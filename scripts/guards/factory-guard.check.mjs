@@ -555,14 +555,10 @@ console.log('===========================================================')
 //     matched the literal word `at` after the number, so it PASSED the reverse
 //     order — a shape live in the corpus at
 //     `.scratch/v28/reports/slice-6b-fix-1.md:292` — and it could not spell a
-//     label like (tracked), src/lib or .scratch. Every case below that HAS a
-//     MUTATION line is paired with the mutation that reaches its failure mode.
-//     The `wordClass` seed has none, and that is declared rather than claimed:
-//     its five labels share one root, and no single mutation makes all five pass
-//     at once — measured, narrowing the gap's token class to `[\w.]+` kills
-//     lines 1-3 and leaves the plain-word connectors (lines 4-5) firing — so it
-//     is a fire-check, not a paired case. (The B1 and B2 mutations in §23/§24 are
-//     what prove the label window and the gap are load-bearing shape by shape.)
+//     label like (tracked), src/lib or .scratch. Every case below is paired with
+//     the mutation that reaches its failure mode, `wordClass` included — the
+//     reviewer's own pairing (the gap window `{0,5}`→`{0,0}`) is the mutation
+//     here, so the seed is a paired case rather than a declared exception.
 {
   const reverseOrder = (ctx) => {
     cleanRoot()(ctx)
@@ -582,17 +578,25 @@ console.log('===========================================================')
     `exit ${missed.exit}`,
   )
 
-  const wordClass = run((ctx) => {
+  const wordClassSeed = (ctx) => {
     cleanRoot()(ctx)
     ctx.write(
       '.scratch/v28/reports/zz-wordclass.md',
       '280 tracked `.scratch` files at HEAD\n280 files in src/lib at HEAD\n280 files (tracked) at HEAD\n87, taken at HEAD\nthe count was 87 as of HEAD\n',
     )
-  })
+  }
+  const wordClass = run(wordClassSeed)
   check(
     'labels the round-5 word class could not spell are CAUGHT',
     wordClass.exit === 1 && /no-bare-head-count/.test(wordClass.out),
     `exit ${wordClass.exit}`,
+  )
+  const narrowWindow = mutatedGuard([['{0,5}', '{0,0}']])
+  const wordClassMiss = run(wordClassSeed, { guard: narrowWindow })
+  check(
+    'MUTATION: narrowing the gap window to {0,0} lets that seed PASS (so the window is load-bearing)',
+    wordClassMiss.exit === 0,
+    `exit ${wordClassMiss.exit}`,
   )
 
   // The reachable control for ARM 1's proximity window: the same two tokens in
@@ -675,7 +679,7 @@ console.log('===========================================================')
     ctx.write('.scratch/v28/reports/zz-cmd.md', `$ git ls-tree -r --name-only ${sha} .scratch | wc -l\n280\n`)
   }
   const cmdValid = run(countedCommand('1c3471a'), { args: ['--repo', REPO] })
-  check('the revision of a counted git command is verified too (valid sha passes)', cmdValid.exit === 0, `exit ${cmdValid.exit}`)
+  check('the FIRST sha-shaped token of a counted git command is verified too (valid sha passes)', cmdValid.exit === 0, `exit ${cmdValid.exit}`)
   const cmdBogus = run(countedCommand('deadbee'), { args: ['--repo', REPO] })
   check(
     'the FIRST sha-shaped token of a counted git command is verified too (bogus sha is CAUGHT)',
@@ -1092,6 +1096,37 @@ console.log('===========================================================')
     'MUTATION: dropping the abandoned-formula scan lets that seed PASS (so the check can fail)',
     reuseMiss.exit === 0,
     `exit ${reuseMiss.exit}`,
+  )
+
+  // RULE 2 — the claim sits in a check NAME, which the leading-block scan could
+  // not see. The seed is a `.check.mjs` whose name makes the claim; the mutation
+  // stops reading check names and the seed goes green, which is what proves the
+  // COVERAGE is load-bearing.
+  const checkNameClaim =
+    '#!/usr/bin/env node\n' +
+    '// zz-seeded check file.\n' +
+    "import process from 'node:process'\n" +
+    'const check = (name, ok) => { if (!ok) process.exit(1) }\n' +
+    "check('the `ZZQ2` alternative is what this proves', true)\n" +
+    'process.exit(0)\n'
+  const byName = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-by-name.check.mjs', checkNameClaim)
+  })
+  check(
+    'a claim carried by a check NAME is read and CAUGHT (check-file prose)',
+    byName.exit === 1 && /instrument-headers-honest/.test(byName.out),
+    `exit ${byName.exit}`,
+  )
+  const noNames = mutatedGuard([["const nameMatch = /^\\s*check\\(\\s*(['\"`])(.*?)\\1/.exec(line)", "const nameMatch = /^\\s*zznevercheck\\(\\s*(['\"`])(.*?)\\1/.exec(line)"]])
+  const byNameMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-by-name.check.mjs', checkNameClaim)
+  }, { guard: noNames })
+  check(
+    'MUTATION: not reading check names lets that seed PASS (so the coverage can fail)',
+    byNameMiss.exit === 0,
+    `exit ${byNameMiss.exit}`,
   )
 
 }

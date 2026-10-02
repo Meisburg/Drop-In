@@ -395,6 +395,8 @@ function proseSegments(lines) {
     const trimmed = line.trim()
     let text = null
     if (/^(?:\/\/|\/\*|\*|#)/.test(trimmed)) text = trimmed.replace(/^(?:\/\/|\/\*|\*|#)\s?/, '')
+    const nameMatch = /^\s*check\(\s*(['"`])(.*?)\1/.exec(line)
+    if (nameMatch) text = text ? `${text} ${nameMatch[2]}` : nameMatch[2]
     if (text) segs.push({ line: i + 1, text })
   })
   return segs
@@ -452,7 +454,10 @@ function checkInstrumentHeaders() {
     // The file's MECHANISM source: comment lines gone AND check-name strings
     // blanked, so a construct named in a check name is not "found" in the
     // name itself (which would make the presence test vacuous).
-    const code = f.lines.filter((l) => !/^\s*(?:\/\/|\/\*|\*|#)/.test(l)).join('\n')
+    const code = f.lines
+      .filter((l) => !/^\s*(?:\/\/|\/\*|\*|#)/.test(l))
+      .map((l) => l.replace(/^\s*check\(\s*(['"`])(.*?)\1/g, "check('')"))
+      .join('\n')
     for (const [i, seg] of f.segs.entries()) {
       const exclusive = EXCLUSIVE_GIT_CLAIM.exec(seg.text)
       if (exclusive) {
