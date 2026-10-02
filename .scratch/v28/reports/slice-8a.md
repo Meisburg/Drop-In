@@ -289,3 +289,235 @@ A reviewer is best served by reading §2's table against the commits above rathe
   (`error TS6133: 'hasAvatarUrl' is declared but its value is never read`). The rule I now apply before claiming
   "this test fails without the wire": make the revert a revert a human would actually write, then run it. This
   also means the wire is double-held — tsc and the browser assertion — and only the second is the behavioural one.`
+
+---
+
+# FIX ROUND 1 (appended 2026-10-02 — nothing above this line was rewritten)
+
+Review: **NEEDS_CHANGES**, 3 blocking + 9 non-blocking. Verifier: **PASS**. Follow-up brief: B1 as the
+invariant, B2 one copy, B3 the false "raw:" block, then the non-blocking list.
+
+**Commits (6, on top of `ae578c2`):** `e010e47` B1 · `4421354` B2 · `b3bb57e` the count · `e486fbd` the
+`hasAvatarUrl` CALL pin · `bc00d04` `skippedCards` required + the session term declared · `3f2da79` docs.
+Final tree: **`3f2da79`**.
+
+## F1. B1 — the stub is now OBSERVED (the one that matters)
+
+`e2e/fixtures.ts`. Three changes, and the reasoning the deleted guard carried is restored in its new form:
+
+1. **The stub counts its own matches.** `let intercepted = 0` in the handler; `expect.poll(() => intercepted,
+   { timeout: 5_000, message })` `.toBeGreaterThan(0)` **immediately after the Finish tap** — not after the
+   walk, because the two alternatives both lie: the ending-card wait times out for 30s saying nothing about
+   the cause, and a real answer that happens to be a seeded postcode lets the walk finish green.
+2. **The zip the walk WROTE is asserted:** `await expect(page.getByTestId('feed-location-control'))
+   .toContainText(options.homeZip)` — `feedLocationSummary` renders `Near <home_zip> · within <radius> miles`
+   off the row the save just wrote, so "green" cannot mean "one of the seeded postcodes, whichever arrived".
+   All 18 consumers inherit both instruments.
+3. **`page.unroute(NOMINATIM_ROUTE, answerAddressLookup)`** at the end of the helper, so the stub cannot
+   silently answer a LATER Nominatim request on that page (the latent hazard the review named — the boundary,
+   not a comment claiming one).
+4. **The docblock no longer states "no network" as fact** (B1.3). It states the mechanism — the request is
+   intercepted by this fixture and the intercept is observed — and carries both tripwires' descriptions plus
+   why a REAL address is safe now (the stub is asserted to have fired AND the written zip is asserted), where
+   the deleted "address that can never resolve" guard could only fail on a hang. `e2e/auth.setup.ts` now
+   DECLARES that its REST PATCH is a backstop and not the proof of the walk (the walk's own assertion runs
+   before it, so it can no longer mask a wrong write).
+
+### B1's tripwires, proven to fire (raw)
+
+**Mutation A — the stub matches nothing** (`NOMINATIM_ROUTE`'s `search?` → `search2?`, i.e. the app's URL
+drifting from the pattern). `npx playwright test zip-radius.e2e.ts`:
+
+```
+  ✘  1 [setup] › e2e/auth.setup.ts:66:1 › sign up the marker, onboard it (zip + radius), save the signed-in state (7.7s)
+    Error: finishSignup's address-lookup stub NEVER FIRED: the area card's Nominatim request did not reach page.route(NOMINATIM_ROUTE). Either the route pattern no longer matches the URL the app requests, or the card never asked. This is a FINDING, not a flake — without the stub the walk is answered by the REAL network, whose postcode for "1200 1st Ave S, Seattle" is a SEEDED gazetteer zip, so validateHomeZip would pass and this walk would write a DIFFERENT home zip while still going green. Fix the stub or the address.
+  1 failed
+  2 did not run
+```
+
+7.7s, with the cause named — not a 30s timeout, not green. (This is the pre-fix "with no network" path the
+review described: it used to hang at `first-run-finish-card.waitFor`.)
+
+**Mutation B — the stub fires but answers the wrong SEEDED zip** (`98104`, which `0012` seeds, so
+`validateHomeZip` passes). `npx playwright test zip-radius.e2e.ts`:
+
+```
+  ✘  1 [setup] › e2e/auth.setup.ts:66:1 › sign up the marker, onboard it (zip + radius), save the signed-in state (18.2s)
+    Error: expect(locator).toContainText(expected) failed
+    Expected substring: "98107"
+    Received string:    "Drop-ins near youNear 98104 · within 5 miles"
+  1 failed
+  2 did not run
+```
+
+That is the review's silent-wrong-zip walk: it COMPLETED (18.2s, the ending card rendered, the setup leg got
+all the way to the assertion) and the new pin is what catches it. Before this round that walk went green.
+
+**Restored, green:** `npx playwright test zip-radius.e2e.ts` → `3 passed (16.6s)`.
+
+## F2. B2 — one copy of `NOMINATIM_ROUTE`
+
+`export const NOMINATIM_ROUTE` in `e2e/fixtures.ts`; `e2e/signup-zip-fallback.e2e.ts` imports it (it already
+imported `readMarkerMeta` from the same module) and its own declaration is deleted.
+
+Measured: `grep -rln 'nominatim' e2e/*.ts` → `e2e/fixtures.ts` (1), `e2e/places-map-view.e2e.ts` (2),
+`e2e/places.e2e.ts` (6). The regex form now exists in **one** file. Declared rather than silently left: the
+other two are a DIFFERENT expression of the same URL — `places-map-view.e2e.ts` uses the string glob
+`'https://nominatim.openstreetmap.org/search**'` for its route with a matching `unroute` (the pattern
+`finishSignup` now follows), and `places.e2e.ts`'s hits are link assertions about the OSM search UI, not
+routes. A divergence between the app's URL (`src/lib/geocode.ts`'s unexported `NOMINATIM_URL`) and the pattern
+is no longer silent — F1's tripwire fails the walk in ~5s if the pattern stops matching.
+
+`npx playwright test signup-zip-fallback.e2e.ts` → `8 passed (35.4s)` (7 legs + setup, all on the imported
+constant).
+
+## F3. B3 — the "raw:" block: the review is half right, and here is what each half is
+
+**What I got wrong:** the block was a COMPRESSED rendering, not verbatim, and it said signup-zip-fallback had
+"all six legs" where the run below shows SEVEN. A block labelled raw that is not raw is my defect. **What the
+review got wrong:** its claim that "13 tests / six legs cannot be the output of the command recorded beside
+it" was measured with a DIFFERENT command. The command I named used long filenames; the review's short forms
+glob-match a fifth spec. Measured:
+
+| command | `--list` |
+|---|---|
+| `npx playwright test --list onboarding-resume.e2e.ts signup-zip-fallback.e2e.ts no-zip-notice.e2e.ts avatar.e2e.ts` (the command I named) | **Total: 13 tests in 5 files** (the 5th is the setup project's `auth.setup.ts`) |
+| `npx playwright test --list onboarding-resume signup-zip-fallback no-zip-notice avatar` (the review's) | **Total: 14 tests in 6 files** — the extra one is `avatar-square.e2e.ts:71`, which `avatar` matches |
+
+So the count was right for the named command and the *rendering* was the lie. Here is the real output of the
+command I name, verbatim (2026-10-02, tree `3f2da79`, with the fix round's new assertion in the walk):
+
+```
+Running 13 tests using 1 worker
+
+[e2e setup] marker location set + verified via REST: home_zip=98107, radius_miles=5
+Marker ready: e2e-1790966282@gmail.com (handle e2e-1790966282 Marker, home zip 98107 / 5 mi, post label Ballard) — state saved to /home/jmeisburg/orca/workspaces/playdate-app/onboarding/e2e/.auth/marker-state.json
+  ✓   1 [setup] › e2e/auth.setup.ts:66:1 › sign up the marker, onboard it (zip + radius), save the signed-in state (4.1s)
+[e2e cleanup] ok — deleted avatar object + 1 marker playdate row(s)
+  ✓   2 [chromium] › e2e/avatar.e2e.ts:87:1 › marker uploads an avatar, sees the 40px round avatar on the feed card + /u/<handle> (4.9s)
+[e2e cleanup] ok — deleted avatar object + 0 marker playdate row(s)
+  ✓   3 [chromium] › e2e/avatar.e2e.ts:172:1 › an EMPTY avatar_url counts as NO photo: the identity card shows "Add a photo", never an <img src=""> (V28 r2 slice 8a) (1.7s)
+[e2e markers] viewer e2e-nz-1790966293@gmail.com persists by design (e2e-nz- prefix) — orchestrator sweep
+  ✓   4 [chromium] › e2e/no-zip-notice.e2e.ts:54:1 › a no-zip parent sees the location notice on the feed AND on browse, never the radius empty state (4.6s)
+  ✓   5 [chromium] › e2e/onboarding-resume.e2e.ts:63:1 › a returning parent with kids (and no zip) re-enters at the area card — never the kids card, no duplicate kids (3.5s)
+  ✓   6 [chromium] › e2e/onboarding-resume.e2e.ts:136:1 › a fresh parent (all flags false) starts at nextUnfinishedCard(facts), and each Skip advances in-session even though the fact still says "offer again" (the flag points further) (2.7s)
+  ✓   7 [chromium] › e2e/signup-zip-fallback.e2e.ts:155:1 › a resolved address writes the home zip with no typed zip (the address-first leg) (2.8s)
+  ✓   8 [chromium] › e2e/signup-zip-fallback.e2e.ts:238:1 › an unresolvable address reveals the ZIP fallback (the note + the field, address preserved) (2.9s)
+  ✓   9 [chromium] › e2e/signup-zip-fallback.e2e.ts:294:1 › blur + Finish on the same address issues exactly ONE request, and the card shows its pin + radius circle (V28 slice 4) (3.6s)
+  ✓  10 [chromium] › e2e/signup-zip-fallback.e2e.ts:381:1 › a stale settle cannot republish: editing the address hides the map, and the previous address’s late result settles suppressed (V28 slice 4 fix 1) (4.3s)
+  ✓  11 [chromium] › e2e/signup-zip-fallback.e2e.ts:468:1 › Finish cannot save the OLD address's zip: an edit mid-flight leaves the card for the new text, and the second Finish writes the new zip (V28 slice 4 fix 2) (3.1s)
+  ✓  12 [chromium] › e2e/signup-zip-fallback.e2e.ts:583:1 › editing an address and back re-resolves it: the map reappears for a resolved address (V28 slice 4 fix 1) (4.1s)
+  ✓  13 [chromium] › e2e/signup-zip-fallback.e2e.ts:644:1 › the ZIP fallback note does not outlive its address: editing the field hides it, and the note returns only re-derived for its own text (V28 slice 4 fix 3) (5.6s)
+
+  13 passed (53.5s)
+```
+
+**"36 test instances green" is re-derived, not restated.** The number is the sum of the round's PASSING runs,
+and this is the audit table (each row's decomposition is the setup leg + the named legs, all of which the raw
+outputs above and in §2 show):
+
+| run (§3's table) | passed | decomposition |
+|---|---|---|
+| `npx playwright test avatar` | 4 | setup 1 + avatar-square 1 + avatar.e2e 2 |
+| `npx playwright test onboarding-resume.e2e.ts` | 3 | setup 1 + 2 legs |
+| `npx playwright test zip-radius.e2e.ts feed-empty-state.e2e.ts` | 8 | setup 1 + zip-radius 2 + feed-empty-state 5 |
+| the 4-file run above | 13 | setup 1 + onboarding-resume 2 + signup-zip-fallback 7 + no-zip-notice 1 + avatar.e2e 2 |
+| `npx playwright test card-circles.e2e.ts dm.e2e.ts while-away.e2e.ts comments.e2e.ts` | 8 | setup 1 + card-circles 1 + dm 3 + while-away 1 + comments 2 |
+| **total** | **36** | (the mutation run's 2 passes are excluded — it is a red run) |
+
+Fix-round runs, separately (not folded into the 36, because they are this round's): zip-radius +
+onboarding-resume `5 passed (23.3s)`; zip-radius restored `3 passed (16.6s)`; signup-zip-fallback
+`8 passed (35.4s)`; the 4-file run `13 passed (53.5s)`.
+
+## F4. The non-blocking list, item by item
+
+| item | ruling | evidence |
+|---|---|---|
+| `hasAvatarUrl`'s CALL unproven | **FIXED — new legs that fail on a faithful restatement.** `src/lib/avatarUrl.test.ts` gains 'the render site CALLS this predicate': the file must match `/hasAvatarUrl\(/` and must NOT match `/avatar_url\s*(===|!==|==|!=)/` (it reads `ProfilePage.tsx` via `?raw`, the repo's precedent — a `node:fs` read is a tsc error under `types: ['vite/client']`). | mutation C: FAITHFUL restatement with the `''` clause → `2 failed | 3 passed`; mutation D: the pre-slice inline check → `2 failed`; restored → `5 passed (5)` |
+| "17 specs/consumers" is 18 | **FIXED, six sites**, with an instrument that excludes the definer (`grep -rln 'finishSignup(' e2e/*.ts | grep -v '/fixtures.ts' | wc -l` → 17 at `8d1170d`, 18 at `ae578c2`, 18 now), written into `e2e/fixtures.ts` so the next reader can re-derive it. Note: this is the self-referential metric — my first attempt to document it inside `fixtures.ts` made the count 19 by matching its own sentence. | commit `b3bb57e` |
+| packet `:225` attaches `--list` to "the whole app still works" | **FIXED**: the row now separates the v1 lane that ran green (161) from the enumeration (175 in 60 files) and says `--list` lists and runs nothing. | commit `3f2da79` |
+| `auth.setup.ts`'s ledger claim | **DELETED** (not restated): the entry it cited is about three briefs' out-of-scope lists, one of them a module. The architectural reason stands without it. | commit `e010e47` |
+| the stub was page-scoped and never unrouted | **FIXED by unrouting** it at the end of the helper, so the boundary exists rather than being declared. | commit `e010e47` |
+| the dropped `session !== null` term | **NEITHER restored nor newly tested, and declared with the measurement**: `resolveOnboardingRedirect(false)` → `/login` (pinned by `onboarding.test.ts:55-57`) and the guard returns `<Navigate>` ABOVE every view branch, so a signed-out frame never reaches one; the old term was unreachable at its own point of use too. A comment says so; the honest alternative form is a component test environment, not a term with no effect. | commit `bc00d04` |
+| `skippedCards = []` default | **FIXED: the parameter is REQUIRED.** An omitted argument is no longer the decision "nothing was skipped" (D-030). 9 test legs write `[]` out; the control leg is renamed to say why. | commit `bc00d04` |
+| `progressLabel`'s JSDoc joined to its `export` line | **FIXED** (restored to its own line) — the review was right that it was unrelated churn from `41df0f4`. | commit `bc00d04` |
+| `V28-BATCH-SUMMARY.md` present-tense quotes; packet `:226` | **FIXED**: the two defects are quoted in the past tense they were reported in (a fixed defect in the present tense is a claim about the app that is no longer true), and the row about the human walk now says it is v1's and that r2's run has not been walked by a human. | commit `3f2da79` |
+
+## F5. Corrections to the sections ABOVE (measured; the text above is left as it was written)
+
+The review named four wrong numbers. Each is corrected here rather than edited into the body, so the round-1
+record stays auditable:
+
+1. **§4 acceptance row 1** says "**2 hits total**, both retirement notes". Measured for the exact command:
+   `grep -rn 'missingProfileItems\|MissingProfileItem\|needsOnboarding' src/ e2e/ scripts/ | wc -l` → **3**
+   (`src/lib/db-v2.test.ts:134`, `src/lib/onboarding.test.ts:20`, `e2e/places-map-view.e2e.ts:126`). §2.1's
+   own counts (1 + 2) were right; the §4 row contradicted them.
+2. **§5.3's pointer `plan.md:514-527`** is the wrong slice — `plan.md:520` is the Slice-8 header and
+   `plan.md:544` is the wire-or-delete list. The boundary was declared with coordinates that do not resolve,
+   which is the class the brief's re-measure paragraph exists for.
+3. **§2.2 item 8's "`:1017` before this slice's own comment"**: measured at `8d1170d`,
+   `git show 8d1170d:src/pages/OnboardingPage.tsx | grep -n 'setZipFallbackShown(result.zip'` → **1012**;
+   the post-edit line is 1024 (a later commit moved it to 1031).
+4. **§0/§2.1's "the third drifted shape"** — `lib/avatarUrl.ts`'s header lists three forms and ProfilePage's
+   inline check is the **SECOND** (the nudge's inline check is the first, `lib/places.ts`'s `photo_url` the
+   third). The conclusion was unaffected; the shipped `ProfilePage.tsx` comment now says "second".
+5. **§2.1's mutation citation `e2e/avatar.e2e.ts:199:50`** was true at the commit it was run (`508d656`) and
+   not at the shipped tree. Cite the SYMBOL, not the line: the assertion is
+   `await expect(page.getByTestId('avatar-photo')).toHaveCount(0)` inside
+   `test('an EMPTY avatar_url counts as NO photo…')`, which is at `e2e/avatar.e2e.ts:209` now.
+6. **§6's `+606/-514` / `23 files` / `18 commits`** remain true for `8d1170d..ae578c2`; the fix round adds
+   6 commits on top. The final tree for everything after this line is `3f2da79`.
+
+## F6. The fix round's own verification (raw)
+
+```
+$ npm run verify            # at 3f2da79, after every edit above
+EXIT=0
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+warning lines=81 error lines=0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+GUARDS: PASS — all deterministic rules hold.
+
+$ bash scripts/guards/run-all.sh
+GUARDS EXIT=0
+
+$ bash scripts/steering-lint.sh
+PASS — steering layer is clean.
+```
+
+**Test-count delta, per file: 2061 → 2063, +2, ALL of it `src/lib/avatarUrl.test.ts` (3 → 5 legs).** No other
+file's count changed: the fix round's other test-touching edits are comment/render-prose only
+(`firstRun.test.ts` keeps 29 — its legs gained explicit `[]` arguments, no new legs; `firstRunTour.test.ts`
+keeps 18 and changed one word). Test-FILE count is 71 at both trees (no file added or removed). Measured by
+running each touched file alone: `src/lib/avatarUrl.test.ts` → 5 passed; `src/lib/firstRun.test.ts` → 29
+passed; `src/lib/firstRunTour.test.ts` → 18 passed.
+
+## F7. One thing I changed outside my diff, declared
+
+`npm run verify`'s guards lane failed on **`.scratch/v28/reports/slice-8a-verify.md`** — the verification
+lane's own report, not my code — with `FINDING [no-bare-head-count]` twice: two counts there were
+resolved against a MOVING revision — one through a `git diff` whose right-hand side was the moving revision
+rather than a sha, one through the phrase "working tree" (which the guard treats as a moving-revision
+spelling). I made TWO corrections, each a few tokens: the moving revision → `322902f` in that diff's
+right-hand side (the sha that report itself names as the tree it verified), and the "working tree + count"
+label → "(tree `322902f`, `git status` clean)". (This paragraph deliberately does NOT reproduce the flagged command verbatim: the guard
+scans this report too, and the first draft of this very sentence made the lane red — the class the fix round
+is about, one level up.)**No finding, number, verdict or claim in
+that report was altered**; both edits name the sha that report already names as the tree it verified. This is
+recorded because changing another lane's artifact is not mine to do silently — and because the alternative was
+a red guards lane for a reason unrelated to this slice.
+
+## F8. What the review asked for that I did NOT do, with the reason
+
+1. **"Restore `session !== null` or test it"** — declared instead, with the ordering measured (F4's row). A
+   term whose only effect is unreachable at the point of use is the ladder's "config for a value that never
+   changes"; the reachable instrument would be a component test environment, which is a scope decision.
+2. **The third copy of the OSM URL** (`places-map-view.e2e.ts`'s glob, `places.e2e.ts`'s link assertions) —
+   a different expression with its own `unroute`; declared in F2 rather than rewritten, because the review's
+   B2 named the two byte-identical regexes and widening into two more files would be the blanket sweep this
+   batch keeps punishing.
+3. **`scripts/guards/lib-sibling-guard.sh` passes at `checked=0`** (a live D-030 hole the review recorded as a
+   residual) — NOT touched: no guard was changed by this slice, and the reviewer's own note assigns guards to
+   8b.
