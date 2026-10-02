@@ -167,18 +167,16 @@ applied — so every existing consumer already satisfied it.
 
 Replaced by `signUpViewer` + `finishSignup`. `MARKER_ADDRESS` deleted. The pre-fill tripwire note moved into
 `signUpViewer`'s docblock (where those fills live), and the inline "satisfy the gate" comments were corrected.
-Commit `b8b1b39`. **Proof: this is every spec's setup** — raw:
+Commit `b8b1b39`.
 
-```
-Running 13 tests using 1 worker
-[e2e setup] marker location set + verified via REST: home_zip=98107, radius_miles=5
-Marker ready: e2e-1790964700@gmail.com (handle e2e-1790964700 Marker, home zip 98107 / 5 mi, post label Ballard) — state saved to …/e2e/.auth/marker-state.json
-  ✓ 1 [setup] › e2e/auth.setup.ts:56:1 › sign up the marker, onboard it (zip + radius), save the signed-in state (3.6s)
-  ✓ 2 [chromium] › e2e/avatar.e2e.ts:87:1 … (5.7s)      ✓ 3 avatar.e2e.ts:172 … (1.7s)
-  ✓ 4 no-zip-notice.e2e.ts:54 … (4.6s)                   ✓ 5 onboarding-resume.e2e.ts:63 … (3.6s)
-  ✓ 6 onboarding-resume.e2e.ts:136 … (2.8s)              ✓ 7–13 signup-zip-fallback.e2e.ts (all six legs)
-  13 passed (53.5s)
-```
+⚠️ **THE `raw:` BLOCK THAT STOOD HERE IS DELETED (fix round 3).** It was introduced with `— raw:`, but it was a
+hand-compaction rather than captured output — playwright prints one `✓` per test and this printed ranges — and
+its summary line counted six legs for a seven-leg spec. Three consecutive review rounds found it, so the number
+is NOT corrected a fourth time: the block is gone (D-028: a fabricated transcript cannot be corrected into a
+true one), and the shape it had is now a guard rule (`transcript-summary-agrees` in `scripts/guards/factory-guard.mjs`,
+with its seed, mutation and control in that guard's own check file — the rule fired on this very line before the
+block was removed). **The REAL transcript of this walk — the command, the tree and all 13 lines, one per line —
+is in F3 below**, where it was run and independently reproduced.
 
 Four files (60-file suite's setup runs once, and every chromium spec depends on it), including **both the brief's
 mandatory specs**: `onboarding-resume.e2e.ts` + `signup-zip-fallback.e2e.ts`.
@@ -454,7 +452,7 @@ onboarding-resume `5 passed (23.3s)`; zip-radius restored `3 passed (16.6s)`; si
 | item | ruling | evidence |
 |---|---|---|
 | `hasAvatarUrl`'s CALL unproven | **FIXED — new legs that fail on a faithful restatement.** `src/lib/avatarUrl.test.ts` gains 'the render site CALLS this predicate': the file must match `/hasAvatarUrl\(/` and must NOT match `/avatar_url\s*(===|!==|==|!=)/` (it reads `ProfilePage.tsx` via `?raw`, the repo's precedent — a `node:fs` read is a tsc error under `types: ['vite/client']`). | mutation C: FAITHFUL restatement with the `''` clause → `2 failed | 3 passed`; mutation D: the pre-slice inline check → `2 failed`; restored → `5 passed (5)` |
-| "17 specs/consumers" is 18 | **FIXED, six sites**, with an instrument that excludes the definer (`grep -rln 'finishSignup(' e2e/*.ts | grep -v '/fixtures.ts' | wc -l` → 17 at `8d1170d`, 18 at `ae578c2`, 18 now), written into `e2e/fixtures.ts` so the next reader can re-derive it. Note: this is the self-referential metric — my first attempt to document it inside `fixtures.ts` made the count 19 by matching its own sentence. | commit `b3bb57e` |
+| "17 specs/consumers" is 18 | **FIXED, six sites**, with an instrument that excludes the definer (`grep -rln 'finishSignup(' e2e/*.ts \| grep -v '/fixtures.ts' \| wc -l` → 17 at `8d1170d`, 18 at `ae578c2`, 18 now), written into `e2e/fixtures.ts` so the next reader can re-derive it. Note: this is the self-referential metric — my first attempt to document it inside `fixtures.ts` made the count 19 by matching its own sentence. | commit `b3bb57e` |
 | packet `:225` attaches `--list` to "the whole app still works" | **FIXED**: the row now separates the v1 lane that ran green (161) from the enumeration (175 in 60 files) and says `--list` lists and runs nothing. | commit `3f2da79` |
 | `auth.setup.ts`'s ledger claim | **DELETED** (not restated): the entry it cited is about three briefs' out-of-scope lists, one of them a module. The architectural reason stands without it. | commit `e010e47` |
 | the stub was page-scoped and never unrouted | **FIXED by unrouting** it at the end of the helper, so the boundary exists rather than being declared. | commit `e010e47` |
@@ -721,3 +719,164 @@ not re-run a third time here.
   satisfy the call leg; the negative leg now fails on emptiness), and both directions were mutation-run.
 - I did not widen a guard: `factory-guard.mjs` changed only by re-deriving its recorded baseline map from its
   own matches, with the run's size printed rather than written into the prose.
+
+---
+
+# FIX ROUND 3 (appended 2026-10-02)
+
+**Commits this round:** `1c24fcc` the guard rule + its seed/mutation/control + the baseline absorption ·
+`6d22351` the `avatarUrl` ceiling · the commit carrying this section holds the §3 block's deletion (the
+blocking fix's other half), the table escape and this record.
+
+Round-3 review: **NEEDS_CHANGES**, 1 blocking + 6 non-blocking. Round-3 verify: **PASS** (restoration
+sha256-identical; baseline idempotent with 0 keys lost; all three `avatarUrl` mutations red; the +2/2063 delta
+genuinely zero). One verify correction accepted: this report's round-1 parenthetical claimed round 1 "would have
+been GREEN" on the inline-restatement file, which is true of leg 1 and of the PAIR only on the alias variant —
+the reviewer's version is the accurate one, and the correction is recorded here rather than argued.
+
+## FR3-1. The blocking finding: BOTH halves of the structural route
+
+`slice-8a.md`'s §3 block stood under `— raw:` for **three** review rounds, each time with a summary line that
+counted six legs for a seven-leg spec. `raw:` on a hand-compaction is a structural defect, so this is not a
+fourth prose correction:
+
+**(1) The block is DELETED** (12 lines → 10; D-028: a fabricated transcript cannot be corrected into a true
+one). What replaced it is a pointer to F3, which carries the REAL transcript — the command, the tree, all 13
+lines one per line — run and independently reproduced twice by the round-2 verifier.
+
+**(2) The SHAPE is now a guard rule**, `transcript-summary-agrees` in `scripts/guards/factory-guard.mjs`:
+inside a block introduced by `raw:`/`verbatim`, a summary line that names a step RANGE (`✓ 7–13 …`) and states
+how many entries it covers (`(all six …)`) must agree with the range.
+
+**THE RULE FIRED ON THE REAL DEFECT BEFORE THE BLOCK WAS DELETED** — this is the route's proof, not a
+synthetic seed's:
+
+```
+$ node scripts/guards/factory-guard.mjs
+  note — transcript-summary-agrees: 11 block(s) introduced as raw:/verbatim read, 1 range summary checked
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8a.md:179: a raw block's summary line covers 7 entries (7–13) but states "(all six" — a block claiming to be raw must reproduce its own arithmetic
+```
+
+**And the rule carries a seed, a mutation and a control** in `scripts/guards/factory-guard.check.mjs` (the
+harness that runs every rule against a throwaway root), so the check CAN fail:
+
+```
+  ✓ a raw block's step range contradicting its own count is CAUGHT (transcript-summary-agrees)
+  ✓ MUTATION: dropping the range/count agreement lets that seed PASS (so the check can fail)
+  ✓ control: the same raw block with its count RIGHT passes (so the rule is not just a fence detector)
+factory-guard check: all 93 checks passed.        (was 90 before this round)
+```
+
+After the deletion the rule reads 10 labelled blocks and 0 range summaries, and its note says so in words:
+`0 range summaries checked — NOTHING was checked: no raw-labelled range summary exists in this scan`. The
+guard's own summary line does not claim the rule unless it checked something (`if (rawSummaryLines) claims.push(…)`),
+which is how a zero here cannot be read as this rule having vouched for the corpus.
+
+**Why the shape cannot produce this finding a fourth time:** the instance is gone (deleted, not corrected), and
+a fourth sighting of the SHAPE is now a red guard naming the file, the line, the range and the count — it fails
+the gate instead of reaching a reviewer. **Its declared ceiling, so this is not over-claimed:** the rule reads
+ONE shape (a `✓ N–M` range beside an `all <count>`), inside blocks labelled with one of two spellings; a
+fabrication written any other way escapes the detector, and a raw block that names no command is not checked at
+all (full reproducibility would mean re-running the command). It is a detector over the shape that has actually
+recurred three times, not a proof of reproducibility — and that ceiling is written into the rule's own
+docblock, in the file, where the next author meets it.
+
+## FR3-2. The `avatarUrl` ceiling: the sign flipped, and both false-pass vectors named
+
+The round-2 ceiling said *"a call written through an alias still passes leg 1, which is intended: an alias call
+IS a call."* **Measured with leg 1's own regex, from the REAL `codeOnly` extracted out of the test file:**
+
+```
+leg 1 (/hasAvatarUrl\(/) applied to codeOnly(input):
+  false aliased callee (import ... as pred)
+  false aliased callee (const p = hasAvatarUrl)
+  true  call with a VARIABLE argument
+  true  call with a longer expression
+  true  JSX-text apostrophe then comment mention
+  true  string text containing the call
+  true  template text containing the call
+```
+
+So the sentence was the OPPOSITE of the mechanism (D-025 with the sign flipped). The ceiling now says:
+**an aliased CALLEE FAILS leg 1 — a false FAIL**, not a false pass, and the remedy is to fix the regex rather
+than delete the leg; what passes is a differently-spelled ARGUMENT (the leg matches the callee's name).
+
+**The two reachable false-PASS vectors the review named are now in the ceiling too, with their measurement of
+absence** (the scanner's own output vs a real parser, over the file the leg reads):
+
+```
+REAL codeOnly over ProfilePage.tsx (extracted from the test file):
+  comment chars total           : 33798
+  comment chars BLANKED         : 33798
+  comment chars SURVIVING (leak): 0
+  non-comment chars blanked     : 0
+```
+
+plus: the file holds exactly ONE `hasAvatarUrl(` and it is the real call at `ProfilePage.tsx:1227`, `@babel/parser`
+reports zero regex literals in it, and it has no JSX-text apostrophe. So (a) the desync vector and (b) the
+string/template-text vector are reachable in principle and ABSENT today — the ceiling says exactly that, and
+names the residual risk (a future edit adding either would change what the leg measures without failing it).
+
+## FR3-3. The rest of the non-blocking list
+
+| item | ruling |
+|---|---|
+| the table cell at `slice-8a.md:461` with an unescaped `\|` | **FIXED** — the two pipes inside the code span are escaped; the row now has exactly 3 columns (measured: 4 unescaped pipes, starts and ends with one) |
+| the standing rule not in a conventions doc | **DONE BY THE ORCHESTRATOR** (`.opencode/agents/orchestrator.md` Guardrails, with the live case named) — not redone here, and it is the general lesson this round: a rule kept only in a slice report is a rule that stops running |
+| `factory-guard.mjs`'s zero-file report/brief scan passing, and `lib-sibling-guard.sh`'s `checked=0` | **NOT TOUCHED** — both are registered for 8b in `plan.md` and `factory/work/v28-r2-8b.json`; `factory/` was not opened by this round, and no guard hole was fixed here |
+| `factory/work/v28-r2-8b.json`'s em-dash escape | an orchestrator commit (`55cf3e6`), not this slice's line to touch |
+
+## FR3-4. Baseline — derived LAST, twice, coverage measured
+
+The two round-3 lane reports are on disk and quote the flagged spellings, so the guards lane was red with
+**11 findings (10 in `slice-8a-verify-3.md`, 1 in `slice-8a-review-3.md`)** — other lanes' records, which
+**keep their labels** and are absorbed by re-derivation. Derived after every other edit in this round, from the
+instrument's own matches (throwaway copy with the map emptied, findings parsed back into an occurrence map):
+
+```
+emptied-map run:        435 distinct keys, 669 occurrences
+committed map before:   426 keys, 658 occurrences
+delta absorbed:         9 keys / 11 occurrences
+COVERAGE LOSS (keys in the committed map absent from the fresh derivation): 0
+count mismatches on shared keys: 0
+run twice: exit 0 / exit 0, identical output
+```
+
+**Coverage loss is reported because it is the failure this absorber can hide**: a re-derivation that silently
+dropped keys would make the guard green on a smaller corpus. It is `0`: nothing was lost, and no
+shared key's count moved. The size is never typed as prose — the run prints it, and this section quotes the run.
+
+## FR3-5. Verification at this tree (raw)
+
+```
+$ npm run verify
+EXIT=0
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+warning lines=81 error lines=0
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+  note — no-bare-head-count: baseline holds 669 recorded occurrence(s); a new count resolved through bare HEAD is a finding
+  note — transcript-summary-agrees: 10 block(s) introduced as raw:/verbatim read, 0 range summaries checked — NOTHING was checked: no raw-labelled range summary exists in this scan
+GUARDS: PASS — all deterministic rules hold.
+
+$ node scripts/guards/factory-guard.check.mjs
+factory-guard check: all 93 checks passed.
+
+$ npx vitest run src/lib/avatarUrl.test.ts
+ Tests  5 passed (5)
+```
+
+**Test delta: 2063 -> 2063 (ZERO)** — `src/lib/avatarUrl.test.ts` keeps 5 legs (this round changed its DOCBLOCK, not
+its legs), and no other test file changed. **Playwright: no e2e file changed this round** — the changed files
+are the guard, its check harness, the test file's ceiling and this report; the round's only product-adjacent
+surface is a docblock, so no spec needed a re-run, and the round-2 `avatar.e2e.ts` run (3 passed) still
+documents the slice's browser legs.
+
+## FR3-6. Not done, with the reason
+
+- **`factory/` untouched** (not even read for edits) and the two registered guard holes left to 8b.
+- **No other lane's report edited.** The two round-3 lane reports keep their labels; this round's red was
+  absorbed by re-derivation, as round 2's rule now says.
+- **No test or guard weakened.** The new rule ADDS a failure mode (and its own check proves it can fail); the
+  `avatarUrl` legs kept their strictness and gained a measured ceiling.
