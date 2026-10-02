@@ -1335,13 +1335,13 @@ console.log('===========================================================')
     crossed.exit === 1 && /covers 7 entries/.test(crossed.out),
     `exit ${crossed.exit}`,
   )
-  const narrowWindow = mutatedGuard([['const INTRO_LINES = 12', 'const INTRO_LINES = 1']])
+  const boundedWindow = mutatedGuard([['for (let i = region.start - 1; intro === -1 && i >= previousEnd; i -= 1) {', 'for (let i = region.start - 1; intro === -1 && i >= previousEnd && region.start - i <= 1; i -= 1) {']])
   const crossedMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', proseCrossed)
-  }, { guard: narrowWindow, args: ['--repo', REPO] })
+  }, { guard: boundedWindow, args: ['--repo', REPO] })
   check(
-    'MUTATION: narrowing the intro window turns that CAUGHT comparison into the tripwire (so the width is pinned)',
+    'MUTATION: bounding the label search to one line turns that CAUGHT comparison into the tripwire (so the search width is pinned)',
     crossedMiss.exit === 1 && /did not read/.test(crossedMiss.out) && !/covers 7 entries/.test(crossedMiss.out),
     `exit ${crossedMiss.exit}`,
   )
@@ -1391,6 +1391,111 @@ console.log('===========================================================')
     'a fence-INLINE label is READ, and its contradiction is CAUGHT',
     inline.exit === 1 && /covers 7 entries/.test(inline.out),
     `exit ${inline.exit}`,
+  )
+  const noInlineLabel = mutatedGuard([['let intro = LABEL_LINE.test(lines[region.start]) ? region.start : -1', 'let intro = -1']])
+  const inlineMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', inlineSeed)
+  }, { guard: noInlineLabel, args: ['--repo', REPO] })
+  check(
+    'MUTATION: not reading the label on the fence line lets that fabrication PASS (so the fence-inline path is load-bearing)',
+    inlineMiss.exit === 0,
+    `exit ${inlineMiss.exit}`,
+  )
+
+  // THE ESCAPE (D-031). `>` used to be the way OUT of this rule: a label whose
+  // next non-blank line began `>` was EXEMPTED, so prefixing `>` over a fabricated
+  // transcript passed with `0 raw-labelled block(s) read … NOTHING was checked`,
+  // exit 0 — and in a root that also held one agreeing block the guard PUBLISHED
+  // its claim over the fabrication. A blockquote is a REGION now, so the quoted
+  // block is read and its contradiction is a finding. Three spellings, each its
+  // own seed, plus the strongest form (an agreeing block elsewhere, so the old
+  // run published its claim) and a control that an AGREEING quote still passes.
+  const quotedLabel =
+    '# zz-quoted label\n\n' +
+    'proof — raw:\n\n' +
+    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
+  const quoted = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a `>`-prefixed fabrication is CAUGHT (the D-031 escape is closed)',
+    quoted.exit === 1 && /covers 7 entries/.test(quoted.out),
+    `exit ${quoted.exit}`,
+  )
+  const wholeQuoted =
+    '# zz-whole quoted\n\n' +
+    '> proof — raw:\n' +
+    '>\n' +
+    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
+  const wholeQuotedRun = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', wholeQuoted)
+  }, { args: ['--repo', REPO] })
+  check(
+    'the WHOLE block quoted, label included, is CAUGHT',
+    wholeQuotedRun.exit === 1 && /covers 7 entries/.test(wholeQuotedRun.out),
+    `exit ${wholeQuotedRun.exit}`,
+  )
+  const quotedThenBlank =
+    '# zz-quoted then blank\n\n' +
+    'proof — raw:\n\n' +
+    '> a quote\n\n' +
+    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
+  const quotedBlankRun = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', quotedThenBlank)
+  }, { args: ['--repo', REPO] })
+  check(
+    'a quote, a blank line, then a quoted contradiction is CAUGHT (the quote region survives a blank line)',
+    quotedBlankRun.exit === 1 && /covers 7 entries/.test(quotedBlankRun.out),
+    `exit ${quotedBlankRun.exit}`,
+  )
+  const agreeingPlusQuote =
+    '# zz agreeing plus quote\n\n' +
+    'proof — raw:\n\n' +
+    '```\n' +
+    '✓ 1–2 a.e2e.ts (all two legs)\n' +
+    '```\n\n' +
+    'also — raw:\n\n' +
+    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
+  const agreeingPlusQuoteRun = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', agreeingPlusQuote)
+  }, { args: ['--repo', REPO] })
+  check(
+    'an agreeing block ALONGSIDE a quoted fabrication no longer republishes the claim — the quoted block is read',
+    agreeingPlusQuoteRun.exit === 1 && /covers 7 entries/.test(agreeingPlusQuoteRun.out) && /2 raw-labelled block\(s\) read, 2 range summaries checked/.test(agreeingPlusQuoteRun.out),
+    `exit ${agreeingPlusQuoteRun.exit}`,
+  )
+  const quotedControl = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel.replace('(all six legs)', '(all seven legs)'))
+  }, { args: ['--repo', REPO] })
+  check(
+    'control: an AGREEING quote passes (so reading quotes is not \"any quote fails\")',
+    quotedControl.exit === 0,
+    `exit ${quotedControl.exit}`,
+  )
+  const noQuoteRegion = mutatedGuard([['} else if (/^\\s*>/.test(line)) {', '} else if (false) {']])
+  const quotedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel)
+  }, { guard: noQuoteRegion, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the blockquote arm turns the escape CAUGHT-comparison into the label tripwire (so READING the quote is what closes it)',
+    quotedMiss.exit === 1 && /did not read/.test(quotedMiss.out) && !/covers 7 entries/.test(quotedMiss.out),
+    `exit ${quotedMiss.exit}`,
+  )
+  const labelBoundary = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', '# zz draw\n\nthe sketch is a draw:\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n')
+  }, { args: ['--repo', REPO] })
+  check(
+    'control: `the sketch is a draw:` is NOT a label (the left word boundary), so its block is not read',
+    labelBoundary.exit === 0,
+    `exit ${labelBoundary.exit}`,
   )
 
   // THE REPORT/BRIEF SCAN'S OWN ZERO CASE (D-030). The scan used to print

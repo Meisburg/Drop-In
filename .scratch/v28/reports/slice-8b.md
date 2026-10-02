@@ -207,3 +207,113 @@ EXIT=0
 
 Committed as: **see commit 5 below.**
 
+### Item 5 — the `transcript-summary-agrees` rule (D-031): the escape is closed
+
+**Re-measured anchors.** Every line number in the findings was stale. Measured at `f55bc12` (before this item's
+edit): `LABEL_LINE` at `:1523`, `INTRO_LINES` at `:1525`, the attribution window at `:1609-1612`, the exemption
+at `:1644-1648`, the note at `:1656`, the claim universal at `:1719`, the early return at `:1403-1406`
+(fixed in item 4), `discloseScanProvenance`'s `ls-files` at `:1715`. Anchors below are symbols, not numbers.
+
+**THE RULING (D-031), stated explicitly as asked: I took the rule back to the smaller form — I did NOT add a
+fourth condition.** The three additions that produced the last reviewed-good form and survived are the ones
+with their own seed *and* mutation (indented regions, the unresolvable-count-is-a-finding rule, the label
+tripwire). What I **removed** is the pair that created the escape and the false claims:
+
+- the **quotation exemption** — deleted outright, not narrowed;
+- the **12-line intro window** — deleted, not tuned (a line window made a legitimate long intro a finding and
+  bought nothing: the label FORM is where the precision is, not a distance);
+- the **`exec`-reads-one-summary** hole — the line is read with `matchAll` now, so every `✓ N–M … (all N)` on
+  a line is compared.
+
+What I **added** is one region kind, and it is what closes the escape: **a blockquote run is a region**, so a
+`>`-prefixed fabricated transcript is READ instead of exempted. No new predicate, no new condition on the
+label.
+
+**THE ESCAPE, PROVEN CLOSED against the pre-fix guard binary** (`git show aa331d0:scripts/guards/factory-guard.mjs`),
+on four throwaway roots (`r1` `>` then a contradiction; `r2` the whole block quoted; `r3` quote, blank,
+quote; `r4` one agreeing block PLUS a quoted fabrication — the case where the old guard *published* its claim):
+
+```
+r1 PRE-FIX : note … 0 raw-labelled block(s) read, 0 range summaries checked — NOTHING was checked …  PASS exit 0
+r1 CURRENT : note … 1 raw-labelled block(s) read, 1 range summary checked
+             FINDING [transcript-summary-agrees]: …zz.md:5: covers 7 entries (7–13) but states "(all six"  FAIL exit 1
+r2 PRE-FIX : 0 read … NOTHING was checked … PASS exit 0
+r2 CURRENT : 1 read, 1 checked → FINDING … FAIL exit 1
+r3 PRE-FIX : 0 read … NOTHING was checked … PASS exit 0
+r3 CURRENT : 1 read, 1 checked → FINDING … FAIL exit 1
+r4 PRE-FIX : 1 read, 1 checked, then `ok — … every step-range summary inside a raw-/verbatim-labelled block
+             agrees with its own "all N" count …`   PASS exit 0   <- THE CLAIM PUBLISHED OVER THE FABRICATION
+r4 CURRENT : 2 read, 2 checked → FINDING … FAIL exit 1
+```
+
+Live corpus (unchanged by the item except for the count): the rule now reads **16** raw-labelled blocks where
+it previously read **8** (the 8 briefs labels whose next line is `>` are regions now), and still compares **0**
+range summaries, with **0 findings** — the guard passes on its own repo.
+
+**The behavior checker: 104 → 115 checks**, every new path with a seed and a mutation (the D-031 "unwatched
+exempt set" is now a watched read path):
+
+```
+  ✓ a `>`-prefixed fabrication is CAUGHT (the D-031 escape is closed)
+  ✓ the WHOLE block quoted, label included, is CAUGHT
+  ✓ a quote, a blank line, then a quoted contradiction is CAUGHT (the quote region survives a blank line)
+  ✓ an agreeing block ALONGSIDE a quoted fabrication no longer republishes the claim — the quoted block is read
+  ✓ control: an AGREEING quote passes (so reading quotes is not "any quote fails")
+  ✓ MUTATION: dropping the blockquote arm turns the escape CAUGHT-comparison into the label tripwire
+  ✓ control: `the sketch is a draw:` is NOT a label (the left word boundary), so its block is not read
+  ✓ MUTATION: not reading the label on the fence line lets that fabrication PASS (fence-inline mutation — the missing one)
+  ✓ MUTATION: bounding the label search to one line turns that CAUGHT comparison into the tripwire
+  …
+factory-guard check: all 115 checks passed.   EXIT=0
+```
+
+Also fixed in the same rule: `LABEL_LINE` now carries a **left word boundary** (`/(?:\braw:|\bverbatim:)\s*\*{0,2}\s*$/i`),
+so `withdraw:` and `the sketch is a draw:` are no longer labels (the control above); the note's zero clause no
+longer says "no range summary … exists" when a range line does exist without a count; the claim universal now
+names the label form it actually reads; and `discloseScanProvenance` restricts `git ls-files` to the SAME depth
+the scan reads (top-level only), so a subdirectory under `reports/` can no longer make "under the same paths"
+compare two different sets.
+
+**DELIBERATE DEVIATION — the "coverage loss" finding, measured, and NOT fixed by widening.** The round-5 review
+named three live blocks the narrowed label form stopped reading (`slice-6c-fix-5-review.md:606`,
+`slice-6d-verify-5.md:120`, `slice-8a.md:408`) — all three introduced by a mid-sentence use of `verbatim`
+(`… (verbatim, so the reader can re-run)`, `Run verbatim, exactly as pasted in …:`,
+`command I name, verbatim (2026-10-02, tree 3f2da79 …):`). I re-measured the widening the finding implies and it
+is **not landable**: with a mid-line token predicate the rule fires on the live corpus —
+
+```
+$ node /tmp/wide/guard.mjs --root <repo> --repo <repo>
+  note — transcript-summary-agrees: 102 raw-labelled block(s) read, 2 range summaries checked
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8a-verify-4.md:122: covers 7 entries …
+  … and 100+ `a label this rule saw and did not read` findings, every one an ordinary prose use of the word
+  "verbatim" in a brief or report (".scratch/v28/briefs/slice-2-verify.md:56: Report counts verbatim. …")
+EXIT=1
+```
+
+The word `verbatim` appears in the PROSE of hundreds of lines in this corpus — it is the word the reports use to
+say "pasted exactly". A mid-line predicate therefore turns prose into labels, and the false attribution at
+`slice-8a-verify-4.md:122` (a prose line that merely NAMES the rule, 8 lines above an indented block that
+QUOTES the seed) makes the gate red on its own repo. The narrower read set is not an accident of the last
+round: it is what makes the label mean "this line is introducing captured output".
+
+So, per D-028, the response is to make the claim true rather than to widen into a rule that is red: the
+docblock now states the label form as the boundary and says what it costs, and the claim universal names it.
+**This is the one item in the dispatch I did not do as written, and the measurement above is why.** It is
+flagged again under Risks and Unresolved questions.
+
+**REPORT PROSE I DID NOT TOUCH.** Findings (4) and (5) name false claims inside **`slice-8a.md`** itself
+(`:931` "all 8 real, none prose", `:953` "blunt tripwire … 31 of 104 checks break", `:990` "Seed + mutation +
+control for every new path", `:1056` "the 3 lost were prose false-attributions"). I did not edit that file:
+the dispatch says *"never hand-edit another lane's report"* and re-derivation of another slice's record is the
+orchestrator's. The corrected measurements, for whoever retires them:
+
+- `:953`'s **31 of 104** was not reproducible at round 5 (38/104 measured there), and it is stale the moment
+  this item lands: **the harness is now 115 checks**, so any fixed denominator in that sentence is wrong.
+- `:1056`'s **"the 3 lost were prose false-attributions"** is false: round 5 measured 6 dropped / 3 gained, and
+  three of the six dropped are genuine (reproduced in the "escape" section above at `slice-8a-review-5.md:146-148`).
+- `:931`'s "all 8 real, none prose" is true of what was read; it is `:1056`'s net-delta arithmetic that is false.
+- `:990`'s "seed + mutation + control for every new path" was false of the exemption, which had none; the
+  exemption no longer exists.
+
+Committed as: **see commit 6 below.**
+
