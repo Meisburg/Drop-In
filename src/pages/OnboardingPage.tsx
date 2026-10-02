@@ -1014,6 +1014,13 @@ export function OnboardingPage() {
         if (areaLookupForRef.current !== owned) return result
         setAreaCoordinates(result.coordinates)
         setGeocoding(false)
+        // THE REVEAL IS EARLIER THAN A FINISH TAP, deliberately (V28 slice 8a
+        // names it because no comment did): this is the BLUR-scheduled settle,
+        // so the note + the ZIP field appear the moment the address is looked
+        // up and comes back empty — not only after Finish. Accepted, not a
+        // defect: it never blocks, it never loses the typed address, and a
+        // Finish tap beats the 500 ms debounce so the walk is unaffected
+        // (e2e/signup-zip-fallback.e2e.ts pins both faces of the reveal).
         setZipFallbackShown(result.zip === null)
         return result
       })
