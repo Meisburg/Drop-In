@@ -386,9 +386,13 @@ export function PlacesMap({
      * EVERY MARKER-DEPENDENT READER IN THIS COMPONENT WAS AUDITED for the
      * `markers: []` + `homePin` set before this guard ships (the measurement
      * the plan requires): the overlay effect (home pin + radius circle —
-     * independent of `markers`), the marker-group effect (re-keys to the
-     * empty key and adds an empty layer group; its camera never ran here —
-     * the V16 rule frames by the circle, and `fitBounds` does not exist on
+     * independent of `markers`), the marker-group effect (EARLY-RETURNS on
+     * `markers.length === 0` — its first statement is that guard, so it neither
+     * re-keys to the empty key nor adds an empty layer group, and a pin-only
+     * mount needs NOTHING from it: the pin and the circle are drawn by the
+     * separate overlay effect, which is why the pin-only spec sees the disc;
+     * its camera never ran here either — the V16 rule frames by the circle, and
+     * `fitBounds` does not exist on
      * this path), the focus-pair + controlled-focus effects (no-ops with no
      * focus id), and the radius-circle framing effect (guards on
      * `radiusCircle` and `map` only, reads nothing from `markers`). All hold.
