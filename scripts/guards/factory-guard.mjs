@@ -60,8 +60,10 @@
 //                         it. The canonical provenance token is `N at <sha>`
 //                         (7-40 lowercase hex) and the sha is VERIFIED with
 //                         `git cat-file -e <sha>^{commit}` — the decidability
-//                         this slice exists for. Not baselined: a wrong named
-//                         commit is a finding, never a ceiling.
+//                         this slice exists for. NEVER A NEW BROKEN SHA: a
+//                         historical lane record that QUOTES a probe seed is
+//                         absorbed by re-derivation (D-021 item 2), and every
+//                         occurrence beyond the recorded count still fails.
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -408,9 +410,28 @@ function checkInstrumentHeaders() {
  * A sha that does not exist, names a blob or a tree rather than a commit, or is
  * otherwise unresolvable is a FINDING (`count-provenance-unresolvable`) — so "a
  * wrong named commit" is no longer a declared ceiling. Naming a commit is
- * necessary AND sufficient here: the run checks it instead of guessing. SHA
- * findings are NOT baselined; a re-derivation can absorb a historical bare-HEAD
- * label, never a broken sha.
+ * necessary AND sufficient here: the run checks it instead of guessing.
+ *
+ * THE PROPERTY IS "NEVER A NEW BROKEN SHA", and that narrowing is deliberate,
+ * written down, and was made after the fact. The round-6 report claimed "never a
+ * broken sha": SHA findings were not baselined at all. The round-6 REVIEW and
+ * VERIFY reports — other lanes' evidence for this very rule — then arrived in the
+ * corpus, and they QUOTE the probe seed by the dozen (`"The tree held **412**
+ * tracked files at deadbee."  PASS`). That is the use/mention distinction: the
+ * class is a report USING a bogus sha as provenance; those lines are a report
+ * MENTIONING one to demonstrate the rule. Leaving the gate permanently red over
+ * ten quotation lines would teach the next reader that red is normal, which is
+ * the failure this whole batch exists to prevent, so `factory/decisions.md` D-021
+ * item 2's own mechanic — "all in lane reports that discuss the class and
+ * therefore quote it … absorbed by a re-derivation, never by hand-adding a key" —
+ * is applied to them: `UNRESOLVABLE_SHA_BASELINE` records the historical
+ * quotations, keyed `file::sha` WITH A COUNT, and the run prints the size. The
+ * absorber can only swallow what was recorded: a NEW unresolvable sha, or a
+ * second occurrence of a recorded one in the same file, still FAILS — both
+ * measured in `.scratch/v28/reports/slice-6c-fix-6.md` ("Bounded repair").
+ * The round-6 reviewer validated the property this narrows; the narrowing is
+ * named here, in that report, and in the `ok —` wording, rather than left to be
+ * discovered.
  *
  * PROVENANCE POSITION. A sha-shaped token is a count's provenance in two places,
  * and only those two are verified: (a) in an `N … at <sha>` label, in either
@@ -919,6 +940,65 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6c-fix-5.md::git ls-tree -r --name-only <HEAD> … | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-5.md::git ls-tree -r --name-only <c> .scratch \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-5.md::git status --porcelain | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::2067** at its HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::265 at HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::265** at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::276 tracked files at @", 3],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::276 tracked files at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::276 tracked files at HEAD@{2}", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::276 tracked files at HEAD^", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::2}` (the bare reflog spelling of HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::2}` → same; `at @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::3); `at @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::3** at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::412 (tracked) files at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::412 tracked files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::412 | tracked files | at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::412\" tracked files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::412** tracked files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::412: tracked files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::536`, `:560`). `**412** tracked files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::540` gap ok), `276 — at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::HEAD the corpus reports 90`,", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git command piped through a filter; (N2) a bare `@", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git diff 1c3471a..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git log --oneline | grep -c \\\"round 6\\\" | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git ls-files src | grep -c \\\"\\.ts$\\\" | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git ls-files src | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git ls-files … | grep … | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git rev-parse @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git rev-parse HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git rev-parse HEAD@{2}", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::git status --porcelain \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::11 = branch names; HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::11 under the ceiling; @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::12 lanes ran this round; HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::1800 ceiling, and HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::190 | `0 findings: the @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::2 working tree", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::2 | slice-6c-fix-3-review.md:116 | `2 working tree", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::2067 tests and 71 files; HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::262 real, at c484648 and HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::276 tracked `.scratch` files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::280 tracked files at @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::33 checks wide; HEAD~2", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::362 | `4 control lines, wildcard @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::5 added 24 behaviour checks; HEAD~1", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::5 open findings; @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::5. HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::6 arms and 24 checks; HEAD~3", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::6 fixed 3 corrections; HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::78 | `11 branch names, HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::8 contributors and 3 reviewers; HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::81 warnings; HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::@ c484648 / 23`", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::@ c484648, 265 after staging, 23`", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::git diff --stat 1c3471a..HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::git diff 1c3471a..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::git rev-parse HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::git show @", 1],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::git show | wc", 1],
   [".scratch/v28/reports/slice-6c-fix-6.md::2067** at its HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-6.md::259 at `32e9f48`, 265 at HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-6.md::262 @", 1],
@@ -988,6 +1068,27 @@ const BARE_HEAD_BASELINE = new Map([
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)
 
+// The ONE absorber on the decidable half, and the reason it exists. A lane report
+// that QUOTES a probe seed — `"The tree held **412** tracked files at deadbee."`,
+// written down precisely to show that the rule fires on it — is MENTIONING a
+// bogus sha, not USING one as its own provenance. `factory/decisions.md` D-021
+// item 2 rules exactly this case: "all in lane reports that discuss the class and
+// therefore quote it … absorbed by a re-derivation, never by hand-adding a key".
+// The property therefore narrows honestly: not "never a broken sha", but NEVER A
+// NEW BROKEN SHA. Keyed `file::sha` with a COUNT, so a second occurrence in the
+// same file, or any new sha, exceeds the record and fails. Re-derived (see
+// .scratch/v28/reports/slice-6c-fix-6.md, "Bounded repair"), never typed.
+const UNRESOLVABLE_SHA_BASELINE = new Map([
+  // Re-derived from THIS instrument's own matches: the historical lane records
+  // that QUOTE a probe seed (D-021 item 2, the use/mention distinction). Keyed
+  // file::sha with a count, so a second occurrence in the same file, or any new
+  // sha, exceeds the record and fails. Never typed, never hand-added.
+  [".scratch/v28/reports/slice-6c-fix-6-review.md::deadbee", 9],
+  [".scratch/v28/reports/slice-6c-fix-6-verify.md::deadbee", 1],
+])
+
+const UNRESOLVABLE_SHA_BASELINE_SIZE = [...UNRESOLVABLE_SHA_BASELINE.values()].reduce((sum, n) => sum + n, 0)
+
 /**
  * The repository provenance shas are resolved against, with the reason, so the
  * note a reader sees describes what actually happened. The seam the behaviour
@@ -1041,13 +1142,18 @@ function checkReportHeadCounts() {
   discloseScanProvenance(files)
 
   // THE DECIDABLE HALF. Every count's provenance token is resolved against a
-  // real repository; a sha that is not a commit there is a finding, never a
-  // ceiling and never a baseline entry.
+  // real repository; a sha that is not a commit there is a finding. The ONE
+  // absorber is `UNRESOLVABLE_SHA_BASELINE`: a historical lane record that QUOTES
+  // a probe seed (the use/mention distinction — a report mentioning the bad
+  // sentence to demonstrate the rule, not using a bogus sha as its own
+  // provenance) is recorded by re-derivation like a historical bare-HEAD label,
+  // and every occurrence BEYOND the recorded count still fails. See the header.
   const { repo, why } = resolveRepo()
   const shaIsCommit = new Map()
-  const alreadyReported = new Set()
+  const seenSha = new Map()
   let provenanceTokens = 0
   let unresolvable = 0
+  let absorbed = 0
   if (!repo) {
     console.log(`  note — count-provenance: no git worktree to resolve provenance shas against — ${why}; the provenance shas of counts are NOT verified here, and no finding is reported for them`)
   }
@@ -1082,9 +1188,16 @@ function checkReportHeadCounts() {
           if (!shaIsCommit.has(sha)) shaIsCommit.set(sha, isCommit(repo, sha))
           if (shaIsCommit.get(sha)) continue
           unresolvable += 1
+          // Counted per (file, sha) against the recorded historical quotations,
+          // exactly like the bare-HEAD arm: a NEW sha in this file, or a second
+          // occurrence of a recorded one, exceeds the record and FAILS.
           const key = `${rel}::${sha}`
-          if (alreadyReported.has(key)) continue
-          alreadyReported.add(key)
+          const seenCount = (seenSha.get(key) ?? 0) + 1
+          seenSha.set(key, seenCount)
+          if (seenCount <= (UNRESOLVABLE_SHA_BASELINE.get(key) ?? 0)) {
+            absorbed += 1
+            continue
+          }
           fail(
             'count-provenance-unresolvable',
             `${rel}:${index + 1}: a count's provenance names ${sha}, which is not a commit in this repository (\`git cat-file -e ${sha}^{commit}\` fails) — name a commit a reader can resolve`,
@@ -1097,6 +1210,7 @@ function checkReportHeadCounts() {
     const label = relative(ROOT, repo)
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
   }
+  console.log(`  note — count-provenance: ${UNRESOLVABLE_SHA_BASELINE_SIZE} recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding${absorbed === UNRESOLVABLE_SHA_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${UNRESOLVABLE_SHA_BASELINE_SIZE} matched this scan`}`)
   return { reportFiles: files.length, provenanceChecked: Boolean(repo) }
 }
 
@@ -1155,7 +1269,7 @@ if (!findings.length) {
   const claims = ['every floor meetable', 'every artifact present']
   if (headerFiles) claims.push('every instrument header stating only what it can point at')
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
-  if (provenanceChecked) claims.push("every count's provenance sha resolving as a commit")
+  if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records")
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
