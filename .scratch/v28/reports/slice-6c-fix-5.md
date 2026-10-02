@@ -90,9 +90,18 @@ $ for c in 9f20d02 99d044f 876a516; do printf "%s %s\n" "$c" "$(git ls-tree -r -
 9f20d02 280
 99d044f 280
 876a516 281
-$ git show 99d044f:scripts/guards/factory-guard.mjs | grep -c instrument-headers-honest
+$ git show 99d044f:scripts/guards/factory-guard.mjs > /tmp/r6blank/guard-99d044f.mjs
+$ node /tmp/r6blank/guard-99d044f.mjs --root /tmp/r6blank | grep -c 'instrument-headers-honest'
 0
+$ node scripts/guards/factory-guard.mjs --root /tmp/r6blank | grep zz-blank
+  FINDING [instrument-headers-honest]: zz-blank.mjs:4: the header types a count of this instrument's own cases — print the count the run derives instead: "// all 9 checks passed after a blank line."
 ```
+
+**ROUND 6 CORRECTION — the raw tail above.** It used to print
+`$ git show 99d044f:scripts/guards/factory-guard.mjs | grep -c instrument-headers-honest` with `0` beside
+it. That command returns **`3`** (measured: the commit's blob mentions the check three times); the `0` came
+from the two-step run pasted above — the pre-fix guard, executed against the blank-line seed, prints **zero**
+findings for that check. The line is corrected so a reader can run it and get the number shown.
 
 `280` holds at `9f20d02` **and** `99d044f`, so naming `99d044f` makes `:57-58` reproducible and the `280` in the
 raw tail keeps its measured value. `99d044f` is the tree HEAD when round 4 started — the commit before the
