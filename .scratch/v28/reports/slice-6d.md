@@ -800,8 +800,8 @@ Two interactions the fix had to settle rather than discover later:
   declared kinds the guard ACCEPTED as kinds (`allKindSet.has(kind)`), because such a kind is unattributable by
   construction — counting it there would make one defect fire two rules and would leave each of their mutations
   unable to clear its seed alone. The finding's own words say so.
-- **with every word collapsed, B2b's counter fires before B3's tripwire**, which is correct (both are the same
-  invariant) but means the B3 seed's mutation now removes both. Its check name says exactly that.
+- **with every word collapsed, BOTH tripwires fire**, so the B3 seed's mutation removes both; §14 records the
+  verifier's measurement that they co-fire redundantly rather than as independent checks.
 
 ### The sweep: every other measurement on this path that can come back empty
 
@@ -818,7 +818,7 @@ path was walked rather than the one set the review named.
 | `constsRead` / `stringsRead` / `claimsRead` | yes | that the registry, the copy text and the declaration mechanism were really read | FAIL (predate this slice) |
 | `constsHere` (per module) | yes | that a registered const was found | FAIL when one is renamed or deleted (predates this slice) |
 | `fallback` (the label function's default word) | `null` is legitimate | a kind's word | **deliberately not a failure**: a label function with no default clause is a real shape; the third unattributable REASON now covers it (N4) |
-| `ambiguousWords` (a word two kinds share) | a word can be unwatched while the scan is non-empty | rule 4's coverage of a copy word | **deliberately not a failure**: it is a taxonomy shape, not an empty measurement, and it is printed per word and named in `WHERE IT STOPS`. A **declared** kind on such a word *is* a finding (the counter) |
+| a word two kinds share (the ambiguity itself) | a word can be unwatched while the scan is non-empty | rule 4's coverage of a copy word | **deliberately not a failure**: it is a taxonomy shape, not an empty measurement; each affected KIND prints a limit line naming the shared word and its owners, and `WHERE IT STOPS` names it. A **declared** kind on such a word *is* a finding (the counter) |
 | the check's own premises (`mutate`'s anchor count, `collapseEveryWord`'s rewrite count, `editFile`'s occurrence count) | yes | that a seed is the input it claims | FAIL as a seed failure, and N2 made the strongest of them real |
 | `offeredKinds ⊄ allKinds` (a chip naming a kind the taxonomy lacks) | not empty, just unset | rule 2 | **not this guard's rule**: the taxonomy's own test pins subset membership; named here rather than silently assumed |
 
@@ -872,3 +872,130 @@ whole block was compared against a fresh run, verbatim, and this round's changes
 | `npm run verify` | **exit 0** — `Test Files  71 passed (71)`, `Tests  2068 passed (2068)`, 81 warnings, 0 errors, `ok — AGENTS.md (1789 words, ceiling 1800)`, `^  FINDING` = 0 (`grep -c FINDING` returns 2 here: this round's own check NAMES for B2b and B3, both passing lines) |
 | test delta | **none**: this round touched `.check.mjs` and the guard only, never a `.test.mjs`; test FILES stay 71 and tests stay 2068 |
 | the seven new `no-bare-head-count` findings | the two round-2 lane reports' quotations, absorbed by re-deriving `factory-guard`'s baseline (new 7, lost 0, decreased 0, derivation run twice byte-identically). The map's size is the run's own note line and is not typed here |
+
+---
+
+## §14 Fix round 3 — the two orphans, three deleted clauses, and what the sweep does NOT cover
+
+**Reviewed:** `.scratch/v28/reports/slice-6d-review-3.md` (227 lines, **NEEDS_CHANGES**): one mechanism finding
+(F3, two orphans), three prose findings (F1, F2, F4), one boundary finding (F6), and the reviewer's audit of the
+sweep table — which is the most useful thing in the round. Verdict accepted in full; **F5 is the orchestrator's
+own text and is not touched**; the declaration, both ceilings, rules 1/2/4's semantics and the scanner's scope
+are untouched and no rule was weakened. **Base:** `a6d72f6`.
+
+### F3 — the two orphans, decided one at a time
+
+| orphan | decision | why |
+|---|---|---|
+| `ambiguousWords` (declared, pushed, never read — round 2 deleted its only reader) | **DELETED** | nothing observable is lost: the per-kind reason already carries the shared word and its owners, so the per-word grouping was a second copy of the same information. Raw, on two non-declared kinds made to share one word: `limit—— kind "park" is not scannable: its word "Park" is the label of 2 kinds (park, indoor_play) …` and the same line for `indoor_play` — **per KIND, and no per-word line** |
+| `claimsChecked` (initialised, incremented, never read) | **WIRED** | it is now the invariant's subject rather than a by-product: the tripwire asks `claimsChecked < claimsAccepted` (accepted = declared kinds rule 1 accepted), `claimsUnchecked` names which went unchecked, and the run prints the pair |
+
+```
+$ node scripts/guards/copy-taxonomy-guard.mjs | tail -3
+  declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts
+
+PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and the copy names no category it did not declare.
+$ grep -n "ambiguousWords" scripts/guards/copy-taxonomy-guard.mjs ; echo exit=$?
+exit=1
+```
+
+The three counters are now each read: `claimsAccepted` by the tripwire and the printed line, `claimsChecked` by
+both, `claimsUnchecked` by the finding's list and by the per-kind line. **`npx oxlint` was silent on both
+orphans**, so the gate cannot be relied on for this class — which is why each is pinned in the check instead
+(the zoo seed asserts the line and the accounting; the B2b seed asserts the counter and its mutation).
+
+**And the reviewer's §0e is the finding I accept without qualification**: `ambiguousWords` is *the set round 2's
+own diff stopped watching* — produced by the round that existed to close exactly that hazard, in a diff whose
+report then certified the sweep row as watched. That is D-030 instance 4's shape a third time, found in the
+audit artifact rather than in the mechanism: **a repair that changes one granularity must re-read the sets its
+own edit touched, not only the sets it listed.**
+
+### F1, F2, F4 — three clauses deleted rather than restated (D-028)
+
+- the guard header's *"…a `limit——` line per such kind **or per shared word**"* — the per-word printer is gone;
+  the clause is deleted and the sentence now says per such kind, naming which of the three reasons applies.
+- §13's sweep row said a shared word *"is printed per word"* — deleted, and the row is renamed from the dead
+  variable to the thing it is about (*a word two kinds share*), with the mechanism described as measured above.
+- §13's *"B2b's counter fires before B3's tripwire"* — backwards; the ordering claim is deleted (the consequence,
+  that both fire on that seed, is kept and is corrected in the next subsection).
+
+```
+$ grep -n "per shared word\|printed per word\|fires before" scripts/guards/copy-taxonomy-guard.mjs .scratch/v28/reports/slice-6d.md ; echo exit=$?
+exit=1
+```
+
+### F6 — a declared kind the taxonomy does not have now prints its own reason
+
+Raw, on a declaration extended with a kind `PLACE_KINDS` does not have:
+
+```
+  limit—— src/lib/firstRunTour.ts: the declared kind "zoo" is not scannable: the taxonomy has no kind "zoo" at all, which is rule 1's finding, so rule 3 has nothing to check
+  declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts
+FAIL — 1 finding(s):
+  - src/lib/firstRunTour.ts: the declaration names the category "zoo", which PLACE_KINDS does not have — a category this copy names must be one of the kinds the app has
+```
+
+The counter's denominator excludes it (rule 1 owns that defect, and one defect firing two rules would leave each
+of their mutations unable to clear its own seed), and the zoo seed now asserts **both** fragments — the rule-1
+finding and this line — through `rule()` accepting a list of fragments; its mutation still clears the seed.
+
+### The sweep held under attack — and the boundary the sweep does NOT cover
+
+**It held.** The reviewer falsified **8 of the 13 rows** on throwaway trees — emptying `PLACE_KINDS`, the chip
+kinds, renaming the label function, collapsing every word, making a declared claim unscannable, deleting the
+declaration, emptying it, renaming every const — and every row behaved as the table claims, including both
+deliberate non-failures. The round's own B2b repro reproduced verbatim. That is the table earning its keep, and
+it is what a sweep should be subjected to.
+
+**What it does not cover, stated because a sweep that claims completeness is the next instance of this class:**
+
+1. **the sets its own diff touched** — `ambiguousWords` is the proof. The sweep enumerated measurements on the
+   guard's path and did not re-read the ones round 2's edits had already changed. Found by review, not by the
+   sweep.
+2. **the check's internal sets beyond its seed premises** — `pristine`, `extras`, `guardRuns`, `mutationRuns`:
+   printed or premise-checked, and not consumed as health (a check's counters are its output, not a verdict), so
+   they are outside the class rather than closed by it.
+3. **other instruments' sets** — `factory-guard`'s three baselines, the copy-field guard's shape table. Not this
+   guard's path; each carries its own obligation and its own sweep.
+4. **coverage, not emptiness** — the reviewer's own measurement: collapsing the six NON-declared kinds onto one
+   shared word leaves the scan set non-empty (`scanned words: 3 (Playground, Pool, Beach)`) and the run PASSES
+   while rule 4's coverage of those six is gone. It is a **declared** gap (printed per kind, named in
+   `WHERE IT STOPS`) and it is **not tripwired**. Recorded here as the sweep's known boundary, not as a closed
+   item.
+5. **anything downstream of the exit code** — this report's prose, the lane records, the work item. A guard
+   cannot watch what reads it; that is the reviewer's job, and this round is the evidence.
+
+So the sweep is an enumeration of the path its author looked at. It is not a proof of completeness, and the
+falsification — not the table — is what makes it worth anything.
+
+### The verifier's nuance, recorded rather than smoothed
+
+The claim that the scan tripwire and the claim counter are *"one invariant at two granularities"* is **true in
+outcome**: on the all-collapsed seed, removing both is what lets that seed pass. But the verifier measured that
+the two are **not independent** — on that seed they **co-fire redundantly** (the run lists two findings, the scan
+one first), and the counter **alone** clears the B2b seed. A true outcome is not a structural-independence claim,
+and the sentence is recorded that way: §13's ordering clause is gone, and the check's name for that mutation
+says *both* were removed without asserting that either is sufficient alone.
+
+### The gate at the end of fix round 3
+
+| what | result |
+|---|---|
+| `node scripts/guards/copy-taxonomy-guard.mjs` | **exit 0**, PASS, 0 findings — `scanned words: 9`, `declared claims CHECKED by rule 3: 3 of 3` |
+| `node scripts/guards/copy-taxonomy-guard.check.mjs` | **exit 0**, `all 29 checks passed, 0 failed, across 26 guard invocations (8 of them against a mutated copy of the guard)` — **no new check**, so no new mutation was owed; the zoo seed gained an assertion and the three mutation anchors were re-pointed |
+| `bash scripts/guards/run-all.sh` | **exit 0**, `GUARDS: PASS — all deterministic rules hold.` |
+| `npx oxlint` on both instruments | no output |
+| test delta | **none** — `.check.mjs` and the guard only, never a `.test.mjs`; 71 files and 2068 tests |
+| the new `no-bare-head-count` findings | **measured: four, all in `.scratch/v28/reports/slice-6d-verify-3.md`** (the round-3 review report contributes none — its commands name fixed shas), absorbed by re-deriving `factory-guard`'s baseline (new 4, lost 0, decreased 0, derivation twice byte-identically). The map's size is the run's own note line and is not typed |
+
+**The mutation anchors moved with the code, and the check said so before anything else did.** Adding the
+rule-3 branch made `!allKindSet.has(kind)` occur twice, and `mutate()` refuses an anchor that is not unique —
+the zoo seed went red with *"mutation anchor occurs 2× — the mutation would do nothing"* rather than silently
+mutating the wrong line. Three anchors were re-pointed; the anchor discipline is why this was a two-minute fix
+instead of a green check over a mutation that did nothing.
+
+**The gate's own numbers, re-measured at the end of this round:** `npm run verify` → **exit 0**,
+`GUARDS: PASS — all deterministic rules hold.`, with `Test Files  71 passed (71)`, `Tests  2068 passed (2068)`,
+81 warnings (`grep -c ': warning '`), 0 errors, `ok — AGENTS.md (1789 words, ceiling 1800)` and `^  FINDING` = 0
+(`grep -c FINDING` returns 2 — this round's own passing check names for B2b and B3). **No test delta**: this round
+touched `.check.mjs` and the guard, never a `.test.mjs`.

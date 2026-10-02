@@ -218,7 +218,12 @@ function rule(name, expect, mutation, seed) {
   reset()
   seed()
   const before = run()
-  check(`${name} — the seed is CAUGHT`, before.exit === 1 && before.out.includes(expect), `exit ${before.exit}: ${findingLines(before.out) || '(no findings)'}`)
+  const wants = Array.isArray(expect) ? expect : [expect]
+  check(
+    `${name} — the seed is CAUGHT`,
+    before.exit === 1 && wants.every((fragment) => before.out.includes(fragment)),
+    `exit ${before.exit}: ${findingLines(before.out) || '(no findings)'} | ${wants.filter((f) => !before.out.includes(f)).join(' | ')}`,
+  )
   let script
   try {
     script = mutate(mutation)
@@ -276,8 +281,14 @@ try {
   // --- rule 1: a declared category the taxonomy lacks ------------------------
   rule(
     'a declaration naming a category the taxonomy does not have',
-    'the declaration names the category "zoo", which PLACE_KINDS does not have',
-    [['!allKindSet.has(kind)', 'false']],
+    [
+      'the declaration names the category "zoo", which PLACE_KINDS does not have',
+      // F6 (round-3 review): the limit line for that claim names ITS OWN case —
+      // the taxonomy lacks the kind, so rule 1 owns it — not the generic reason
+      // the attribution cases use.
+      'the declared kind "zoo" is not scannable: the taxonomy has no kind "zoo" at all',
+    ],
+    [['declared.filter((kind) => !allKindSet.has(kind))', 'declared.filter(() => false)']],
     () => editFile(TOUR, DECLARES, "export const TOUR_TAXONOMY_CLAIMS: readonly PlaceKind[] = ['playground', 'pool', 'beach', 'zoo']"),
   )
 
@@ -405,7 +416,7 @@ try {
   )
   let b2b = null
   try {
-    b2b = mutate([['if (claimsUnchecked.length > 0) {', 'if (false) {']])
+    b2b = mutate([['if (claimsChecked < claimsAccepted) {', 'if (false) {']])
   } catch (e) {
     check('B2b — MUTATION: the counter tripwire can be removed (so the seed proves it)', false, e instanceof Error ? e.message : String(e))
   }
@@ -456,7 +467,7 @@ try {
   )
   let b3 = null
   try {
-    b3 = mutate([[B3_ANCHOR, B3_MUTATED], ['if (claimsUnchecked.length > 0) {', 'if (false) {']])
+    b3 = mutate([[B3_ANCHOR, B3_MUTATED], ['if (claimsChecked < claimsAccepted) {', 'if (false) {']])
   } catch (e) {
     check('B3 — MUTATION: the tripwire can be removed (so the seed proves it)', false, e instanceof Error ? e.message : String(e))
   }

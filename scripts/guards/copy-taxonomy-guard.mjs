@@ -57,9 +57,9 @@
  *     two kinds resolve to the SAME word; or the label function names no word for
  *     it at all (no `case` and no `default`). Rules 3 and 4 skip such a kind
  *     entirely — a match on it is neither required of the copy nor caught in it —
- *     and the guard prints a `limit——` line per such kind or per shared word,
- *     NAMING WHICH of the three applies, because a printed reason that is not the
- *     real one is the same defect as a claim the mechanism does not support.
+ *     and the guard prints a `limit——` line per such kind, NAMING WHICH of the
+ *     three applies, because a printed reason that is not the real one is the
+ *     same defect as a claim the mechanism does not support.
  *   - A DECLARED kind that is unscannable makes rule 3 unable to check that
  *     claim, and the run then cannot call the declaration backed. That is a
  *     FINDING, not a `limit——` line: the line says why, and the exit code says
@@ -315,7 +315,6 @@ const wordOf = (kind) => labels.get(kind) ?? fallback
  *      still attributes them. */
 const kindsByLabel = new Map() // word -> the ONE kind it names
 const unattributableKinds = [] // { kind, why }
-const ambiguousWords = []
 {
   const kindsByWord = new Map()
   for (const kind of allKindSet) {
@@ -333,7 +332,6 @@ const ambiguousWords = []
   }
   for (const [word, kinds] of kindsByWord) {
     if (kinds.length > 1) {
-      ambiguousWords.push([word, kinds])
       for (const kind of kinds) {
         unattributableKinds.push({ kind, why: `its word "${word}" is the label of ${kinds.length} kinds (${kinds.join(', ')})` })
       }
@@ -359,9 +357,13 @@ for (const { kind, why } of unattributableKinds) {
 let constsRead = 0
 let stringsRead = 0
 let claimsRead = 0
-/** How many declared claims rule 3 could actually CHECK, and the ones it could
- *  not — the measurement the round-1 repair stopped watching, and the reason the
- *  counter is here rather than only a `limit——` line (D-030). */
+/** How many declared claims the guard ACCEPTED as kinds, how many of those rule 3
+ *  actually CHECKED, and the ones it could not — the measurement the round-1
+ *  repair stopped watching (D-030, instance 4). `claimsChecked` is the invariant's
+ *  subject: the tripwire below asks whether any accepted claim went unchecked, and
+ *  `claimsUnchecked` names which, so nothing here is computed and thrown away
+ *  (round-3 review F3). */
+let claimsAccepted = 0
 let claimsChecked = 0
 const claimsUnchecked = []
 
@@ -449,11 +451,20 @@ for (const entry of COPY_MODULES) {
   //    printing a reason is not establishing anything (D-030, instance 4).
   for (const kind of declared) {
     const word = wordOf(kind)
-    if (word === null || kindsByLabel.get(word) !== kind) {
-      // A kind the taxonomy does not have is rule 1's finding, not this
+    if (!allKindSet.has(kind)) {
+      // A kind the taxonomy does not have is RULE 1's finding, not this
       // counter's: counting it here would make one defect fire two rules and
-      // would leave each of their mutations unable to clear the seed alone.
-      if (allKindSet.has(kind)) claimsUnchecked.push({ module: entry.module, kind })
+      // would leave each of their mutations unable to clear its seed alone. It
+      // is printed with its OWN reason, not the generic one (round-3 review F6).
+      console.log(
+        `  limit—— ${entry.module}: the declared kind "${kind}" is not scannable: the taxonomy has no kind ` +
+          `"${kind}" at all, which is rule 1's finding, so rule 3 has nothing to check`,
+      )
+      continue
+    }
+    claimsAccepted += 1
+    if (word === null || kindsByLabel.get(word) !== kind) {
+      claimsUnchecked.push({ module: entry.module, kind })
       console.log(
         `  limit—— ${entry.module}: the declared kind "${kind}" is not scannable, so rule 3 does not check its ` +
           `claim (${whyUnattributable.get(kind) ?? 'the guard cannot attribute its word'} — see WHERE IT STOPS)`,
@@ -485,6 +496,11 @@ for (const entry of COPY_MODULES) {
   }
 }
 
+// The positive half of the same measurement, printed where the run says what it
+// derived: of the declared claims this guard accepted as kinds, how many rule 3
+// actually checked. An accepted claim it could not check is a finding below.
+console.log(`  declared claims CHECKED by rule 3: ${claimsChecked} of ${claimsAccepted} the taxonomy accepts`)
+
 // The instrument's own tripwires. Every measurement this guard consumes as
 // evidence must come back with something in it, and one that came back empty is a
 // FAIL rather than a quiet pass (D-030) — including the set the first repair
@@ -496,12 +512,12 @@ if (kindsByLabel.size === 0) {
       'test NOTHING and a report of health would mean the guard did not look (see limit—— lines above)',
   )
 }
-if (claimsUnchecked.length > 0) {
+if (claimsChecked < claimsAccepted) {
   fail(
-    `${claimsUnchecked.length} declared claim(s) this guard accepted as kinds could not be CHECKED by rule 3 — ` +
-      `${claimsUnchecked.map(({ module, kind }) => `${module} claims "${kind}"`).join(', ')}. An unscannable ` +
-      'declared kind leaves the run unable to call that declaration backed, so a PASS would claim backup the ' +
-      'mechanism did not test (D-030): the limit—— line above says why, and THIS is the finding',
+    `${claimsAccepted - claimsChecked} declared claim(s) this guard accepted as kinds could not be CHECKED by ` +
+      `rule 3 — ${claimsUnchecked.map(({ module, kind }) => `${module} claims "${kind}"`).join(', ')}. An ` +
+      'unscannable declared kind leaves the run unable to call that declaration backed, so a PASS would claim ' +
+      'backup the mechanism did not test (D-030): the limit—— line above says why, and THIS is the finding',
   )
 }
 if (constsRead === 0) {
