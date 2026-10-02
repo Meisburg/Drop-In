@@ -11,13 +11,22 @@
   "created_at": "2026-10-02T16:22:52.085Z",
   "lanes": {
     "implementation": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [
-        ".scratch/v28/reports/slice-6d.md"
+        ".scratch/v28/reports/slice-6d.md",
+        "scripts/guards/copy-taxonomy-guard.mjs",
+        "scripts/guards/copy-taxonomy-guard.check.mjs",
+        "src/lib/firstRunTour.ts",
+        "docs/agents/code-structure.md"
       ],
-      "evidence": []
+      "evidence": [
+        "npm run verify at fa3f24b -> exit 0 / GUARDS: PASS — 71 test files / 2068 tests / 81 warnings / 0 errors / AGENTS.md 1789 of 1800 / 0 FINDING lines",
+        "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 and node scripts/guards/copy-taxonomy-guard.check.mjs -> exit 0 with 23 of 23 checks across 22 invocations (6 against a mutated guard)",
+        "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 with the new guard registered in both places",
+        "report section 2 raw seeds: withheld kind in the copy -> exit 1 ; restore -> exit 0 ; nonexistent kind declared -> exit 1 ; restore -> exit 0"
+      ]
     },
     "verification": {
       "state": "pending",
@@ -76,6 +85,33 @@
       "note": "repair: newWorkItem defaulted acceptance to pending, which its own guard rejects (lane-states-legal). Constructor fixed; this item repaired.",
       "actor": null,
       "model": null
+    },
+    {
+      "at": "2026-10-02T16:49:41.353Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:49:45.345Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:49:46.739Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": "slice 6d built, proven and reported: the repo-wide copy-taxonomy guard (4 rules both directions, seed+mutation per rule, registered in run-all.sh in both places), the tour card's declaration, the rule in code-structure.md, and Tier 2 declared as an explicit ceiling rather than half-built. BLOCKED at handover was environmental and became D-029 (the registry's own constructor emitted acceptance:pending, which factory-guard rejects); the gate reads exit 0 / GUARDS: PASS at fa3f24b with all six files this slice touched blob-identical across the fix. Not pushed.",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
     }
   ]
 }
