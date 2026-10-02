@@ -95,8 +95,12 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await openProfileEditor(page)
 
   // Upload (the /profile "Your photo" card — V13 ticket 01 moved the avatar
-  // editor off /settings; onboarding is only reachable for users without a
-  // home zip, so an already-onboarded parent edits it here). The ≤5MB gate and
+  // editor off /settings; the first run's picker now lives on the NAME card,
+  // which renders only for a parent with NO profiles row yet — the marker has
+  // one — so an already-onboarded parent edits it here. This paragraph used to
+  // say onboarding "is only reachable for users without a home zip", which V28
+  // slice 2b made false: no route is gated on the home zip any more, see
+  // docs/adr/0001-home-zip-stops-being-a-gate.md.) The ≤5MB gate and
   // the decode run inside the crop step (this file is far under 5 MB), then the
   // crop dialog opens on the decoded image. Accepting its default frame is one tap.
   //
