@@ -47,13 +47,21 @@
 //   no-bare-head-count    no report or brief resolves a count through bare
 //                         HEAD — an "N … at HEAD" label (any HEAD spelling, or
 //                         the `@` shorthand), a `git … HEAD` read whatever the
-//                         subcommand, or a counted command that defaults to HEAD
-//                         with no revision named (`git log … | wc -l`) — instead
-//                         of naming the commit it was measured at. Such a count
-//                         is unreproducible by construction: the commit carrying
-//                         the sentence is the one that moves HEAD. Forward-only,
-//                         and the run prints the size of the recorded baseline
-//                         it passes.
+//                         subcommand and whatever global options precede it, or
+//                         a counted command that names no fixed revision
+//                         (`git log … | wc -l`) — instead of naming the commit it
+//                         was measured at. Such a count is unreproducible by
+//                         construction: the commit carrying the sentence is the
+//                         one that moves HEAD. Forward-only, and the run prints
+//                         the size of the recorded baseline it passes.
+//   count-provenance-unresolvable  a count's provenance names a commit sha that
+//                         does not exist, is not a commit, or is otherwise
+//                         unresolvable, so the count cannot be reproduced from
+//                         it. The canonical provenance token is `N at <sha>`
+//                         (7-40 lowercase hex) and the sha is VERIFIED with
+//                         `git cat-file -e <sha>^{commit}` — the decidability
+//                         this slice exists for. Not baselined: a wrong named
+//                         commit is a finding, never a ceiling.
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -67,7 +75,12 @@
 //   - scripts/guards/*.mjs (JavaScript), ONE level — the leading comment block
 //     of each file, before the first line of code.
 //   - .scratch/v28/reports/*.md and .scratch/v28/briefs/*.md (markdown), ONE
-//     level — every line, for the bare-HEAD shapes.
+//     level — every line, for the bare-HEAD shapes and for the provenance
+//     tokens of counts.
+//   - the git repository those provenance tokens are resolved against: the
+//     `--repo <dir>` argument when given, else the scan root when it is a
+//     worktree, else this instrument's own repository. No ref, object or index
+//     content is read — the only git call is `cat-file -e <sha>^{commit}`.
 //   NOT read, and therefore NOT counted: .scratch/v28/ledger.md,
 //   .scratch/v28/plan.md, other V28 lanes and older versions, any file BELOW
 //   the directories named above (every walk is non-recursive), any extension
@@ -75,7 +88,7 @@
 //   is PRESENCE ON DISK, not `git ls-files`: a tracked file absent from the tree
 //   is not seen, and a present untracked file IS seen.
 //
-// Usage:  node scripts/guards/factory-guard.mjs [--root <dir>]
+// Usage:  node scripts/guards/factory-guard.mjs [--root <dir>] [--repo <dir>]
 // Exit:   0 = clean, 1 = findings
 
 import { execFileSync } from 'node:child_process'
@@ -367,56 +380,135 @@ function checkInstrumentHeaders() {
 }
 
 /**
- * A count in a report or a brief must name the commit it was measured at.
+ * A count in a report or a brief must name the commit it was measured at, in a
+ * form a reader — or a machine — can check.
  *
  * WHY THIS EXISTS. `instrument-headers-honest` reads guard HEADERS; this class
  * kept recurring in report PROSE, where no instrument was looking. A count
  * written as "N at HEAD" is unreproducible BY CONSTRUCTION — the commit that
  * carries the sentence is the one that moves HEAD, so the number was measured at
- * one commit and read at another. It has now cost four review rounds.
+ * one commit and read at another. It has now cost six review rounds.
  *
- * THE WIDENED CLASS. Four rounds fixed instances of the `N at HEAD` shape while
- * reports kept producing the SAME class in two other shapes the old pattern
- * could not see: a tree count written `git ls-tree … HEAD | wc -l` (whose
- * `HEAD .scratch` argument the old pattern never reached), and a committed-blob
- * read written `git show HEAD:<path>`. The rule is named for the class — a count
- * whose provenance is a bare moving revision — so the match now covers all
- * three: an `N … at HEAD` count label (also `at @`, the git shorthand for HEAD),
- * a `git ls-tree … HEAD` listing, and a `git show HEAD:<path>` read. A revision
- * token ends at a word boundary OR at any non-word character — `(?![\w])`, not
- * `\b` — because `@` itself ends in a non-word character, so a trailing `\b`
- * silently dropped the entire `@` arm while the code still declared it. That is
- * the same defect shape as every earlier round: a capability written down that
- * the mechanism does not have.
+ * THE CANONICAL PROVENANCE TOKEN — `N at <sha>`. A count's provenance is a
+ * COMMIT, written as a bare count, the connector `at`, and 7-40 lowercase hex
+ * characters: `276 tracked `.scratch` files at 1c3471a`. The count and the token
+ * may sit in either word order within the same clause (`at 1c3471a the corpus
+ * reports 276 documents`), and the count may carry the punctuation English puts
+ * between a number and its label (`.scratch`, `src/lib`, `(tracked)`,
+ * `87, taken at <sha>`, `87 as of <sha>`).
+ *
+ * THE SHA IS VERIFIED, and that is the decidability this slice exists for. Every
+ * token in provenance position is resolved with `git cat-file -e <sha>^{commit}`.
+ * A sha that does not exist, names a blob or a tree rather than a commit, or is
+ * otherwise unresolvable is a FINDING (`count-provenance-unresolvable`) — so "a
+ * wrong named commit" is no longer a declared ceiling. Naming a commit is
+ * necessary AND sufficient here: the run checks it instead of guessing. SHA
+ * findings are NOT baselined; a re-derivation can absorb a historical bare-HEAD
+ * label, never a broken sha.
+ *
+ * PROVENANCE POSITION. A sha-shaped token is a count's provenance in two places,
+ * and only those two are verified: (a) in an `N … at <sha>` label, in either
+ * word order — the canonical form; and (b) as the revision of a counted git
+ * command (`git ls-tree -r --name-only <sha> .scratch | wc -l`). A sha-shaped
+ * token anywhere else is not a provenance token and is not verified: an
+ * md5/sha256 content hash in an evidence tail is a hash of bytes, not a commit.
+ * Quoting the sha (`` `1c3471a` ``, `"1c3471a"`, `'1c3471a'`) is the usual dress
+ * of the canonical spelling and is accepted.
+ *
+ * NOT A GIT WORKTREE — the decision, because the behaviour checks run in
+ * git-less temp roots and the rule must not be untestable through its own seam.
+ * The repository the shas are resolved against is resolved in order: the
+ * `--repo <dir>` argument when given, else the scan root when it holds a `.git`,
+ * else THIS instrument's own repository. When none of those is a worktree, the
+ * run prints a note saying the provenance shas were NOT verified and reports no
+ * sha finding for them — it never manufactures one — and the `ok —` summary
+ * omits the resolved-as-a-commit claim, exactly as it omits any other check that
+ * did not run. A check that cannot run must not pass as if it had.
+ *
+ * THE MOVING-REV DETECTOR — three arms over every line of every report and
+ * brief, each match counted per `file::matched-text`:
+ *   - ARM 1 — a count token and a MOVING-REV token adjacent to each other in
+ *     EITHER word order (`N … at HEAD` and `at HEAD … reports N`), where
+ *     adjacency is up to four non-quoted tokens between them. It is about the
+ *     TOKEN, not about one English sentence shape: earlier rounds matched the
+ *     literal word `at` and one word class, and so missed the reverse order —
+ *     live in this corpus at `.scratch/v28/reports/slice-6b-fix-1.md:292` —
+ *     plus labels the word class could not spell, and every non-`at` connector.
+ *   - ARM 2 — a `git` read whose REVISION is a moving one, whatever the
+ *     subcommand and whatever precedes it: `git show HEAD:p`, `git --no-pager
+ *     log HEAD`, `git -C <dir> show HEAD`, `git -c core.pager=cat show HEAD`,
+ *     `git show "HEAD"`, `git rev-parse 'HEAD'`, `git diff <sha>..HEAD`. Global
+ *     options and quoting are part of the spelling; matching them is a fix, not
+ *     a widening.
+ *   - ARM 3 — a counted git command that names NO fixed revision:
+ *     `git <anything> … | wc -l`. This is a PROPERTY, not the eight-name list it
+ *     replaced, and the list was wrong in both directions: it missed `git show |
+ *     wc -l`, `git reflog | wc -l`, `git blame <file> | wc -l` and `git annotate
+ *     <file> | wc -l` (all HEAD-resolving) and it fired on `git branch | wc -l`
+ *     and `git stash | wc -l`. Under the property all six fire, because a count
+ *     taken from a git command that names no fixed revision has no reproducible
+ *     provenance — `git branch` counts moving refs, `git status --porcelain |
+ *     wc -l` counts the working tree. THE WORKING-TREE COUNT IS THEREFORE
+ *     ENFORCED HERE, not a ceiling: naming a fixed sha (which the sha rule then
+ *     verifies) is what makes the arm stand down.
  *
  * WHAT IT STILL CANNOT SEE, stated rather than implied — the exact shapes, so
  * this can be judged rather than trusted:
+ *   - A COUNT WHOSE PROVENANCE IS IMPLIED AND NOT WRITTEN: `2067 passed (2067)`
+ *     names no commit and no moving ref, so no arm fires. The canonical form is
+ *     enforceable only where a provenance is STATED — which is why the summary
+ *     claim names bare HEAD and unresolvable shas, not "every count".
+ *   - A RESOLVABLE BUT WRONG COMMIT: `… at 1c3471a` passes when 1c3471a is A
+ *     commit, whether or not it is the tree the count came from. Verification
+ *     closes "the sha does not exist or is not a commit"; it cannot close
+ *     "the sha is the wrong one". This is the residue of the ruling and it is
+ *     declared, not implied.
+ *   - A SHA PROVENANCE WRITTEN WITHOUT THE `at` CONNECTOR: `… from 1c3471a`,
+ *     `… of 1c3471a`, `3 commits before 1c3471a`. The canonical connector is
+ *     `at`, and only it starts the verification; a count whose sha provenance is
+ *     spelled otherwise is not verified. Requiring the connector is what keeps
+ *     a `->`-separated content-hash table from being read as provenance, which
+ *     is the trade this ceiling buys.
+ *   - A PROVENANCE TOKEN THAT IS NEITHER A MOVING REV NOR A SHA: `… at latest`,
+ *     `… at 71bdd5` (six hex characters, below the 7-character sha floor). A
+ *     non-commit-looking token is indistinguishable from ordinary prose; the
+ *     floor is 7 because that is the shortest sha git itself prints.
+ *   - A MOVING REV WRITTEN AS A PLACEHOLDER OR AS PART OF ANOTHER REF: `<HEAD>`
+ *     is how a report names the bare token while quoting it, and `MERGE_HEAD`,
+ *     `ORIG_HEAD`, `FETCH_HEAD`, `REBASE_HEAD` hold the token as a substring.
+ *     None is read as a revision: ARM 1's gap ends in whitespace, so a
+ *     `<`-bounded token is never reached, and the left token boundary keeps the
+ *     reverse-order arm off `MERGE_HEAD`-style refs. Deliberate and
+ *     behaviour-checked (a seeded control turns red when the boundary goes).
+ *   - A BARE `@` FOLLOWED BY A WORD CHARACTER: `user@example.com`, `@decorator`.
+ *     The lookahead's only reachable job is a bare `@{…}` reflog spec — the
+ *     token's own `(?!\w)` end excludes the email and decorator shapes before
+ *     the lookahead is consulted.
  *   - OTHER MOVING REFS: a branch name (`main`), a tag, `ORIG_HEAD`,
- *     `MERGE_HEAD`, `FETCH_HEAD`, `REBASE_HEAD`, `refs/heads/*`. They move on
- *     a push or a fetch exactly as HEAD moves on a commit, but they are
+ *     `MERGE_HEAD`, `FETCH_HEAD`, `REBASE_HEAD`, `refs/heads/*`. They move on a
+ *     push or a fetch exactly as HEAD moves on a commit, but they are
  *     indistinguishable from ordinary prose, so they are not matched.
- *   - A COUNT WITH NO PROVENANCE AT ALL: `2067 passed (2067)` names no commit
- *     and no HEAD, and this instrument cannot tell whether it was measured at a
- *     commit or in the working tree. It is silent on it — which is why the
- *     summary line no longer claims otherwise.
- *   - A WRONG NAMED COMMIT: `… at 71bdd55` passes whether or not 71bdd55 is the
- *     tree measured. Naming a commit is necessary, not sufficient.
- *   - WORKING-TREE GIT COUNTS: `git status --porcelain | wc -l` (the
- *     orchestrator's measured case). `git status` reads the working tree/index,
- *     not HEAD, so it is NOT arm 3 (whose list is commands that resolve HEAD by
- *     default) and it is NOT flagged. It is a KNOWN GAP, named on its own rather
- *     than folded into the filesystem bullet below: a working-tree count is
- *     reproducible in this worktree and at no commit, and the human's "HEAD
- *     versus working tree" half is classification, not enforcement, here. The
- *     same holds for `git ls-files | wc -l`, `git diff | wc -l`, `git grep | wc`.
+ *   - ARM 1 IS A LEXICAL PROXIMITY RULE, not a provenance classifier: a
+ *     sentence that merely mentions a moving revision within four tokens of a
+ *     number fires even when the number's subject is something else. That is the
+ *     declared cost of a token rule where a phrase list used to be, and it is
+ *     why this half is the DETECTOR half while `N at <sha>` + verification is
+ *     the DECIDABLE half.
+ *   - ARM 3 DOES NOT TELL A TEMPLATE FROM A MEASUREMENT: `git ls-tree -r
+ *     --name-only <c> .scratch | wc -l` (a placeholder in a command the report
+ *     is explaining) fires like a real count, because it names no revision
+ *     either. A placeholder command is a command the reader cannot run.
  *   - FILESYSTEM COUNTS: `ls | wc -l`, `wc -l < file`. They read the working
  *     tree, which is at no commit, but they are also the guard's own basis, and
- *     forbidding them would forbid every verify run. They are NOT flagged.
+ *     forbidding them would forbid every verify run. They are NOT flagged — a
+ *     named ceiling, not an oversight: arm 3 is scoped to GIT counts, and this
+ *     one cannot be enforced without failing the guard's own evidence.
  *   - FILES OUTSIDE SCOPE: `.scratch/v28/ledger.md` (line 7091 carries the
- *     class and is recorded as known-open in `factory/decisions.md`),
- *     `plan.md`, older V28 lanes, and every non-`.md` extension.
+ *     class and is recorded as known-open in `factory/decisions.md`), `plan.md`,
+ *     older V28 lanes, and every non-`.md` extension.
  * This is a DETECTOR over the class's shapes, not a proof that no other shape
- * exists.
+ * exists. The DECIDABLE half is `N at <sha>` + verification: there, a violation
+ * fails mechanically.
  *
  * FORWARD-ONLY, and that is a hard requirement. `factory/decisions.md` D-011
  * item 2 rules that a historical record KEEPS its original label: a record
@@ -424,93 +516,355 @@ function checkInstrumentHeaders() {
  * are recorded in the baseline below, the run PRINTS the baseline's size at run
  * time (a size typed into the header would go stale in this file's own text),
  * and only an occurrence that is not in it fails. The baseline shrinks only by a
- * deliberate edit.
+ * deliberate edit, and a widened arm is absorbed by RE-DERIVING the map from the
+ * instrument's own matches (D-021 item 2), never by typing a key.
  *
  * EVERY MATCH ON A LINE IS COUNTED. `.exec()` counted the FIRST match and
  * silently dropped the rest, so appending a second occurrence to a line that
  * already carried a counted one left the total unchanged — the reviewer doubled
  * a `265 at HEAD` on one line and the guard still exited 0. `matchAll` now
- * enumerates every match; two live lines carry two matches each
- * (`slice-6c-fix-2-review.md:245`, `slice-6c-fix-3-review.md:177`) and record
- * two, not one.
+ * enumerates every match.
  */
 const MOVING_REV = String.raw`HEAD(?:~[0-9]*|\^[0-9]*|@\{[^}]*\})?|@(?![{\w])`
 const FIXED_SHA = /\b[0-9a-f]{7,40}\b/
+const BACKTICK = '`'
 
-// Shape 1 — a count whose LABEL is a moving revision: "N … at HEAD" (any HEAD
-// spelling), "N … at @", "N … at the working tree".
-const BARE_HEAD_COUNT_AT = new RegExp(
-  String.raw`(?<![\d/.\w])\d+(?![/\d])\s+(?:[a-z` + '`' + String.raw`][\w` + '`' + String.raw`.-]*\s+){0,4}\bat (?:the )?(?:${MOVING_REV}|working (?:tree|copy|directory))(?![\w])`,
+// A count token: a standalone number, optionally carrying the comma or full stop
+// English puts after it, followed by whitespace and the label it counts. The
+// trailing lookahead is what keeps list numbers (`12.` opening a table row) out
+// of a rule about counts.
+const COUNT_TOKEN = String.raw`(?<![\d/.\w])\d+(?![/\d])[.,]?(?=\s+[a-zA-Z` + BACKTICK + String.raw`])`
+// Between the count and the revision, in either order: up to four tokens. A
+// token is a whitespace-delimited run, and a quoted string is not one, so a
+// quote ends the run — `… at HEAD` is a label; `"HEAD" is a moving rev` is prose.
+const COUNT_GAP = String.raw`(?:\s[^\s'"“”]+){0,4}\s+`
+// A moving revision as a STANDALONE token — not the `HEAD` inside `MERGE_HEAD`,
+// not a revision a count label reaches mid-word — ending at `(?!\w)` rather than
+// `\b`, because `@` ends in a non-word character and the trailing `\b` truncated
+// the token for `HEAD^`/`HEAD@{}` and dropped the `@` arm entirely. The left
+// boundary is what keeps the reverse-order arm (`HEAD … N`) off
+// `MERGE_HEAD`/`ORIG_HEAD`; ARM 1's gap ends in whitespace, so `<HEAD>` never
+// reaches the token either way.
+const REV_TOKEN = String.raw`(?<![\w<])(?:${MOVING_REV}|working (?:tree|copy|directory))(?!\w)`
+// A git invocation, options and all: `git [options] <lowercase-subcommand>`.
+// Global options (`--no-pager`, `-C <dir>`, `-c k=v`) precede the subcommand and
+// are part of the real spelling, which the old pattern could not see.
+const GIT_CMD = String.raw`\bgit\s+(?:--?[A-Za-z][\w-]*(?:[=\s]\S{1,40})?\s+){0,4}[a-z][a-z-]*\b`
+// What may introduce a revision argument: whitespace, a quote, `(`, `=`, or the
+// `..`/`...` of a range.
+const REV_LEAD = String.raw`(?:[\s"'` + BACKTICK + String.raw`(=]|\.{2,3})`
+
+// ARM 1 — the count label, either word order (the alternative round 5 lacked:
+// `at HEAD the corpus reports 90 documents` is a live member of the class and
+// the guard used to PASS it).
+const BARE_HEAD_COUNT_AT = new RegExp(String.raw`(?:${COUNT_TOKEN}${COUNT_GAP}${REV_TOKEN}|${REV_TOKEN}${COUNT_GAP}${COUNT_TOKEN})`, 'g')
+// ARM 2 — a git read whose REVISION is a moving one, whatever the subcommand,
+// whatever global options precede it, however the revision is quoted.
+const BARE_HEAD_COUNT_CMD = new RegExp(String.raw`${GIT_CMD}[^\n|` + BACKTICK + String.raw`]{0,120}?${REV_LEAD}(?:${MOVING_REV})(?![\w])`, 'g')
+// ARM 3 — a COUNT taken from a git command that names NO fixed revision. The
+// property, not the subcommand list: `git show|reflog|blame|annotate` (which the
+// list missed) and `git branch|stash|status` (which it fired on wrongly) all
+// fire, because none of them names a commit the reader can go to.
+const BARE_HEAD_COUNT_WC = new RegExp(String.raw`${GIT_CMD}[^\n|` + BACKTICK + String.raw`]{0,120}?\|\s*wc\b`, 'g')
+// The provenance token of a count, in the two positions that ARE provenance: the
+// canonical `N … at <sha>` label (either order) and the revision of a counted
+// git command. `SHA_TOKEN` is 7-40 lowercase hex, quote-dressed or not.
+const SHA_TOKEN = String.raw`[0-9a-f]{7,40}`
+const COUNT_AT_SHA = new RegExp(
+  String.raw`(?:${COUNT_TOKEN}${COUNT_GAP}at\s+(?:the\s+)?["'` + BACKTICK + String.raw`]?(\b${SHA_TOKEN}\b)|at\s+(?:the\s+)?["'` + BACKTICK + String.raw`]?(\b${SHA_TOKEN}\b)${COUNT_GAP}${COUNT_TOKEN})`,
   'g',
 )
-// Shape 2 — a git read whose REVISION is a moving one, whatever the subcommand:
-// `git ls-tree … HEAD`, `git show HEAD:<path>`, `git rev-parse HEAD`,
-// `git diff HEAD`, `git cat-file -p HEAD:<path>`. Structural, not the list of
-// six command strings that happened to fail a review.
-const BARE_HEAD_COUNT_CMD = new RegExp(String.raw`\bgit\s+[a-z][a-z-]*[^\n|` + '`' + String.raw`]*?\s(?:${MOVING_REV})(?![\w])`, 'g')
-// Shape 3 — a COUNT taken from a git command that defaults to HEAD and names no
-// revision at all: `git log … | wc -l`, `git rev-list … | wc -l`. The `| wc`
-// requirement is what keeps this arm to counts and off ordinary prose.
-const BARE_HEAD_COUNT_WC = /\bgit\s+(?:log|rev-list|shortlog|whatchanged|cherry|stash|branch|describe)\b[^|\n]*\|\s*wc\b/g
+const COUNT_CMD_SHA = new RegExp(String.raw`${GIT_CMD}[^\n|` + BACKTICK + String.raw`]{0,120}?["'` + BACKTICK + String.raw`]?(\b${SHA_TOKEN}\b)[^\n]*\|\s*wc\b`, 'g')
 
-// One scan over all three shapes, every match on the line.
+// One scan over all three arms, every match on the line.
 const BARE_HEAD_COUNT = new RegExp([BARE_HEAD_COUNT_AT.source, BARE_HEAD_COUNT_CMD.source, BARE_HEAD_COUNT_WC.source].join('|'), 'g')
 const MOVING_REV_RE = new RegExp(MOVING_REV)
 const BARE_HEAD_BASELINE = new Map([
-  // Re-derived from THIS instrument's real matches under the widened pattern at
-  // 87 recorded occurrence(s) across 47 keys (slice 6c fix round 5; see
-  // .scratch/v28/reports/slice-6c-fix-5.md). Forward-only, per D-011 item 2: the
-  // history keeps its labels and the baseline absorbs them; nothing below was
-  // typed to make a run green.
+  // Re-derived from THIS instrument's own matches under the three arms above —
+  // never typed, never extended by hand (D-021 item 2). The run prints the size
+  // at run time. Forward-only, per D-011 item 2: a historical record keeps its
+  // original label and is absorbed here rather than rewritten.
   [".scratch/v28/briefs/slice-1-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-2-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-2a-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-2b-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-2c-verify.md::git rev-parse HEAD", 1],
+  [".scratch/v28/briefs/slice-3-verify.md::git log --oneline c9ab382..HEAD", 1],
   [".scratch/v28/briefs/slice-3a-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-3b-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-3c-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-4a-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-4b-verify.md::git rev-parse HEAD", 1],
   [".scratch/v28/briefs/slice-4c-verify.md::git rev-parse HEAD", 1],
+  [".scratch/v28/briefs/slice-6a-fix-5.md::41 checks on HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-1-completion.md::git ls-files .scratch | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-1-review.md::git diff c484648..HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-1-verify.md::git ls-files '.scratch/**/*.mjs' | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-1-verify.md::git ls-files .scratch | wc", 2],
+  [".scratch/v28/briefs/slice-6c-fix-1.md::git grep --untracked --fixed-strings -- \"$PAT\" -- . | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-2-review.md::git diff 0205c8d..HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-2-verify.md::git diff 0205c8d..HEAD", 1],
   [".scratch/v28/briefs/slice-6c-fix-2.md::265 at HEAD", 1],
-  [".scratch/v28/briefs/slice-6c-fix-3.md::265 at HEAD", 2],
+  [".scratch/v28/briefs/slice-6c-fix-2.md::git ls-files .scratch | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-2.md::git ls-tree -r --name-only <c> .scratch | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-3.md::259 at `ce3479c`/`32e9f48`, 265 at HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-3.md::265 at HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-3.md::git ls-files .scratch | wc", 2],
   [".scratch/v28/briefs/slice-6c-fix-4.md::265 at HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-4.md::276 tracked \\`.scratch\\` files at HEAD", 1],
   [".scratch/v28/briefs/slice-6c-fix-5.md::265 at HEAD", 2],
   [".scratch/v28/briefs/slice-6c-fix-5.md::git ls-tree -r --name-only HEAD", 2],
   [".scratch/v28/briefs/slice-6c-fix-5.md::git ls-tree … HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-5.md::git ls-tree … | wc", 1],
   [".scratch/v28/briefs/slice-6c-fix-5.md::git show HEAD", 5],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::HEAD the corpus reports 90", 2],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git --no-pager log HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git -C <dir> show HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git -c core.pager=cat show HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git annotate <file> | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git blame <file> | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git branch | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git reflog | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git rev-parse 'HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git show \"HEAD", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git show | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git stash | wc", 1],
+  [".scratch/v28/briefs/slice-6c-fix-6.md::git status --porcelain | wc", 1],
+  [".scratch/v28/reports/slice-6b-fix-1.md::HEAD the corpus reports 90", 1],
   [".scratch/v28/reports/slice-6b-fix-1.md::git show HEAD", 1],
-  [".scratch/v28/reports/slice-6c-fix-1-review.md::265 at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::259 at ce3479c/32e9f48, 265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::262 at c484648, 265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::265 at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::git diff --stat c2ec32e..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::git diff --stat c484648..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::git diff c484648..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::git ls-files '.scratch/**/*.mjs' '.scratch/*.mjs' | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::git ls-files .scratch | wc", 4],
+  [".scratch/v28/reports/slice-6c-fix-1-review.md::git ls-tree -r --name-only <c> .scratch | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-verify.md::262 real, at c484648 and HEAD", 1],
   [".scratch/v28/reports/slice-6c-fix-1-verify.md::265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-verify.md::@ c484648 / 23", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-verify.md::@ c484648, 265 after staging, 23", 1],
+  [".scratch/v28/reports/slice-6c-fix-1-verify.md::git ls-files '.scratch/**/*.mjs' | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-1-verify.md::git ls-files .scratch | wc", 3],
   [".scratch/v28/reports/slice-6c-fix-1-verify.md::git ls-tree -r --name-only HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-1-verify.md::git rev-parse HEAD", 3],
   [".scratch/v28/reports/slice-6c-fix-1-verify.md::git show --name-only --format=\"%H\" HEAD", 1],
   [".scratch/v28/reports/slice-6c-fix-1-verify.md::git show --stat HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-1.md::git grep --untracked -F -f /tmp/g1demo/needle.txt -- . | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-1.md::git grep --untracked -F -f /tmp/g1demo/needle.txt -- src e2e scripts supabase | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-1.md::git grep … \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-1.md::git ls-files .scratch \\| wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-1.md::git ls-files .scratch | wc", 3],
   [".scratch/v28/reports/slice-6c-fix-1.md::git show HEAD", 2],
-  [".scratch/v28/reports/slice-6c-fix-2-review.md::265 at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::2. `ladder:` `265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::259 at `ce3479c`/`32e9f48`, 265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::265 at HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-2-review.md::271 at HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-2-review.md::439 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::git diff 0205c8d..HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::git ls-files .scratch \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::git ls-files .scratch | wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-2-review.md::git ls-tree -r --name-only $c .scratch \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-2-review.md::git ls-tree -r --name-only HEAD", 1],
-  [".scratch/v28/reports/slice-6c-fix-2-verify.md::265 at HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-2-verify.md::259 at `ce3479c`/`32e9f48`, 265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-2-verify.md::265 at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-2-verify.md::git diff 0205c8d..HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-2-verify.md::git ls-files '.scratch/**/*.mjs' | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-2-verify.md::git ls-files .scratch | wc", 3],
   [".scratch/v28/reports/slice-6c-fix-2-verify.md::git rev-parse --short HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-2.md::git ls-files .scratch \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-2.md::git ls-files .scratch | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-2.md::git ls-tree -r --name-only $c .scratch | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-review.md::2 working tree", 2],
   [".scratch/v28/reports/slice-6c-fix-3-review.md::265 at HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-3-review.md::276 tracked `.scratch` files at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-review.md::git diff --stat 71bdd55..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-review.md::git ls-files .scratch \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-review.md::git ls-files .scratch | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-review.md::git ls-tree -r --name-only \"$c\" .scratch | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-review.md::git ls-tree -r --name-only <c> .scratch \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-3-verify.md::265 at HEAD", 1],
   [".scratch/v28/reports/slice-6c-fix-3-verify.md::git archive HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-verify.md::git diff b4a8b73..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-verify.md::git log --oneline a4b3cf5..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3-verify.md::git ls-files .scratch \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-3-verify.md::git ls-tree -r --name-only HEAD", 1],
   [".scratch/v28/reports/slice-6c-fix-3-verify.md::git rev-parse HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3.md::265 `0205c8d` / 276 HEAD", 1],
   [".scratch/v28/reports/slice-6c-fix-3.md::265 at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-3.md::HEAD (276 = 276,", 1],
+  [".scratch/v28/reports/slice-6c-fix-3.md::git diff a4b3cf5..HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-3.md::git ls-tree -r --name-only \"$c\" .scratch | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-3.md::git ls-tree -r --name-only <sha> .scratch \\| wc", 1],
   [".scratch/v28/reports/slice-6c-fix-3.md::git rev-parse HEAD", 1],
-  [".scratch/v28/reports/slice-6c-fix-4-review.md::265 at HEAD", 5],
+  [".scratch/v28/reports/slice-6c-fix-4-review.md::259 at `32e9f48`, 265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-4-review.md::265 at HEAD", 4],
   [".scratch/v28/reports/slice-6c-fix-4-review.md::git ls-tree -r --name-only HEAD", 3],
   [".scratch/v28/reports/slice-6c-fix-4-review.md::git show HEAD", 4],
-  [".scratch/v28/reports/slice-6c-fix-4-verify.md::265 at HEAD", 6],
+  [".scratch/v28/reports/slice-6c-fix-4-verify.md::265 at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-4-verify.md::265 at HEAD\\n265 at HEAD", 2],
   [".scratch/v28/reports/slice-6c-fix-4-verify.md::412 tracked files at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-4.md::HEAD the corpus reports 90", 2],
   [".scratch/v28/reports/slice-6c-fix-4.md::git show HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::11 branch names, HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::2, `slice-6c-fix-3-review.md::265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::207 files at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::259 at 32e9f48, 265 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::265 at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::265 at the working tree", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::271 at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 files (tracked) at HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 files in src/lib at HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 tracked .scratch files at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 tracked `.scratch` files at HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 tracked file(s) at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 tracked files at @", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::280 tracked files at HEAD", 5],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::4 control lines, wildcard @", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::87 as of HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::87 at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::87 measured on HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::87 occurrences at HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::87, taken at HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::HEAD by default, 327", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::HEAD the corpus reports 90", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git --no-pager log HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git --no-pager show \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git --no-pager show | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git -C /tmp/ws show HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git -C <dir> show HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git -c core.pager=cat show HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git annotate <file> | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git annotate package.json \\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git annotate package.json | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git blame <file> | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git blame package.json \\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git blame package.json | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git blame package.json' 'git annotate package.json' 'git branch' 'git stash list'; do printf '%-30s %s\\n' \"$p\" \"$(eval $p | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git branch \\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git branch | wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git cat-file -p HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git cherry \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git cherry | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git describe \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git describe | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git diff --cached HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git diff \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git for-each-ref | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log --oneline -1 \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log --oneline -1 | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log --oneline HEAD~1", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log -1 --format=%H | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git log … | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git ls-files \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git ls-tree -r --name-only @", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git ls-tree -r --name-only HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git merge-base HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git reflog \\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git reflog show \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git reflog show | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git reflog | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git rev-list --count HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git rev-list \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git rev-list | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git rev-parse 'HEAD", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git rev-parse HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git shortlog \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git shortlog | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show \"HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show --stat \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show --stat | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show @", 4],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show HEAD", 12],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show HEAD@{2}", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show HEAD@{upstream}", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show HEAD^", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show HEAD~1", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show HEAD~3", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show \\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git show | wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git stash \\| wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git stash list | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git stash | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git status --porcelain \\| wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git status --porcelain | wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git tag | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-review.md::git worktree list | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::0 findings: the @", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::280 tracked files at @", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::git ls-tree -r --name-only @", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::git ls-tree -r --name-only HEAD@{2}", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::git ls-tree -r --name-only HEAD^", 1],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::git show @", 2],
+  [".scratch/v28/reports/slice-6c-fix-5-verify.md::git status --porcelain | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::HEAD when round 4", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git command that resolves to `HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git diff | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git grep | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git ls-files | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git ls-tree -r --name-only $c .scratch | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git ls-tree -r --name-only <HEAD> … | wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git ls-tree -r --name-only <c> .scratch \\| wc", 1],
+  [".scratch/v28/reports/slice-6c-fix-5.md::git status --porcelain | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::280 files (tracked) at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::280 files in src/lib at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::280 tracked .scratch files at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::87 as of HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::87, taken at HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git --no-pager log HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git -C /tmp/ws show HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git -c core.pager=cat show HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git annotate package.json | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git blame package.json | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git branch | wc", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git ls-tree -r --name-only <c> .scratch | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git ls-tree -r --name-only <sha> .scratch | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git reflog | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git rev-parse 'HEAD", 4],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git show \"HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git show \\\"HEAD", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git show \\\\\\\"HEAD", 1],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git show | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git stash | wc", 2],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git status --porcelain \\\\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git status --porcelain \\| wc", 3],
+  [".scratch/v28/reports/slice-6c-fix-6.md::git status --porcelain | wc", 4],
+  [".scratch/v28/reports/slice-6c.md::git grep --fixed-strings -- \"$PAT\" -- . | wc", 2],
+  [".scratch/v28/reports/slice-6c.md::git grep --untracked --fixed-strings -- \"$PAT\" -- . | wc", 1],
+  [".scratch/v28/reports/slice-6c.md::git ls-files .scratch | wc", 1],
   [".scratch/v28/reports/slice-6c.md::git show HEAD", 4],
 ])
+
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)
+
+/**
+ * The repository provenance shas are resolved against. The seam the behaviour
+ * checks need: they run in git-less temp roots, and a rule that could not run
+ * there would be untestable through its own seam. Order, stated in the header:
+ * `--repo <dir>`, else the scan root when it is a worktree, else this
+ * instrument's own repository. `null` means "no repository can answer", which is
+ * a printed note and no finding — never a manufactured one, never a silent pass.
+ */
+function resolveRepo() {
+  const repoFlag = argv.indexOf('--repo')
+  const candidates = repoFlag === -1 ? [ROOT, resolve(join(import.meta.dirname, '..', '..'))] : [resolve(argv[repoFlag + 1])]
+  for (const dir of candidates) if (existsSync(join(dir, '.git'))) return dir
+  return null
+}
+
+/** Is `sha` a commit in `repo`? The decidability half's only git call. */
+function isCommit(repo, sha) {
+  try {
+    execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], { cwd: repo, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
 
 function checkReportHeadCounts() {
   console.log(`  note — no-bare-head-count: baseline holds ${BARE_HEAD_BASELINE_SIZE} recorded occurrence(s); a new count resolved through bare HEAD is a finding`)
@@ -522,9 +876,23 @@ function checkReportHeadCounts() {
   }
   if (!files.length) {
     console.log('  note — no .scratch/v28/reports or briefs under this root; report and brief counts unchecked here')
-    return 0
+    console.log('  note — count-provenance: no report or brief to verify a provenance sha in; unchecked here')
+    return { reportFiles: 0, provenanceChecked: false }
   }
   discloseScanProvenance(files)
+
+  // THE DECIDABLE HALF. Every count's provenance token is resolved against a
+  // real repository; a sha that is not a commit there is a finding, never a
+  // ceiling and never a baseline entry.
+  const repo = resolveRepo()
+  const shaIsCommit = new Map()
+  const alreadyReported = new Set()
+  let provenanceTokens = 0
+  let unresolvable = 0
+  if (!repo) {
+    console.log("  note — count-provenance: no git worktree to resolve provenance shas against (looked for --repo, then this scan root, then this instrument's own repository) — the provenance shas of counts are NOT verified here, and no finding is reported for them")
+  }
+
   const seen = new Map()
   for (const path of files) {
     const rel = relative(ROOT, path)
@@ -534,7 +902,7 @@ function checkReportHeadCounts() {
       // so a second occurrence appended to an already-counted line was invisible.
       for (const match of line.matchAll(BARE_HEAD_COUNT)) {
         const text = match[0].trim()
-        // Shape 3 names no revision by construction; if it names a fixed commit,
+        // ARM 3 names no revision by construction; if it names a fixed commit,
         // that IS the fix this rule asks for and it is not a finding.
         if (!MOVING_REV_RE.test(text) && FIXED_SHA.test(text)) continue
         const key = `${rel}::${text}`
@@ -547,9 +915,30 @@ function checkReportHeadCounts() {
           )
         }
       }
+      for (const pattern of [COUNT_AT_SHA, COUNT_CMD_SHA]) {
+        for (const match of line.matchAll(pattern)) {
+          const sha = match[1] ?? match[2]
+          provenanceTokens += 1
+          if (!repo) continue
+          if (!shaIsCommit.has(sha)) shaIsCommit.set(sha, isCommit(repo, sha))
+          if (shaIsCommit.get(sha)) continue
+          unresolvable += 1
+          const key = `${rel}::${sha}`
+          if (alreadyReported.has(key)) continue
+          alreadyReported.add(key)
+          fail(
+            'count-provenance-unresolvable',
+            `${rel}:${index + 1}: a count's provenance names ${sha}, which is not a commit in this repository (\`git cat-file -e ${sha}^{commit}\` fails) — name a commit a reader can resolve`,
+          )
+        }
+      }
     }
   }
-  return files.length
+  if (repo) {
+    const label = relative(ROOT, repo)
+    console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} — ${unresolvable} unresolvable`)
+  }
+  return { reportFiles: files.length, provenanceChecked: Boolean(repo) }
 }
 
 /**
@@ -595,7 +984,7 @@ checkRegistry(config)
 checkWorkItems(config)
 checkAgentModels(config)
 const headerFiles = checkInstrumentHeaders()
-const reportFiles = checkReportHeadCounts()
+const { reportFiles, provenanceChecked } = checkReportHeadCounts()
 
 if (!findings.length) {
   const items = existsSync(join(FACTORY, 'work')) ? readdirSync(join(FACTORY, 'work')).filter((f) => f.endsWith('.json')).length : 0
@@ -607,6 +996,7 @@ if (!findings.length) {
   const claims = ['every floor meetable', 'every artifact present']
   if (headerFiles) claims.push('every instrument header stating only what it can point at')
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
+  if (provenanceChecked) claims.push("every count's provenance sha resolving as a commit")
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
