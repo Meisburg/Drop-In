@@ -25,7 +25,7 @@
 // Usage is the CLI (factory.mjs); this module is the decision.
 
 import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 
 // ---------------------------------------------------------------------------
 // Real-world probes. Every one of these can fail; a probe that fails returns
@@ -91,6 +91,28 @@ export const systemProbes = {
   /** A unit on its way up. It has not taken its memory yet, and it will. */
   serviceActivating(unit) {
     return this.serviceState(unit) === 'activating'
+  },
+
+  /**
+   * A TCP connect, the only availability signal that is cheap and honest for a
+   * remote endpoint. Returns null when it could not be determined, which is NOT
+   * the same as true — callers decide, and admission decides "no".
+   *
+   * Measured 2026-10-02: fr-1 (100.92.51.0:11434) timed out while carrying
+   * cost_tier 1, so it was the PREFERRED fallback and could not serve. That is
+   * why this exists (factory/decisions.md D-003).
+   */
+  tcpReachable(host, port, timeoutMs = 4000) {
+    if (!host || !port) return null
+    try {
+      const r = spawnSync('bash', ['-c', `exec 3<>/dev/tcp/${host}/${port} && exec 3<&-`], {
+        timeout: timeoutMs,
+        stdio: 'ignore',
+      })
+      return r.status === 0
+    } catch {
+      return null
+    }
   },
 
   /** Resident memory of a systemd user unit, or null when it is not running. */
@@ -192,6 +214,78 @@ const capabilityHeadroom = (model, floors = {}) =>
  * The RAM and VRAM this model needs that is NOT already paid for, plus the
  * reclaimable things standing in its way.
  */
+/** host:port out of an endpoint, so there is one source of truth for where a model lives. */
+export function endpointHostPort(model) {
+  try {
+    const u = new URL(model.endpoint)
+    return { host: u.hostname, port: Number(u.port || (u.protocol === 'https:' ? 443 : 80)) }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Is this model reachable right now, by the mechanism it declares?
+ *
+ * `probe:tcp` is a GATE: a remote endpoint has no unit to read and no footprint
+ * to charge, so connecting is the only thing that can tell the truth, and an
+ * unreachable one is rejected rather than selected and failed into.
+ *
+ * `probe:service` is NOT a gate. A stopped local service is a planned start, and
+ * its state is already accounted for by `modelFootprint` — which charges the
+ * whole model when it is down and nothing when it is up. Gating on it as well
+ * would refuse every task on a machine that is doing exactly what it should.
+ */
+export function checkHealth(modelKey, config, probes) {
+  const model = config.models[modelKey]
+  if (!model) return { ok: false, gated: true, how: `unregistered model '${modelKey}'` }
+  const probe = model.health?.probe
+  if (probe === 'service') {
+    return { ok: true, gated: false, how: `systemd ${model.service} ${probes.serviceState(model.service)} (footprint already accounts for this)` }
+  }
+  if (probe === 'tcp') {
+    const where = endpointHostPort(model)
+    if (!where) return { ok: false, gated: true, how: 'no parseable endpoint' }
+    const reachable = probes.tcpReachable?.(where.host, where.port, model.health.timeout_ms) ?? null
+    return { ok: reachable === true, gated: true, how: `tcp ${where.host}:${where.port}${reachable === null ? ' (unknown)' : ''}` }
+  }
+  return { ok: false, gated: true, how: `no health probe declared for '${modelKey}' — an unprobed model is not a verified one` }
+}
+
+/** The one local model the machine should actually be holding, per policy. */
+export function residentModel(config) {
+  return Object.entries(config.models).find(([, m]) => m.residency === 'resident')?.[0] ?? null
+}
+
+/**
+ * Which resident models a human-typed `reclaim` may stop.
+ *
+ * The invariant enforced here is the one that must never break: reclaim does not
+ * kill a model a live reservation holds. Whether reclaim runs AUTOMATICALLY is a
+ * separate question — it does not, and it needs liveness and ownership semantics
+ * this scheduler does not have yet (factory/decisions.md D-004).
+ */
+export function reclaimCandidates(config, probes, reservations = []) {
+  const live = reservations.filter((r) => r.state === 'ADMITTED' || r.state === 'RUNNING')
+  const inUse = new Set(live.map((r) => r.model))
+  const candidates = []
+  const refused = []
+  for (const [key, model] of Object.entries(config.models)) {
+    if (model.provider !== 'local') continue
+    const state = probes.serviceState(model.service)
+    if (state !== 'active' && state !== 'activating') continue
+    const gbRam = probes.serviceRamGb(model.service)
+    const entry = { key, service: model.service, state, gb: gbRam ? Math.round(gbRam * 10) / 10 : null }
+    if (inUse.has(key)) {
+      const holder = live.find((r) => r.model === key)
+      refused.push({ ...entry, heldBy: holder.id, heldSince: holder.admittedAt ?? null })
+    } else {
+      candidates.push(entry)
+    }
+  }
+  return { candidates, refused }
+}
+
 export function modelFootprint(modelKey, config, probes) {
   const model = config.models[modelKey]
   if (!model) return { ok: false, why: `${modelKey} is not in the registry` }
@@ -450,6 +544,13 @@ export function selectModel({ config, kind, probes = systemProbes, reservations 
   for (const modelKey of candidates) {
     const decision = admit({ config, kind, modelKey, probes, reservations })
     if (decision.state === 'ADMITTED') {
+      // Availability is part of admission, not a privilege of a cheap tier. A model
+      // that is tier 1 but unreachable is not a fallback, it is a delayed failure.
+      const health = checkHealth(modelKey, config, probes)
+      if (health.gated && !health.ok) {
+        blockedFor.push({ modelKey, why: `unreachable (${health.how})` })
+        continue
+      }
       const wasPreferred = tier(modelKey) === 0 && policy === 'local-preferred'
       return {
         modelKey,

@@ -28,6 +28,15 @@
 //                         This is the one with teeth: an artifact named but
 //                         missing is a claim with nothing behind it, which is
 //                         the exact failure this factory was built to stop.
+//   health-declared       every model says HOW it is known to be reachable. A
+//                         model with no probe is a fallback that fails late.
+//   residency-declared    every model says whether it is resident, on-demand or
+//                         remote, and every remote-capable probe can be run
+//   one-resident-local    at most one LOCAL model is declared resident, because
+//                         they share `exclusive: local-inference` and cannot
+//                         coexist — and policy and the per-model fields agree
+//   reclaim-opt-in        reclamation is not automatic (D-004)
+//   remote-verified       an unverified remote endpoint is never a fallback (D-003)
 //
 // Usage:  node scripts/guards/factory-guard.mjs [--root <dir>]
 // Exit:   0 = clean, 1 = findings
@@ -73,6 +82,46 @@ function checkRegistry(config) {
       fail('registry-fields', `${key}: resources has no footprint_source — an unlabelled number reads as measured`)
     }
     if (!Number.isFinite(model.cost_tier)) fail('registry-fields', `${key}: no cost_tier`)
+    const probe = model.health?.probe
+    if (!model.health) fail('health-declared', `${key}: no health block — a model with no availability check is a fallback that fails late`)
+    else if (!['service', 'tcp'].includes(probe)) fail('health-declared', `${key}: health.probe is '${probe}', not one of service|tcp`)
+    else if (probe === 'tcp' && !model.endpoint) fail('health-declared', `${key}: probe tcp needs an endpoint to derive host and port from`)
+    else if (probe === 'service' && !model.service) fail('health-declared', `${key}: probe service needs a systemd unit name`)
+    if (!['resident', 'on-demand', 'remote'].includes(model.residency)) {
+      fail('residency-declared', `${key}: residency is ${JSON.stringify(model.residency)}, not one of resident|on-demand|remote`)
+    }
+    if (model.residency === 'resident' && model.provider !== 'local') {
+      fail('residency-declared', `${key}: declared 'resident' but is not a local model`)
+    }
+  }
+
+  // At most ONE local model may be declared resident. Every local model declares
+  // `exclusive: local-inference` because they genuinely cannot coexist — measured
+  // 2026-10-02, when ninfer-serve holding the GPU drove strata-max into 176 failed
+  // starts in 20 minutes. Two residents would be a registry that contradicts the
+  // hardware it describes.
+  const residentLocals = Object.entries(config.models ?? {})
+    .filter(([, m]) => m.provider === 'local' && m.residency === 'resident')
+    .map(([k]) => k)
+  if (residentLocals.length > 1) {
+    fail('one-resident-local', `${residentLocals.length} local models are declared resident (${residentLocals.join(', ')}) — they share the 'local-inference' resource and cannot coexist`)
+  }
+  if (residentLocals.length === 0) {
+    fail('one-resident-local', 'no local model is declared resident — the factory has no worker it expects to be running')
+  }
+  const declaredResidents = config.policies?.residency?.resident
+  if (declaredResidents && JSON.stringify([...declaredResidents].sort()) !== JSON.stringify([...residentLocals].sort())) {
+    fail('one-resident-local', `policies.residency.resident (${declaredResidents.join(', ')}) disagrees with the per-model residency fields (${residentLocals.join(', ')})`)
+  }
+
+  // Reclaim must never be able to kill a model that is in use, and it is not
+  // automatic until the scheduler has liveness and ownership semantics (D-004).
+  if (config.policies?.reclaim !== 'opt-in') {
+    fail('reclaim-opt-in', `policies.reclaim is ${JSON.stringify(config.policies?.reclaim)} — automatic reclamation is a later change and must be a deliberate one`)
+  }
+
+  if (config.policies?.remote_verification !== 'required') {
+    fail('remote-verified', `policies.remote_verification is ${JSON.stringify(config.policies?.remote_verification)} — an unverified remote endpoint must not be treated as a fallback (D-003)`)
   }
 
   for (const [kind, task] of Object.entries(config.task_kinds ?? {})) {

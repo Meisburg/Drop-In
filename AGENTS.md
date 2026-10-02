@@ -38,6 +38,8 @@ mode" — confirm in one line, then revert to default style.
   The orchestrator updates it after every phase transition.
 - `factory/work/<id>.json` — per-work-item lane state and artifacts; a worker
   is disposable, this is not.
+- `factory/decisions.md` — append-only decisions about factory behaviour. The
+  batch ledger keeps slice rulings; its mixed history stays as it is.
 - Subagents get briefs pointing at files, never pasted chat history.
 - Each returns a structured report; the orchestrator routes on the report plus
   the files, not on vibes.
@@ -120,14 +122,11 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
 The three lanes above **judge**; none can *guarantee*. A reviewer misses files,
 `ocr` skips config and prose, the verifier runs only what it was handed. So
 `npm run guards` (inside `verify`) runs scripts that either find a violation or
-do not — no model, no tokens. Four rules: a `lib/` module needs its sibling
-test; a check-config change needs `ALLOW_CONFIG_CHANGE="<why>"`; tracked git
-hooks stay wired; every e2e fixture stays inside the sweep's marker convention
-(`docs/agents/e2e-fixture-convention.md`). Rules that parse source ship a
-`.check.mjs` proving the checker fires.
-
-Borrowed from `affaan-m/ECC` (MIT): `docs/agents/borrowed-guards.md` — what was
-taken, refused, the four tests.
+do not — no model, no tokens. The rules and why each exists:
+`docs/agents/factory.md` (the factory's), `docs/agents/borrowed-guards.md`
+(provenance, and the four tests a new one passes), and
+`docs/agents/e2e-fixture-convention.md` (fixture markers). A rule that parses
+source ships a `.check.mjs` proving it can fire.
 
 ## The escalating fix loop (why it escalates by capability)
 

@@ -29,13 +29,20 @@ mechanism is `node scripts/factory/factory.mjs`.
   model by capability floor, resources and independence. `factory admit <kind>
   --id <id>` is admission control: **exit 3 is `BLOCKED_RESOURCE`**, and it
   prints the arithmetic plus the command that would unblock it.
+- **The router already knows what is reachable — do not second-guess it.** A
+  remote model whose health probe fails is rejected and the router falls through
+  to the next tier. If it returns `fallback: true`, that is a scheduling outcome,
+  not a degradation to report.
 - **A blocked resource is a scheduling fact, not an escalation.** Record it in
   the run/telemetry log and pick the admissible alternative. It is not a ledger
   entry, and it is not something to surface to the human.
 - **Pass the routed model on every dispatch.** The `model:` in an agent
 definition is a declared default, not the decision.
 - **Never start or stop an inference server to make room on your own judgement.**
-  `factory reclaim` names what is resident and what it would free.
+  `factory reclaim` names what is resident and what it would free, and it
+  **refuses to stop a model a live reservation holds**. `strata-max` is the
+  resident worker; `ninfer-serve` and `strata-serve` are on-demand, so their
+  being up is not the machine's normal state (`factory/decisions.md` D-001).
 
 **Why this is a rule and not advice:** this exact constraint was re-derived by
 hand on four dispatches on 2026-10-02 and got it wrong four times —
@@ -204,8 +211,11 @@ wrong>`. A decision that dies in chat was a decision made in secret.
   `factory work transition <id> <lane> <state>` — the CLI refuses an illegal
   transition and **refuses `acceptance pass` while a required lane is not
   complete**.
-- **Decision log** — the batch ledger. `Slice N: Ruling: <what> — <why> —
-  <cost if wrong>`. Decisions only.
+- **Decision log** — `factory/decisions.md` for decisions that changed how the
+  factory **behaves** (append-only, never rewritten), and the batch ledger for
+  slice rulings: `Slice N: Ruling: <what> — <why> — <cost if wrong>`. Decisions
+  only. The 7,112-line historical ledger carries all four kinds mixed and is
+  **left as it is** — the split is forward-only (`factory/decisions.md` D-002).
 - **Telemetry and run logs** — `factory/logs/`, gitignored. An OOM, a cloud
   fallback and a slow lane are *telemetry*. They are not decisions, and they do
   not belong in the ledger.

@@ -183,6 +183,62 @@ console.log('===========================================================')
   check('an agent default naming an unregistered model is CAUGHT', result.exit === 1 && /agent-model-in-registry/.test(result.out), `exit ${result.exit}`)
 }
 
+// 9. health-declared — a model with no availability probe is a fallback that
+//    fails late, which is exactly what fr-1 did while carrying cost_tier 1.
+{
+  const result = run((ctx) => {
+    cleanRoot()(ctx)
+    const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    delete config.models['fr-1/glm-4.7-flash:latest'].health
+    ctx.write('factory/config.json', config)
+  })
+  check('a model with no health probe is CAUGHT', result.exit === 1 && /health-declared/.test(result.out), `exit ${result.exit}`)
+}
+
+// 10. residency-declared — an undeclared residency is a machine nobody described.
+{
+  const result = run((ctx) => {
+    cleanRoot()(ctx)
+    const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    config.models['ninfer/qwen3.8-27b'].residency = 'sometimes'
+    ctx.write('factory/config.json', config)
+  })
+  check('an illegal residency value is CAUGHT', result.exit === 1 && /residency-declared/.test(result.out), `exit ${result.exit}`)
+}
+
+// 11. one-resident-local — two residents would be a registry contradicting the
+//     hardware: local models share `exclusive: local-inference` and cannot coexist.
+{
+  const result = run((ctx) => {
+    cleanRoot()(ctx)
+    const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    config.models['ninfer/qwen3.8-27b'].residency = 'resident'
+    config.policies.residency.resident.push('ninfer/qwen3.8-27b')
+    ctx.write('factory/config.json', config)
+  })
+  check('two models declared resident at once is CAUGHT', result.exit === 1 && /one-resident-local/.test(result.out), `exit ${result.exit}`)
+}
+
+// 12. reclaim-opt-in / remote-verified — the two policy decisions (D-003, D-004)
+//     that must not be quietly relaxed to make a red gate green.
+{
+  const result = run((ctx) => {
+    cleanRoot()(ctx)
+    const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    config.policies.reclaim = 'auto'
+    ctx.write('factory/config.json', config)
+  })
+  check('turning reclaim automatic is CAUGHT', result.exit === 1 && /reclaim-opt-in/.test(result.out), `exit ${result.exit}`)
+
+  const result2 = run((ctx) => {
+    cleanRoot()(ctx)
+    const config = JSON.parse(JSON.stringify(REAL_CONFIG))
+    delete config.policies.remote_verification
+    ctx.write('factory/config.json', config)
+  })
+  check('dropping the remote-verification requirement is CAUGHT', result2.exit === 1 && /remote-verified/.test(result2.out), `exit ${result2.exit}`)
+}
+
 console.log()
 if (failures === 0) {
   // Counted at run time, not typed: a hand-maintained total goes stale here just

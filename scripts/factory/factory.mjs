@@ -23,11 +23,14 @@ import {
   DEFAULT_LANES,
   acceptanceDecision,
   admit,
+  checkHealth,
   dependencyGraph,
   laneTransitionAllowed,
   liveReservations,
   loadConfig,
+  reclaimCandidates,
   readyItems,
+  residentModel,
   selectModel,
   systemProbes,
 } from './scheduler.mjs'
@@ -113,17 +116,31 @@ function cmdDoctor() {
   console.log(`VRAM  free      ${gb(vram === null ? null : Math.round(vram * 10) / 10)}`)
   console.log()
   console.log('local models')
+  const wantResident = residentModel(config)
   for (const [key, model] of Object.entries(config.models)) {
     if (model.provider !== 'local') continue
     const state = systemProbes.serviceState(model.service)
     const resident = systemProbes.serviceRamGb(model.service)
     const mark = state === 'active' ? '●' : state === 'activating' ? '◌' : state === 'failed' ? '✗' : '○'
+    const should = model.residency === 'resident' ? 'RESIDENT' : 'on-demand'
+    const drift = state === 'active' && model.residency !== 'resident' ? '  ⚠ resident but declared on-demand'
+      : state === 'inactive' && model.residency === 'resident' ? '  ⚠ declared resident but not running'
+        : ''
     console.log(
       `  ${mark} ${key}` +
-        `  service=${model.service} ${state}` +
+        `  ${should}  service=${model.service} ${state}` +
         `  resident=${gb(resident === null ? null : Math.round(resident * 10) / 10)}` +
-        `  footprint=${model.resources.ram_gb === null ? 'UNMEASURED (inadmissible)' : gb(model.resources.ram_gb)}`,
+        `  footprint=${model.resources.ram_gb === null ? 'UNMEASURED (inadmissible)' : gb(model.resources.ram_gb)}${drift}`,
     )
+  }
+  if (wantResident) console.log(`  the factory's own worker is ${wantResident} — start it with: systemctl --user start ${config.models[wantResident].service}`)
+
+  console.log()
+  console.log('remote models')
+  for (const [key, model] of Object.entries(config.models)) {
+    if (model.provider === 'local') continue
+    const health = checkHealth(key, config, systemProbes)
+    console.log(`  ${health.ok ? '●' : '○'} ${key}  ${health.ok ? 'reachable' : 'NOT REACHABLE'}  (${health.how})  cost_tier ${model.cost_tier}`)
   }
   console.log()
   console.log(`reservations (${live.length} live)`)
@@ -301,22 +318,20 @@ function cmdRelease(args) {
  * owns, so it is opt-in and named — never automatic.
  */
 function cmdReclaim() {
-  const candidates = []
-  for (const [key, model] of Object.entries(config.models)) {
-    if (model.provider !== 'local') continue
-    const state = systemProbes.serviceState(model.service)
-    if (state !== 'active' && state !== 'activating') continue
-    const gbRam = systemProbes.serviceRamGb(model.service)
-    candidates.push({ key, service: model.service, state, gb: gbRam ? Math.round(gbRam * 10) / 10 : null })
+  const { candidates, refused } = reclaimCandidates(config, systemProbes, reservationsNow())
+
+  for (const r of refused) {
+    console.log(`REFUSING to stop ${r.service} (${r.key}) — a live reservation holds it: ${r.heldBy}`)
+    logTelemetry({ event: 'reclaim_refused', what: r.key, service: r.service, heldBy: r.heldBy })
   }
   if (!candidates.length) {
-    console.log('nothing resident to reclaim')
+    console.log(refused.length ? 'nothing else resident to reclaim' : 'nothing resident to reclaim')
     process.exit(0)
   }
   for (const c of candidates) {
-    console.log(`stopping ${c.service} (${c.key}, frees ${gb(c.gb)})`)
+    console.log(`stopping ${c.service} (${c.key}, state ${c.state}, frees ${gb(c.gb)})`)
     const r = spawnSync('systemctl', ['--user', 'stop', c.service], { stdio: 'inherit' })
-    logTelemetry({ event: 'reclaim', what: c.key, service: c.service, freedGb: c.gb, exitCode: r.status })
+    logTelemetry({ event: 'reclaim', what: c.key, service: c.service, state: c.state, freedGb: c.gb, exitCode: r.status })
   }
   process.exit(0)
 }

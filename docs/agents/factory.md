@@ -63,6 +63,38 @@ cloud result is reported as `fallback: true`.
 telemetry log. It is not a ledger entry and not an escalation — the ledger holds
 decisions.
 
+### Availability is part of admission, not a privilege of a cheap tier
+
+Every model declares `health.probe`, and it runs **at admission**. A remote model
+(`probe: tcp`) that cannot be reached is **rejected** and the router falls through
+to the next tier; an **unknowable** probe counts as unreachable, never as
+reachable. Cost tier says *how cheap*, never *whether it is there*.
+
+This is not hypothetical. `fr-1` carries `cost_tier 1`, making it the preferred
+fallback ahead of cloud — and on 2026-10-02 a TCP connect to
+`100.92.51.0:11434` **timed out**. Admission did not know, so a builder would
+have been routed to a dead endpoint and the failure would have landed a slice
+later. See `factory/decisions.md` D-003.
+
+For a **local** model, `probe: service` is deliberately **not** a gate: a stopped
+service is a *planned start*, already accounted for by the footprint, which
+charges the whole model while it is down and nothing while it is up.
+
+### One resident local model, and reclamation is opt-in
+
+`residency` (`resident` | `on-demand` | `remote`) is what the machine **should**
+look like; the probes report what it **does**, and `doctor` flags the difference.
+`strata-max` is the factory's resident worker; `ninfer-serve` and `strata-serve`
+are on-demand. At most **one** local model may be resident, because they all
+declare `exclusive: local-inference` and genuinely cannot coexist — measured
+2026-10-02, `ninfer-serve` holding the GPU drove `strata-max` into **176 failed
+starts in 20 minutes**.
+
+`factory reclaim` is **opt-in**, and its one hard invariant is enforced in code:
+it **refuses to stop a model a live reservation holds**, and names the holder.
+Automatic reclamation waits on liveness and ownership semantics this scheduler
+does not have yet. See `factory/decisions.md` D-001 and D-004.
+
 ## Independence is a property, not a geography
 
 The reviewer must sit on an **independent reasoning path** from the implementer.
@@ -96,27 +128,40 @@ inside the worker.
 | | what it answers | where |
 |---|---|---|
 | **work state** | what is true about the work | `factory/work/` — tracked |
-| **decision log** | why a decision was made | the batch ledger — tracked |
+| **decision log** | why a decision was made, and what it does not authorize | `factory/decisions.md` — tracked |
 | **run log** | what happened during an execution | `factory/logs/runs.jsonl` — gitignored |
 | **telemetry** | what resources were consumed or unavailable | `factory/logs/telemetry.jsonl` — gitignored |
 | **artifacts** | what outputs exist | named by the work item; the guard checks they are on disk |
 
 Only the first two are record. The logs are exhaust — nothing decides from them.
 
+The **historical batch ledger** (`.scratch/v28/ledger.md`) predates this split and
+carries all four kinds mixed. It is left as it is, deliberately; the separation is
+forward-only. See `factory/decisions.md` D-002.
+
 ## What is enforced by machine
 
 `scripts/guards/factory-guard.mjs` runs inside `npm run verify`. It checks that
-every model and task kind declares where its number came from, that every
-capability floor is meetable, that no work item sits in an unreachable state,
-that acceptance is not green early, and that **every artifact a work item names
-is on disk**. Its own behavior check seeds each failure shape and requires the
-guard to fire, because a guard that matches nothing looks exactly like a clean
-repo.
+every model and task kind declares where its number came from, that every model
+declares how it is known to be reachable, that exactly **one** local model is
+declared resident and the policy agrees, that reclamation has not been quietly
+made automatic, that every capability floor is meetable, that no work item sits
+in an unreachable state, that acceptance is not green early, and that **every
+artifact a work item names is on disk**. Its own behavior check seeds each
+failure shape and requires the guard to fire, because a guard that matches
+nothing looks exactly like a clean repo.
 
 ## Limitations, named rather than glossed
 
-- **Remote endpoints are not probed.** `fr-1` over the tailnet is treated as
-  available because nothing checks. Only local services are measured.
+- **The scheduler is called, it does not intercept.** The orchestrator is
+  *required* to run `admit` first, but nothing structurally stops a worker being
+  launched without it. An admission-token / dispatch-interception layer is the
+  next infrastructure task — recorded as `factory/decisions.md` D-006, **not yet
+  built**.
+- **`~/.pi/agent/agents/*.md` are not repo-tracked.** They set each lane's model
+  and live outside every guard. Inspected: they contain no machine-local
+  content, so tracking `agents/*.md` alone is safe — the `.bak-*` clutter beside
+  them must be excluded. Not enforced yet; see `factory/decisions.md` D-005.
 - **Capability levels are declared policy, not a benchmark.** They live in the
   registry with that written next to them.
 - **Two models are registered with no measured footprint**, and a null footprint

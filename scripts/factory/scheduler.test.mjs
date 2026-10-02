@@ -20,10 +20,14 @@ import {
   acceptanceDecision,
   admit,
   capabilityGaps,
+  checkHealth,
+  endpointHostPort,
   heldGb,
   laneTransitionAllowed,
   liveReservations,
   readyItems,
+  reclaimCandidates,
+  residentModel,
   selectModel,
 } from './scheduler.mjs'
 import { newWorkItem } from './state.mjs'
@@ -42,6 +46,8 @@ function machine({
   activating = [],
   resident = { 'strata-max': 55 },
   now = 1_000_000,
+  reachable = {},
+  defaultReachable = true,
 } = {}) {
   const stateOf = (unit) => (active.includes(unit) ? 'active' : activating.includes(unit) ? 'activating' : 'inactive')
   return {
@@ -51,6 +57,7 @@ function machine({
     serviceState: stateOf,
     serviceActive: (unit) => stateOf(unit) === 'active',
     serviceRamGb: (unit) => (resident[unit] === undefined ? 0 : resident[unit]),
+    tcpReachable: (host, port) => reachable[`${host}:${port}`] ?? defaultReachable,
     now: () => now,
   }
 }
@@ -332,5 +339,95 @@ describe('the registry itself', () => {
       expect(Number.isFinite(model.cost_tier), key).toBe(true)
       expect(['local', 'cloud'], key).toContain(model.provider)
     }
+  })
+
+  it('declares exactly one RESIDENT local model, because local models cannot coexist', () => {
+    expect(realConfig.models[residentModel(realConfig)].residency).toBe('resident')
+    const residentLocals = Object.entries(realConfig.models)
+      .filter(([, m]) => m.provider === 'local' && m.residency === 'resident')
+      .map(([k]) => k)
+    expect(residentLocals).toHaveLength(1)
+    // Policy and the per-model field must agree, or `doctor` and the router
+    // would be reading two different intentions.
+    expect(realConfig.policies.residency.resident).toEqual(residentLocals)
+  })
+
+  it('gives every model a health probe, and derives a remote endpoint from one place', () => {
+    for (const [key, model] of Object.entries(realConfig.models)) {
+      expect(['service', 'tcp'], `${key} declares a probe`).toContain(model.health?.probe)
+      if (model.health.probe === 'tcp') expect(endpointHostPort(model)).toBeTruthy()
+    }
+    expect(endpointHostPort(realConfig.models['fr-1/glm-4.7-flash:latest'])).toEqual({ host: '100.92.51.0', port: 11434 })
+    expect(endpointHostPort(realConfig.models['ollama-cloud/deepseek-v4.1-flash:cloud'])).toEqual({ host: 'ollama.com', port: 443 })
+  })
+})
+
+describe('remote availability is part of admission (D-003)', () => {
+  it('refuses a tier-1 remote model that cannot be reached, and falls through to tier 2', () => {
+    // The real shape: the local model cannot fit, so the tier-1 tailnet model is
+    // the next preference — and it is down. Before this rule, admission would pass
+    // and the failure would land on the builder, a whole slice later.
+    const probes = machine({ availableGb: 12, active: [], activating: [], resident: {}, reachable: { '100.92.51.0:11434': false } })
+    const routed = selectModel({ config: realConfig, kind: 'explorer', probes })
+    const fr1 = routed.rejected.find((r) => r.modelKey.startsWith('fr-1'))
+    expect(fr1, 'fr-1 must be rejected, not silently skipped').toBeTruthy()
+    expect(fr1.why).toMatch(/unreachable \(tcp 100\.92\.51\.0:11434\)/)
+    expect(routed.modelKey).toBe('ollama-cloud/deepseek-v4.1-flash:cloud')
+    expect(routed.fallback).toBe(true)
+  })
+
+  it('still selects it when the probe says it is there — cost tier is not the disqualifier', () => {
+    const probes = machine({ availableGb: 50, reachable: { '100.92.51.0:11434': true } })
+    const health = checkHealth('fr-1/glm-4.7-flash:latest', realConfig, probes)
+    expect(health).toEqual({ ok: true, gated: true, how: 'tcp 100.92.51.0:11434' })
+  })
+
+  it('treats an UNKNOWABLE probe as unreachable, never as reachable', () => {
+    const probes = { ...machine({ availableGb: 50 }), tcpReachable: () => null }
+    const health = checkHealth('fr-1/glm-4.7-flash:latest', realConfig, probes)
+    expect(health.ok).toBe(false)
+    expect(health.how).toMatch(/unknown/)
+  })
+
+  it('does NOT gate a local model on its service being up — a stopped service is a planned start', () => {
+    // The distinction that matters: a local model's state is MODELED by its
+    // footprint (charged in full while down, nothing while up). Gating on it too
+    // would refuse every task on a machine that is behaving correctly.
+    const probes = machine({ availableGb: 50, active: [], activating: [], resident: {} })
+    const health = checkHealth('strata-max/qwen3.8-flash-next-iq3_s', realConfig, probes)
+    expect(health.gated).toBe(false)
+    expect(health.ok).toBe(true)
+  })
+})
+
+describe('reclaim never kills a model that is in use (D-004)', () => {
+  const live = [
+    { id: 'r2-6c-gate', kind: 'gate', model: 'strata-max/qwen3.8-flash-next-iq3_s', state: 'RUNNING', admittedAt: '2026-10-02T12:00:00.000Z' },
+  ]
+
+  it('refuses to stop a model a live reservation holds, and names the holder', () => {
+    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const { candidates, refused } = reclaimCandidates(realConfig, probes, live)
+    expect(candidates.map((c) => c.key)).not.toContain('strata-max/qwen3.8-flash-next-iq3_s')
+    const r = refused.find((x) => x.key === 'strata-max/qwen3.8-flash-next-iq3_s')
+    expect(r.heldBy).toBe('r2-6c-gate')
+  })
+
+  it('still reclaims a resident model nobody holds — the rule is ownership, not refusal to act', () => {
+    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const { candidates, refused } = reclaimCandidates(realConfig, probes, [])
+    expect(candidates.map((c) => c.key)).toContain('strata-max/qwen3.8-flash-next-iq3_s')
+    expect(refused).toHaveLength(0)
+  })
+
+  it('ignores a RELEASED reservation, so a finished lane does not block reclamation forever', () => {
+    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const released = [{ ...live[0], state: 'RELEASED', releasedAt: '2026-10-02T12:10:00.000Z' }]
+    const { candidates } = reclaimCandidates(realConfig, probes, released)
+    expect(candidates.map((c) => c.key)).toContain('strata-max/qwen3.8-flash-next-iq3_s')
+  })
+
+  it('reclaim is opt-in by policy — this is not an automatic behaviour', () => {
+    expect(realConfig.policies.reclaim).toBe('opt-in')
   })
 })

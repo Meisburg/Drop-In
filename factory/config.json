@@ -15,6 +15,8 @@
       "label": "Qwen3.8-Flash-Next IQ3_S (Strata 'max')",
       "endpoint": "http://127.0.0.1:8081/v1",
       "service": "strata-max",
+      "residency": "resident",
+      "health": { "probe": "service", "timeout_ms": 2000 },
       "resources": {
         "ram_gb": 55,
         "vram_gb": 30,
@@ -35,6 +37,8 @@
       "provider": "cloud",
       "label": "DeepSeek V4.1 Flash (Ollama Cloud)",
       "endpoint": "https://ollama.com/v1",
+      "residency": "remote",
+      "health": { "probe": "tcp", "timeout_ms": 4000 },
       "resources": {
         "ram_gb": 1,
         "vram_gb": 0,
@@ -56,6 +60,8 @@
       "label": "Qwen3.8-27B NVFP4 (NInfer)",
       "endpoint": "http://127.0.0.1:18080/v1",
       "service": "ninfer-serve",
+      "residency": "on-demand",
+      "health": { "probe": "service", "timeout_ms": 2000 },
       "resources": {
         "ram_gb": null,
         "vram_gb": 24,
@@ -77,6 +83,8 @@
       "label": "Qwen3.8-Flash-Next Coder IQ1_M (Strata)",
       "endpoint": "http://127.0.0.1:8080/v1",
       "service": "strata-serve",
+      "residency": "on-demand",
+      "health": { "probe": "service", "timeout_ms": 2000 },
       "resources": {
         "ram_gb": null,
         "vram_gb": null,
@@ -97,6 +105,8 @@
       "provider": "cloud",
       "label": "GLM-4.7-Flash 30B-A3B (FR-1 tailnet)",
       "endpoint": "http://100.92.51.0:11434/v1",
+      "residency": "remote",
+      "health": { "probe": "tcp", "timeout_ms": 4000 },
       "resources": {
         "ram_gb": 1,
         "vram_gb": 0,
@@ -115,6 +125,9 @@
   },
 
   "_capability_source": "These levels are DECLARED policy, not a benchmark. reasoning/coding/tool_use are 0-3 ordinals; context_window is the provider's own figure. A task kind's floor is a floor — raising one is how a maintainer says 'do not send this lane to a weaker model', and the router will then refuse rather than quietly pick something below it.",
+
+  "_residency_why": "One local model is RESIDENT — the factory's own worker. The others are ON-DEMAND: they are legitimate models that must be explicitly started to be used, and their service being up is not the machine's normal state. residency is what the machine SHOULD look like; the probes report what it DOES look like, and `doctor` flags the difference rather than assuming it away. Only strata-max may be resident, because every local model declares exclusive local-inference and they cannot coexist: on 2026-10-02 ninfer-serve holding the GPU drove strata-max into 176 failed starts in 20 minutes.",
+  "_health_why": "A model is not eligible because it is cheap. fr-1 is cost_tier 1 and sits on the tailnet, and on 2026-10-02 it was UNREACHABLE — measured, TCP connect to 100.92.51.0:11434 timed out — while admission would happily have routed a builder to it as the preferred fallback. So availability is probed at admission and an unreachable model is REJECTED with that reason, which also means a tier-1 model is never treated as a reliable fallback on the strength of its tier. probe:service reads the systemd unit; probe:tcp derives host and port from `endpoint`, so there is one source of truth for where a model lives.",
 
   "task_kinds": {
     "builder": {
@@ -183,7 +196,12 @@
       "reviewer": { "required": true, "same_model": false, "same_run": false },
       "verifier": { "required": true, "same_model": false, "same_run": false }
     },
-    "_independence_why": "The requirement is an independent REASONING PATH from the implementer, not a different machine. same_model:false and same_run:false are the mechanism; local-vs-cloud is one way to satisfy it and no longer the rule."
+    "_independence_why": "The requirement is an independent REASONING PATH from the implementer, not a different machine. same_model:false and same_run:false are the mechanism; local-vs-cloud is one way to satisfy it and no longer the rule.",
+    "reclaim": "opt-in",
+    "_reclaim_why": "Automatic reclamation is DELIBERATELY not enabled. Stopping a resident model is destructive and this scheduler does not yet have reliable liveness (is anything actually using it?) or ownership (who may be told to wait?) semantics. Until it does, reclaim is a human-typed command. The invariant that IS enforced now: reclaim refuses to stop a model a live reservation holds — it must never kill a model that is in use. See factory/decisions.md D-004.",
+    "residency": { "resident": ["strata-max/qwen3.8-flash-next-iq3_s"], "on_demand": ["ninfer/qwen3.8-27b", "strata/qwen3.8-flash-next-coder-iq1_m"] },
+    "remote_verification": "required",
+    "_remote_verification_why": "A remote model must pass its health probe to be selected. Cloud is verified by the same mechanism as the tailnet, for the same reason: an endpoint that cannot be reached is not a fallback, it is a delayed failure that costs a whole slice."
   },
 
   "lanes": ["implementation", "verification", "review", "visual_validation", "acceptance"],
