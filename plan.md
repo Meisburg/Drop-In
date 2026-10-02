@@ -112,16 +112,32 @@ rather than trust.
 7. **Kids limits**: `MAX_KIDS_PER_PROFILE = 5` (`src/lib/db.ts:2364`); `useKidPhotoUrls`
    (`src/components/useKidPhotoUrls.ts`); paths in `src/lib/photoStorage.ts:90,118`, bucket
    `kid-photos` (`:64`).
-8. **The photo card's own gate and testid**: `if (!photoCardDone && !hasAvatarUrl(profile.avatar_url))`
-   (`OnboardingPage.tsx:828`), `photoCardDone` (`:237`), testid `first-run-photo-card` (`:848`).
-9. **The nudge passes `hasPhoto`** into `nextUnfinishedCard` (`src/App.tsx:163`).
-10. **`skipLabel` is DEAD AND WRONG.** `firstRunCopy.ts:42,48` says `'Skip for now'`;
-    `firstRunCopy.test.ts:28-32` pins it; **`rg -n "skipLabel" src/` returns 0 render sites**;
-    `FirstRunCard.tsx:117-120` renders a **hard-coded `Skip`**. The module documented as the one
-    place the words live is lying about a word the parent sees.
-11. **Dead exports, confirmed by two independent lanes**: `missingProfileItems` +
-    `MissingProfileItem` (`db.ts:2513,2511`) — **0 production callers**;
-    `needsOnboarding` (`src/lib/onboarding.ts:30`) — **0 production callers**.
+8. **~~The photo card's own gate and testid~~ — SUPERSEDED, and NOTHING in this entry survives.**
+   V28 r2 slice 1b DELETED the photo card (the picker moved onto the name card, r2 slice 2), so
+   the gate as written (`if (!photoCardDone && !hasAvatarUrl(profile.avatar_url))`,
+   `OnboardingPage.tsx:828`), `photoCardDone` (`:237`) and testid `first-run-photo-card` (`:848`)
+   all left the tree. Re-measured by slice 8a at `8d1170d`: **`grep -rn "first-run-photo-card\|photoCardDone" src/`
+   finds zero.** Kept because deleting it is what slice 1b was dispatched to do.
+9. **~~The nudge passes `hasPhoto`~~ — SUPERSEDED by the same deletion.** `hasPhoto` is gone from
+   `FirstRunFacts` (`src/lib/firstRun.ts`); the nudge now passes `signedIn / hasName / hasKids /
+   hasZip` (`src/App.tsx:167` — measured at `8d1170d`, after slice 8a's own docblock
+   edit in App.tsx moved it).
+10. **`skipLabel` *was* DEAD AND WRONG — FIXED by V28 r2 slice 6a.** As written: `firstRunCopy.ts`
+    said `'Skip for now'`; `firstRunCopy.test.ts` pinned it; **`rg -n "skipLabel" src/` returned 0
+    render sites**; `FirstRunCard.tsx` rendered a **hard-coded `Skip`** — the module documented as
+    the one place the words live was lying about a word the parent sees. **BOTH halves are false
+    now**, which is why the entry is updated in place rather than deleted: the field is a PROP the
+    chrome renders verbatim (the chrome keeps no label of its own), OnboardingPage passes it from
+    the module, and the module's value equals the rendered word (`'Skip'`, pinned by
+    `firstRunCopy.test.ts:41`). Re-measured by slice 8a at `8d1170d`: **`grep -rn skipLabel src/`
+    finds 24 lines — the module's value (`firstRunCopy.ts:100`), the prop and its render
+    (`FirstRunCard.tsx:72,130`) and the call site (`OnboardingPage.tsx:1378`). Not 0.**
+11. **Dead exports, confirmed by two independent lanes — EXECUTED by V28 r2 slice 8a.** As written:
+    `missingProfileItems` + `MissingProfileItem` (`db.ts:2513,2511`) and `needsOnboarding`
+    (`src/lib/onboarding.ts:30`), **0 production callers each**. Slice 8a re-measured the count at
+    `8d1170d` (still 0 — the only `src/` mention was a sentence in App.tsx's own docblock naming
+    the seam the nudge does NOT use) and deleted all three with their tests: **`grep -rn` for
+    either name across `src/ e2e/ scripts/` now finds only the retirement notes.**
 12. **THE COLD START, measured on the live database this turn.** The product and research agents
     raised it; the numbers are mine, and they corrected two of the record's own:
     - **`playdates`: 20 rows, 19 with `status='on'`, 20 not hidden, and `starts_at > now()` = ZERO.**
@@ -357,7 +373,9 @@ such — a red commit nobody explains is indistinguishable from a mistake.
 - **Approach.** ⚠️ **PLAN DEFECT #29, found by grounding: as written, this slice renders a map
   nobody can see.** Measured — the address resolves **only inside `handleAreaFinish`**
   (`OnboardingPage.tsx:419`; its `onPrimary` is `:790` and the sole `zipFromAddressQueryBounded`
-  call is `:441`), and that handler's success leg calls `saveLocation` (`:464`), which flips
+  call is `:441` — that function was DELETED by V28 r2 slice 8a, measured at `8d1170d`: zero
+  production callers, and the card calls `locationFromAddressQueryBounded`), and that handler's
+  success leg calls `saveLocation` (`:464`), which flips
   `homeZipSet` and renders the run's FINISH CARD **in place**. So "once an address resolves" is
   precisely the instant the card stops existing.
   **Ruled: the address resolves EARLIER — on blur, debounced — through the injected `AddressLookup`
