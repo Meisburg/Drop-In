@@ -378,6 +378,76 @@ console.log('===========================================================')
   )
 }
 
+// 18. no-bare-head-count — the WIDENED class. The old pattern matched only
+//     `N at HEAD`, so `git ls-tree … HEAD | wc -l` and `git show HEAD:<path>`
+//     were invisible. These seeds are those shapes, plus the per-line counting
+//     fix (F2): a SECOND occurrence appended to an already-counted line must be
+//     seen, and the old `.exec()` could not see it.
+{
+  const lsd = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-head-tree.md', '$ git ls-tree -r --name-only HEAD .scratch | wc -l\n280\n')
+  })
+  check(
+    'a `git ls-tree` count against a bare moving revision is CAUGHT (widened shape)',
+    lsd.exit === 1 && /no-bare-head-count/.test(lsd.out),
+    `exit ${lsd.exit}`,
+  )
+
+  const shown = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-head-show.md', 'before (`git show HEAD:scripts/guards/factory-guard.mjs`): `grep -c x` -> `0`\n')
+  })
+  check(
+    'a `git show <rev>:` read against a bare moving revision is CAUGHT (widened shape)',
+    shown.exit === 1 && /no-bare-head-count/.test(shown.out),
+    `exit ${shown.exit}`,
+  )
+
+  const countedDefault = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-head-log.md', '$ git log --oneline | wc -l\n412\n')
+  })
+  check(
+    'a counted command defaulting to a bare moving revision is CAUGHT',
+    countedDefault.exit === 1 && /no-bare-head-count/.test(countedDefault.out),
+    `exit ${countedDefault.exit}`,
+  )
+
+  // Control: the same three shapes naming a commit all pass, so the rule is
+  // about bare HEAD, not about git verbs or counters.
+  const named = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-named.md',
+      '$ git ls-tree -r --name-only 876a516 .scratch | wc -l\n281\n' +
+        'before (`git show 876a516:scripts/guards/factory-guard.mjs`): `grep -c x` -> `1`\n' +
+        '$ git log --oneline 876a516 | wc -l\n5\n',
+    )
+  })
+  check('the same shapes naming the commit pass (control)', named.exit === 0, `exit ${named.exit}`)
+
+  // F2: the baseline for this key is 4 (a recorded historical file). Five
+  // occurrences on disk, TWO of them on one line, is the reviewer's proof:
+  // single-match counting saw 4 and passed; counting every match sees 5 and
+  // fails. If that baseline count ever moves, this seed moves with it.
+  const doubled = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/slice-6c-fix-1-review.md',
+      'measured: 265 at HEAD\n' +
+        'two on one line: 265 at HEAD and 265 at HEAD\n' +
+        'again 265 at HEAD\n' +
+        'finally 265 at HEAD\n',
+    )
+  })
+  check(
+    'a SECOND occurrence on an already-counted line is CAUGHT (per-line counting)',
+    doubled.exit === 1 && /no-bare-head-count/.test(doubled.out),
+    `exit ${doubled.exit}`,
+  )
+}
+
 console.log()
 if (failures === 0) {
   // Counted at run time, not typed: a hand-maintained total goes stale here just

@@ -1,7 +1,7 @@
 # Slice 6c — FIX ROUND 4 (V28 r2)
 
 **Brief:** `.scratch/v28/briefs/slice-6c-fix-4.md` (authoritative for this round).
-**Base:** `7fe7003`; the brief itself was committed at `9f20d02`, the tree HEAD when this round started.
+**Base:** `7fe7003`; the brief itself was committed at `9f20d02`, and the tree HEAD when this round started was `99d044f`.
 **Round 3's slice commits:** `20773ee` + `b4a8b73`. Round-3 lanes: verifier PASS, reviewer NEEDS_CHANGES.
 **This report was written first and appended to as evidence was produced** — the OOM convention the brief
 requires.
@@ -26,7 +26,7 @@ Every row's proof is a command whose raw output is pasted below.
 | # | Finding | Verdict | What changed | Command that proves it | Raw result |
 |---|---|---|---|---|---|
 | **B1 (BLOCKING)** | `.scratch/v28/reports/slice-6c-fix-3.md:526` is a NEW bare-`HEAD` count label | FIXED | the count now names the commit it was measured at (`71bdd55`); one line, no number changed | `git ls-tree -r --name-only 71bdd55 .scratch \| wc -l` and `… 20773ee … \| wc -l` | `276` and `277`. The round-3 report is itself the 277th tracked file, so the label was unreproducible by construction — the sentence is committed in the commit that moves the tree. After the edit `:526` reads `276 tracked `.scratch` files at 71bdd55 …`. |
-| **N1** | `factory-guard.mjs:315`: a blank line inside a header truncates the `instrument-headers-honest` scan | FIXED | the header scan `continue`s past a blank line instead of treating it as "not a comment"; a behaviour seed for exactly that shape is added | the orchestrator's blank-line repro, run against the committed guard and the working guard | before (`git show HEAD:scripts/guards/factory-guard.mjs`): `grep -c instrument-headers-honest` → `0`. After: `1`, finding at `zz-blank.mjs:4`. |
+| **N1** | `factory-guard.mjs:315`: a blank line inside a header truncates the `instrument-headers-honest` scan | FIXED | the header scan `continue`s past a blank line instead of treating it as "not a comment"; a behaviour seed for exactly that shape is added | the orchestrator's blank-line repro, run against the committed guard and the working guard | before (`git show 99d044f:scripts/guards/factory-guard.mjs`): `grep -c instrument-headers-honest` → `0`. After: `1`, finding at `zz-blank.mjs:4`. |
 | **N2** | `factory-guard.mjs:347`: the `ok —` line claims a check it skipped | FIXED | the `ok —` line emits only the claims whose scan actually ran; a behaviour check plus a control are added | the orchestrator's root-with-no-`scripts/guards` scenario, re-run | the `ok —` line now ends `every floor meetable, every artifact present` — no header claim. The `note —` still discloses the skip. |
 | **N3** | the class rule `no-bare-head-count` (the other half of B1) | FIXED | a new forward-only rule in `factory-guard.mjs` with a recorded baseline, registered in the header rule list and the `ok —` line; three behaviour checks | a `/tmp` root with a seeded label; `node scripts/guards/factory-guard.check.mjs` | seeded → `FINDING [no-bare-head-count]` and exit 1; baselined control → PASS; dated control → PASS. Baseline size `23` printed at run time. |
 | **N4** | `.scratch/v28/reports/slice-6c-fix-3.md:129`: a `HEAD` identity label on a hash | FIXED | the trailing comment names `04921d8` instead of `HEAD`; the number it justifies is untouched | `node scripts/guards/regexp-escape-guard.check.mjs \| grep -c "^  [✓✗]"` | `12` — unchanged, so the label was the only edit. |
@@ -54,7 +54,7 @@ $ git ls-tree -r --name-only 71bdd55 .scratch | wc -l
 276
 $ git ls-tree -r --name-only 20773ee .scratch | wc -l
 277
-$ git ls-tree -r --name-only HEAD .scratch | wc -l
+$ git ls-tree -r --name-only 99d044f .scratch | wc -l
 280
 ```
 
@@ -304,7 +304,7 @@ $ grep -c 'check(' scripts/guards/factory-guard.check.mjs          # incl. the `
    list in `factory-guard.mjs`, which is where it now lives. Left alone (same call as round 3's item 4).
 2. **`scripts/guards/factory-guard.mjs`** (the new `checkReportHeadCounts`) — the scan covers
    `.scratch/v28/reports/` and `.scratch/v28/briefs/` only. A bare-`HEAD` count in
-   `.scratch/v28/ledger.md`, `.scratch/v28/plan.md`, or an older-version lane is not scanned. The brief named
+   `.scratch/v28/ledger.md`, `plan.md`, or an older-version lane is not scanned. The brief named
    the reports and briefs; widening the scope is the orchestrator's decision, not this slice's.
 3. **`.scratch/v28/reports/slice-6c-fix-3.md:87-89`** — the round-3 report's `printf` needle and its echoed
    output both carry the label. They are a *reproduction of a needle*, not a measurement label, and D-011 item 2

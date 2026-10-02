@@ -404,3 +404,14 @@ loop, its own rule resolution and its own rules file, which is a genuinely diffe
 agent reviewer — but it is **not** an independent judgment in the sense the human asked about.
 
 **Revert when the human says so.** The flag went from `true` to `false`; restoring it is a one-line edit.
+
+## D-018 — the widened bare-HEAD scan's excluded ledger line, recorded as known-open
+
+**Decided 2026-10-02, slice 6c fix round 5.** The widened `no-bare-head-count` rule scans
+`.scratch/v28/reports/*.md` and `.scratch/v28/briefs/*.md`. `.scratch/v28/ledger.md:7091`
+(`259 at 32e9f48, 265 at HEAD — …`) carries the class and is **outside that scope**, so it is
+recorded here as **known-open with file:line**, the way D-011 item 1 recorded its two header-scan
+lines — an exclusion that lives only in a guard's `ladder:` bullet is a silence with a footnote.
+
+Does **not** authorize: editing `.scratch/v28/ledger.md` (D-002 keeps it as it is), or widening the
+scan to the ledger or to `plan.md` without its own work item.
