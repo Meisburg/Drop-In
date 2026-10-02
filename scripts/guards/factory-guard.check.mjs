@@ -63,7 +63,7 @@ function run(mutate, { guard = GUARD, args = [] } = {}) {
  * anchor that no longer exists is a silent no-op, and a silent no-op would make
  * every mutation check below pass vacuously.
  */
-const MUTANT_DIRS = []
+const SCRATCH_DIRS = [] // mutant copies AND scratch roots — not only mutants (D-024)
 function mutatedGuard(replacements) {
   let text = readFileSync(GUARD, 'utf8')
   for (const [from, to] of replacements) {
@@ -72,7 +72,7 @@ function mutatedGuard(replacements) {
     text = text.split(from).join(to)
   }
   const dir = mkdtempSync(join(os.tmpdir(), 'factory-guard-mutant-'))
-  MUTANT_DIRS.push(dir)
+  SCRATCH_DIRS.push(dir)
   const path = join(dir, 'factory-guard.mutant.mjs')
   writeFileSync(path, text)
   return path
@@ -498,8 +498,10 @@ console.log('===========================================================')
   // N2, REPAIRED. `@{2}` is a moving revision in its own right — measured,
   // `git rev-parse @{2}` == `git rev-parse HEAD@{2}` — and until the bounded
   // repair the `@` lookahead suppressed the bare reflog form while the header
-  // called `@` a moving revision. The seed below fires; the mutation that drops
-  // the `@{…}` alternative makes it PASS, so the check can fail.
+  // called `@` a moving revision. The seed below fires, matched by the `@`
+  // alternative whose END assertion admits `{` (there is no separate `@{…}` arm).
+  // The mutation RE-ADDS the round-5 lookahead, which is the mechanism the seed
+  // depends on: with it back, `@{2}` is suppressed again and the seed PASSES.
   const bareReflog = (ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-reflog.md', 'The tree held 276 tracked files at @{2}.\n')
@@ -513,7 +515,7 @@ console.log('===========================================================')
   const noBareReflog = mutatedGuard([['|@`', '|@(?![{\\w])`']])
   const reflogMiss = run(bareReflog, { guard: noBareReflog })
   check(
-    'MUTATION: dropping the `@{…}` alternative lets that seed PASS (so the check can fail)',
+    'MUTATION: re-adding the round-5 `@` lookahead lets that seed PASS (so the check can fail)',
     reflogMiss.exit === 0,
     `exit ${reflogMiss.exit}`,
   )
@@ -553,8 +555,14 @@ console.log('===========================================================')
 //     matched the literal word `at` after the number, so it PASSED the reverse
 //     order — a shape live in the corpus at
 //     `.scratch/v28/reports/slice-6b-fix-1.md:292` — and it could not spell a
-//     label like (tracked), src/lib or .scratch. Every case below is paired with
-//     the mutation that reaches its failure mode.
+//     label like (tracked), src/lib or .scratch. Every case below that HAS a
+//     MUTATION line is paired with the mutation that reaches its failure mode.
+//     The `wordClass` seed has none, and that is declared rather than claimed:
+//     its five labels share one root, and no single mutation makes all five pass
+//     at once — measured, narrowing the gap's token class to `[\w.]+` kills
+//     lines 1-3 and leaves the plain-word connectors (lines 4-5) firing — so it
+//     is a fire-check, not a paired case. (The B1 and B2 mutations in §23/§24 are
+//     what prove the label window and the gap are load-bearing shape by shape.)
 {
   const reverseOrder = (ctx) => {
     cleanRoot()(ctx)
@@ -633,7 +641,8 @@ console.log('===========================================================')
 //     a commit sha, and the sha is CHECKED against a real repository instead of
 //     guessed at. `N at <valid sha>` passes; `N at <bogus sha>` fails. This is
 //     the ceiling D-021 closed: "a wrong named commit" was declared for five
-//     rounds and now produces a finding.
+//     rounds and now produces a finding — a NEW one; the historical quotations
+//     the absorber holds (D-023) are the header's business, not this section's.
 {
   const canonical = (sha) => (ctx) => {
     cleanRoot()(ctx)
@@ -669,7 +678,7 @@ console.log('===========================================================')
   check('the revision of a counted git command is verified too (valid sha passes)', cmdValid.exit === 0, `exit ${cmdValid.exit}`)
   const cmdBogus = run(countedCommand('deadbee'), { args: ['--repo', REPO] })
   check(
-    'the revision of a counted git command is verified too (bogus sha is CAUGHT)',
+    'the FIRST sha-shaped token of a counted git command is verified too (bogus sha is CAUGHT)',
     cmdBogus.exit === 1 && /count-provenance-unresolvable/.test(cmdBogus.out),
     `exit ${cmdBogus.exit}`,
   )
@@ -700,17 +709,29 @@ console.log('===========================================================')
   // shas were not verified, report no finding for them, and drop the claim from
   // its summary — never a manufactured finding, never a silent pass.
   const notARepo = mkdtempSync(join(os.tmpdir(), 'factory-guard-norepo-'))
-  MUTANT_DIRS.push(notARepo)
+  SCRATCH_DIRS.push(notARepo)
   const unverifiable = run(canonical('deadbee'), { args: ['--repo', notARepo] })
   check(
     'with no worktree to resolve against, the sha is a NOTE and not a finding',
     unverifiable.exit === 0 && /no git worktree to resolve provenance shas against/.test(unverifiable.out) && !/count-provenance-unresolvable/.test(unverifiable.out),
     `exit ${unverifiable.exit}`,
   )
+  // The assertion is on the LIVE claim text. It used to name the round-6 wording
+  // (`provenance sha resolving as a commit`), which D-023 replaced — a negative
+  // assertion on a phrase the guard no longer contains can never fire, so the
+  // check was a claim. The mutation below re-instates the claim unconditionally
+  // and requires this check to go red, which is what makes it a check.
   check(
-    '... and the summary does NOT claim the shas were resolved (control)',
-    unverifiable.exit === 0 && /ok —/.test(unverifiable.out) && !/provenance sha resolving as a commit/.test(unverifiable.out),
+    '... and the summary omits the provenance claim when the shas could not be resolved (control)',
+    unverifiable.exit === 0 && /ok —/.test(unverifiable.out) && !/unresolvable beyond the recorded records/.test(unverifiable.out),
     `exit ${unverifiable.exit}`,
+  )
+  const claimAlways = mutatedGuard([['if (provenanceChecked) claims.push(', 'if (true) claims.push(']])
+  const claimFired = run(canonical('deadbee'), { guard: claimAlways, args: ['--repo', notARepo] })
+  check(
+    'MUTATION: printing the claim unconditionally turns that control red (so the control CAN fail)',
+    claimFired.exit === 0 && /unresolvable beyond the recorded records/.test(claimFired.out),
+    `exit ${claimFired.exit}`,
   )
 }
 
@@ -923,7 +944,7 @@ console.log('===========================================================')
   // explicit --repo is an instruction, so the scan root was NOT consulted — and
   // must not repeat the old sentence claiming all three candidates were tried.
   const notARepo = mkdtempSync(join(os.tmpdir(), 'factory-guard-norepo2-'))
-  MUTANT_DIRS.push(notARepo)
+  SCRATCH_DIRS.push(notARepo)
   const staleRepo = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-canon.md', 'The tree held 276 tracked `.scratch` files at deadbee.\n')
@@ -934,9 +955,23 @@ console.log('===========================================================')
     `exit ${staleRepo.exit}`,
   )
   check(
-    '... and the note no longer claims all three candidates were consulted (N3, control)',
-    staleRepo.exit === 0 && !/looked for --repo/.test(staleRepo.out),
+    '... and the note names what it did NOT consult instead of claiming a lookup order it never walked (N3, control)',
+    staleRepo.exit === 0 && /neither the scan root nor this instrument's own repository was consulted/.test(staleRepo.out),
     `exit ${staleRepo.exit}`,
+  )
+  // The mutation puts the old step-order sentence back, and the assertion above
+  // is on the live text, so this check goes red the moment the note lies again.
+  const oldNote = mutatedGuard([
+    ['so neither the scan root nor this instrument\'s own repository was consulted', "looked for --repo, then this scan root, then this instrument's own repository"],
+  ])
+  const noteFired = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-canon.md', 'The tree held 276 tracked `.scratch` files at deadbee.\n')
+  }, { guard: oldNote, args: ['--repo', notARepo] })
+  check(
+    'MUTATION: restoring the old step-order sentence turns that control red (so the control can fail)',
+    noteFired.exit === 0 && /looked for --repo/.test(noteFired.out),
+    `exit ${noteFired.exit}`,
   )
   // Control: with no --repo at all and a git-less root, the fallback still works
   // and says so — the root was not a worktree, this instrument's repository was.
@@ -952,7 +987,7 @@ console.log('===========================================================')
 }
 
 process.on('exit', () => {
-  for (const dir of MUTANT_DIRS) rmSync(dir, { recursive: true, force: true })
+  for (const dir of SCRATCH_DIRS) rmSync(dir, { recursive: true, force: true })
 })
 
 console.log()
