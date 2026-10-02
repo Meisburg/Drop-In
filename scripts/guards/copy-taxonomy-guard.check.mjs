@@ -280,7 +280,7 @@ try {
 
   // --- the instrument going blind -------------------------------------------
   reset()
-  editFile(TOUR, "export const TOUR_PROGRESS_LABEL = 'All done'", 'export const TOUR_PROGRESS_LABEL_X = \'All done\'')
+  editFile(TOUR, "export const TOUR_PROGRESS_LABEL = 'All done'", "export const TOUR_PROGRESS_LABEL_X = 'All done'")
   r = run()
   check(
     'a registered copy const that was renamed is a finding (not a silent drop)',

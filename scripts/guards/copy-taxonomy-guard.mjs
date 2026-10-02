@@ -276,7 +276,7 @@ if (!existsSync(taxonomyPath)) {
   }
   if (labels.size === 0) {
     fail(
-      `${TAXONOMY_MODULE}: ${LABEL_FUNCTION} yielded no kind word — rule 3 and rule 4 key on a kind\'s word, ` +
+      `${TAXONOMY_MODULE}: ${LABEL_FUNCTION} yielded no kind word — rule 3 and rule 4 key on the word for a kind, ` +
         'and with none the scan would match nothing in either direction',
     )
   }
@@ -380,7 +380,7 @@ for (const entry of COPY_MODULES) {
   for (const kind of missing) {
     fail(
       `${entry.module}: the declaration names the category "${kind}", which ${ALL_KINDS_CONST} does not have — ` +
-        'a category this copy names must exist in the app\'s own taxonomy',
+        'a category this copy names must be one of the kinds the app has',
     )
   }
 
