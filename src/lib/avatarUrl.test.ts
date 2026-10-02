@@ -41,36 +41,120 @@ describe('hasAvatarUrl (the one avatar presence predicate)', () => {
 
 /**
  * ⚠️ THE CALL IS PINNED HERE, AND IT HAS TO BE A SOURCE-LEVEL PIN (V28 r2 slice
- * 8a fix round 1). The behaviour legs above prove what the PREDICATE decides;
+ * 8a fix rounds 1-2). The behaviour legs above prove what the PREDICATE decides;
  * `e2e/avatar.e2e.ts`'s '' leg proves what the RENDER SITE does with an
  * empty-string avatar. Neither can distinguish "the page calls this function"
  * from "the page restates the same one-liner faithfully" — a restatement WITH
  * the empty-string clause passes every behavioural test in the suite. This
  * module's whole value is being the ONE definition, so the call itself is the
- * claim, and these legs are what checks it: the render site names the predicate,
- * and the file holds no comparison against the column at all.
+ * claim, and these legs are what checks it — over CODE, never over prose.
  *
- * Its ceiling, stated rather than implied: this reads source TEXT, so it cannot
- * see semantics. A call through an alias still passes (it IS a call), and a
- * restatement spelled without any comparison operator could escape leg 2 — but
- * that is a deliberate act, and leg 1 would still have to be deleted for the page
- * to stop calling this predicate.
+ * ⚠️ WHY BOTH LEGS READ A COMMENT-FREE VIEW, AND WHY THE EMPTY CASE IS A FINDING
+ * (fix round 2 — the round-1 legs had both holes, inside the very test that
+ * exists to catch a missing call):
  *
- * BOTH LEGS WERE MUTATION-RUN (fix round 1): restoring the pre-slice inline check
- * fails leg 1, and restoring a FAITHFUL restatement — the same test with the
- * empty-string clause put back — fails leg 2. Before this round, that faithful
- * restatement passed everything the suite had.
+ *   - A COMMENT MUST NOT SATISFY THE CALL LEG. Round 1 matched the raw text, so a
+ *     comment mentioning `hasAvatarUrl(` passed it with no call in the file; the
+ *     mutation that proves the new legs reject that is in the report.
+ *   - A NEGATIVE LEG MUST NOT PASS BY MEASURING NOTHING. A bare `not.toMatch` is
+ *     vacuously TRUE on an empty string, so an empty or broken `?raw` read would
+ *     have made "the page does not restate the check" green with nothing read —
+ *     D-030, one level down from the defect these legs exist for. Each leg
+ *     asserts BOTH sets are non-empty: the raw read and the comment-free view
+ *     (two sets, because D-030's own lesson is that an invariant at one
+ *     granularity is a claim at every other).
+ *   - BLANKING ALSO REMOVES A FALSE POSITIVE leg 2 used to have: a comment that
+ *     merely *quotes* the comparison is prose, not a restatement, and round 1's
+ *     raw-text scan forced one such comment to be reworded.
+ *
+ * CEILING, stated rather than implied: this reads source TEXT, so it cannot see
+ * semantics, and `codeOnly` is a scanner, not a parser — a REGEX LITERAL is not
+ * tracked — measured, a grep for regex-literal shapes in src/pages/ProfilePage.tsx
+ * returns none in the file this reads — and a call written through an alias still
+ * passes leg 1,
+ * which is intended: an alias call IS a call.
+ *
+ * It is deliberately NOT a copy of firstRun.test.ts's `stripComments`: that one
+ * returns a joined token stream for a purity scan and preserves string literals
+ * character for character; this one BLANKS comment spans so a pattern can be
+ * matched against code. The one-copy rule's trigger is the same expression in
+ * two files — if a third site needs a comment-free read, that is when these two
+ * become one module, and this paragraph is where the trigger is recorded.
+ *
+ * MUTATION-RUN, all in the report's fix-round sections: a FAITHFUL restatement
+ * removes the call (both legs red, round 1); a COMMENT-ONLY mention of the call
+ * does not rescue it (both legs red, round 2); an EMPTY `?raw` read is a finding
+ * rather than a green negative (both legs red, round 2).
  */
-describe('the render site CALLS this predicate (V28 r2 slice 8a fix round 1)', () => {
+describe('the render site CALLS this predicate (V28 r2 slice 8a fix rounds 1-2)', () => {
+  /**
+   * The page's source with every comment span BLANKED (replaced by spaces, line
+   * structure kept): line remarks and block comments alike, so a match can only
+   * be code. String and template literals are tracked — a `//` inside a string is
+   * not a comment — which is also why a quote character inside a comment cannot
+   * desynchronise the scan.
+   */
+  function codeOnly(source: string): string {
+    let out = ''
+    let state: 'code' | 'line' | 'block' | 'sq' | 'dq' | 'tick' = 'code'
+    for (let i = 0; i < source.length; i++) {
+      const ch = source[i]
+      const next = source[i + 1] ?? ''
+      if (state === 'line') {
+        if (ch === '\n') { state = 'code'; out += ch } else out += ' '
+        continue
+      }
+      if (state === 'block') {
+        if (ch === '*' && next === '/') { state = 'code'; out += '  '; i += 1 } else out += ch === '\n' ? ch : ' '
+        continue
+      }
+      if (state === 'sq' || state === 'dq' || state === 'tick') {
+        const closer = state === 'sq' ? "'" : state === 'dq' ? '"' : '`'
+        out += ch
+        if (ch === '\\') { out += next; i += 1 }
+        else if (ch === closer) state = 'code'
+        continue
+      }
+      if (ch === '/' && next === '/') { state = 'line'; out += '  '; i += 1; continue }
+      if (ch === '/' && next === '*') { state = 'block'; out += '  '; i += 1; continue }
+      if (ch === "'") state = 'sq'
+      else if (ch === '"') state = 'dq'
+      else if (ch === '`') state = 'tick'
+      out += ch
+    }
+    return out
+  }
+
+  const code = codeOnly(profilePageSource)
+  /** The comment-free view's non-whitespace length: the second set to keep watching. */
+  const codeLength = code.replace(/\s+/g, '').length
+
   it('the identity card calls hasAvatarUrl', () => {
-    expect(profilePageSource, 'ProfilePage.tsx must CALL hasAvatarUrl for its avatar branch').toMatch(
-      /hasAvatarUrl\(/,
-    )
+    expect(
+      profilePageSource.length,
+      'the ?raw read of ProfilePage.tsx is EMPTY — this leg would measure nothing',
+    ).toBeGreaterThan(0)
+    expect(
+      codeLength,
+      'the comment-free view is EMPTY — this leg would measure nothing',
+    ).toBeGreaterThan(0)
+    expect(
+      code,
+      'ProfilePage.tsx must CALL hasAvatarUrl for its avatar branch (a mention in a comment is not a call)',
+    ).toMatch(/hasAvatarUrl\(/)
   })
 
   it('and never compares the column inline — the restatement this module exists to stop', () => {
     expect(
-      profilePageSource,
+      profilePageSource.length,
+      'the ?raw read of ProfilePage.tsx is EMPTY — a negative assertion over nothing is vacuously true',
+    ).toBeGreaterThan(0)
+    expect(
+      codeLength,
+      'the comment-free view is EMPTY — a negative assertion over nothing is vacuously true',
+    ).toBeGreaterThan(0)
+    expect(
+      code,
       'ProfilePage.tsx must not restate the avatar-presence test inline',
     ).not.toMatch(/avatar_url\s*(===|!==|==|!=)/)
   })
