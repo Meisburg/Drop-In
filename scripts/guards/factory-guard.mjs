@@ -98,8 +98,13 @@
 //                         and a rule that must infer an association it cannot
 //                         see will keep moving its hole. The price is DECLARED
 //                         and paid rather than exempted: a block that QUOTES a
-//                         bad transcript fires. A scan that read no fenced block
-//                         is a finding, never a pass (D-030).
+//                         bad transcript fires — and is absorbed only by the
+//                         RECORDED baseline (D-033), which a report cannot
+//                         forge: the key carries the FILE, so the same text in a
+//                         new file, or a second occurrence in the same file,
+//                         still fires. The run prints the baseline's size. A scan
+//                         that read no fenced block is a finding, never a pass
+//                         (D-030).
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -1342,6 +1347,14 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-8a-verify-3.md::git diff ae578c2..HEAD", 3],
   [".scratch/v28/reports/slice-8a-verify-3.md::git ls-files .scratch/v28/reports/ | wc", 1],
   [".scratch/v28/reports/slice-8a-verify-3.md::git rev-parse --short HEAD", 1],
+  // V28 r2 slice 8b fix round 2 (D-033): a full re-derivation — the map emptied,
+  // the instrument run over this corpus, its own matches recorded. It reproduced
+  // this map EXACTLY (435 keys, 669 occurrences, 0 keys lost, 0 shared counts
+  // moved) and added the two below, which are slice 8b's own review report
+  // quoting a run line against the moving revision as its evidence. Derived,
+  // never hand-added; the two entries are the entire delta.
+  [".scratch/v28/reports/slice-8b-review.md::HEAD **exit 1**", 1],
+  [".scratch/v28/reports/slice-8b-review.md::0, HEAD", 1],
 ])
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)
@@ -1447,6 +1460,7 @@ function checkReportHeadCounts() {
   }
 
   const seen = new Map()
+  let bareHeadAbsorbed = 0
   for (const path of files) {
     const rel = relative(ROOT, path)
     const lines = readFileSync(path, 'utf8').split('\n')
@@ -1466,6 +1480,8 @@ function checkReportHeadCounts() {
             'no-bare-head-count',
             `${rel}:${index + 1}: a count is resolved through bare HEAD and cannot be reproduced — name the commit it was measured at: ${JSON.stringify(text)}`,
           )
+        } else {
+          bareHeadAbsorbed += 1
         }
       }
       for (const pattern of [COUNT_AT_SHA, COUNT_CMD_SHA]) {
@@ -1494,6 +1510,11 @@ function checkReportHeadCounts() {
       }
     }
   }
+  // LOST COVERAGE is a PRINTED NUMBER, not a claim: a baselined key that no
+  // longer matches is a stale record, and a record that quietly stops matching
+  // would make this guard green on a smaller corpus. The clause appears only when
+  // the number is non-zero, exactly like the unresolvable-sha note beside it.
+  console.log(`  note — no-bare-head-count: ${bareHeadAbsorbed} of the ${BARE_HEAD_BASELINE_SIZE} recorded occurrence(s) matched this scan (LOST COVERAGE ${BARE_HEAD_BASELINE_SIZE - bareHeadAbsorbed})`)
   if (repo) {
     const label = relative(ROOT, repo)
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
@@ -1570,12 +1591,16 @@ function checkTranscripts(files) {
  * vocabulary (one…twelve) is a finding, never a skip; a range with no count
  * beside it is not counted as checked.
  *
- * THE PRICE, DECLARED (D-032). A fenced block that QUOTES a bad transcript now
- * fires. That is a COST, not a hole: the old quotation exemption was undeclared
- * until a reviewer constructed the escape out of it, whereas a quotation firing
- * is visible in the run's own output and can be reported. The alternative — a
- * structural exemption for "this block is a quotation" — is the same escape one
- * level over, because a fabricator writes the exempt shape.
+ * THE PRICE, AND HOW IT IS PAID (D-032 → D-033). A fenced block that QUOTES a
+ * bad transcript fires. That price is real — a lane report must quote a bad block
+ * to prove the rule catches it — and D-032 first took it as a bare COST, which
+ * came due unpayable: the two quotations in this repo's own evidence trail would
+ * have reddened the gate forever, and hand-editing another lane's report is
+ * forbidden. D-033 rules the payable form: a RECORDED BASELINE of the quotation
+ * sites, `file::line-text` with a count, re-derived and never hand-added, printed
+ * with its size on every run. The alternative — an exemption for "this block is a
+ * quotation" — is forgeable, because a fabricator writes the exempt shape. A
+ * baseline is not: a new file quoting the same text is a new key and still fires.
  *
  * CEILING, named rather than implied — the exact shapes:
  *   - ONE shape is read: a `✓ A–B` range beside an `all <count>` on the same
@@ -1587,11 +1612,13 @@ function checkTranscripts(files) {
  *     block IS read — over-reading is the safe direction, and tightening the
  *     regex to `^ {0,3}` would open exactly the escape this sentence would then
  *     have to declare (a four-space-indented fence around a fabricated
- *     transcript). An indented run with no fence marker in it is not read; this
- *     corpus holds a genuine range/count contradiction in one
+ *     transcript). An indented run with NO fence marker in it is outside the
+ *     scan set — DECLARED, per D-033 item 3, because it is a scope boundary and
+ *     not an accident: it is also the second way a lane report can clear a
+ *     quotation, by indenting it, at the cost of no longer being a fenced block.
+ *     This corpus holds a genuine range/count contradiction in one
  *     (`.scratch/v28/reports/slice-8a-verify-4.md:122`, an indented QUOTATION of
- *     the seed), and reading it would fire on a quotation that the fenced rule's
- *     own declared cost does not cover. Declared, not hidden;
+ *     the seed). Declared, not hidden;
  *   - a block with NO fence at all (prose, a table cell, an inline code span) is
  *     not read: the rule reads fenced blocks, and an unfenced `✓ A–B … (all N)`
  *     line escapes it. That is the boundary the next reader should attack;
@@ -1600,14 +1627,54 @@ function checkTranscripts(files) {
  *   - nothing is re-run: the block's own arithmetic is checked, not whether the
  *     command it names would reproduce its lines;
  *   - the size printed each run is what was READ, and a zero says in words that
- *     NOTHING was compared, while the guard's claim list names only checks that ran.
+ *     NOTHING was compared, while the guard's claim list names only checks that ran;
+ *   - the QUOTATION BASELINE absorbs only sites RE-DERIVED from the instrument's
+ *     own matches, keyed `file::line-text` with a count. A new file quoting the
+ *     same text, or a second occurrence in the same file, still fires.
  */
 const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]+|\d+)\b/gi
+
+/**
+ * THE QUOTATION BASELINE (D-033). A lane report must be able to QUOTE a bad
+ * transcript to prove the rule fires — that is the evidence trail, and a rule may
+ * not impose a cost its own evidence trail cannot pay. D-032 first chose a
+ * declared cost for that, and the cost came due unpayable: hand-editing another
+ * lane's report is forbidden, so the gate would be red forever. D-033 rules the
+ * absorber instead: a RECORDED BASELINE, exactly `no-bare-head-count`'s form.
+ *
+ * WHY A RECORD AND NOT A RULE ABOUT WHAT A QUOTATION LOOKS LIKE. The exemption
+ * D-032 removed was a SYNTAX a fabricator can write — any block prefixed `>` was
+ * exempt, so the CONTENT chose whether the rule looked. A baseline is not
+ * forgeable from a report: the key is `file::the offending line's text`, counted,
+ * so a NEW report quoting the SAME text is a NEW key and still fires, and a
+ * second occurrence of a recorded one in the same FILE exceeds its recorded count
+ * and still fires. Producing a baselined citation requires editing THIS guard,
+ * which is a reviewed diff.
+ *
+ * RE-DERIVED, NEVER HAND-ADDED, FORWARD-ONLY. The map is the instrument's own
+ * matches, recorded; the run prints its size every time and says how many of the
+ * recorded sites it saw, so lost coverage is a printed number rather than a
+ * claim. A site leaves the map only by re-derivation — never by typing an entry
+ * away, which is the mechanic `no-bare-head-count` and `UNRESOLVABLE_SHA_BASELINE`
+ * already use (D-021 item 2 / D-023).
+ */
+// Re-derived from THIS instrument's own matches (2026-10-02, slice 8b fix round
+// 2): the emptied-map run reported exactly these two sites, and the SAME
+// derivation run twice produced byte-identical output. LOST COVERAGE 0 — every
+// recorded key still matches — and the two entries are the two lane-report
+// quotations D-032's cost fell on, absorbed rather than paid by editing a report.
+const TRANSCRIPT_QUOTATION_BASELINE = new Map([
+  [".scratch/v28/reports/slice-8a-verify-5.md::> \u2713 7\u201313 zz-spec.e2e.ts (all six legs)", 1],
+  [".scratch/v28/reports/slice-8b-review.md::\u2713 7\u201313 zz-spec.e2e.ts (all six legs)", 1],
+])
+const TRANSCRIPT_QUOTATION_BASELINE_SIZE = [...TRANSCRIPT_QUOTATION_BASELINE.values()].reduce((sum, n) => sum + n, 0)
 
 function checkRawBlockSummaries(files) {
   const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 }
   let blocks = 0
   let ranges = 0
+  const seen = new Map()
+  let absorbed = 0
   for (const path of files) {
     const rel = relative(ROOT, path)
     const lines = readFileSync(path, 'utf8').split('\n')
@@ -1640,10 +1707,21 @@ function checkRawBlockSummaries(files) {
         // the first pair's count and published a contradiction the line did not
         // contain.
         for (const pair of lines[i].matchAll(STEP_RANGE_COUNT)) {
+          // The key is the FILE plus the line's own text, so a baselined site
+          // cannot be reached by writing the same text into a new file (D-033).
+          const key = `${rel}::${lines[i].trim()}`
+          const seenCount = (seen.get(key) ?? 0) + 1
+          seen.set(key, seenCount)
+          const baselined = seenCount <= (TRANSCRIPT_QUOTATION_BASELINE.get(key) ?? 0)
           const span = Number(pair[2]) - Number(pair[1]) + 1
           const word = pair[3].toLowerCase()
           const count = /^\d+$/.test(word) ? Number(word) : WORDS[word]
           if (count === undefined) {
+            ranges += 1
+            if (baselined) {
+              absorbed += 1
+              continue
+            }
             fail(
               'transcript-summary-agrees',
               `${rel}:${i + 1}: a fenced block's summary line states a count this rule cannot resolve to a number: "(all ${word}" — a range SEEN and not compared is a finding, not a pass`,
@@ -1652,6 +1730,10 @@ function checkRawBlockSummaries(files) {
           }
           ranges += 1
           if (count === span) continue
+          if (baselined) {
+            absorbed += 1
+            continue
+          }
           fail(
             'transcript-summary-agrees',
             `${rel}:${i + 1}: a fenced block's summary line covers ${span} entr${span === 1 ? 'y' : 'ies'} (${pair[1]}–${pair[2]}) but states "(all ${word}" — a captured transcript must reproduce its own arithmetic`,
@@ -1674,6 +1756,7 @@ function checkRawBlockSummaries(files) {
   }
 
   console.log(`  note — transcript-summary-agrees: ${blocks} fenced block(s) read, ${ranges} range summar${ranges === 1 ? 'y' : 'ies'} checked${ranges === 0 ? ' — NOTHING was compared: no fenced block in this scan states a step range beside its count' : ''}`)
+  console.log(`  note — transcript-summary-agrees: quotation baseline holds ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} recorded site(s), re-derived and never hand-added; a NEW site, or a second occurrence of a recorded one in the same file, is a finding${absorbed === TRANSCRIPT_QUOTATION_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} matched this scan (LOST COVERAGE ${TRANSCRIPT_QUOTATION_BASELINE_SIZE - absorbed})`}`)
   return ranges
 }
 
@@ -1739,7 +1822,7 @@ if (!findings.length) {
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
   if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
   if (transcriptsChecked) claims.push('every pasted provenance transcript that cites a `.scratch/` file still carries the sha it names (or is marked historical; other paths and other rules are ceilings)')
-  if (rawSummaryLines) claims.push("every step-range-and-count line read inside a fenced block agrees with its own count (that one shape only, and a block that QUOTES a bad transcript fires too — see transcript-summary-agrees's ceiling)")
+  if (rawSummaryLines) claims.push("every step-range-and-count line read inside a fenced block agrees with its own count (that one shape only; a block that QUOTES a bad transcript fires unless its site is one of the recorded quotation baseline's, and a NEW site or a second occurrence in the same file still fires — see transcript-summary-agrees's ceiling)")
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')

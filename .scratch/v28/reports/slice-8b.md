@@ -709,3 +709,149 @@ parenthetical, is enough — indented code is outside this rule's scan set), and
 **The build-law half of this rule is proven at the committed state**: `factory-guard.check.mjs` 112/112 (exit
 0), `trailing-newline-guard.check.mjs` 10/10, `lib-sibling-guard.check.mjs` 8/8; the reviewer's seed exits 0
 on the pre-change guard and 1 here; eleven separation attempts are all CAUGHT.
+
+---
+
+# FIX ROUND 2 — the declared cost becomes PAYABLE: a recorded baseline (D-033)
+
+**This section SUPERSEDES fix round 1's handover.** Round 1 ended with `npm run verify` red on four findings, all
+quotations inside two lane reports, and stopped there because hand-editing a lane report is forbidden. D-033 rules
+that a declared cost which the evidence trail cannot pay is a hole with better manners, and names the payable
+form: **a recorded baseline, which a report cannot forge** — not a rule about what a quotation looks like, which
+the content can write. The gate is green again and nothing in a lane report was edited.
+
+## 1. `transcript-summary-agrees` gets the same absorber as every other rule in this suite
+
+Copied from `no-bare-head-count`'s form, mechanism and all: a committed map of `file::line-text → count`,
+re-derived from the instrument's own matches, never hand-added, printing its size on every run, and
+**forward-only** — a new key, or a second occurrence of a recorded one in the same file, exceeds the record and
+still fires. The run prints, verbatim:
+
+```
+  note — transcript-summary-agrees: quotation baseline holds 2 recorded site(s), re-derived and never hand-added;
+         a NEW site, or a second occurrence of a recorded one in the same file, is a finding
+  note — transcript-summary-agrees: quotation baseline holds … — 1 of the 2 matched this scan (LOST COVERAGE 1)
+         [that clause appears only when a recorded site stops matching; on this repo it is ABSENT, i.e. 0]
+```
+
+The two entries, derived by blanking the map in a throwaway copy and recording the instrument's own findings:
+
+    // transcript-summary-agrees: 2 distinct key(s), 2 occurrence(s)
+      [".scratch/v28/reports/slice-8a-verify-5.md::> ✓ 7–13 zz-spec.e2e.ts (all six legs)", 1],
+      [".scratch/v28/reports/slice-8b-review.md::✓ 7–13 zz-spec.e2e.ts (all six legs)", 1],
+
+**Derived TWICE, byte-identical** (`diff -q` → no difference), at both the middle and the final state of this
+round. The derivation is a command, not a promise: `node /tmp/derive.mjs <rule> <mapVar>` blanks the named map in
+a copy of the guard, runs that copy over the repo, and prints ready-to-paste entries.
+
+## 2. UNFORGEABILITY — proven, and it is the requirement that decides the ruling
+
+**The seed: a NEW file quoting the SAME text still FIRES.** A throwaway root holding the recorded site AND a new
+file (`zz-new-quoter.md`) with the identical line:
+
+```
+$ node scripts/guards/factory-guard.mjs --root /tmp/forg --repo .
+  note — transcript-summary-agrees: quotation baseline holds 2 recorded site(s) … — 1 of the 2 matched this scan (LOST COVERAGE 1)
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz-new-quoter.md:4: a fenced block's summary line
+          covers 7 entries (7–13) but states "(all six" …
+FAIL — 1 factory finding(s).        # the recorded file is ABSENT from the findings; only the newcomer fires
+```
+
+**And the mutation proves the FILE in the key is what does it**: an absorber keyed on the TEXT alone
+(`[...keys()].some((k) => k.endsWith('::' + line))`) absorbs the newcomer too and the seed PASSES — so the check
+can fail, and the property it asserts is the mechanism, not the wording. Harness, verbatim:
+
+```
+  ✓ a RECORDED quotation site is absorbed — the baseline absorbs it, not its shape
+  ✓ MUTATION: with no absorber the recorded site goes RED (exit 0 -> 1 — a DETECTION flip)
+  ✓ UNFORGEABILITY: a NEW file quoting the SAME text still FIRES, and the recorded file does not
+  ✓ MUTATION: an absorber keyed on the TEXT alone lets that newcomer pass (exit 1 -> 0) — the FILE in the key is
+    what makes the record unforgeable
+  ✓ a SECOND occurrence of a recorded line, in the same file, is a finding (the baseline records a COUNT)
+  ✓ MUTATION: a count-free lookup absorbs the second occurrence too (exit 1 -> 0 — a DETECTION flip)
+  ✓ the DECLARED boundary: an INDENTED fabricated transcript is OUTSIDE the scan set (no finding)
+  ✓ MUTATION: reading unfenced content makes that indented fabrication FIRE (exit 0 -> 1) — the fenced boundary is
+    what keeps it out
+```
+
+`factory-guard.check.mjs`: **112 → 120 checks**, every one of the six new checks with a mutation whose **exit code
+moves**.
+
+## 3. The indented-code boundary, DECLARED — with its own seed
+
+D-033 item 3 asks for the scope boundary to be stated where the rule states its scope, not implied. It is now in
+the ceiling list in those words: *this rule reads FENCED blocks; an indented code block is outside its scan set —
+which is also the second way a lane report can clear a quotation, by indenting it, at the cost of no longer being
+a fenced block.* The seed (indented, so it is not inside a fence itself — `FENCE-OPEN`/`FENCE-CLOSE` stand in for
+the fence markers, or this report would be displaying a block it reads):
+
+    # zz indented
+    FENCE-OPEN
+    no step ranges in this one
+    FENCE-CLOSE
+
+        proof — raw:
+
+        ✓ 7–13 zz-spec.e2e.ts (all six legs)
+
+→ **exit 0, `1 fenced block(s) read`, no finding.** Its mutation reads unfenced content and the same seed goes RED
+(`covers 7 entries`), so the boundary is load-bearing rather than incidental.
+
+## 4. `no-bare-head-count` — RE-DERIVED, and it reproduced itself exactly
+
+The map was emptied in a throwaway copy, the instrument run over this corpus, its own matches recorded, and the
+result compared to the committed map:
+
+```
+committed: 437 key(s), 671 occurrence(s)
+derived  : 437 key(s), 671 occurrence(s)
+LOST coverage (baselined key no longer matched): 0
+GAINED (new key): 0
+COUNT CHANGED: 0
+order-insensitive equality with the committed map: true
+```
+
+Derived **twice, byte-identical**. The committed map now equals a fresh derivation, so **lost coverage is 0 and
+no shared count moved** — nothing was typed away and nothing was quietly dropped. (For the record, the
+intermediate state was 435 keys / 669 occurrences + the two new `slice-8b-review.md` entries; the count grew to
+**671** as printed, which is `669 + 2`.)
+
+**One addition beyond the literal ask, declared:** `no-bare-head-count`'s run now also prints
+`671 of the 671 recorded occurrence(s) matched this scan (LOST COVERAGE 0)`, mirroring the clause
+`UNRESOLVABLE_SHA_BASELINE` already prints one rule over. Without it, "lost coverage" is a claim made in a report
+rather than a number the run produces — the shape D-030 exists to catch.
+
+## RAW VERIFY — `npm run verify` is exit 0
+
+```
+$ npm run verify
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+ oxlint: 81 warning lines, 0 errors
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+  note — no-bare-head-count: baseline holds 671 recorded occurrence(s) …
+  note — transcript-summary-agrees: quotation baseline holds 2 recorded site(s), re-derived and never hand-added …
+  note — no-bare-head-count: 671 of the 671 recorded occurrence(s) matched this scan (LOST COVERAGE 0)
+GUARDS: PASS — all deterministic rules hold.
+VERIFY EXIT=0
+$ bash scripts/guards/run-all.sh
+GUARDS: PASS — all deterministic rules hold.        RUNALL EXIT=0
+$ bash scripts/steering-lint.sh
+PASS — steering layer is clean.                      EXIT=0
+```
+
+Every number above is re-measured in this round; the two baseline sizes are quoted **as the guard prints them**,
+never as prose.
+
+## Fix-round-2 risks
+
+- **The absorber is a record, so it must be re-derived when the corpus's quotations change.** If a lane report
+  re-words a recorded quotation the old entry goes stale and the run prints `LOST COVERAGE 1`; the remedy is a
+  re-derivation, never a hand-edit of an entry. The clause is printed for exactly that reason.
+- **The count is per (file, line-text), not per line number**: a recorded line that MOVES inside its file stays
+  absorbed (the key has no line number), which is deliberate — a lane report that grows a paragraph must not
+  redden the gate — and a second occurrence still fires.
+- **The indented boundary remains a boundary**: a fabricated transcript written as indented code is not read by
+  this rule. That is declared in the ceiling, is now seeded in the harness, and is the one shape the next reader
+  should attack if they want a fifth attempt at this rule.

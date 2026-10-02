@@ -1427,6 +1427,120 @@ console.log('===========================================================')
     `exit ${noFenceMiss.exit}`,
   )
 
+  // THE QUOTATION BASELINE (D-033). A lane report must be able to QUOTE a bad
+  // transcript to prove the rule catches it, and hand-editing another lane's
+  // report is forbidden — so the absorber is a RECORDED BASELINE (`file::line-text`
+  // with a count), re-derived and never hand-added, and NOT a rule about what a
+  // quotation looks like. The two properties that separate a record from a syntax
+  // are below: a recorded site is absorbed, and the SAME text written into a NEW
+  // file is still a finding. A mutation that leaves the seed red proves nothing,
+  // so each check here asserts the verdict MOVES.
+  const BASELINED_PATH = '.scratch/v28/reports/slice-8a-verify-5.md'
+  const BASELINED_LINE = '> ✓ 7–13 zz-spec.e2e.ts (all six legs)'
+  const baselinedSeed = `# 8a verify — the round-5 BLK-A quotation\n\n\`\`\`\n${BASELINED_LINE}\n\`\`\`\n`
+  const absorbedRun = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(BASELINED_PATH, baselinedSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'a RECORDED quotation site is absorbed — the baseline absorbs it, not its shape',
+    absorbedRun.exit === 0 && /quotation baseline holds 2 recorded site\(s\)/.test(absorbedRun.out),
+    `exit ${absorbedRun.exit}`,
+  )
+  const noAbsorber = mutatedGuard([['const baselined = seenCount <= (TRANSCRIPT_QUOTATION_BASELINE.get(key) ?? 0)', 'const baselined = false']])
+  const absorbedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(BASELINED_PATH, baselinedSeed)
+  }, { guard: noAbsorber, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: with no absorber the recorded site goes RED (exit 0 -> 1 — a DETECTION flip)',
+    absorbedMiss.exit === 1 && /covers 7 entries/.test(absorbedMiss.out),
+    `exit ${absorbedMiss.exit}`,
+  )
+
+  // UNFORGEABILITY — the requirement that decides whether D-033 was honoured. A
+  // baseline entry must NOT be reachable by writing a file: the key carries the
+  // FILE, so the same text in a new file is a new key and still fires.
+  const newcomerSeed = '# a NEW report quoting the same text\n\n```\n' + BASELINED_LINE + '\n```\n'
+  const forged = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(BASELINED_PATH, baselinedSeed)
+    ctx.write('.scratch/v28/reports/zz-new-quoter.md', newcomerSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'UNFORGEABILITY: a NEW file quoting the SAME text still FIRES, and the recorded file does not',
+    forged.exit === 1 && /zz-new-quoter\.md:4: a fenced block's summary line covers 7 entries/.test(forged.out) && !/slice-8a-verify-5\.md:\d+: a fenced block's summary line covers/.test(forged.out),
+    `exit ${forged.exit}`,
+  )
+  // The mutation is the failure mode D-033 names: an absorber keyed on the TEXT
+  // alone, so the record becomes reachable by writing that text into any file.
+  const forgeableKey = mutatedGuard([
+    [
+      'const baselined = seenCount <= (TRANSCRIPT_QUOTATION_BASELINE.get(key) ?? 0)',
+      'const baselined = [...TRANSCRIPT_QUOTATION_BASELINE.keys()].some((k) => k.endsWith(`::${lines[i].trim()}`))',
+    ],
+  ])
+  const forgedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(BASELINED_PATH, baselinedSeed)
+    ctx.write('.scratch/v28/reports/zz-new-quoter.md', newcomerSeed)
+  }, { guard: forgeableKey, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: an absorber keyed on the TEXT alone lets that newcomer pass (exit 1 -> 0) — the FILE in the key is what makes the record unforgeable',
+    forgedMiss.exit === 0,
+    `exit ${forgedMiss.exit}`,
+  )
+
+  // The count half of the record: a SECOND occurrence in the SAME file exceeds
+  // what was recorded and still fires.
+  const twiceSeed = `# 8a verify — the same quotation twice\n\n\`\`\`\n${BASELINED_LINE}\n\`\`\`\n\n\`\`\`\n${BASELINED_LINE}\n\`\`\`\n`
+  const twice = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(BASELINED_PATH, twiceSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'a SECOND occurrence of a recorded line, in the same file, is a finding (the baseline records a COUNT)',
+    twice.exit === 1 && /covers 7 entries/.test(twice.out),
+    `exit ${twice.exit}`,
+  )
+  const uncounted = mutatedGuard([['const baselined = seenCount <= (TRANSCRIPT_QUOTATION_BASELINE.get(key) ?? 0)', 'const baselined = TRANSCRIPT_QUOTATION_BASELINE.has(key)']])
+  const twiceMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(BASELINED_PATH, twiceSeed)
+  }, { guard: uncounted, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: a count-free lookup absorbs the second occurrence too (exit 1 -> 0 — a DETECTION flip)',
+    twiceMiss.exit === 0,
+    `exit ${twiceMiss.exit}`,
+  )
+
+  // THE INDENTED-CODE BOUNDARY, DECLARED (D-033 item 3). This rule reads FENCED
+  // blocks; an indented code block is outside its scan set. That is also how a
+  // lane report can clear a quotation WITHOUT a baseline entry — by indenting it,
+  // at the cost of no longer being a fenced block. The seed carries a benign fence
+  // so the empty-block tripwire is not the thing under test.
+  const indentedSeed =
+    '# zz indented\n\n```\nno step ranges in this one\n```\n\n    proof — raw:\n\n    ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
+  const indentedOutside = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', indentedSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'the DECLARED boundary: an INDENTED fabricated transcript is OUTSIDE the scan set (no finding)',
+    indentedOutside.exit === 0 && /1 fenced block\(s\) read/.test(indentedOutside.out),
+    `exit ${indentedOutside.exit}`,
+  )
+  const readsEverything = mutatedGuard([['for (const block of fenced) {', 'for (const block of [{ content: 0, end: lines.length }]) {']])
+  const indentedMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', indentedSeed)
+  }, { guard: readsEverything, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: reading unfenced content makes that indented fabrication FIRE (exit 0 -> 1) — the fenced boundary is what keeps it out',
+    indentedMiss.exit === 1 && /covers 7 entries/.test(indentedMiss.out),
+    `exit ${indentedMiss.exit}`,
+  )
+
   // THE REPORT/BRIEF SCAN'S OWN ZERO CASE (D-030). The scan used to print
   // "unchecked here" and exit 0 when the root carried no report or brief, so a
   // run that read nothing reported health over four rules (the bare-HEAD counts,
