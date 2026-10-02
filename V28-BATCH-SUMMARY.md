@@ -1,14 +1,18 @@
 # V28 — The First Run (card-by-card onboarding) — summary for product review
 
 **Bottom line:** when a new parent signs up, they now walk a card-by-card setup
-(account → name → kids → photo → area), can leave and come back without losing their
-place, and land on something real near them. Built, gated, and verified end to end on a
-branch. **Not in production.** A human playtest then changed the desired shape — that new
-direction is written up below, **decided but not yet built**.
+(account → name → kids → area), can leave and come back without losing their place, and
+finish on a tour of the app itself. Built, gated, and verified end to end on a branch.
+**Not in production.** A human playtest changed the desired shape mid-batch — that second
+shape is written up in §5, and **it is built too** (V28 r2, the second half of this
+batch). The run this summary's §1 now describes is r2's; the r1 shape it replaced is
+named where each difference lands.
 
 - Base: `e2570c9` (== `origin/master`, the V27 tip)
-- Branch: `Meisburg/onboarding` — pushed; **86 commits**
-- Size: **96 files changed, +14561 / −2158**
+- Branch: `Meisburg/onboarding` — pushed; **361 commits** (measured 2026-10-02 at
+  `1effd0a`; this line carried an r1-era snapshot of 86, and a live count moves with
+  every commit — run `git rev-list --count e2570c9..HEAD`)
+- Size: **249 files changed, +56422 / −2443** (same measurement, same caveat)
 - **Zero migrations** — this batch changes no schema and touches no data model
 - Run it: a Vercel **preview** deployment (production is untouched). It is behind Vercel
   Deployment Protection and is reached with a **bypass link** — ask Jon. The secret is
@@ -23,11 +27,16 @@ direction is written up below, **decided but not yet built**.
 | 1 | **Create your account** — email + password (Google also available) | `/login` | yes |
 | 2 | **What should we call you?** — first + last name | `/onboarding` | **yes** |
 | 3 | **Who's coming?** — kid first name + age, repeatable | `/onboarding` | skippable |
-| 4 | **Add a photo** — the parent's own photo | `/onboarding` | skippable |
-| 5 | **Where do you live?** — home address (ZIP as fallback) + radius | `/onboarding` | **yes** |
-| ✓ | **You're all set** — a few real places near you | `/onboarding` | the ending |
+| 4 | **Where do you live?** — home address (ZIP as fallback), a map, and the radius | `/onboarding` | **yes** |
+| ✓ | **How Drop In works** — the four tabs and the centre Post action | `/onboarding` | the ending |
 
-Each card is labelled `N of 5` so the parent knows how much is left.
+Each card is labelled `N of 4` so the parent knows how much is left.
+
+⚠️ **The row that moved:** r1 built a FIVE-card run, with a standalone **Add a photo**
+card as card 4 (`4 of 5`) and an ending card titled **You're all set — a few real places
+near you**. V28 r2 deleted the photo card (the photo now rides on the name card) and
+replaced the places ending with the tour. The three claims above were all false at
+`8d1170d` and were corrected in place by slice 8a.
 
 **The thing that makes this batch matter:** the parent's location is no longer a gate at
 the door. Before V28, a parent with no home ZIP was bounced into setup and could not use
@@ -45,12 +54,14 @@ second device behaves the same way. The accepted cost is up to two extra taps.
 ## 2. What shipped (grouped)
 
 1. **The first-run model** — `src/lib/firstRun.ts`: which card comes next for a given
-   parent, which cards are skippable, the `N of 5` progress label. Pure functions, sibling
+   parent, which cards are skippable, the `N of 4` progress label. Pure functions, sibling
    test, no React.
-2. **The cards** — `FirstRunCard` (a shared, presentation-only shell) and the five cards,
+2. **The cards** — `FirstRunCard` (a shared, presentation-only shell) and the four cards,
    with their words in a module (`firstRunCopy.ts`) rather than hard-coded per screen.
-3. **The finish card** — `FinishRunCard` + real nearby places, distance-ranked, up to
-   three, with each place's hours.
+3. **The ending card** — `HowItWorksCard` + `src/lib/firstRunTour.ts`: one line per nav
+   control, carrying the measurements each line has to pass. (r1 shipped `FinishRunCard` +
+   real nearby places, distance-ranked, up to three, with each place's hours; V28 r2
+   replaced it, because the list promised content an empty day cannot show.)
 4. **The gate moved to the writes** — posting and RSVPing now ask for a location in place
    (`LocationRequiredNotice`), including the feed's "nothing nearby" state.
 5. **"Has a home ZIP" defined once** — `hasHomeZip()` in `src/lib/homeZip.ts`, used at
@@ -90,7 +101,9 @@ hold:**
 
 - Purpose is **launch prep**: inviting a first cohort. Not a growth experiment.
 - The main job is **"learn about you, then land on something real near you."**
-- **Name and location are required; kids and photo are skippable; the account is not.**
+- **Name and location are required; kids and the photo are optional; the account is not.**
+  (Kids is the only card that carries a Skip control; since r2 the photo is not a card at
+  all — it rides on the name card and never blocks Continue.)
 - The first run renders **bare** — no navigation, no prompts fighting for attention.
 - **Notifications stay owned by the existing push prompt**; the first run does not
   compete with it.
@@ -100,7 +113,7 @@ hold:**
 - **The bio drops out of the first run.** It stays editable on the profile.
 - Kids are **first name + age only** — a privacy choice, never a full identity.
 
-**The playtest changed the following** (decided, **not yet built** — see §5):
+**The playtest changed the following** (decided, and **all of it BUILT in V28 r2** — see §5):
 
 - The standalone **photo card goes away**; the parent's photo moves onto the **name card**.
 - The **finish card's "pick a place" list goes away.**
@@ -110,25 +123,29 @@ hold:**
 
 ---
 
-## 5. Decided but not built (the next batch)
+## 5. Decided by the playtest — BUILT in V28 r2
 
 **The corrected run:**
 
 ```
-1 of 5   Create your account       email + password
-2 of 5   What should we call you?  first, last, YOUR photo
-3 of 5   Who's coming?             kid name + age, kid photo (optional)
-4 of 5   Where do you live?        address + radius + MAP
+1 of 4   Create your account       email + password
+2 of 4   What should we call you?  first, last, YOUR photo
+3 of 4   Who's coming?             kid name + age, kid photo (optional)
+4 of 4   Where do you live?        address + radius + MAP
 All done How Drop In works         Drop Ins / the + button / Places / Inbox
          → into the app
 ```
 
-The final card is the **app tour**, because nothing like it exists today: after onboarding
-a brand-new parent was dropped into a four-tab app with no explanation of what the tabs
-are for. It explains *Drop Ins = what's near you · the + = post your own · Places = where
-you could host · Inbox = message other parents · Profile = you.*
+The final card is the **app tour**, because nothing else explained the app: after
+onboarding a brand-new parent was dropped into a four-tab app with no explanation of what
+the tabs are for. It explains *Drop Ins = what's near you · the + = post your own · Places
+= where you could host · Inbox = message other parents · Profile = you.* **It ships now**
+(`src/lib/firstRunTour.ts`; the product packet's §3 carries its exact words and the four
+measurements every line has to pass).
 
-**Two copy defects found by reading the screen** (real, small, unfixed):
+**Two copy defects found by reading the screen** (real, small — **both fixed since**,
+measured 2026-10-02: the taken-name message no longer names a middle-name field, and the
+name card's body no longer says "A first name is plenty"):
 1. On a taken display name the app advises *"try adding a middle name or initial"* — and
    **no such field exists.**
 2. The name card says *"A first name is plenty"* directly above a **Last name** field.
