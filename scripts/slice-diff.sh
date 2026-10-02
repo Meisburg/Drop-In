@@ -9,20 +9,28 @@
 # CHOOSING the base. So this tool does not take a freely-typed base. It takes a
 # slice name and reads the base from the ledger's `dispatched (base <sha>)` line,
 # which is written at dispatch time and therefore records what was true then.
+#
+# WHAT DOES NOT COUNT AS THAT LINE. A FIX-ROUND dispatch line also says
+# `dispatched (base <sha>)`, and its base is the state the fix round started from
+# -- a commit AFTER the slice's implementation. Resolving a closed slice to a
+# fix-round base silently hides the slice's own work behind later rounds, so this
+# tool refuses when the only recorded base sits on a fix-round line. A WRONG BASE
+# IS WORSE THAN A REFUSAL, and refusing is not guessing.
+#
 # It REFUSES rather than guessing when the ledger records no base for the slice,
 # and it REFUSES rather than choosing when the ledger records more than one.
 #
 # USAGE
 #   scripts/slice-diff.sh <slice-id> [-- <path>...]
 #
-#   <slice-id>    the token after `Slice ` in the ledger, e.g. 6c, 8a, 8b.
+#   <slice-id>    the token after `Slice ` in the ledger, e.g. 1, 3, 6c, 8a, 8b.
 #   -- <path>...  optional pathspecs; the diff is restricted to them.
 #
 # It prints the resolved range (`<base>..<tip>`) in its header, so a wrong base is
 # visible instead of silent.
 #
-# Exit: 0 = diff printed, 1 = no base recorded (or ambiguous), 2 = usage, 3 = base
-#       does not resolve to a commit in this repository.
+# Exit: 0 = diff printed, 1 = no base recorded (or only a fix-round base, or
+#       ambiguous), 2 = usage, 3 = base does not resolve to a commit here.
 
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -30,7 +38,7 @@ cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 LEDGER="${SLICE_DIFF_LEDGER:-.scratch/v28/ledger.md}"
 
 usage() {
-  sed -n '/^# USAGE$/,/^# Exit:/p' "$0" | sed 's/^# \{0,1\}//'
+  awk '/^# USAGE$/{on=1} on && /^[^#]/{exit} on{sub(/^# ?/, ""); print}' "$0"
 }
 
 if [ -z "${1:-}" ]; then
@@ -40,6 +48,7 @@ if [ -z "${1:-}" ]; then
 fi
 slice="$1"
 shift
+[ "${1:-}" = "--" ] && shift
 
 # The slice id is embedded in an extended regex, so refuse anything that could
 # rewrite the pattern rather than quoting it into a different question.
@@ -57,25 +66,44 @@ fi
 
 # Dispatch lines for THIS slice: a line naming `Slice <id>` as a whole token that
 # also carries the word `dispatched`. The token boundary stops id `1` from
-# matching `1b`; the dispatch filter keeps fix-round and status lines out.
+# matching `1b`; the dispatch filter keeps status lines out. Then they are split
+# by whether the line is a FIX-ROUND dispatch (see the header).
 mapfile -t dispatch_lines < <(
   grep -nE "^[^|]*Slice[[:space:]]+${slice}([^0-9A-Za-z]|$)" "$LEDGER" 2>/dev/null \
     | grep -iE "dispatch" || true
 )
+build_lines=()
+fixround_lines=()
+for line in "${dispatch_lines[@]}"; do
+  if printf '%s' "$line" | grep -qiE "fix[- ]round"; then
+    fixround_lines+=("$line")
+  else
+    build_lines+=("$line")
+  fi
+done
+
+# Every `(base <sha>)` on the given lines. The parenthesis is part of the
+# spelling: it is what the ledger's dispatch line writes.
+extract_bases() {
+  printf '%s\n' "$@" \
+    | grep -oiE "\(base[[:space:]]+[\`\"']?[0-9a-f]{7,40}" \
+    | grep -oE "[0-9a-f]{7,40}" \
+    | sort -u || true
+}
 
 bases=()
-if [ "${#dispatch_lines[@]}" -gt 0 ]; then
-  # Every `base <sha>` on every dispatch line for the slice. Extract with a
-  # literal needle rather than a shell-mangled pattern.
-  mapfile -t bases < <(
-    printf '%s\n' "${dispatch_lines[@]}" \
-      | grep -oiE "\(base[[:space:]]+[\`\"']?[0-9a-f]{7,40}" \
-      | grep -oE "[0-9a-f]{7,40}" \
-      | sort -u || true
-  )
+if [ "${#build_lines[@]}" -gt 0 ]; then
+  mapfile -t bases < <(extract_bases "${build_lines[@]}")
 fi
 
 if [ "${#bases[@]}" -eq 0 ]; then
+  if [ "${#fixround_lines[@]}" -gt 0 ] && [ -n "$(extract_bases "${fixround_lines[@]}")" ]; then
+    echo "slice-diff: REFUSING — slice '$slice' has a base recorded only on a FIX-ROUND line."
+    echo "  A fix-round base is a commit AFTER the slice's implementation; diffing from it would"
+    echo "  hide the slice's own work. A wrong base is worse than a refusal."
+    printf '    %s\n' "${fixround_lines[@]}"
+    exit 1
+  fi
   echo "slice-diff: REFUSING — the ledger records no \`dispatched (base <sha>)\` line for slice '$slice'."
   echo "  A diff needs a base that was written down when the slice started; this tool will not invent one."
   if [ "${#dispatch_lines[@]}" -gt 0 ]; then
@@ -103,7 +131,7 @@ if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
 fi
 
 echo "slice-diff: slice '$slice'  range '${base}..${tip}'"
-echo "            base '${base}' read from ${LEDGER} (dispatch time, not typed now)"
+echo "            base '${base}' read from ${LEDGER}'s dispatch line for the slice (written at dispatch, not typed now)"
 echo "==========================================================="
 
 if [ "$#" -gt 0 ]; then

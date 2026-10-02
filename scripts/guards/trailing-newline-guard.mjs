@@ -13,8 +13,10 @@
 // three directories, so a brand-new uncommitted file is checked before it can
 // be committed. Only the LAST BYTE of each file is inspected. A zero-byte file
 // is counted as EMPTY, not consumed as clean; a file containing a NUL byte is
-// counted as BINARY and is not read as text. Both counts are printed each run,
-// so a scan that skipped a whole class of file cannot hide behind a pass.
+// counted as BINARY and is not read as text; a file that cannot be read at all
+// is counted as UNREADABLE and is a FINDING, because a file this guard could not
+// open is a file it cannot certify. All four counts are printed each run, so a
+// scan that skipped a whole class of file cannot hide behind a pass.
 //
 // WHAT IT IS NOT. Not a reformatter and not a text-file linter: it reads the
 // last byte and nothing else, so it can neither reformat nor judge a file. Its
@@ -80,6 +82,7 @@ const findings = []
 let text = 0
 let empty = 0
 let binary = 0
+const unreadable = []
 
 const { files, via } = scanSet()
 for (const rel of files) {
@@ -87,7 +90,12 @@ for (const rel of files) {
   let buf
   try {
     buf = readFileSync(abs)
-  } catch {
+  } catch (e) {
+    // A listed file this guard cannot open (a broken symlink, a permission it
+    // does not have) is neither empty, nor binary, nor checked. Dropping it
+    // silently is the D-030 shape: the class disappears and the run still says
+    // the convention holds.
+    unreadable.push(`${rel} (${e.code ?? e.message})`)
     continue
   }
   if (buf.length === 0) {
@@ -106,14 +114,21 @@ for (const rel of files) {
 
 console.log(`Trailing-newline guard — ${SCOPE.join('/, ')}/ read via ${via}`)
 console.log('===========================================================')
-console.log(`  ${text} text file(s) read, ${empty} empty (no newline is expected in a zero-byte file), ${binary} binary (not read as text)`)
+console.log(`  ${text} text file(s) read, ${empty} empty (no newline is expected in a zero-byte file), ${binary} binary (not read as text), ${unreadable.length} unreadable`)
 
 if (text === 0) {
   // D-030 — an empty measurement consumed as health is the class this guard
   // exists to stop, one granularity below the files it judges.
   console.log('  FINDING: the scan read no text file at all — an empty scan is a finding, not a clean repo')
   console.log()
-  console.log(`FAIL — ${1 + findings.length} trailing-newline finding(s).`)
+  console.log(`FAIL — ${1 + findings.length + unreadable.length} trailing-newline finding(s).`)
+  process.exit(1)
+}
+
+if (unreadable.length) {
+  for (const rel of unreadable) console.log(`  FINDING: ${rel} — listed in the scan set but could not be read, so its last byte was not checked`)
+  console.log()
+  console.log(`FAIL — ${unreadable.length + findings.length} trailing-newline finding(s).`)
   process.exit(1)
 }
 

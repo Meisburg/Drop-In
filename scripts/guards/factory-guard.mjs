@@ -1527,66 +1527,71 @@ function checkTranscripts(files) {
   return true
 }
 
-/** A label line: its LAST token is `raw:`/`verbatim:`, optionally bolded, with
- * a word boundary on the left so `withdraw:` and `the sketch is a draw:` are
- * prose, not labels. */
-const LABEL_LINE = /(?:\braw:|\bverbatim:)\s*\*{0,2}\s*$/i
-
 /**
- * A BLOCK INTRODUCED BY `raw:`/`verbatim:` CLAIMS CAPTURED OUTPUT, and a captured
- * output's own arithmetic is checkable without re-running anything: a summary line
- * that names a step RANGE and states how many entries it covers must agree with
- * the range. The class this exists for is V28 r2 slice 8a's §3 block, which stood
- * under a `raw:` label for THREE review rounds as `✓ 7–13 … (all six legs)` —
- * seven entries, six counted. The block itself is deleted (D-028: a fabricated
- * transcript cannot be corrected into a true one); this rule is what stops the
- * SHAPE from needing a fourth review round.
+ * A FENCED BLOCK IS CAPTURED OUTPUT, and a captured output's own arithmetic is
+ * checkable without re-running anything: a summary line that names a step RANGE
+ * and states how many entries it covers must agree with the range. The class
+ * this exists for is V28 r2 slice 8a's §3 block, which stood under a `raw:`
+ * label for THREE review rounds as `✓ 7–13 … (all six legs)` — seven entries,
+ * six counted. The block itself is deleted (D-028: a fabricated transcript
+ * cannot be corrected into a true one); this rule is what stops the SHAPE from
+ * needing a fourth review round.
  *
- * WHAT IT READS. A label is a line whose LAST token is `raw:` or `verbatim:`
- * (optionally bolded). A REGION is fenced code, Markdown indented code, or a
- * blockquote run (a line beginning `>`, extended over blank lines while the
- * quote continues); a fence whose own line carries the label inline is a region
- * whose first line is the label. The nearest label above a region, outside any
- * earlier region, introduces it — there is no line window, because a legitimate
- * long intro must not become a finding and the label FORM is where the precision
- * lives, not a distance. Inside a labelled region, every summary line IN THAT
- * SHAPE (a range beside a stated count) is either COMPARED or a finding — a
- * count this rule cannot resolve to a number (the vocabulary is one…twelve) is a
- * finding, never a skip, and EVERY such pair on a line is read, so no range is
- * counted as checked without being checked.
+ * WHY THERE IS NO LABEL, NO ATTRIBUTION AND NO REGION LIST (D-032). Three times
+ * this rule was repaired and three times it opened a reachable escape, each with
+ * the same signature — `0 … read`, `NOTHING was checked`, PASS, exit 0 — and each
+ * by breaking the ASSOCIATION between a label and the block it introduced: a
+ * quotation exemption (8a round 4), then a blockquote region that took the label
+ * from the fence that label introduced (8b). Attribution is a parsing problem
+ * being solved by regex, so any rule that NEEDS it can be evaded by breaking it.
+ * The rule is therefore re-scoped to what it can observe: EVERY fenced block is
+ * read, whoever wrote it and whatever precedes it. There is no association left
+ * to break, so this family of escape is gone by construction rather than by a
+ * fourth condition.
  *
- * THE LABEL TRIPWIRE (D-030 at this rule's own granularity). A label that no
- * region was attributed to is a finding. There is NO exemption for a quotation:
- * a blockquote is a region, so a label introducing one is READ — the shape a
- * quotation of a bad block takes is exactly the shape this rule exists for. (An
- * earlier form exempted quotation-introduced labels; a fabricated transcript then
- * escaped by prefixing `>`, which is why the exemption is gone. The absorber for
- * a report that wants to QUOTE a bad block is in the report's hands: give the
- * quote a label that does not END in the token, or drop the label line.)
+ * WHAT IT READS. Every fenced block in the scan set, wherever it sits in the
+ * file, of EITHER markdown fence kind (```` ``` ```` and `~~~`), paired with a
+ * fence of its own kind; inside each, every line that states a step range beside
+ * a count (`✓ A–B` … `(all <word|digit>`) is compared. EVERY such pair on a line
+ * is read, each paired with the count that follows IT, so two pairs on one line
+ * are not compared against one another's count. A count word outside the
+ * vocabulary (one…twelve) is a finding, never a skip; a range with no count
+ * beside it is not counted as checked.
+ *
+ * THE PRICE, DECLARED (D-032). A fenced block that QUOTES a bad transcript now
+ * fires. That is a COST, not a hole: the old quotation exemption was undeclared
+ * until a reviewer constructed the escape out of it, whereas a quotation firing
+ * is visible in the run's own output and can be reported. The alternative — a
+ * structural exemption for "this block is a quotation" — is the same escape one
+ * level over, because a fabricator writes the exempt shape.
  *
  * CEILING, named rather than implied — the exact shapes:
- *   - ONE shape is read: a `✓ N–M` range beside an `all <count>` on the same
- *     line. `through`/`to`/`..`, a phrase with no `all`, a count split across two
- *     lines, and a `PASS` line with no `✓` escape;
- *   - the label is the LAST TOKEN of a line. An intro that uses the word
- *     `verbatim` mid-sentence (`Run verbatim, exactly as pasted in …:`) is not a
- *     label and its block is not read. Widening to a mid-line token was measured
- *     and rejected: on this corpus it matches hundreds of ordinary prose lines
- *     and attributes an unrelated indented block in `slice-8a-verify-4.md` to a
- *     prose line that merely NAMES the rule, turning the gate red on its own
- *     repo;
+ *   - ONE shape is read: a `✓ A–B` range beside an `all <count>` on the same
+ *     line, the count AFTER the range. `through`/`to`/`..`, a count BEFORE the
+ *     range, a count split across two lines, and a `PASS` line with no `✓`
+ *     escape;
+ *   - Markdown INDENTED code is not read as such. The fence regex deliberately
+ *     accepts LEADING WHITESPACE, so an indented fence marker IS a fence and its
+ *     block IS read — over-reading is the safe direction, and tightening the
+ *     regex to `^ {0,3}` would open exactly the escape this sentence would then
+ *     have to declare (a four-space-indented fence around a fabricated
+ *     transcript). An indented run with no fence marker in it is not read; this
+ *     corpus holds a genuine range/count contradiction in one
+ *     (`.scratch/v28/reports/slice-8a-verify-4.md:122`, an indented QUOTATION of
+ *     the seed), and reading it would fire on a quotation that the fenced rule's
+ *     own declared cost does not cover. Declared, not hidden;
+ *   - a block with NO fence at all (prose, a table cell, an inline code span) is
+ *     not read: the rule reads fenced blocks, and an unfenced `✓ A–B … (all N)`
+ *     line escapes it. That is the boundary the next reader should attack;
  *   - the scan set is the top-level `*.md` of `.scratch/v28/reports` and
- *     `.scratch/v28/briefs` only — a labelled block anywhere else is invisible;
- *   - nothing is re-run: the region's own arithmetic is checked, not whether the
+ *     `.scratch/v28/briefs` only — a block anywhere else is invisible;
+ *   - nothing is re-run: the block's own arithmetic is checked, not whether the
  *     command it names would reproduce its lines;
  *   - the size printed each run is what was READ, and a zero says in words that
- *     NOTHING was checked, while the guard's claim list names only checks that ran.
- *
- * USE vs MENTION, a known tension rather than a discovery: a lane report that
- * QUOTES a bad labelled block reproduces the shape and trips the rule (the
- * round-4 verifier's own first draft did). Nothing here can separate a quotation
- * from a use.
+ *     NOTHING was compared, while the guard's claim list names only checks that ran.
  */
+const STEP_RANGE_COUNT = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b[^\n]*?\(all\s+([a-z]+|\d+)\b/gi
+
 function checkRawBlockSummaries(files) {
   const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 }
   let blocks = 0
@@ -1595,77 +1600,41 @@ function checkRawBlockSummaries(files) {
     const rel = relative(ROOT, path)
     const lines = readFileSync(path, 'utf8').split('\n')
 
-    // Every code region in the file: fenced pairs, Markdown indented runs (a
-    // 4-space/tab-indented line after a blank one), and blockquote runs. The
-    // blockquote arm is what makes `>` a region instead of an escape. `content`
-    // is the first line a reader would see inside it; `end` is exclusive.
-    const regions = []
-    let open = -1
+    // EVERY fenced block. No label, no nearest-above search, no region kind that
+    // can take a label from the block that follows it: there is nothing to
+    // associate, so there is nothing to break (D-032).
+    // BOTH markdown fence kinds, each paired with a fence of its own kind — a
+    // fence line of the OTHER kind inside an open block is content, as markdown
+    // says. Reading only backticks would leave `~~~`-fenced content unread: the
+    // same family of gap, a block the rule cannot see.
+    const fenced = []
+    let open = null
     for (const [index, line] of lines.entries()) {
-      if (/^\s*```/.test(line)) {
-        if (open === -1) open = index
-        else {
-          regions.push({ start: open, content: open + 1, end: index })
-          open = -1
-        }
-        continue
-      }
-      if (open !== -1) continue
-      if (/^(\t| {4,})\S/.test(line) && (index === 0 || lines[index - 1].trim() === '')) {
-        let end = index + 1
-        while (end < lines.length && (lines[end].trim() === '' || /^(\t| {4,})/.test(lines[end]))) end += 1
-        regions.push({ start: index, content: index, end })
-      } else if (/^\s*>/.test(line)) {
-        let end = index + 1
-        while (end < lines.length) {
-          if (/^\s*>/.test(lines[end])) {
-            end += 1
-            continue
-          }
-          if (lines[end].trim() === '') {
-            let next = end
-            while (next < lines.length && lines[next].trim() === '') next += 1
-            if (next < lines.length && /^\s*>/.test(lines[next])) {
-              end = next + 1
-              continue
-            }
-          }
-          break
-        }
-        regions.push({ start: index, content: index, end })
+      const marker = /^\s*(```|~~~)/.exec(line)
+      if (!marker) continue
+      if (!open) open = { kind: marker[1], at: index }
+      else if (open.kind === marker[1]) {
+        fenced.push({ content: open.at + 1, end: index })
+        open = null
       }
     }
-    if (open !== -1) regions.push({ start: open, content: open + 1, end: lines.length })
-    const inBlock = new Set()
-    for (const region of regions) for (let i = region.start; i < region.end; i += 1) inBlock.add(i)
+    if (open) fenced.push({ content: open.at + 1, end: lines.length })
 
-    // The introducing label: on the region's own first line, or the nearest label
-    // above it that is outside an earlier region.
-    const attributed = new Set()
-    let previousEnd = 0
-    for (const region of regions) {
-      let intro = LABEL_LINE.test(lines[region.start]) ? region.start : -1
-      for (let i = region.start - 1; intro === -1 && i >= previousEnd; i -= 1) {
-        if (LABEL_LINE.test(lines[i])) intro = i
-      }
-      previousEnd = region.end
-      if (intro === -1) continue
-      attributed.add(intro)
+    for (const block of fenced) {
       blocks += 1
-      for (let i = region.content; i < region.end; i += 1) {
-        // EVERY pair on the line: a second `✓ N–M … (all N)` beside an agreeing
-        // one used to be invisible to `exec`, which read only the first — so the
-        // claim could be published over a summary that disagreed.
-        for (const range of lines[i].matchAll(/✓\s*(\d+)\s*[–—-]\s*(\d+)\b/g)) {
-          const stated = /\(all\s+([a-z]+|\d+)\b/i.exec(lines[i])
-          if (!stated) continue
-          const span = Number(range[2]) - Number(range[1]) + 1
-          const word = stated[1].toLowerCase()
+      for (let i = block.content; i < block.end; i += 1) {
+        // Each `✓ A–B` is paired with the `(all N)` that FOLLOWS it on the same
+        // line. Reading the count once per line compared a second pair against
+        // the first pair's count and published a contradiction the line did not
+        // contain.
+        for (const pair of lines[i].matchAll(STEP_RANGE_COUNT)) {
+          const span = Number(pair[2]) - Number(pair[1]) + 1
+          const word = pair[3].toLowerCase()
           const count = /^\d+$/.test(word) ? Number(word) : WORDS[word]
           if (count === undefined) {
             fail(
               'transcript-summary-agrees',
-              `${rel}:${i + 1}: a raw block's summary line states a count this rule cannot resolve to a number: "${stated[0]}" — a range SEEN and not compared is a finding, not a pass`,
+              `${rel}:${i + 1}: a fenced block's summary line states a count this rule cannot resolve to a number: "(all ${word}" — a range SEEN and not compared is a finding, not a pass`,
             )
             continue
           }
@@ -1673,23 +1642,26 @@ function checkRawBlockSummaries(files) {
           if (count === span) continue
           fail(
             'transcript-summary-agrees',
-            `${rel}:${i + 1}: a raw block's summary line covers ${span} entr${span === 1 ? 'y' : 'ies'} (${range[1]}–${range[2]}) but states "${stated[0]}" — a block claiming to be raw must reproduce its own arithmetic`,
+            `${rel}:${i + 1}: a fenced block's summary line covers ${span} entr${span === 1 ? 'y' : 'ies'} (${pair[1]}–${pair[2]}) but states "(all ${word}" — a captured transcript must reproduce its own arithmetic`,
           )
         }
       }
     }
-
-    // THE LABEL TRIPWIRE — a label this rule saw and read no region for.
-    for (const [index, line] of lines.entries()) {
-      const unreadLabel = LABEL_LINE.test(line) && !attributed.has(index) && !inBlock.has(index)
-      if (!unreadLabel) continue
-      fail(
-        'transcript-summary-agrees',
-        `${rel}:${index + 1}: a line introduces a block as raw:/verbatim but no captured-output region was attributed to it: ${JSON.stringify(line.trim())} — a label this rule saw and did not read`,
-      )
-    }
   }
-  console.log(`  note — transcript-summary-agrees: ${blocks} raw-labelled block(s) read, ${ranges} range summar${ranges === 1 ? 'y' : 'ies'} checked${ranges === 0 ? ' — NOTHING was checked: this scan read no line that states a step range beside its count' : ''}`)
+
+  if (blocks === 0 && files.length > 0) {
+    // D-030 at this rule's own granularity: the scan read reports and found no
+    // fenced block in any of them, so it compared nothing. An empty input class
+    // and a clean corpus print the same green. The no-FILE case is
+    // `report-scan-empty`'s, one level up — this rule's zero case is "reports
+    // were read and none held a block".
+    fail(
+      'transcript-summary-agrees',
+      'the report/brief scan read no fenced block at all — an empty block set has established nothing about this rule (D-030)',
+    )
+  }
+
+  console.log(`  note — transcript-summary-agrees: ${blocks} fenced block(s) read, ${ranges} range summar${ranges === 1 ? 'y' : 'ies'} checked${ranges === 0 ? ' — NOTHING was compared: no fenced block in this scan states a step range beside its count' : ''}`)
   return ranges
 }
 
@@ -1755,7 +1727,7 @@ if (!findings.length) {
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
   if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
   if (transcriptsChecked) claims.push('every pasted provenance transcript that cites a `.scratch/` file still carries the sha it names (or is marked historical; other paths and other rules are ceilings)')
-  if (rawSummaryLines) claims.push('every step-range-and-count line read inside a region whose introducing line ENDS with raw:/verbatim agrees with its own count (that label form and that range shape only — see transcript-summary-agrees\'s ceiling)')
+  if (rawSummaryLines) claims.push("every step-range-and-count line read inside a fenced block agrees with its own count (that one shape only, and a block that QUOTES a bad transcript fires too — see transcript-summary-agrees's ceiling)")
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')

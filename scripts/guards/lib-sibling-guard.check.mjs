@@ -7,15 +7,16 @@
 // `ok — all 0 non-exempt module(s) have a sibling .test.ts` and exited 0. It
 // reported health over a measurement that did not happen — the D-030 class
 // sitting inside the guard suite itself, found by slice 8a's round-2 review.
-// Each verdict below therefore gets its own seed AND the mutation that flips it,
-// because a rule whose check cannot fail is a comment:
+// A check that cannot fail is a comment, so every verdict below carries a seed,
+// and every verdict that asserts a FAILURE also carries the mutation that MOVES
+// ITS EXIT CODE — not one that merely changes the message (that distinction is
+// what let three mutation checks elsewhere in this suite ship blind):
 //
-//   1. a module with no sibling test is a FINDING, named;
-//   2. the same module WITH its sibling passes (the rule is not always red);
-//   3. a module on the declared EXEMPT list is skipped, not failed;
-//   4. a src/lib whose ONLY entry is exempt ⇒ checked=0 ⇒ FINDING (the D-030
-//      seed), with the mutation that re-opens it;
-//   5. a MISSING src/lib ⇒ FINDING (the other empty-scan path).
+//   1. a module with no sibling test is a FINDING, named          (seed + mutation);
+//   2. the same module WITH its sibling passes                     (control);
+//   3. a module on the declared EXEMPT list is skipped, not failed  (control);
+//   4. a src/lib whose ONLY entry is exempt ⇒ checked=0 ⇒ FINDING   (seed + mutation);
+//   5. a MISSING src/lib ⇒ FINDING naming the missing directory     (seed + mutation).
 //
 // Usage: node scripts/guards/lib-sibling-guard.check.mjs
 // Exit:  0 = every check ran and passed, 1 = at least one is not doing its job
@@ -62,6 +63,23 @@ function mutatedGuard(from, to) {
   return path
 }
 
+/** The same, with several replacements applied to one copy. Each anchor must
+ * still occur exactly once, so a rename throws rather than turning into a silent
+ * no-op. */
+function mutatedGuard2(replacements) {
+  let text = readFileSync(GUARD, 'utf8')
+  for (const [from, to] of replacements) {
+    const hits = text.split(from).length - 1
+    if (hits !== 1) throw new Error(`mutation anchor occurs ${hits} time(s), not once: ${JSON.stringify(from)}`)
+    text = text.split(from).join(to)
+  }
+  const dir = mkdtempSync(join(os.tmpdir(), 'lib-sibling-mutant-'))
+  SCRATCH.push(dir)
+  const path = join(dir, 'lib-sibling-guard.sh')
+  writeFileSync(path, text)
+  return path
+}
+
 let failures = 0
 let ran = 0
 const check = (name, ok, detail = '') => {
@@ -101,8 +119,20 @@ const exemptMiss = run(rootWith({ 'src/lib/types.ts': 'export type T = 1\n' }), 
 check('MUTATION: dropping the empty-scan test lets that seed PASS (so check 4 can fail)', exemptMiss.exit === 0, `exit ${exemptMiss.exit}`)
 
 // 5. The other empty-scan path.
-const noLib = run(rootWith({ 'src/App.tsx': 'export const a = 1\n' }))
+const noLibRoot = rootWith({ 'src/App.tsx': 'export const a = 1\n' })
+const noLib = run(noLibRoot)
 check('a MISSING src/lib is a FINDING, not a SKIP', noLib.exit === 1 && /does not exist/.test(noLib.out), `exit ${noLib.exit}`)
+
+// The mutation removes BOTH zero-checks, because either one alone keeps this seed
+// red (the missing-directory branch exits 1 by itself, and the checked=0 branch
+// would fire after it). A mutant that stayed red would prove nothing — the seed's
+// exit code must move for the check to be load-bearing.
+const noZeroPaths = mutatedGuard2([
+  ['if [ ! -d "$LIB_DIR" ]; then', 'if [ "x" = "y" ]; then'],
+  ['elif [ "$checked" -eq 0 ]; then', 'elif [ "x" = "y" ]; then'],
+])
+const noLibMiss = run(noLibRoot, noZeroPaths)
+check('MUTATION: dropping BOTH zero-checks lets that seed PASS (exit 1 -> 0, a DETECTION flip)', noLibMiss.exit === 0, `exit ${noLibMiss.exit}`)
 
 for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true })
 

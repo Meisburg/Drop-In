@@ -5,29 +5,34 @@
 // WHY THIS EXISTS. A guard that matches nothing looks exactly like a clean
 // repository. So for each property the guard claims, build the failing world in
 // a throwaway git root, run the guard against it, and require a non-zero exit
-// naming that property. A rule whose check cannot fail is a comment. The two
-// D-030 properties this guard carries get their own seeds and their own
-// mutation, because "the scan read nothing" and "this file has no newline" are
-// different failures that must not be able to hide behind each other:
+// naming that property. A rule whose check cannot fail is a comment. The D-030
+// property this guard carries — an empty scan read as health — gets its own seed
+// and its own mutation, because "the scan read nothing" and "this file has no
+// newline" are different failures that must not be able to hide behind each
+// other:
 //
-//   1. a text file with no newline at EOF is a FINDING, named;
+//   1. a text file with no newline at EOF is a FINDING, named (seed + mutation);
 //   2. a clean text file passes (so the rule is not simply always red);
 //   3. a zero-byte file and a NUL-bearing binary are COUNTED, not read as text
 //      and not failed on (they cannot corrupt the sweep, and the guard says so);
 //   4. an EMPTY scan (no src/e2e/scripts content at all) is a FINDING — D-030,
-//      an empty measurement is not health;
+//      an empty measurement is not health (seed + mutation);
 //   5. the guard reads UNTRACKED files too, so a file is checked before it can
-//      be committed.
+//      be committed;
+//   6. a listed file that CANNOT BE READ (a broken symlink) is a FINDING — an
+//      uncertified file is not a clean one (seed + mutation);
+//   7. a file outside src/e2e/scripts is out of the scan set (a control).
 //
-// The mutations prove each verdict CAN flip: neuter the last-byte test and the
-// seed passes (so check 1 can fail); neuter the empty-scan test and that seed
-// passes (so check 4 can fail).
+// The mutations prove each verdict CAN flip — "flip" meaning the SEED'S EXIT
+// CODE moves, not that a message changes: neuter the last-byte test and seed 1
+// passes; neuter the empty-scan test and seed 4 passes; neuter the unreadable
+// test and seed 6 passes.
 //
 // Usage: node scripts/guards/trailing-newline-guard.check.mjs
 // Exit:  0 = every check ran and passed, 1 = at least one is not doing its job
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
@@ -128,6 +133,22 @@ check('an UNTRACKED text file is read (git --others, not just the index)', untra
 // out of the scan set, which is the boundary the header states.
 const outOfScope = run(rootWith({ 'README.md': 'no newline here', 'src/lib/a.ts': 'x\n' }))
 check('control: a file OUTSIDE the scan set does not fire the rule', outOfScope.exit === 0, `exit ${outOfScope.exit}`)
+
+// 7. A listed file that cannot be opened is neither empty, nor binary, nor
+// checked. Dropping it silently would make its class invisible (the D-030 shape),
+// so it is a finding: an uncertified file is not a clean one. The seed is a
+// broken symlink, which git lists and readFileSync cannot open.
+const unreadableRoot = rootWith({ 'src/lib/ok.ts': 'export const a = 1\n' })
+symlinkSync('/nonexistent-target-for-the-check', join(unreadableRoot, 'src', 'lib', 'broken.ts'))
+const unreadable = run(unreadableRoot)
+check(
+  'a listed file that CANNOT BE READ is a FINDING, not a silent skip',
+  unreadable.exit === 1 && /broken\.ts .*could not be read/.test(unreadable.out) && /1 unreadable/.test(unreadable.out),
+  `exit ${unreadable.exit}`,
+)
+const noUnreadable = mutatedGuard('if (unreadable.length) {', 'if (false) {')
+const unreadableMiss = run(unreadableRoot, noUnreadable)
+check('MUTATION: dropping the unreadable-file finding lets that seed PASS (exit 1 -> 0, a DETECTION flip)', unreadableMiss.exit === 0, `exit ${unreadableMiss.exit}`)
 
 for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true })
 

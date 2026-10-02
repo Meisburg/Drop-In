@@ -411,9 +411,14 @@ green. Had they landed together, the guard would have been red from birth.
   leave `config-guard` red against the merge-base for the rest of the batch. Ceiling: a missing newline in
   `.scratch/`, `docs/` or `supabase/` is invisible to this guard, by declaration. (2) `slice-diff.sh` refuses
   on an ambiguous ledger rather than selecting a round; the ceiling is a `ponytail:` comment in the file.
-- **The `transcript-summary-agrees` coverage loss is declared, not restored** — see item 5. Widening the label
-  to a mid-line token makes the live corpus red (100+ findings, measured). This is the one dispatch item not
-  done as written.
+- **The `transcript-summary-agrees` coverage loss is now MOOT, and the widening measurement is superseded.**
+  The label predicate and the indented arm are deleted (fix round 1, D-032), so "the narrowed label form" no
+  longer exists to widen. The figures this bullet used to carry (`102 / 2 / 100+`) were not bit-reproducible
+  (review N3); the reviewer's own reproduction is the record now — a mid-line-token predicate gives
+  `35 blocks / 1 summary / 54 findings` for `(?:\braw:|\bverbatim:)` and `107 / 2 / 143` for
+  `(?:\braw:|\bverbatim\b)`, both EXIT=1 on this repo. **The load-bearing part of that measurement is
+  unchanged and is what matters: the live corpus carries the word `verbatim` in its PROSE, so any predicate
+  that reads a mid-line token fires on the reports themselves.**
 - **`slice-8a.md`'s false claims are NOT edited.** `:931`, `:953` (31 of 104 — unreproducible, and the harness
   is now 115 checks), `:990`, `:1056` stand as written. The dispatch says never hand-edit another lane's
   report, and re-derivation of another slice's record is the orchestrator's. Corrected measurements are above.
@@ -432,7 +437,9 @@ green. Had they landed together, the guard would have been red from birth.
   quietly fixed.
 - `scripts/guards/no-bypass-guard` and `e2e/places.e2e.ts:2759` are the brief's two named flakes. Neither was
   touched and neither failed in the two full `npm run verify` runs (`no-bypass-guard` is in the suite and
-  passed both times); no e2e spec was run by this slice, because no e2e file changed.
+  passed both times); no e2e spec was run by this slice, because no e2e file changed SEMANTICALLY — twenty
+  e2e files did change in commit A, each by exactly one appended newline (review N8 corrected this sentence,
+  which said "no e2e file changed" and was false as written).
 
 ## Unresolved questions (for the orchestrator)
 
@@ -477,3 +484,200 @@ item-4 early-return edit sits between it and my measurement. **The drift was in 
 (four different values across three documents) and the harness cost (unreproducible). Two anchors did move by
 symbol: the `lib-sibling-guard.sh` `ok —` line (+5 against the review) and the harness size (104 → 115 by the
 end of this slice).
+
+---
+
+# FIX ROUND 1 — the rule is re-scoped to "every fenced block, attribute nothing" (D-032)
+
+Reviewed range `aa331d0..98db92f`; review at `.scratch/v28/reports/slice-8b-review.md` (VERIFY PASS, REVIEW
+NEEDS_CHANGES, 3 blocking). **D-032 is the ruling and it changes the rule's SHAPE**: three repairs, three
+escapes, each by breaking the *association* between a label and the block it introduces, so the rule is
+re-scoped to what it can observe — **every fenced block is read, whoever wrote it and whatever precedes it.**
+There is no association left to break.
+
+**WHICH BRANCH OF D-032 I TOOK: I KEPT THE RULE. I did not delete it**, because the new shape did NOT open a
+hole of the same family. I attacked it eleven ways (the reviewer's seed plus ten separators, below) and every
+one is caught. The rule is now literal, so the last-attempt clause does not apply.
+
+## B1 — the escape the review found, and its fix by DELETION
+
+**What was deleted, and there is nothing left of it:**
+
+| deleted | why it existed | state now |
+|---|---|---|
+| `LABEL_LINE` (the label regex) | to mark a block as captured output | **gone** (`grep -n LABEL_LINE` → no hits) |
+| the nearest-label-above attribution + `previousEnd` bookkeeping | to associate a label with a block | **gone** |
+| the blockquote REGION arm | so `>`-introduced labels in `briefs/` would be read | **gone** |
+| the label tripwire (`attributed` / `inBlock` / `unreadLabel`) | D-030 for "a label I saw and did not read" | **gone** |
+| the Markdown INDENTED region arm | it existed to serve the label machinery | **gone**, declared as a ceiling |
+| `INTRO_LINES` | a label's search distance | already gone at `eeac917` |
+
+**The reviewer's exact seed, against both binaries.** Seed: a `raw:` label, a blank line, a blockquote line,
+a blank line, then the fenced block the label introduces. (Displayed below with the fence markers spelled
+`FENCE-OPEN` / `FENCE-CLOSE`, because a literal fence here would put a bad `✓ A–B … (all N)` line inside a
+fenced block of MY OWN report and make this report fire the rule it is documenting — which is also the
+cleanest statement of D-032's declared cost.)
+
+    # zz
+
+    proof — raw:
+
+    > a quote with no range in it
+
+    FENCE-OPEN
+    ✓ 7–13 zz-spec.e2e.ts (all six legs)
+    FENCE-CLOSE
+
+```
+$ node /tmp/b1/prefix.mjs --root /tmp/b1 --repo .   # the guard at 98db92f, pre-change
+  note — transcript-summary-agrees: 1 raw-labelled block(s) read, 0 range summaries checked — NOTHING was
+         checked: this scan read no line that states a step range beside its count
+PASS — the registry can be trusted and no work item claims evidence it does not have.
+PRE EXIT=0
+
+$ node scripts/guards/factory-guard.mjs --root /tmp/b1 --repo .
+  note — transcript-summary-agrees: 1 fenced block(s) read, 1 range summary checked
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/zz.md:8: a fenced block's summary line covers
+          7 entries (7–13) but states "(all six" — a captured transcript must reproduce its own arithmetic
+FAIL — 1 factory finding(s).
+NEW EXIT=1
+```
+
+**Pre-change PASS, post-change FAIL — the escape is closed.**
+
+**NO NEW ESCAPE OF THE FAMILY: eleven attempts, all CAUGHT.** Pre-change = the guard at `98db92f`;
+"caught" means the mutant-free guard exits 1 **with the arithmetic finding**, i.e. the block was READ (not
+merely tripped by the label wire):
+
+```
+SEPARATOR        PRE      NEW      VERDICT
+heading          1        1        CAUGHT      label, then a heading, then the fence
+listitem         1        1        CAUGHT      label, then a list item, then the fence
+paragraph        1        1        CAUGHT      label, then an ordinary paragraph, then the fence
+listlabel        1        1        CAUGHT      the label INSIDE a list item
+blockquote       0        1        CAUGHT      <- B1's shape: PRE-CHANGE ESCAPED (exit 0)
+indentbetween    0        1        CAUGHT      <- an indented line between label and fence: escaped pre-change
+htmlcomment      1        1        CAUGHT      an HTML comment between
+twolabels        1        1        CAUGHT      two labels before one fence
+tildeonly        1        1        CAUGHT      the block in a ~~~ fence only
+tildelabel       1        1        CAUGHT      a label on the ~~~ fence's own line
+labelinside      1        1        CAUGHT      the label inside the fence's opening line
+```
+
+`tildeonly` is the extra one this round closed beyond the review's list: the fence parser now reads **both**
+markdown fence kinds (` ``` ` and `~~~`), paired with a fence of its own kind — a fence line of the OTHER kind
+inside an open block is content, as markdown says. Reading only backticks left `~~~`-fenced content unread,
+which is the same family of gap. Live corpus: 644 → **645** fenced blocks read, same two findings.
+
+## B2 — the three mutations that moved PRINTING, not DETECTION
+
+`factory-guard.check.mjs:1338-1346`, `:1365-1376`, `:1481-1489` were the `boundedWindow`, `noIndented` and
+`noQuoteRegion` mutations. **All three are DELETED, together with the label machinery they mutated** — there
+is no anchor for them left in the guard. The re-audit asked for, over every mutation this slice ships:
+
+| mutation | seed → mutant verdict | flips? |
+|---|---|---|
+| `assumesAgreement` (`if (count === span) continue` → `if (true) continue`) | 1 → 0 | **yes** (7 checks use it) |
+| `wordAssumesAgreement` (`WORDS[word]` → `span`) | 1 → 0 | **yes** |
+| `greedyCount` (lazy `[^\n]*?` → greedy `[^\n]*`) | 0 → 1 | **yes** (the both-correct two-pair seed goes RED) |
+| `noZeroBlocks` | 1 → 0 | **yes** |
+| `noEmptyScan` | 1 → 0 | **yes** (required `files.length > 0` on the block tripwire so the two zero states are separable) |
+| `mutatedGuard('if (buf[buf.length - 1] !== 0x0a) {', …)` (newline guard) | 1 → 0 | **yes** |
+| `mutatedGuard('if (text === 0) {', …)` | 1 → 0 | **yes** |
+| `mutatedGuard('if (unreadable.length) {', …)` (new, N6) | 1 → 0 | **yes** |
+| `mutatedGuard('if [ ! -f "$LIB_DIR/$base.test.ts" ]; then', …)` | 1 → 0 | **yes** |
+| `mutatedGuard('elif [ "$checked" -eq 0 ]; then', …)` | 1 → 0 | **yes** |
+| `mutatedGuard2([two zero-check anchors])` (new, N4) | 1 → 0 | **yes** |
+
+Every mutation check now asserts the seed's **exit code moves**. The two controls in each checker (a clean
+tree passes) carry no mutation, and the checkers' headers now SAY which verdicts carry one — which is N4.
+
+## B3 — `slice-diff.sh` resolved slice `6c` to a FIX-ROUND base and printed "dispatch time"
+
+Fixed in the direction the review demanded ("a wrong base is worse than a refusal"): **dispatch lines are
+split into BUILD dispatches and FIX-ROUND dispatches**, only the build lines' `(base <sha>)` counts, and when
+the only recorded base sits on a fix-round line the tool REFUSES and says why.
+
+```
+$ bash scripts/slice-diff.sh 6c
+slice-diff: REFUSING — slice '6c' has a base recorded only on a FIX-ROUND line.
+  A fix-round base is a commit AFTER the slice's implementation; diffing from it would
+  hide the slice's own work. A wrong base is worse than a refusal.
+    7156:Slice 6c: fix round 3/5 dispatched (base `68080b0`, model cloud …)
+EXIT=1
+$ for id in 1 3 6c 8a 8b; do bash scripts/slice-diff.sh "$id" 2>&1 | head -1; done
+slice-diff: slice '1'  range '15ada15..98db92f5bcb9536b9b966b45c85f532035f8395d'
+slice-diff: slice '3'  range 'c9ab382..98db92f5bcb9536b9b966b45c85f532035f8395d'
+slice-diff: REFUSING — slice '6c' has a base recorded only on a FIX-ROUND line.
+slice-diff: REFUSING — the ledger records no `dispatched (base <sha>)` line for slice '8a'.
+slice-diff: REFUSING — the ledger records no `dispatched (base <sha>)` line for slice '8b'.
+```
+
+**N5** also fixed: the usage block no longer truncates mid-sentence (it printed `2 = usage, 3 = base` and
+stopped), and a leading `--` is stripped so the pathspec echo reads `(diff restricted to: scripts/…)`.
+
+## The other findings
+
+| finding | disposition |
+|---|---|
+| **N2** — `matchAll` over ranges but the count read once per line | **FIXED**: one regex pairs each `✓ A–B` with the `(all N)` that FOLLOWS it. New seed (two correct pairs on one line → pass, `2 range summaries checked`) + a mutation whose mutant goes RED (`greedyCount`). |
+| **N3** — the widening figures were not reproducible | **FIXED** in the Risks section: my `102 / 2 / 100+` is superseded by the reviewer's reproduction table and the point that matters (prose `verbatim`), and the widening is now moot — the label is deleted. |
+| **N4** — false claims in the two checkers' headers | **FIXED**: both headers now say which verdicts carry a mutation and which are controls, and `lib-sibling-guard.check.mjs` gained a real mutation for its missing-`src/lib` verdict. |
+| **N5** — truncated usage, `--` echoed | **FIXED** (above). |
+| **N6** — an unreadable file was silently `continue`d | **FIXED**: it is counted, named, and a FINDING (an uncertified file is not a clean one). Seed = a broken symlink (git lists it; `readFileSync` cannot open it) + a mutation whose mutant exits 0. Checker 8 → 10 checks. |
+| **N7** — `rawSummaryLines === 0` drops the transcript claim silently | **unchanged, declared.** The claim is published only when a comparison ran, which is the honest half; on this repo the rule now compares **2** range summaries, so the claim IS published. |
+| **N8** — my report said "no e2e file changed" | **FIXED**: say "no e2e file changed SEMANTICALLY"; twenty e2e files changed in commit A, each by exactly one newline. |
+| **N9** — the coverage-loss deviation | **superseded** by the deletion; recorded above with the reviewer's figures. |
+| **N10** — `lib-sibling-guard.sh` fires only when EVERY module is exempt | **unchanged, recorded.** An allowlist that grows until one module remains unchecked still prints `ok — all 1 non-exempt module(s)`. A baseline (the module count at the slice's base) would be needed to close it, and that is a re-derivation decision, not a builder's. |
+
+## RAW VERIFY — `npm run verify` is RED, and ONLY from lane-report quotations
+
+```
+$ npm run verify
+> npm run build && npm run test && npm run lint && npm run a11y:focus && npm run steering-lint && npm run guards
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+ oxlint: 81 warning lines, 0 errors
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8a-verify-5.md:37: a fenced block's summary
+          line covers 7 entries (7–13) but states "(all six" — a captured transcript must reproduce its own arithmetic
+  FINDING [transcript-summary-agrees]: .scratch/v28/reports/slice-8b-review.md:89: (the same shape, the review's
+          own quotation of the B1 seed)
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-8b-review.md:191: a count quoted against the bare
+          moving revision (the review's own pasted run line, `<sha>`-less)
+  FINDING [no-bare-head-count]: .scratch/v28/reports/slice-8b-review.md:193: the same class, twice on one line
+FAIL — 4 factory finding(s).
+GUARDS: FAIL — 1 guard(s) reported findings:  (factory-guard)
+VERIFY EXIT=1
+```
+
+**Every one of the four is a QUOTATION inside a LANE report, and none is in a file this slice owns.**
+
+- The two `transcript-summary-agrees` findings are D-032's **declared cost**, paid: `slice-8a-verify-5.md:37`
+  is slice 8a's verifier quoting the 8a-round-4 escape seed; `slice-8b-review.md:89` is THIS review quoting
+  the B1 seed inside a `~~~` block. Both are bad blocks *quoted to demonstrate the rule*, not fabrications.
+- The two `no-bare-head-count` findings are **pre-existing at `98db92f`**, not added by this round — measured
+  with the head version of the guard against the same tree: `FAIL — 2 factory finding(s)`, both on
+  `slice-8b-review.md:191/:193`. They are another lane's quotations of `HEAD` inside a run transcript, and the
+  baseline they exceed is re-derived by the orchestrator.
+- **I did not hand-edit either lane report.** Clearing the two transcript findings needs one of: (a) re-word
+  the quoted line in those two reports so it is not a fenced `✓ A–B … (all N)` (drop the parenthetical, or put
+  the quotation in an indented block — indented code is outside this rule's scan set); or (b) delete the rule
+  (D-032's escape hatch), which I did not take because no hole of the family remains. Clearing the two
+  bare-HEAD findings is a baseline re-derivation, which the dispatch reserves to the orchestrator.
+
+## Fix-round risks
+
+- **The gate is red, from lane-report quotations only.** Stated plainly because it is the one thing a reader
+  must not have to discover: `npm run verify` exits 1 at the guards step, and every finding names
+  `.scratch/v28/reports/slice-8a-verify-5.md` or `.scratch/v28/reports/slice-8b-review.md`.
+- **The declared cost is now a real one, on this corpus.** D-032 accepted that a report quoting a bad block
+  will fire. It does — twice, right now. If that is unacceptable for a report that is *demonstrating* the
+  rule, the only structurally safe absorber would need its own seed and mutation **and** must not be writable
+  by a fabricator, which no shape I could find satisfies.
+- **`ponytail:`** — the fence parser reads both fence kinds with same-kind pairing; the ceiling is that a
+  mismatch (a ` ``` ` inside a `~~~` block) is treated as content, which is markdown's rule but is not a
+  general parser.
+- The rule's live signal: **2** range summaries compared on this corpus now (was 0), both from the two quoted
+  seeds — so its live signal is still quotation, not a real transcript.

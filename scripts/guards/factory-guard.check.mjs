@@ -45,11 +45,16 @@ function run(mutate, { guard = GUARD, args = [], report = true } = {}) {
   }
   try {
     mutate({ root, write })
-    // Every root the report/brief scan reads must CARRY a report: a scan that
-    // read no file is now a finding (D-030). This file makes no claim the rules
-    // below read (no bare HEAD, no provenance sha, no label), so it changes no
-    // verdict except the empty scan's; `report: false` reaches that state.
-    if (report) write('.scratch/v28/reports/zz-check-root.md', '# zz-check root — a clean report file; it makes no claim\n')
+    // Every root the report/brief scan reads must CARRY a report — a scan that
+    // read no file is a finding (D-030), and so is a scan that read no fenced
+    // block. This file makes no claim the rules below read (no bare HEAD, no
+    // provenance sha, no step range), so it changes no verdict except those two;
+    // `report: false` reaches the empty states.
+    if (report)
+      write(
+        '.scratch/v28/reports/zz-check-root.md',
+        '# zz-check root — a clean report file; it makes no claim\n\n```\nzz-check root: a fenced block with no step range in it\n```\n',
+      )
     const out = execFileSync('node', [guard, '--root', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
     return { exit: 0, out }
   } catch (e) {
@@ -1199,55 +1204,57 @@ console.log('===========================================================')
     `exit ${transcriptMiss.exit}`,
   )
 
-  // RULE 5 — a block introduced as `raw:`/`verbatim` claims CAPTURED output, so its
-  // own arithmetic has to hold: a step RANGE and the count it states must agree.
-  // The seed is the shape V28 r2 slice 8a's §3 block carried for three review
-  // rounds (✓ 7–13, seven entries, "all six legs"); the control is the same line
-  // with the count right, which proves the rule is not merely a fence detector.
-  const rawSeed =
-    '# zz-seeded raw block\n\n' +
-    'proof — raw:\n\n' +
+  // RULE 5 — EVERY FENCED BLOCK, NO LABEL (D-032). A captured transcript's own
+  // arithmetic must hold: a `✓ A–B` range beside a stated count on the same line,
+  // inside a fenced block, whoever wrote the block and whatever precedes it. The
+  // label machinery is deleted, so the seed below carries NO label at all — that
+  // is the point of the re-scope, and it is why the seed needs none.
+  //
+  // Every seed in this section is paired with `assumesAgreement`, a mutation that
+  // makes the rule accept any count. D-032/B2's standard: the seed's VERDICT must
+  // move (exit 1 -> exit 0). A mutation that leaves the seed red proves only that
+  // the wording changed, which is how the previous escape shipped unseen.
+  const noLabelSeed =
+    '# zz no label at all\n\n' +
     '```\n' +
     'Running 3 tests using 1 worker\n' +
     '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
     '```\n'
-  const raw = run((ctx) => {
+  const noLabel = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed)
-  }, { args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-raw.md', noLabelSeed)
+  }, { report: false, args: ['--repo', REPO] })
   check(
-    "a raw block's step range contradicting its own count is CAUGHT (transcript-summary-agrees)",
-    raw.exit === 1 && /transcript-summary-agrees/.test(raw.out),
-    `exit ${raw.exit}`,
+    'a fenced block with NO label, whose range contradicts its count, is CAUGHT',
+    noLabel.exit === 1 && /covers 7 entries/.test(noLabel.out) && /transcript-summary-agrees/.test(noLabel.out),
+    `exit ${noLabel.exit}`,
   )
-  const noRawSummaries = mutatedGuard([['if (count === span) continue', 'if (true) continue']])
-  const rawMiss = run((ctx) => {
+  const assumesAgreement = mutatedGuard([['if (count === span) continue', 'if (true) continue']])
+  const noLabelMiss = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed)
-  }, { guard: noRawSummaries, args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-raw.md', noLabelSeed)
+  }, { guard: assumesAgreement, report: false, args: ['--repo', REPO] })
   check(
-    'MUTATION: dropping the range/count agreement lets that seed PASS (so the check can fail)',
-    rawMiss.exit === 0,
-    `exit ${rawMiss.exit}`,
+    'MUTATION: assuming agreement lets that seed PASS (exit 1 -> 0 — a DETECTION flip)',
+    noLabelMiss.exit === 0,
+    `exit ${noLabelMiss.exit}`,
   )
-  const rawControl = run((ctx) => {
+  const noLabelControl = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed.replace('(all six legs)', '(all seven legs)'))
-  }, { args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-raw.md', noLabelSeed.replace('(all six legs)', '(all seven legs)'))
+  }, { report: false, args: ['--repo', REPO] })
   check(
-    'control: the same raw block with its count RIGHT passes (so the rule is not just a fence detector)',
-    rawControl.exit === 0,
-    `exit ${rawControl.exit}`,
+    'control: the same fenced block with its count RIGHT passes (so the rule is not just a fence detector)',
+    noLabelControl.exit === 0,
+    `exit ${noLabelControl.exit}`,
   )
 
-  // A count OUTSIDE the vocabulary (`all thirteen`) used to be counted as CHECKED
-  // and the rule's claim published over a comparison that never ran. It is now a
-  // finding: a range SEEN and not COMPARED cannot pass.
-  const thirteen = rawSeed.replace('(all six legs)', '(all thirteen legs)')
+  // An out-of-vocabulary count word is a finding, never a skip.
+  const thirteen = noLabelSeed.replace('(all six legs)', '(all thirteen legs)')
   const outOfTable = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', thirteen)
-  }, { args: ['--repo', REPO] })
+  }, { report: false, args: ['--repo', REPO] })
   check(
     'an out-of-vocabulary count word (all thirteen) is CAUGHT, not skipped',
     outOfTable.exit === 1 && /transcript-summary-agrees/.test(outOfTable.out) && /cannot resolve to a number/.test(outOfTable.out),
@@ -1257,245 +1264,167 @@ console.log('===========================================================')
   const outOfTableMiss = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', thirteen)
-  }, { guard: wordAssumesAgreement, args: ['--repo', REPO] })
+  }, { guard: wordAssumesAgreement, report: false, args: ['--repo', REPO] })
   check(
-    'MUTATION: an unresolvable count assumed to agree lets that seed PASS (so the check can fail)',
+    'MUTATION: an unresolvable count assumed to agree lets that seed PASS (exit 1 -> 0 — a DETECTION flip)',
     outOfTableMiss.exit === 0,
     `exit ${outOfTableMiss.exit}`,
   )
   const digitCount = run((ctx) => {
     cleanRoot()(ctx)
     ctx.write('.scratch/v28/reports/zz-raw.md', thirteen.replace('(all thirteen legs)', '(all 7 legs)'))
-  }, { args: ['--repo', REPO] })
+  }, { report: false, args: ['--repo', REPO] })
   check(
     'control: the same range with its count as a DIGIT passes (so the rule is not "big words fail")',
     digitCount.exit === 0,
     `exit ${digitCount.exit}`,
   )
 
-  // THE LABEL TRIPWIRE — "no raw block exists" must not look like "raw blocks I
-  // failed to attribute". A label the rule saw and read no block for is a finding.
-  const orphanLabel =
-    '# zz-orphan label\n\n' +
-    'proof — raw:\n\n' +
-    'Running 3 tests using 1 worker\n'
-  const orphan = run((ctx) => {
+  // TWO PAIRS ON ONE LINE (review N2). The count is paired with the range it
+  // FOLLOWS, so two correct pairs are two comparisons, not one comparison that
+  // borrows the other pair's count.
+  const twoPairsSeed =
+    '# zz two pairs, both correct\n\n' +
+    '```\n' +
+    '✓ 1–2 a.e2e.ts (all two legs) and ✓ 7–13 b.e2e.ts (all seven legs)\n' +
+    '```\n'
+  const twoPairs = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', orphanLabel)
-  }, { args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-raw.md', twoPairsSeed)
+  }, { report: false, args: ['--repo', REPO] })
   check(
-    'a raw:/verbatim label with no block to read is CAUGHT (the label tripwire)',
-    orphan.exit === 1 && /transcript-summary-agrees/.test(orphan.out) && /did not read/.test(orphan.out),
-    `exit ${orphan.exit}`,
+    'two range/count pairs on ONE line, both correct, PASS (each range takes the count that follows it)',
+    twoPairs.exit === 0 && /2 range summaries checked/.test(twoPairs.out),
+    `exit ${twoPairs.exit}`,
   )
-  const noTripwire = mutatedGuard([['const unreadLabel =', 'const unreadLabel = false &&']])
-  const orphanMiss = run((ctx) => {
+  const greedyCount = mutatedGuard([['[^\\n]*?\\(all', '[^\\n]*\\(all']])
+  const twoPairsMiss = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', orphanLabel)
-  }, { guard: noTripwire, args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-raw.md', twoPairsSeed)
+  }, { guard: greedyCount, report: false, args: ['--repo', REPO] })
   check(
-    'MUTATION: dropping the label tripwire lets that seed PASS (so the check can fail)',
-    orphanMiss.exit === 0,
-    `exit ${orphanMiss.exit}`,
+    'MUTATION: a GREEDY count search pairs a range with the wrong count and that seed goes RED (exit 0 -> 1 — a DETECTION flip)',
+    twoPairsMiss.exit === 1 && /covers 2 entries/.test(twoPairsMiss.out),
+    `exit ${twoPairsMiss.exit}`,
   )
 
-  // The witness for the INPUT number, and the tripwire's control: a label WITH a
-  // block is attributed and passed, and the note says how many blocks were READ
-  // and how many compared — so a narrowed parse window cannot hide behind a zero.
-  const twoLabels =
-    '# zz-raw count witness\n\n' +
-    'first — raw:\n\n' +
+  // THE ESCAPE THE REVIEW FOUND (D-032 / B1), seed for seed. A `raw:` label, a
+  // blank line, a BLOCKQUOTE line, a blank line, then the fenced block the label
+  // introduces. At the previous guard this PASSED (the blockquote region took the
+  // label and the fence was read by nothing); with attribution deleted there is
+  // no label to take.
+  const stealSeed =
+    '# zz\n\n' +
+    'proof — raw:\n\n' +
+    '> a quote with no range in it\n\n' +
     '```\n' +
-    '✓ 7–13 zz-spec.e2e.ts (all seven legs)\n' +
-    '```\n\n' +
-    'second — raw:\n\n' +
-    '```\n' +
-    'nothing to compare here\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
     '```\n'
+  const steal = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', stealSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    "the reviewer's exact seed (label / blank / blockquote / blank / fence) is CAUGHT",
+    steal.exit === 1 && /covers 7 entries/.test(steal.out),
+    `exit ${steal.exit}`,
+  )
+  const stealMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', stealSeed)
+  }, { guard: assumesAgreement, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: with agreement assumed that seed PASSES (exit 1 -> 0), so READING the fence is what catches it',
+    stealMiss.exit === 0,
+    `exit ${stealMiss.exit}`,
+  )
+
+  // NO SEPARATOR CAN HIDE A BLOCK (the family, swept). Each of these separates a
+  // label from the fence it would introduce; with attribution deleted the
+  // separation has nothing to act on, which is the property under test.
+  const separators = {
+    'a heading': '# zz\n\nproof — raw:\n\n## a heading between\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+    'a list item': '# zz\n\nproof — raw:\n\n- a list item between\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+    'an ordinary paragraph': '# zz\n\nproof — raw:\n\nan ordinary paragraph between.\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+    'the label inside a list item': '# zz\n\n- proof — raw:\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n',
+  }
+  for (const [separator, seed] of Object.entries(separators)) {
+    const caught = run((ctx) => {
+      cleanRoot()(ctx)
+      ctx.write('.scratch/v28/reports/zz-raw.md', seed)
+    }, { report: false, args: ['--repo', REPO] })
+    const missed = run((ctx) => {
+      cleanRoot()(ctx)
+      ctx.write('.scratch/v28/reports/zz-raw.md', seed)
+    }, { guard: assumesAgreement, report: false, args: ['--repo', REPO] })
+    check(
+      `${separator} between a label and its fence does NOT hide the block: CAUGHT, and the mutant PASSES`,
+      caught.exit === 1 && /covers 7 entries/.test(caught.out) && missed.exit === 0,
+      `caught exit ${caught.exit} / mutant exit ${missed.exit}`,
+    )
+  }
+
+  // THE DECLARED COST (D-032). A fenced block that QUOTES a bad transcript FIRES.
+  // That is the price of having no association to break: there is no exemption to
+  // construct an escape out of, and a run that quotes will say so.
+  const quotedCostSeed =
+    '# zz quoting a bad block\n\n' +
+    '~~~text\n' +
+    '```\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
+    '```\n' +
+    '~~~text\n'
+  const quotedCost = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', quotedCostSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'the COST, declared: a fenced block that quotes a bad transcript FIRES (there is no exemption to escape through)',
+    quotedCost.exit === 1 && /covers 7 entries/.test(quotedCost.out),
+    `exit ${quotedCost.exit}`,
+  )
+  const quotedCostControl = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', quotedCostSeed.replace('(all six legs)', '(all seven legs)'))
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'control: a fenced block that quotes an AGREEING transcript passes',
+    quotedCostControl.exit === 0,
+    `exit ${quotedCostControl.exit}`,
+  )
+
+  // The witness for the INPUT number: the note states how many fenced blocks were
+  // READ and how many ranges were compared, so a narrowed scan cannot hide.
   const witness = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', twoLabels)
-  }, { args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-raw.md', '# zz witness\n\n```\n✓ 1–2 a.e2e.ts (all two legs)\n```\n\n```\nno range here\n```\n')
+  }, { report: false, args: ['--repo', REPO] })
   check(
-    'control: a label with a block passes, and the note states what it READ (2 blocks, 1 range summary)',
-    witness.exit === 0 && /2 raw-labelled block\(s\) read, 1 range summary checked/.test(witness.out),
+    'control: the note states what it READ (2 fenced block(s), 1 range summary checked)',
+    witness.exit === 0 && /2 fenced block\(s\) read, 1 range summary checked/.test(witness.out),
     `exit ${witness.exit}`,
   )
 
-  // The label may sit above a PROSE line, not only directly above its fence. One
-  // prose line between the two used to leave the identical fabrication unlabelled
-  // while the run said NOTHING was checked.
-  const proseCrossed = rawSeed.replace('proof — raw:\n\n```', 'proof — raw:\n\nthe transcript follows.\n\n```')
-  const crossed = run((ctx) => {
+  // D-030 at this rule's granularity: the scan read reports, and none of them
+  // holds a fenced block, so the rule compared nothing.
+  const noFence = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', proseCrossed)
-  }, { args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-nofence.md', '# a report with no fenced block\n')
+  }, { report: false })
   check(
-    'a label one PROSE line above its fence is still read, and the fabrication CAUGHT',
-    crossed.exit === 1 && /covers 7 entries/.test(crossed.out),
-    `exit ${crossed.exit}`,
+    'a scan that read no fenced block is a FINDING, not a pass (D-030)',
+    noFence.exit === 1 && /read no fenced block at all/.test(noFence.out),
+    `exit ${noFence.exit}`,
   )
-  const boundedWindow = mutatedGuard([['for (let i = region.start - 1; intro === -1 && i >= previousEnd; i -= 1) {', 'for (let i = region.start - 1; intro === -1 && i >= previousEnd && region.start - i <= 1; i -= 1) {']])
-  const crossedMiss = run((ctx) => {
+  const noZeroBlocks = mutatedGuard([['if (blocks === 0 && files.length > 0) {', 'if (false) {']])
+  const noFenceMiss = run((ctx) => {
     cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', proseCrossed)
-  }, { guard: boundedWindow, args: ['--repo', REPO] })
+    ctx.write('.scratch/v28/reports/zz-nofence.md', '# a report with no fenced block\n')
+  }, { guard: noZeroBlocks, report: false })
   check(
-    'MUTATION: bounding the label search to one line turns that CAUGHT comparison into the tripwire (so the search width is pinned)',
-    crossedMiss.exit === 1 && /did not read/.test(crossedMiss.out) && !/covers 7 entries/.test(crossedMiss.out),
-    `exit ${crossedMiss.exit}`,
-  )
-
-  // A raw-labelled block written as an INDENTED code block (no fence) used to be
-  // invisible: the rule walked fences only.
-  const indentedSeed =
-    '# zz-indented raw block\n\n' +
-    'proof — raw:\n\n' +
-    '    Running 3 tests using 1 worker\n' +
-    '    ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
-  const indented = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', indentedSeed)
-  }, { args: ['--repo', REPO] })
-  check(
-    'an INDENTED raw block is READ, and its contradiction is CAUGHT',
-    indented.exit === 1 && /covers 7 entries/.test(indented.out) && /1 raw-labelled block\(s\) read/.test(indented.out),
-    `exit ${indented.exit}`,
-  )
-  const noIndented = mutatedGuard([
-    ["if (/^(\\t| {4,})\\S/.test(line) && (index === 0 || lines[index - 1].trim() === '')) {", "if (/^(\\t| {9999,})\\S/.test(line) && (index === 0 || lines[index - 1].trim() === '')) {"],
-  ])
-  const indentedMiss = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', indentedSeed)
-  }, { guard: noIndented, args: ['--repo', REPO] })
-  check(
-    'MUTATION: dropping indented-block detection reads 0 blocks and lets the fabrication hide (tripwire instead)',
-    indentedMiss.exit === 1 && /0 raw-labelled block\(s\) read/.test(indentedMiss.out) && /did not read/.test(indentedMiss.out),
-    `exit ${indentedMiss.exit}`,
-  )
-
-  // A fence-INLINE label (the fence's own line carries it) is read, rather than
-  // escaping because the label is not on a line of its own.
-  const inlineSeed =
-    '# zz-fence-inline label\n\n' +
-    '```raw:\n' +
-    'Running 3 tests using 1 worker\n' +
-    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
-    '```\n'
-  const inline = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', inlineSeed)
-  }, { args: ['--repo', REPO] })
-  check(
-    'a fence-INLINE label is READ, and its contradiction is CAUGHT',
-    inline.exit === 1 && /covers 7 entries/.test(inline.out),
-    `exit ${inline.exit}`,
-  )
-  const noInlineLabel = mutatedGuard([['let intro = LABEL_LINE.test(lines[region.start]) ? region.start : -1', 'let intro = -1']])
-  const inlineMiss = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', inlineSeed)
-  }, { guard: noInlineLabel, args: ['--repo', REPO] })
-  check(
-    'MUTATION: not reading the label on the fence line lets that fabrication PASS (so the fence-inline path is load-bearing)',
-    inlineMiss.exit === 0,
-    `exit ${inlineMiss.exit}`,
-  )
-
-  // THE ESCAPE (D-031). `>` used to be the way OUT of this rule: a label whose
-  // next non-blank line began `>` was EXEMPTED, so prefixing `>` over a fabricated
-  // transcript passed with `0 raw-labelled block(s) read … NOTHING was checked`,
-  // exit 0 — and in a root that also held one agreeing block the guard PUBLISHED
-  // its claim over the fabrication. A blockquote is a REGION now, so the quoted
-  // block is read and its contradiction is a finding. Three spellings, each its
-  // own seed, plus the strongest form (an agreeing block elsewhere, so the old
-  // run published its claim) and a control that an AGREEING quote still passes.
-  const quotedLabel =
-    '# zz-quoted label\n\n' +
-    'proof — raw:\n\n' +
-    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
-  const quoted = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel)
-  }, { args: ['--repo', REPO] })
-  check(
-    'a `>`-prefixed fabrication is CAUGHT (the D-031 escape is closed)',
-    quoted.exit === 1 && /covers 7 entries/.test(quoted.out),
-    `exit ${quoted.exit}`,
-  )
-  const wholeQuoted =
-    '# zz-whole quoted\n\n' +
-    '> proof — raw:\n' +
-    '>\n' +
-    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
-  const wholeQuotedRun = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', wholeQuoted)
-  }, { args: ['--repo', REPO] })
-  check(
-    'the WHOLE block quoted, label included, is CAUGHT',
-    wholeQuotedRun.exit === 1 && /covers 7 entries/.test(wholeQuotedRun.out),
-    `exit ${wholeQuotedRun.exit}`,
-  )
-  const quotedThenBlank =
-    '# zz-quoted then blank\n\n' +
-    'proof — raw:\n\n' +
-    '> a quote\n\n' +
-    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
-  const quotedBlankRun = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', quotedThenBlank)
-  }, { args: ['--repo', REPO] })
-  check(
-    'a quote, a blank line, then a quoted contradiction is CAUGHT (the quote region survives a blank line)',
-    quotedBlankRun.exit === 1 && /covers 7 entries/.test(quotedBlankRun.out),
-    `exit ${quotedBlankRun.exit}`,
-  )
-  const agreeingPlusQuote =
-    '# zz agreeing plus quote\n\n' +
-    'proof — raw:\n\n' +
-    '```\n' +
-    '✓ 1–2 a.e2e.ts (all two legs)\n' +
-    '```\n\n' +
-    'also — raw:\n\n' +
-    '> ✓ 7–13 zz-spec.e2e.ts (all six legs)\n'
-  const agreeingPlusQuoteRun = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', agreeingPlusQuote)
-  }, { args: ['--repo', REPO] })
-  check(
-    'an agreeing block ALONGSIDE a quoted fabrication no longer republishes the claim — the quoted block is read',
-    agreeingPlusQuoteRun.exit === 1 && /covers 7 entries/.test(agreeingPlusQuoteRun.out) && /2 raw-labelled block\(s\) read, 2 range summaries checked/.test(agreeingPlusQuoteRun.out),
-    `exit ${agreeingPlusQuoteRun.exit}`,
-  )
-  const quotedControl = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel.replace('(all six legs)', '(all seven legs)'))
-  }, { args: ['--repo', REPO] })
-  check(
-    'control: an AGREEING quote passes (so reading quotes is not any-quote-fails)',
-    quotedControl.exit === 0,
-    `exit ${quotedControl.exit}`,
-  )
-  const noQuoteRegion = mutatedGuard([['} else if (/^\\s*>/.test(line)) {', '} else if (false) {']])
-  const quotedMiss = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', quotedLabel)
-  }, { guard: noQuoteRegion, args: ['--repo', REPO] })
-  check(
-    'MUTATION: dropping the blockquote arm turns the escape CAUGHT-comparison into the label tripwire (so READING the quote is what closes it)',
-    quotedMiss.exit === 1 && /did not read/.test(quotedMiss.out) && !/covers 7 entries/.test(quotedMiss.out),
-    `exit ${quotedMiss.exit}`,
-  )
-  const labelBoundary = run((ctx) => {
-    cleanRoot()(ctx)
-    ctx.write('.scratch/v28/reports/zz-raw.md', '# zz draw\n\nthe sketch is a draw:\n\n```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n')
-  }, { args: ['--repo', REPO] })
-  check(
-    'control: `the sketch is a draw:` is NOT a label (the left word boundary), so its block is not read',
-    labelBoundary.exit === 0,
-    `exit ${labelBoundary.exit}`,
+    'MUTATION: dropping the empty-block finding lets that seed PASS (exit 1 -> 0 — a DETECTION flip)',
+    noFenceMiss.exit === 0,
+    `exit ${noFenceMiss.exit}`,
   )
 
   // THE REPORT/BRIEF SCAN'S OWN ZERO CASE (D-030). The scan used to print
