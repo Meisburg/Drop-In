@@ -417,6 +417,10 @@ Does **not** authorize: editing `.scratch/v28/ledger.md` (D-002 keeps it as it i
 scan to the ledger or to `plan.md` without its own work item.
 
 ## D-019 — instrument coverage vs the violation class (the round-5 comparison, measured)
+> **SUPERSEDED — 2026-10-02.** The table below describes the instrument as it stood at round 5. It no longer
+> exists: **D-021** replaced the lexical arms with a canonical, *verified* provenance token, and D-020 records
+> why. The table is kept as the historical record of what was measured and why the widening stopped; a reader
+> looking for the current rule should read D-021 and the guard's own header, which is authoritative.
 
 **Requested by the human 2026-10-02.** The rule was matching *examples* of the class; round 5 made it
 structural. This is the coverage comparison, and **every row was measured by the orchestrator** against the
