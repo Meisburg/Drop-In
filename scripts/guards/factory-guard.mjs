@@ -88,6 +88,18 @@
 //                         other path, a cited file not on disk, a finding that
 //                         names no sha, another rule's transcript — is a named
 //                         ceiling, not a covered shape.
+//   transcript-summary-agrees  EVERY fenced block, of either markdown fence kind
+//                         and however it is introduced, is read; a line inside
+//                         one that states a step range beside a count must
+//                         agree with its own arithmetic. There is no label and
+//                         no attribution between the two — the rule was
+//                         re-scoped by D-032, because three repairs each opened
+//                         an escape by breaking the label/block association,
+//                         and a rule that must infer an association it cannot
+//                         see will keep moving its hole. The price is DECLARED
+//                         and paid rather than exempted: a block that QUOTES a
+//                         bad transcript fires. A scan that read no fenced block
+//                         is a finding, never a pass (D-030).
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's

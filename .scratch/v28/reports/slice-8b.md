@@ -681,3 +681,31 @@ VERIFY EXIT=1
   general parser.
 - The rule's live signal: **2** range summaries compared on this corpus now (was 0), both from the two quoted
   seeds — so its live signal is still quotation, not a real transcript.
+
+## Fix-round 1 — committed, and the state it hands over
+
+Committed as: **`0f17891`** (plus a header-completeness follow-up in the same turn: the guard's own rule list
+did not name `transcript-summary-agrees` at all, so the header — which `docs/agents/code-structure.md` makes
+the authoritative statement of what the guard covers — now carries it).
+
+**Fresh, at the committed state: `npm run verify` EXIT=1, and the failure is one guard, on four findings, all
+quotations inside two LANE reports.** Everything before the guards step is green: `Test Files 71 passed (71)`,
+`Tests 2063 passed (2063)`, oxlint `81 warnings / 0 errors`, `AGENTS.md (1789 words, ceiling 1800)`,
+`PASS — steering layer is clean.`
+
+| finding | file | what it is | who clears it |
+|---|---|---|---|
+| `transcript-summary-agrees` | `.scratch/v28/reports/slice-8a-verify-5.md:37` | 8a's verifier quoting the round-4 escape seed | a lane report — not mine |
+| `transcript-summary-agrees` | `.scratch/v28/reports/slice-8b-review.md:89` | THIS review quoting the B1 seed | a lane report — not mine |
+| `no-bare-head-count` | `.scratch/v28/reports/slice-8b-review.md:191` | the review's pasted run line, quoted against the moving revision | **PRE-EXISTING at `98db92f`** (measured: the head guard reports 2 findings on the same tree) — baseline re-derivation |
+| `no-bare-head-count` | `.scratch/v28/reports/slice-8b-review.md:193` | the same class, twice on one line | as above |
+
+**Say-so, per the dispatch:** `run-all.sh` is red ONLY from lane-report quotations, so I did not hand-edit a
+report that is not mine, and the baseline re-derivation is the orchestrator's. The two clearance routes are
+(a) re-word the two quoted lines so they are not fenced `✓ A–B … (all N)` (indented code, or dropping the
+parenthetical, is enough — indented code is outside this rule's scan set), and (b) re-derive the
+`no-bare-head-count` baseline. **Neither is a builder's edit, and both are named rather than assumed.**
+
+**The build-law half of this rule is proven at the committed state**: `factory-guard.check.mjs` 112/112 (exit
+0), `trailing-newline-guard.check.mjs` 10/10, `lib-sibling-guard.check.mjs` 8/8; the reviewer's seed exits 0
+on the pre-change guard and 1 here; eleven separation attempts are all CAUGHT.
