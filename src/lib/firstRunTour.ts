@@ -82,6 +82,7 @@
 
 import { escapeForRegExp } from './escapeForRegExp.mjs'
 import { PLACE_KINDS, PLACE_KIND_CHIP_KINDS, placeKindLabel } from './places'
+import type { PlaceKind } from './types'
 
 /** One line of the tour: a control the parent is about to meet, and its job. */
 export interface TourLine {
@@ -176,6 +177,32 @@ export const TOUR_LINES: readonly TourLine[] = [
       'keep you and your kids up to date, and link your partner’s account — search their name to find them',
   },
 ]
+
+/**
+ * THE TAXONOMY CLAIMS THIS CARD'S COPY MAKES — declared here so a machine can
+ * read them (V28 r2 slice 6d, `scripts/guards/copy-taxonomy-guard.mjs`).
+ *
+ * A CLAIM IS A STATEMENT ABOUT CONTENT. The Places line names categories the
+ * Places tab offers, and the line is true only while every one of them is a
+ * category the app actually puts in front of a parent. The guard's rule over
+ * this list is literal and narrow: every kind listed must EXIST in `PLACE_KINDS`
+ * and must be one the app OFFERS (`PLACE_KIND_CHIP_KINDS`) rather than one it
+ * withholds, and each listed kind's label must actually appear in the words
+ * above — so the declaration cannot drift away from the copy it is about, and a
+ * category in the copy that is NOT declared is a finding in the other direction.
+ *
+ * KINDS, NOT LABELS — because the withholding is a fact about the taxonomy
+ * (`PLACE_KIND_CHIP_KINDS` is a subset of `PLACE_KINDS` and "withheld" is that
+ * set difference over KINDS), and a label is a lossy projection of a kind. The
+ * derivation above stays the authority; this list is the same answer, written
+ * down where the words are.
+ *
+ * IT IS TYPED, and that is deliberately a second net rather than the only one:
+ * a kind that does not exist is a `tsc` error here, while the guard's rule is
+ * the TEXTUAL one (it reads source, not types) and its seed proves that rule
+ * fires on a category the taxonomy lacks.
+ */
+export const TOUR_TAXONOMY_CLAIMS: readonly PlaceKind[] = ['playground', 'pool', 'beach']
 
 /**
  * The CTA. ⚠️ LOAD-BEARING: `e2e/auth.setup.ts` (EVERY spec's setup),
