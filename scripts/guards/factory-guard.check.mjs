@@ -321,8 +321,8 @@ console.log('===========================================================')
   )
 
   // Control: the second header carries BOTH the count vocabulary and a
-  // staleness claim, and passes because the claim names the commit that shows
-  // it. The rule is about a resolvable pointer, not about the words — a rule
+  // staleness claim, and passes because the claim names a hex-shaped commit
+  // pointer. The rule is about the pointer's SHAPE, not about the words — a rule
   // that fired on the words alone would fire on this repo's own headers.
   const honest = run((ctx) => {
     cleanRoot()(ctx)
@@ -984,6 +984,116 @@ console.log('===========================================================')
     fallback.exit === 0 && /this instrument's own repository/.test(fallback.out),
     `exit ${fallback.exit}`,
   )
+}
+
+// 26. V28 slice 6c fix-7 — the mechanism-vs-prose rules (D-025/D-026). Each of
+//     the four ships the failing world it was built to catch, and a mutation of
+//     the rule that turns that seed green, so the rule is a check rather than a
+//     comment. The claim shapes are seeded in a throwaway guard/check/report, so
+//     nothing here reads or writes the real instruments.
+{
+  // RULE 1a — a claim that the file makes only ONE git call must name every git
+  // call it makes. The seed makes the claim and only one of its two calls.
+  const exclusiveClaim =
+    '#!/usr/bin/env node\n' +
+    '// zz-seeded — the only git call is `cat-file -e <sha>^{commit}`.\n' +
+    "import { execFileSync } from 'node:child_process'\n" +
+    "execFileSync('git', ['ls-files', '-z'], { stdio: 'ignore' })\n" +
+    'process.exit(0)\n'
+  const exclusive = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-exclusive.mjs', exclusiveClaim)
+  })
+  check(
+    'an exclusive git-call claim the file itself contradicts is CAUGHT',
+    exclusive.exit === 1 && /instrument-headers-honest/.test(exclusive.out) && /git ls-files/.test(exclusive.out),
+    `exit ${exclusive.exit}`,
+  )
+  const noExclusive = mutatedGuard([['if (missing.length) {', 'if (false) {']])
+  const exclusiveMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-exclusive.mjs', exclusiveClaim)
+  }, { guard: noExclusive })
+  check(
+    'MUTATION: dropping the exclusive-git-claim test lets that seed PASS (so the check can fail)',
+    exclusiveMiss.exit === 0,
+    `exit ${exclusiveMiss.exit}`,
+  )
+
+  // RULE 1b — a named construct must appear in the file's own source.
+  const namedAlternative =
+    '#!/usr/bin/env node\n' +
+    '// zz-seeded — the `ZZQ` alternative matches the label.\n' +
+    'process.exit(0)\n'
+  const alternative = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-alternative.mjs', namedAlternative)
+  })
+  check(
+    'a named alternative with no such construct in the source is CAUGHT',
+    alternative.exit === 1 && /instrument-headers-honest/.test(alternative.out),
+    `exit ${alternative.exit}`,
+  )
+  const noAlternative = mutatedGuard([['if (!PROSE_NEGATION.test(seg.text) && !PROSE_NEGATION.test(prev) && core.length >= 2 && !code.includes(core)) {', 'if (false) {']])
+  const alternativeMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-alternative.mjs', namedAlternative)
+  }, { guard: noAlternative })
+  check(
+    'MUTATION: dropping the named-construct test lets that seed PASS (so the check can fail)',
+    alternativeMiss.exit === 0,
+    `exit ${alternativeMiss.exit}`,
+  )
+
+  // RULE 1d — a claim of a CAPABILITY the rule does not have: the pointer test is
+  // a shape test, so calling the pointer resolvable claims a lookup it never does.
+  const resolutionClaim =
+    '#!/usr/bin/env node\n' +
+    '// zz-seeded — the rule is about a resolvable pointer, not about the words.\n' +
+    'process.exit(0)\n'
+  const resolution = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-resolution.mjs', resolutionClaim)
+  })
+  check(
+    'a prose claim that the pointer RESOLVES is CAUGHT (a capability the rule lacks)',
+    resolution.exit === 1 && /instrument-headers-honest/.test(resolution.out),
+    `exit ${resolution.exit}`,
+  )
+  const noResolution = mutatedGuard([['if (POINTER_RESOLUTION_CLAIM.test(seg.text) && !/\\bcannot\\b/i.test(seg.text)) {', 'if (false) {']])
+  const resolutionMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-resolution.mjs', resolutionClaim)
+  }, { guard: noResolution })
+  check(
+    'MUTATION: dropping the capability-claim test lets that seed PASS (so the check can fail)',
+    resolutionMiss.exit === 0,
+    `exit ${resolutionMiss.exit}`,
+  )
+
+  // RULE 1c — a phrase the instrument records as the wording it narrowed away
+  // must not be restated as current prose. The seed abandons a phrase in one
+  // guard and restates it in another, which is the shape that survived in a
+  // check name and a constants comment while the header had been narrowed.
+  const abandonedSeed = (ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('scripts/guards/zz-old.mjs', '#!/usr/bin/env node\n// zz-seeded — the header used to claim the "zz-old formula" and it was narrowed.\nprocess.exit(0)\n')
+    ctx.write('scripts/guards/zz-reuse.mjs', '#!/usr/bin/env node\n// a second file restates the zz-old formula as current.\nprocess.exit(0)\n')
+  }
+  const reuse = run(abandonedSeed)
+  check(
+    'an abandoned formula restated as current prose is CAUGHT',
+    reuse.exit === 1 && /instrument-headers-honest/.test(reuse.out) && /zz-reuse/.test(reuse.out),
+    `exit ${reuse.exit}`,
+  )
+  const noReuse = mutatedGuard([['for (let at = f.joined.indexOf(phrase); at !== -1; at = f.joined.indexOf(phrase, at + phrase.length)) {', 'for (let at = -1; at !== -1; at = f.joined.indexOf(phrase, at + phrase.length)) {']])
+  const reuseMiss = run(abandonedSeed, { guard: noReuse })
+  check(
+    'MUTATION: dropping the abandoned-formula scan lets that seed PASS (so the check can fail)',
+    reuseMiss.exit === 0,
+    `exit ${reuseMiss.exit}`,
+  )
+
 }
 
 process.on('exit', () => {

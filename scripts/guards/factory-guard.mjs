@@ -42,10 +42,16 @@
 //   independence-satisfiable  a lane requiring same_model:false has a second
 //                         model that clears its floor, or says in writing that
 //                         it does not — independence is not a slogan
-//   instrument-headers-honest  a guard's header block states only what a reader
+//   instrument-headers-honest  an instrument's prose states only what a reader
 //                         can point at: the counts it reports are derived at run
-//                         time, and a claim about its own text names the commit
-//                         or the line that shows it
+//                         time, a claim about its own text names a hex-shaped
+//                         commit or `file:line` pointer, and a claim that names a
+//                         concrete construct — an alternative, an exclusive git
+//                         call, a formula this instrument has itself recorded as
+//                         narrowed away — is backed by that construct in the
+//                         file's own source. Read over every comment line and
+//                         each check name on the line that opens the call, not
+//                         only the leading block.
 //   no-bare-head-count    no report or brief resolves a count through bare
 //                         HEAD — an "N … at HEAD" label (any HEAD spelling, or
 //                         the `@` shorthand), a `git … HEAD` read whatever the
@@ -67,6 +73,11 @@
 //                         absorbed by re-derivation (D-021 item 2, ruled for
 //                         this half by D-023), and every occurrence beyond the
 //                         recorded count still fails.
+//   transcript-reproduces a pasted `count-provenance-unresolvable` transcript
+//                         that cites a file IN this repository must cite a line
+//                         that carries the sha it names, or be marked historical —
+//                         a transcript written before a later edit and never
+//                         re-taken is a claim the committed artifact contradicts.
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -77,21 +88,26 @@
 //     and depends_on.
 //   - .opencode/agents/*.md, and the live harness dir ~/.pi/agent/agents/*.md
 //     when present (markdown) — only each file's `model:` line.
-//   - scripts/guards/*.mjs (JavaScript), ONE level — the leading comment block
-//     of each file, before the first line of code.
+//   - scripts/guards/*.mjs (JavaScript), ONE level — every comment line of each
+//     file, plus the `check('…')` name string on each line that opens a check
+//     call (the leading block is a subset).
 //   - .scratch/v28/reports/*.md and .scratch/v28/briefs/*.md (markdown), ONE
 //     level — every line, for the bare-HEAD shapes and for the provenance
 //     tokens of counts.
 //   - the git repository those provenance tokens are resolved against: the
 //     `--repo <dir>` argument when given, else the scan root when it is a
-//     worktree, else this instrument's own repository. No ref, object or index
-//     content is read — the only git call is `cat-file -e <sha>^{commit}`.
+//     worktree, else this instrument's own repository. Two git calls are made
+//     against it: `cat-file -e <sha>^{commit}` verifies a provenance sha, and
+//     `ls-files -z` reads the index to disclose which scanned report/brief files
+//     git tracks.
 //   NOT read, and therefore NOT counted: .scratch/v28/ledger.md,
 //   .scratch/v28/plan.md, other V28 lanes and older versions, any file BELOW
 //   the directories named above (every walk is non-recursive), any extension
 //   other than the ones named, and any file's git status. The report/brief scan
-//   is PRESENCE ON DISK, not `git ls-files`: a tracked file absent from the tree
-//   is not seen, and a present untracked file IS seen.
+//   is PRESENCE ON DISK, not `git ls-files` — that `ls-files -z` call is a
+//   disclosure of which scanned files are tracked, never the set that is read: a
+//   tracked file absent from the tree is not seen, and a present untracked file
+//   IS seen.
 //
 // Usage:  node scripts/guards/factory-guard.mjs [--root <dir>] [--repo <dir>]
 // Exit:   0 = clean, 1 = findings
@@ -331,12 +347,16 @@ function checkAgentModels(config) {
  *   - a COUNT of the instrument's own cases typed into the header ("all 9 checks
  *     passed", "12 cases"). The file grows, the sentence does not, and the
  *     sentence is what a reviewer trusts. Print the derived count instead.
- *   - a HISTORY claim about the header's own text with nothing that resolves it
+ *   - a HISTORY claim about the header's own text with NO pointer at all
  *     ("a typed count in this header went stale once already" — a sentence whose
- *     claimed commit does not exist). A commit sha or a `file:line` is what makes
- *     the claim checkable; without one, a reader has to take it on faith, and the
- *     pointer has to sit on the line that makes the claim — a header is short,
- *     and a claim whose evidence is three lines away is the shape that failed.
+ *     claimed commit is named nowhere). What the rule requires is a HEX-SHAPED
+ *     pointer — a 7-40 character hex run, or a `file:line` — because that is the
+ *     form a reader can follow. It does NOT verify that the named commit exists:
+ *     that is `count-provenance-unresolvable`'s half, for a count's provenance,
+ *     not for header prose — so the claim and the mechanism are stated to match.
+ *     The pointer has to sit on the line that makes the claim — a header is
+ *     short, and a claim whose evidence is three lines away is the shape that
+ *     failed.
  *
  * The second shape is matched only where the line is about THIS instrument's own
  * text or numbers (count/number/total/header/sentence/prose/label/map). A header
@@ -348,6 +368,37 @@ const HEADER_TYPED_COUNT = /\d+\s*[-\s]?\s*(?:check|checks|case|cases|test|tests
 const HEADER_HISTORY = /\b(?:went stale|was once|used to be|has grown)\b/i
 const HEADER_SELF_SUBJECT = /\b(?:count|counts|number|total|header|sentence|prose|label|map)\b/i
 const HEADER_POINTER = /\b[0-9a-f]{7,40}\b|[\w@./-]+:\d+/
+// --- the mechanism-vs-prose rules (V28 slice 6c fix-7) --------------------
+// A guard's prose is a claim about its own mechanism, and three claim shapes
+// have gone false repeatedly (D-025/D-026): a construct the prose names but the
+// source does not contain; a formula the instrument has itself recorded as the
+// wording it narrowed away, restated as current; and a count of a derived
+// quantity that the derivation contradicts. The prose read is EVERY comment line
+// and each `check('…')` name on the line that opens its call, not only the
+// leading block — check names and body comments used to be unguarded, and two of
+// the four instances one round found lived there.
+const GIT_INVOCATION = /execFileSync\(\s*'git'\s*,\s*\[\s*'([^']+)'/g
+const EXCLUSIVE_GIT_CLAIM = /the only git call is\s+`([^`]*)`/
+const NAMED_ALTERNATIVE = /`([^`]+)`(?:'s)?\s+alternative\b/
+const PROSE_NEGATION = /\b(?:no|not|none|never|without)\b/i
+const ABANDON_MARKER = /used to claim|was narrowed|it was narrowed/g
+const ABANDON_QUOTE = /(?:`([^`\n]{10,140})`|"([^"\n]{10,140})"|\(([^()\n]{10,140})\))/g
+const POINTER_RESOLUTION_CLAIM = /\bresolvable\s+pointer\b|\bmakes the claim checkable\b|\bthe line that shows it\b/
+
+/** The prose positions of an instrument file: every comment line (its decor
+ * stripped) and each `check('…')` name on the line that opens its call, with the
+ * source line each came from. The leading block is a subset; these are the
+ * positions the class kept escaping into. */
+function proseSegments(lines) {
+  const segs = []
+  lines.forEach((line, i) => {
+    const trimmed = line.trim()
+    let text = null
+    if (/^(?:\/\/|\/\*|\*|#)/.test(trimmed)) text = trimmed.replace(/^(?:\/\/|\/\*|\*|#)\s?/, '')
+    if (text) segs.push({ line: i + 1, text })
+  })
+  return segs
+}
 
 function checkInstrumentHeaders() {
   const dir = join(ROOT, 'scripts', 'guards')
@@ -356,27 +407,111 @@ function checkInstrumentHeaders() {
     return 0
   }
   const files = readdirSync(dir).filter((f) => f.endsWith('.mjs'))
-  for (const file of files) {
-    const lines = readFileSync(join(dir, file), 'utf8').split('\n')
-    for (const [index, line] of lines.entries()) {
+  const scanned = files.map((file) => {
+    const raw = readFileSync(join(dir, file), 'utf8')
+    const lines = raw.split('\n')
+    const segs = proseSegments(lines)
+    const offsets = []
+    let off = 0
+    for (const s of segs) {
+      offsets.push({ start: off, end: off + s.text.length, line: s.line })
+      off += s.text.length + 1
+    }
+    return { file, raw, lines, segs, offsets, joined: segs.map((s) => s.text).join(' ') }
+  })
+  const lineAt = (f, idx) => f.offsets.find((o) => idx >= o.start && idx < o.end)?.line ?? 0
+
+  for (const f of scanned) {
+    // The header block: the leading comment lines, before the first line of
+    // code. `#` covers the shebang; the rest are the block-comment spellings.
+    // A BLANK line is part of the block, not the end of it — treating it as
+    // "not a comment" used to stop the scan silently, so a typed count after
+    // one went unflagged (the gap this scan's own behaviour check now seeds).
+    for (const [index, line] of f.lines.entries()) {
       const text = line.trim()
-      // The header block: the leading comment lines, before the first line of
-      // code. `#` covers the shebang; the rest are the block-comment spellings.
-      // A BLANK line is part of the block, not the end of it — treating it as
-      // "not a comment" used to stop the scan silently, so a typed count after
-      // one went unflagged (the gap this scan's own behaviour check now seeds).
       if (!text) continue
       if (!/^(?:\/\/|\/\*|\*|#)/.test(text)) break
       if (HEADER_TYPED_COUNT.test(text)) {
         fail(
           'instrument-headers-honest',
-          `${file}:${index + 1}: the header types a count of this instrument's own cases — print the count the run derives instead: ${JSON.stringify(text)}`,
+          `${f.file}:${index + 1}: the header types a count of this instrument's own cases — print the count the run derives instead: ${JSON.stringify(text)}`,
         )
       }
       if (HEADER_HISTORY.test(text) && HEADER_SELF_SUBJECT.test(text) && !HEADER_POINTER.test(text)) {
         fail(
           'instrument-headers-honest',
-          `${file}:${index + 1}: the header claims its own text changed and names no commit sha or file:line to check it against: ${JSON.stringify(text)}`,
+          `${f.file}:${index + 1}: the header claims its own text changed and names no commit sha or file:line to check it against: ${JSON.stringify(text)}`,
+        )
+      }
+    }
+
+    // RULE 2 — the check file's NAMES and body comments are read, not only the
+    // leading block, and RULE 1 applies: a claim naming a concrete construct
+    // must be backed by it in this file's own source.
+    const invoked = new Set([...f.raw.matchAll(GIT_INVOCATION)].map((m) => m[1]))
+    // The file's MECHANISM source: comment lines gone AND check-name strings
+    // blanked, so a construct named in a check name is not "found" in the
+    // name itself (which would make the presence test vacuous).
+    const code = f.lines.filter((l) => !/^\s*(?:\/\/|\/\*|\*|#)/.test(l)).join('\n')
+    for (const [i, seg] of f.segs.entries()) {
+      const exclusive = EXCLUSIVE_GIT_CLAIM.exec(seg.text)
+      if (exclusive) {
+        const named = exclusive[1].trim().split(/\s+/)[0]
+        const missing = [...invoked].filter((s) => s !== named)
+        if (missing.length) {
+          fail(
+            'instrument-headers-honest',
+            `${f.file}:${seg.line}: the prose says the only git call is \`${exclusive[1]}\`, but this file also invokes ${missing.map((s) => `\`git ${s}\``).join(', ')} — name every call, or drop the exclusivity`,
+          )
+        }
+      }
+      const alt = NAMED_ALTERNATIVE.exec(seg.text)
+      if (alt) {
+        const prev = f.segs[i - 1]?.text ?? ''
+        const core = alt[1].split(/…|\.\.\./)[0].replace(/\\/g, '')
+        if (!PROSE_NEGATION.test(seg.text) && !PROSE_NEGATION.test(prev) && core.length >= 2 && !code.includes(core)) {
+          fail(
+            'instrument-headers-honest',
+            `${f.file}:${seg.line}: the prose names a \`${alt[1]}\` alternative, but no such construct appears in the file's own source`,
+          )
+        }
+      }
+      // RULE 1d — a claim of a CAPABILITY the rule does not have. The pointer
+      // test is a lexical shape test, so prose calling the pointer resolvable —
+      // or saying it shows the thing it names — claims a lookup the rule never
+      // performs. The negative forms (a directory "cannot make the claim
+      // checkable") are controls about something else and are skipped.
+      if (POINTER_RESOLUTION_CLAIM.test(seg.text) && !/\bcannot\b/i.test(seg.text)) {
+        fail(
+          'instrument-headers-honest',
+          `${f.file}:${seg.line}: the prose claims the header pointer RESOLVES what it names, but the rule only tests the pointer's SHAPE — say what the mechanism does`,
+        )
+      }
+    }
+  }
+
+  // RULE 1 (continued) — ABANDONED FORMULA. A phrase this instrument records as
+  // the wording it narrowed away must not be restated as current prose anywhere
+  // in the instruments (the D-025 instance that survived in a check name and in
+  // a constants comment while the header had already been narrowed).
+  const abandoned = new Set()
+  for (const f of scanned) {
+    for (const marker of f.joined.matchAll(ABANDON_MARKER)) {
+      const window = f.joined.slice(marker.index, marker.index + 140)
+      for (const quoted of window.matchAll(ABANDON_QUOTE)) {
+        const phrase = (quoted[1] ?? quoted[2] ?? quoted[3] ?? '').replace(/^["'`“”]+|["'`“”]+$/g, '').trim()
+        if (phrase.split(/\s+/).length >= 2) abandoned.add(phrase)
+      }
+    }
+  }
+  for (const phrase of abandoned) {
+    for (const f of scanned) {
+      const markers = [...f.joined.matchAll(ABANDON_MARKER)]
+      for (let at = f.joined.indexOf(phrase); at !== -1; at = f.joined.indexOf(phrase, at + phrase.length)) {
+        if (markers.some((mk) => at >= mk.index && at <= mk.index + 140)) continue
+        fail(
+          'instrument-headers-honest',
+          `${f.file}:${lineAt(f, at)}: the prose restates \`${phrase}\`, which this instrument records as the wording it narrowed away — state what the mechanism does instead`,
         )
       }
     }
@@ -680,8 +815,9 @@ const BARE_HEAD_COUNT_CMD = new RegExp(String.raw`${GIT_CMD}[^\n|` + BACKTICK + 
 // `git ls-files src | wc -l` and the arm's stated property covers both.
 const BARE_HEAD_COUNT_WC = new RegExp(String.raw`${GIT_CMD}[^\n` + BACKTICK + String.raw`]{0,160}?\|\s*wc\b`, 'g')
 // The provenance token of a count, in the two positions that ARE provenance: the
-// canonical `N … at <sha>` label (either order) and the revision of a counted
-// git command. `SHA_TOKEN` is 7-40 lowercase hex, quote-dressed or not.
+// canonical `N … at <sha>` label (either order) and the FIRST sha-shaped token of
+// a counted git command, the one before the first `| wc`. `SHA_TOKEN` is 7-40
+// lowercase hex, quote-dressed or not.
 const SHA_TOKEN = String.raw`[0-9a-f]{7,40}`
 const COUNT_AT_SHA = new RegExp(
   String.raw`(?:${COUNT_TOKEN}${COUNT_GAP}at\s+(?:the\s+)?["'` + BACKTICK + String.raw`]?(\b${SHA_TOKEN}\b)|at\s+(?:the\s+)?["'` + BACKTICK + String.raw`]?(\b${SHA_TOKEN}\b)${COUNT_GAP}${COUNT_TOKEN})`,
