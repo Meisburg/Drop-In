@@ -586,3 +586,37 @@ instead of producing a named finding; and `checkAgentModels` always reading the 
 `~/.pi/agent/agents` regardless of `--root`, contradicting the checker's own hermeticity claim.
 **`ocr`'s round 2 timed out (`context deadline exceeded`) and its findings are round-1 only** — the run is
 partial and should be repeated on a narrower range.
+
+## D-023 — the decidability half gets a forward-only absorber, and the property narrows in writing
+
+**Ruling by the orchestrator 2026-10-02, on a builder escalation.** The round-6 repair made the guard green
+everywhere except **two findings**, both on the sha-verification half, and re-derivation could not absorb them
+because round 6 deliberately gave that half **no absorber** ("a re-derivation can absorb a historical bare-HEAD
+label, never a broken sha") — a property the round-6 reviewer checked and endorsed.
+
+The two lines are `slice-6c-fix-6-review.md:109` and `slice-6c-fix-6-verify.md:223`, and both are lane reports
+**quoting a probe seed** (`"The tree held **412** tracked files at deadbee."  PASS`) to demonstrate that the
+rule fires. **This is a use-mention distinction:** the class is about a report *using* a bogus sha as
+provenance; these *mention* one. The HEAD half already absorbs exactly this case, and the human prescribed the
+mechanic — **D-021 item 2**: *"all in lane reports that discuss the class and therefore quote it … absorbed by
+a re-derivation, never by hand-adding a key."*
+
+**Ruled: the sha half takes the same forward-only mechanic.** The baseline becomes `file::sha -> count` for
+unresolvable tokens, the run prints the number of recorded records, and a **NEW** unresolvable sha — or a
+second occurrence in the same file — is still a finding.
+
+**The property narrows: "never a broken sha" becomes "never a NEW broken sha."** This is recorded, and required
+to be stated in the guard header, in the report, and in the `ok —` claim, together with the reason. A narrowing
+that is written down is a decision; a narrowing discovered later is a defect. **The round-6 reviewer's validated
+property was deliberately narrowed here, and that is said out loud rather than left for a future reader to find.**
+
+**Rejected alternatives.** *(B) leave it red as known-open* — a permanently red gate over two **quotation**
+lines would teach the next reader that red is normal, which is worse than the narrowing and is the failure mode
+this batch exists to prevent. *(C) rewrite the probe sha as a placeholder in the lane reports* — **forbidden**:
+it retro-edits another lane's measurement record, which D-011 item 2 forbids; the builder proposed it and
+advised against it, correctly.
+
+**Mandatory proofs, required of the builder:** a new unresolvable sha in a fresh file fails; a second
+occurrence in the same file fails; the B1 dressed-count seed and the B2 punctuation seed still fail (the
+absorber must not eat the very findings the repair was for); all 72 checks still exit 0 **with their mutation
+proofs still flipping**; and the printed counter reads 2.
