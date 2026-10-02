@@ -46,12 +46,29 @@
 //                         can point at: the counts it reports are derived at run
 //                         time, a claim about its own text names a hex-shaped
 //                         commit or `file:line` pointer, and a claim that names a
-//                         concrete construct — an alternative, an exclusive git
-//                         call, a formula this instrument has itself recorded as
-//                         narrowed away — is backed by that construct in the
+//                         concrete construct is backed by that construct in the
 //                         file's own source. Read over every comment line and
 //                         each check name on the line that opens the call, not
-//                         only the leading block.
+//                         only the leading block — a name split across lines is
+//                         NOT read (26 of the 90 names in this file, measured).
+//                         KEYED TO LITERAL PHRASINGS, and this is the boundary
+//                         MEASURED rather than implied (D-020's lexical/semantic
+//                         limit): the exclusive form ("the only git call is"
+//                         plus a backticked command — `git ls-files` beside it
+//                         was the live miss), "X is its own alternative" and a
+//                         backticked token followed by the word alternative, a
+//                         phrase this file records as narrowed, the
+//                         pointer-is-resolvable family (`resolvable-pointer`,
+//                         `claim-checkable`, `line-shows-it`), and "the baseline
+//                         is N". A PARAPHRASE OF THE SAME SHAPE ESCAPES: eleven
+//                         fresh class instances were built and all eleven escaped
+//                         — an absent-construct claim in other words, an
+//                         alternative phrase ordered differently, a "sole git
+//                         invocation", a wrong number phrased as "the map holds
+//                         N", a check-name capability claim, a split check name,
+//                         a transcript of a different rule, and a citation
+//                         outside `.scratch/`. This is a detector over the named
+//                         spellings, never a decision procedure for the prose.
 //   no-bare-head-count    no report or brief resolves a count through bare
 //                         HEAD — an "N … at HEAD" label (any HEAD spelling, or
 //                         the `@` shorthand), a `git … HEAD` read whatever the
@@ -74,10 +91,13 @@
 //                         this half by D-023), and every occurrence beyond the
 //                         recorded count still fails.
 //   transcript-reproduces a pasted `count-provenance-unresolvable` transcript
-//                         that cites a file IN this repository must cite a line
+//                         that cites a file under `.scratch/` must cite a line
 //                         that carries the sha it names, or be marked historical —
 //                         a transcript written before a later edit and never
 //                         re-taken is a claim the committed artifact contradicts.
+//                         A citation of any OTHER path (e.g. `scripts/…`) is NOT
+//                         checked, and neither is a transcript of a different
+//                         rule: both are named ceilings, not covered shapes.
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -1404,7 +1424,9 @@ function checkReportHeadCounts() {
  * A pasted run is a claim that the command in it produces the lines under it.
  * The decidable subset this rule can check without re-running anything: a
  * `count-provenance-unresolvable` finding pasted into a report that cites a file
- * IN this repository must cite a line that carries the sha the finding names.
+ * under `.scratch/` must cite a line that carries the sha the finding names.
+ * A citation of any OTHER path (e.g. `scripts/…`) is NOT checked, and neither is
+ * a transcript of a different rule — both are named ceilings, not covered shapes.
  * The sha half is mechanical — the finding names one, the line either has it or
  * not — so a transcript that cites a line without it did not come from this
  * commit. A draft transcript written before a later edit is allowed to stay, but
@@ -1497,7 +1519,7 @@ if (!findings.length) {
   if (headerFiles) claims.push('every instrument header stating only what it can point at')
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
   if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
-  if (transcriptsChecked) claims.push('every pasted provenance transcript that cites this repository still carries the sha it names (or is marked historical)')
+  if (transcriptsChecked) claims.push('every pasted provenance transcript that cites a `.scratch/` file still carries the sha it names (or is marked historical; other paths and other rules are ceilings)')
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
