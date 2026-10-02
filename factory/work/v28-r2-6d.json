@@ -27,6 +27,12 @@
         "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 with the new guard registered in both places",
         "report section 2 raw seeds: withheld kind in the copy -> exit 1 ; restore -> exit 0 ; nonexistent kind declared -> exit 1 ; restore -> exit 0",
         "fix round 1 committed at 45cd77b (review NEEDS_CHANGES: B1 B2 B3) — copy-taxonomy-guard.mjs exit 0 PASS 0 findings ; its check exit 0 with 27 of 27 checks across 24 invocations (7 mutated) ; run-all.sh exit 0 GUARDS PASS ; npm run verify exit 0 GUARDS PASS with 71 files / 2068 tests / 81 warnings / 0 errors — the four no-bare-head-count findings in the two lane reports absorbed by re-deriving the factory-guard baseline (new 4 lost 0 decreased 0 and twice byte-identical)"
+      ],
+      "reopened": [
+        {
+          "at": "2026-10-02T17:05:57.521Z",
+          "why": "fix round 1/5: review NEEDS_CHANGES — B1 a coverage claim naming a paragraph the guard does not have (contradicting the law 20 lines above it in the same file), B2 a claim that the check names the guard under test, B3 the MECHANISM defect: an empty scan read as health (D-030)"
+        }
       ]
     },
     "verification": {
@@ -232,6 +238,24 @@
       "from": "complete",
       "to": "complete",
       "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:05:57.521Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:05:57.549Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": "fix round 1 done: B3 tripwire + its own check and mutation, B1 deleted per D-028, B2 made true and proven; checks 23->27, mutations 6->7; baseline re-derived 631->635 (new 4 / lost 0 / decreased 0)",
       "actor": null,
       "model": null
     }
