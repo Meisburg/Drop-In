@@ -22,10 +22,11 @@
         "docs/agents/code-structure.md"
       ],
       "evidence": [
-        "npm run verify at fa3f24b -> exit 0 / GUARDS: PASS — 71 test files / 2068 tests / 81 warnings / 0 errors / AGENTS.md 1789 of 1800 / 0 FINDING lines",
+        "npm run verify at fa3f24b -> exit 0 / GUARDS: PASS — 71 test files / 2068 tests / 81 warnings / 0 errors / AGENTS.md 1789 of 1800 / 0 real finding lines",
         "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 and node scripts/guards/copy-taxonomy-guard.check.mjs -> exit 0 with 23 of 23 checks across 22 invocations (6 against a mutated guard)",
         "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 with the new guard registered in both places",
-        "report section 2 raw seeds: withheld kind in the copy -> exit 1 ; restore -> exit 0 ; nonexistent kind declared -> exit 1 ; restore -> exit 0"
+        "report section 2 raw seeds: withheld kind in the copy -> exit 1 ; restore -> exit 0 ; nonexistent kind declared -> exit 1 ; restore -> exit 0",
+        "fix round 1 committed at 45cd77b (review NEEDS_CHANGES: B1 B2 B3) — copy-taxonomy-guard.mjs exit 0 PASS 0 findings ; its check exit 0 with 27 of 27 checks across 24 invocations (7 mutated) ; run-all.sh exit 0 GUARDS PASS ; npm run verify exit 0 GUARDS PASS with 71 files / 2068 tests / 81 warnings / 0 errors — the four no-bare-head-count findings in the two lane reports absorbed by re-deriving the factory-guard baseline (new 4 lost 0 decreased 0 and twice byte-identical)"
       ]
     },
     "verification": {
@@ -213,6 +214,24 @@
       "from": "failed",
       "to": "running",
       "note": "fix round 1/5: resume original builder; B3 fixed as the D-030 invariant (zero is a finding), B1/B2 per D-028 (delete rather than restate)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:04:20.244Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:04:27.052Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
       "actor": null,
       "model": null
     }
