@@ -943,9 +943,11 @@ better manners.**
 
 **The ruling — and the distinction that makes it safe.** The exemption D-032 removed was **a SYNTAX a fabricator
 can write**: any block prefixed `>` was exempt, so the content itself chose whether the rule looked. **That is
-forgeable by the very thing the rule is meant to catch.** A **recorded baseline** is not: it is a map of
-`file::matched-text → count`, committed in the guard, and **a fabricator cannot produce a baselined citation from
-a report** — they would have to edit the guard, which is a reviewed diff.
+forgeable by the very thing the rule is meant to catch.** A **recorded baseline** is not forgeable **by content**:
+it is a map of `file::matched-text → count`, committed in the guard, and **the text alone cannot manufacture a
+baselined citation.** *That is the limit of it — the key names a PATH, and a path is writable, which the correction
+below measures. **A sentence that used to stand here claimed the record was "unforgeable" and that a fabricator
+"would have to edit the guard"; it was measured FALSE and deleted for that reason rather than softened.***
 
 **So `transcript-summary-agrees` gets the same absorber every other rule in this suite uses:**
 1. **A recorded baseline** of known quotation sites, **re-derived, never hand-added**, printing its size on every
@@ -1016,3 +1018,49 @@ other, and it expires with the gap.**
 **Measured, and worth knowing before anyone repeats this:** `pi --list-models` in a **fresh process** sees it (`ollama-cloud  glm-5.3  1.0M  thinking yes`), but the **running session's registry was loaded at startup and does not reload** — a subagent spawned in this session reports `Unknown subagent model`. **So a model registered mid-session is usable by the NEXT session, not the current one.** That is a fact about the harness, not a defect in the registration, and it is the kind of thing that otherwise gets discovered as a mystery.
 
 **And it did not block the work:** Pi already knew `ollama/glm-5.3-flash:cloud` — **also GLM, also a different family from the DeepSeek builder** — so the first genuinely independent review of this batch was dispatched on that model immediately rather than waiting for a reload. *The independence was available; it took looking for the route rather than assuming the missing one.*
+
+## D-035 — the family-independent reviewer found what four siblings could not, three hours after it was bought
+
+**D-034 registered a GLM because the reviewer floor had exactly one qualifier, which was also the implementer.**
+The first review that model ever ran **falsified the rule four sibling reviews had called sound** — not a
+disagreement about taste, a **reachable escape**:
+
+**The fifth shape: the fence parser is not CommonMark, and three sentences say it is.** `factory-guard.mjs:1751-1758`
+closed a fenced block on **any** same-kind marker line — **no length check, no nothing-after check.** CommonMark
+closes only on a run of the same character **≥ the opener's length** followed by **only whitespace**. So an inner
+```js **wrongly closes** an outer ``` block, and the standard markdown idiom for **quoting a fenced block** puts
+the inner content in **no parsed block at all**: `2 fenced block(s) read, 0 range summaries checked — NOTHING was
+compared` → **exit 0, PASS.** Same signature D-031 and D-032 were built to close, and it falsified the header
+(`:91-95`), the docblock (`:1629-1632`), and the parser comment that says **"as markdown says"** (`:1745-1749`).
+
+**Why this is a ruling and not just a bug report.** D-032 said the next hole of that family would mean **deleting
+the rule**, and this round's authorisation turns on a distinction that is worth keeping: **every previous attempt
+guessed at a SHAPE; this one conforms to a SPECIFICATION.** CommonMark's fence rules are closed and have reference
+implementations, so the fix is decidable and checkable against a real parser (`marked`) — **a fix with a spec is not
+a blind fix round.** The rule's shape is untouched (check every fenced block, attribute nothing, which the reviewer
+confirmed is sound); **the PARSER was wrong, one level down.** *And the escape was not reachable in the live corpus
+— latent, found by construction, which is the only reason a fifth round was affordable.*
+
+**The measured lesson, and the reason to keep paying for family diversity: four fresh-context siblings and one
+different family looked at the same code, and the siblings converged. A shared blind spot is not a shared
+verdict — it is one verdict counted four times.** Fresh context buys independence from *context*; it does not buy
+independence from *prior*. The floor now has two qualifiers and they are different families **on purpose.**
+
+## D-036 — the corpus paradox has a second face: an UNTRACKED lane report
+
+**D-020 measured that a lane's own evidence file can become the next lane's red.** The guard's scan set is
+deliberately the top-level `*.md` of `.scratch/v28/reports` (`:1671`), so this was known and accepted.
+
+**What was not known: the red can arrive from a file at NO COMMIT AT ALL.** The guard now reports **8 findings
+against two review reports** — `slice-8b-review-4.md` and `slice-8b-review-independent.md` — every one of them a
+count written **"at HEAD"** when the reviewer meant "at the tip I reviewed", while HEAD **moved underneath both
+lanes during the run** (the verifier says so in its own report: `7c16e7a` → `4b2939c` → `05a264c`). **The guard is
+right and the text is wrong:** a count at bare HEAD cannot be reproduced, which is what the rule exists to say.
+**Measured separation: move only those two files aside and the guard exits 0 — so all 8 are theirs and nothing
+else; the CHECKER's red is independent and survives, because it is D-034's damage to check 13's seed.**
+
+**The reporting-form rule, stated so the next lane does not have to rediscover it:** **a lane report names the
+commit it measured at.** `at HEAD` is not a provenance token. The lanes' reports are not the orchestrator's to
+write, so these 8 are recorded **known-open with file:line** rather than edited or absorbed — **absorbing them into
+the `no-bare-head-count` baseline would be re-deriving a record to silence a true finding, which D-027 forbids: you
+lower the claim, you never widen the mechanism.**
