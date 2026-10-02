@@ -23,10 +23,9 @@
       ],
       "evidence": [
         "npm run verify at fa3f24b -> exit 0 / GUARDS: PASS — 71 test files / 2068 tests / 81 warnings / 0 errors / AGENTS.md 1789 of 1800 / 0 real finding lines",
-        "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 and node scripts/guards/copy-taxonomy-guard.check.mjs -> exit 0 with 23 of 23 checks across 22 invocations (6 against a mutated guard)",
-        "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 with the new guard registered in both places",
-        "report section 2 raw seeds: withheld kind in the copy -> exit 1 ; restore -> exit 0 ; nonexistent kind declared -> exit 1 ; restore -> exit 0",
-        "fix round 1 committed at 45cd77b (review NEEDS_CHANGES: B1 B2 B3) — copy-taxonomy-guard.mjs exit 0 PASS 0 findings ; its check exit 0 with 27 of 27 checks across 24 invocations (7 mutated) ; run-all.sh exit 0 GUARDS PASS ; npm run verify exit 0 GUARDS PASS with 71 files / 2068 tests / 81 warnings / 0 errors — the four no-bare-head-count findings in the two lane reports absorbed by re-deriving the factory-guard baseline (new 4 lost 0 decreased 0 and twice byte-identical)"
+        "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 PASS 0 findings and its check -> exit 0 (29 of 29 checks across 26 invocations ; 8 of them mutated)",
+        "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 GUARDS PASS with the guard registered in both places",
+        "fix round 1 committed at 45cd77b (B1 B2 B3) and fix round 2 at a6d72f6 (B2b mechanism ; N1 ; N2 ; N4) — B2b closed with a claim counter: the old guard exits 0 PASS on the three-declared-kind collapse while the fixed guard exits 1 with the counter finding ; both halves raw in report section 13 ; the seven no-bare-head-count findings in the two round-2 lane reports absorbed by re-deriving the factory-guard baseline (new 7 ; lost 0 ; decreased 0 ; derivation run twice byte-identical) ; no test delta — 71 files and 2068 tests at every commit"
       ],
       "reopened": [
         {
@@ -256,6 +255,24 @@
       "from": "running",
       "to": "complete",
       "note": "fix round 1 done: B3 tripwire + its own check and mutation, B1 deleted per D-028, B2 made true and proven; checks 23->27, mutations 6->7; baseline re-derived 631->635 (new 4 / lost 0 / decreased 0)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:15:40.308Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:15:45.800Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
       "actor": null,
       "model": null
     }
