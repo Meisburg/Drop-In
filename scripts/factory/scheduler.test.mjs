@@ -1,0 +1,336 @@
+/**
+ * Resource admission, capability routing, independence and work-state rules.
+ *
+ * WHY THIS FILE EXISTS. The constraint it pins is the one that cost four
+ * `systemd-oomd` kills in a single day: a 55 GB local model cannot coexist with
+ * the gate run that the same task triggers, on a 62 GB machine — and a factory
+ * that discovers that AFTER starting the work has already lost the work.
+ *
+ * Every case here hands the scheduler a fake machine, because the point is the
+ * DECISION, not the hardware. The probes are injected for exactly that reason.
+ * One case uses the real `factory/config.json`, so the registry itself is under
+ * test rather than a convenient copy of it.
+ */
+
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+import {
+  DEFAULT_LANES,
+  acceptanceDecision,
+  admit,
+  capabilityGaps,
+  heldGb,
+  laneTransitionAllowed,
+  liveReservations,
+  readyItems,
+  selectModel,
+} from './scheduler.mjs'
+import { newWorkItem } from './state.mjs'
+
+const realConfig = JSON.parse(readFileSync(new URL('../../factory/config.json', import.meta.url), 'utf8'))
+
+/**
+ * A 62 GB machine, the one this factory actually runs on, in a shape the tests
+ * can dial. Defaults describe the state that produced the OOM: the local model
+ * resident, ~5 GB left, and another inference server squatting on the VRAM.
+ */
+function machine({
+  availableGb = 5,
+  freeVramGb = 6.5,
+  active = ['strata-max'],
+  activating = [],
+  resident = { 'strata-max': 55 },
+  now = 1_000_000,
+} = {}) {
+  const stateOf = (unit) => (active.includes(unit) ? 'active' : activating.includes(unit) ? 'activating' : 'inactive')
+  return {
+    availableRamGb: () => availableGb,
+    totalRamGb: () => 62,
+    freeVramGb: () => freeVramGb,
+    serviceState: stateOf,
+    serviceActive: (unit) => stateOf(unit) === 'active',
+    serviceRamGb: (unit) => (resident[unit] === undefined ? 0 : resident[unit]),
+    now: () => now,
+  }
+}
+
+const LOCAL = 'strata-max/qwen3.8-flash-next-iq3_s'
+const CLOUD = 'ollama-cloud/deepseek-v4.1-flash:cloud'
+
+describe('admission control', () => {
+  it('refuses the exact combination from the logs, before starting it', () => {
+    // 2026-10-02 04:56: the local model resident at 55 GB, 5 GB available, and a
+    // builder that must run `npm run verify` inside itself.
+    const decision = admit({ config: realConfig, kind: 'builder', id: 'r2-6c', modelKey: LOCAL, probes: machine() })
+
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    // The arithmetic, not just the verdict: 3 GB task + 4 GB reserve against
+    // 5 GB available. The model is already resident, so it is NOT charged again
+    // — and the task is still refused, which is the whole finding.
+    expect(decision.requiredGb).toBe(7)
+    expect(decision.usableGb).toBe(5)
+    expect(decision.reasons.join(' ')).toMatch(/RAM: needs 7 GB \(task 3 \+ reserve 4\), usable 5 GB \(available 5 - promised 0\)/)
+  })
+
+  it('names what to reclaim and how, so a blocked task is actionable', () => {
+    const decision = admit({ config: realConfig, kind: 'gate', modelKey: null, probes: machine() })
+    // The gate is light; it is the reserve and the resident model that squeeze it.
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    expect(decision.reclaimable.map((r) => r.what)).toContain(LOCAL)
+    expect(decision.reclaimable.find((r) => r.what === LOCAL).how).toBe('systemctl --user stop strata-max')
+  })
+
+  it('admits the same task once the model is not resident and the machine is big enough', () => {
+    const tight = admit({
+      config: realConfig,
+      kind: 'builder',
+      id: 'r2-6c',
+      modelKey: LOCAL,
+      probes: machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }),
+    })
+    // 3 task + 4 reserve + 55 model load = 62 > 50 available: refused, and
+    // correctly so — this machine cannot hold the model AND the gate.
+    expect(tight.state).toBe('BLOCKED_RESOURCE')
+    expect(tight.requiredGb).toBe(62)
+
+    const roomy = admit({
+      config: realConfig,
+      kind: 'builder',
+      id: 'r2-6c',
+      modelKey: LOCAL,
+      probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }),
+    })
+    expect(roomy.state).toBe('ADMITTED')
+    expect(roomy.requiredGb).toBe(62)
+    expect(roomy.exclusive).toBe('local-inference')
+  })
+
+  it('does not charge twice for a model that is already resident', () => {
+    // The model's 55 GB is already inside "available"; adding it again would
+    // make the factory refuse work it can actually do.
+    const resident = admit({ config: realConfig, kind: 'gate', id: 'g', probes: machine({ availableGb: 20 }) })
+    expect(resident.requiredGb).toBe(7) // 3 task + 4 reserve, no model load
+    expect(resident.state).toBe('ADMITTED')
+  })
+
+  it('counts ADMITTED promises but not RUNNING work, which the OS already accounts for', () => {
+    const now = 1_000_000
+    const reservations = [
+      { id: 'a', state: 'ADMITTED', requiredGb: 10, expiresAt: now + 1000 },
+      { id: 'b', state: 'RUNNING', requiredGb: 10 },
+      { id: 'c', state: 'ADMITTED', requiredGb: 10, releasedAt: 'x' },
+      { id: 'd', state: 'ADMITTED', requiredGb: 10, expiresAt: now - 1 },
+    ]
+    const live = liveReservations(reservations, now)
+    expect(live.map((r) => r.id)).toEqual(['a', 'b'])
+    expect(heldGb(live)).toBe(10) // a only: b is visible to the OS, c released, d expired
+  })
+
+  it('blocks a local model on VRAM when another inference server holds it', () => {
+    const decision = admit({
+      config: realConfig,
+      kind: 'ocr',
+      id: 'o',
+      modelKey: LOCAL,
+      probes: machine({ availableGb: 50, freeVramGb: 6.5, active: ['ninfer-serve'], resident: {} }),
+    })
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    expect(decision.reasons.join(' ')).toMatch(/VRAM/)
+    expect(decision.reclaimable.map((r) => r.what)).toContain('ninfer/qwen3.8-27b')
+  })
+
+  it('serializes local inference: one exclusive holder at a time', () => {
+    const probes = machine({ availableGb: 50, active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const reservations = [{ id: 'ocr-running', kind: 'ocr', state: 'RUNNING', requiredGb: 2, exclusive: 'local-inference' }]
+    const decision = admit({ config: realConfig, kind: 'ocr', id: 'second', modelKey: LOCAL, probes, reservations })
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    expect(decision.reasons.join(' ')).toMatch(/exclusive resource 'local-inference' is held by reservation 'ocr-running'/)
+  })
+
+  it('refuses to guess an unmeasured footprint', () => {
+    const decision = admit({ config: realConfig, kind: 'explorer', id: 'e', modelKey: 'ninfer/qwen3.8-27b', probes: machine({ availableGb: 50 }) })
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    expect(decision.reasons[0]).toMatch(/no measured RAM footprint/)
+  })
+
+  it('charges a model that is only ACTIVATING, and blocks it on a GPU someone else holds', () => {
+    // The bug this test exists for was found live: `systemctl is-active` exits
+    // non-zero for `activating`, so a model on its way up read as ABSENT — its
+    // 55 GB went uncharged and its claim on the GPU was invisible. strata-max
+    // sat in exactly this state while crash-looping against the VRAM that
+    // ninfer-serve held.
+    const decision = admit({
+      config: realConfig,
+      kind: 'ocr',
+      id: 'o',
+      modelKey: LOCAL,
+      probes: machine({ availableGb: 50, freeVramGb: 6.5, active: ['ninfer-serve'], activating: ['strata-max'], resident: {} }),
+    })
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    expect(decision.requiredGb).toBe(61) // 2 task + 4 reserve + 55 — the load is charged
+    expect(decision.reasons.join(' ')).toMatch(/VRAM: .* needs 30 GB, 6\.5 GB free — held by ninfer\/qwen3\.8-27b/)
+    expect(decision.reclaimable.map((r) => r.what)).toContain('ninfer/qwen3.8-27b')
+  })
+
+  it('treats an unknown service state as not-running rather than as safe', () => {
+    const probes = { ...machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }), serviceState: () => 'unknown' }
+    const decision = admit({ config: realConfig, kind: 'explorer', id: 'e', modelKey: LOCAL, probes })
+    // 2 + 4 + 55 = 61 > 50: an unknown state must never be read as "already loaded".
+    expect(decision.state).toBe('BLOCKED_RESOURCE')
+    expect(decision.requiredGb).toBe(61)
+  })
+})
+
+describe('capability routing', () => {
+  it('treats a capability floor as a floor, not a preference', () => {
+    // strata-max declares reasoning 2; ask for 3 and it must be rejected by name.
+    const strict = { ...realConfig, task_kinds: { ...realConfig.task_kinds, reviewer: { ...realConfig.task_kinds.reviewer } } }
+    strict.task_kinds.deep = { capabilities: { reasoning: 3, tool_use: 3 }, resources: { ram_gb: 1 }, role: 'reader' }
+    const result = selectModel({ config: strict, kind: 'deep', probes: machine({ availableGb: 50, active: [], resident: {} }) })
+    const rejected = result.rejected.find((r) => r.modelKey === LOCAL)
+    expect(rejected.why).toMatch(/below the capability floor/)
+    expect(result.modelKey).not.toBe(LOCAL)
+  })
+
+  it('falls back to cloud when the local preference is resource-blocked, and calls it a fallback', () => {
+    // The real 04:00 decision: the model is NOT resident, reloading it would
+    // cost 55 GB of a 50 GB pool, and the gate alone fits comfortably. Local is
+    // cost_tier 0 and the policy preference; it is simply not admissible, so the
+    // router falls back rather than failing. A fallback is an outcome, not an
+    // incident — it belongs in telemetry, not in the ledger.
+    const result = selectModel({ config: realConfig, kind: 'builder', probes: machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(result.modelKey).toBe(CLOUD)
+    expect(result.fallback).toBe(true)
+    expect(result.reason).toMatch(/fell back to cost_tier 2/)
+    // And the model it refused is named, with the reason.
+    expect(result.rejected.find((r) => r.modelKey === LOCAL).why).toMatch(/RAM: needs 62 GB/)
+  })
+
+  it('blocks outright when even the fallback does not fit', () => {
+    // 5 GB available and a 4 GB reserve: nothing may start, cloud included.
+    const result = selectModel({ config: realConfig, kind: 'builder', probes: machine() })
+    expect(result.modelKey).toBeNull()
+    expect(result.reason).toMatch(/every capability-qualified model is blocked on resources/)
+    expect(result.reclaimable.map((r) => r.what)).toContain(LOCAL)
+  })
+
+  it('prefers the cheap tier when it is admissible', () => {
+    // A task that needs no model gets no model — the gate and the browser lane.
+    const gate = selectModel({ config: realConfig, kind: 'gate', probes: machine({ availableGb: 50 }) })
+    expect(gate.modelKey).toBeNull()
+    expect(gate.reason).toMatch(/needs no model/)
+
+    const explorer = selectModel({ config: realConfig, kind: 'explorer', probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(explorer.costTier).toBe(0)
+    expect(explorer.modelKey).toBe(LOCAL)
+    expect(explorer.fallback).toBe(false)
+  })
+
+  it('excludes the implementer\u2019s model by name — independence is a property, not a machine', () => {
+    const result = selectModel({
+      config: realConfig,
+      kind: 'reviewer',
+      probes: machine({ availableGb: 50, active: [], resident: {} }),
+      avoidModels: [LOCAL],
+    })
+    expect(result.rejected.find((r) => r.modelKey === LOCAL).why).toMatch(/excluded by independence/)
+    expect(result.modelKey).not.toBe(LOCAL)
+  })
+
+  it('requires local inference for the ocr lane and never routes it to cloud', () => {
+    const result = selectModel({ config: realConfig, kind: 'ocr', probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(result.modelKey).toBe(LOCAL)
+    expect(result.rejected.find((r) => r.modelKey === CLOUD).why).toMatch(/requires local inference/)
+  })
+
+  it('reports a capability gap when no model can meet the floor', () => {
+    const config = { ...realConfig, task_kinds: { ...realConfig.task_kinds, impossible: { capabilities: { reasoning: 9 }, resources: { ram_gb: 1 } } } }
+    const result = selectModel({ config, kind: 'impossible', probes: machine({ availableGb: 50 }) })
+    expect(result.modelKey).toBeNull()
+    expect(result.reason).toMatch(/no model in the registry meets/)
+  })
+
+  it('computes gaps against every declared floor', () => {
+    expect(capabilityGaps({ capabilities: { reasoning: 1, tool_use: 3 } }, { reasoning: 3, tool_use: 3 })).toEqual(['reasoning: 1 < 3'])
+    expect(capabilityGaps({ capabilities: {} }, { reasoning: 1 })).toEqual(['reasoning: model declares nothing, task needs >= 1'])
+  })
+})
+
+describe('work state', () => {
+  const item = (lanes) => ({ ...newWorkItem({ id: 'x', title: 'x', planRef: 'plan.md' }), lanes })
+
+  it('makes complete terminal for a lane: evidence does not un-exist', () => {
+    expect(laneTransitionAllowed(realConfig, 'pending', 'running')).toBe(true)
+    expect(laneTransitionAllowed(realConfig, 'running', 'complete')).toBe(true)
+    expect(laneTransitionAllowed(realConfig, 'complete', 'running')).toBe(false)
+    expect(laneTransitionAllowed(realConfig, 'complete', 'pending')).toBe(false)
+    expect(laneTransitionAllowed(realConfig, 'failed', 'running')).toBe(true)
+  })
+
+  it('refuses acceptance while a required lane is not complete — and says which', () => {
+    const decision = acceptanceDecision(realConfig, item({
+      implementation: { state: 'complete' },
+      verification: { state: 'complete' },
+      review: { state: 'running' },
+      visual_validation: { state: 'pending' },
+      acceptance: { state: 'blocked' },
+    }))
+    expect(decision.state).toBe('blocked')
+    expect(decision.incomplete).toEqual(['review'])
+    expect(decision.reason).toBe('cannot pass: review=running')
+  })
+
+  it('passes acceptance only when every required lane is complete', () => {
+    const decision = acceptanceDecision(realConfig, item({
+      implementation: { state: 'complete' },
+      verification: { state: 'complete' },
+      review: { state: 'complete' },
+      visual_validation: { state: 'pending' }, // not required by the gate
+      acceptance: { state: 'blocked' },
+    }))
+    expect(decision.state).toBe('pass')
+    // The lane set is the configured one, not a list hard-coded in two places.
+    expect(DEFAULT_LANES).toEqual(Object.keys(newWorkItem({ id: 'y', title: 'y', planRef: 'p' }).lanes))
+  })
+
+  it('offers only work whose dependencies are green, so independent work can run at once', () => {
+    const done = (id) => ({
+      id,
+      plan_ref: 'plan.md',
+      lanes: { implementation: { state: 'complete' }, verification: { state: 'complete' }, review: { state: 'complete' } },
+    })
+    const waiting = { id: 'b', plan_ref: 'plan.md', depends_on: ['pending-elsewhere'], lanes: { implementation: { state: 'pending' } } }
+    const free = { id: 'c', plan_ref: 'plan.md', depends_on: ['a2'], lanes: { implementation: { state: 'pending' } } }
+    const ready = readyItems([done('a'), done('a2'), waiting, free])
+    expect(ready.map((i) => i.id)).toEqual(['a', 'a2', 'c'])
+    expect(ready.map((i) => i.id)).not.toContain('b')
+  })
+})
+
+describe('the registry itself', () => {
+  it('every capability floor is meetable by at least one registered model', () => {
+    for (const [kind, task] of Object.entries(realConfig.task_kinds)) {
+      const floors = task.capabilities ?? {}
+      if (!Object.keys(floors).length) continue
+      const meetable = Object.values(realConfig.models).some((m) => capabilityGaps(m, floors).length === 0)
+      expect(meetable, `task kind '${kind}' has a floor no model can meet`).toBe(true)
+    }
+  })
+
+  it('every task kind declares a footprint, and an unknown one is null rather than a guess', () => {
+    for (const [kind, task] of Object.entries(realConfig.task_kinds)) {
+      expect(task.resources, `task kind '${kind}' has no resources block`).toBeTruthy()
+      expect(task.resources.footprint_source, `task kind '${kind}' does not say where its number came from`).toBeTruthy()
+    }
+  })
+
+  it('gives every model a capability set, a footprint source and a cost tier', () => {
+    for (const [key, model] of Object.entries(realConfig.models)) {
+      expect(model.capabilities, key).toBeTruthy()
+      expect(model.resources.footprint_source, key).toBeTruthy()
+      expect(Number.isFinite(model.cost_tier), key).toBe(true)
+      expect(['local', 'cloud'], key).toContain(model.provider)
+    }
+  })
+})

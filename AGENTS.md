@@ -36,6 +36,8 @@ mode" — confirm in one line, then revert to default style.
   builder dispatch. Template: `plan.template.md`.
 - `task-state.md` — current phase, slice states, evidence, risks, escalations.
   The orchestrator updates it after every phase transition.
+- `factory/work/<id>.json` — per-work-item lane state and artifacts; a worker
+  is disposable, this is not.
 - Subagents get briefs pointing at files, never pasted chat history.
 - Each returns a structured report; the orchestrator routes on the report plus
   the files, not on vibes.
@@ -127,20 +129,15 @@ hooks stay wired; every e2e fixture stays inside the sweep's marker convention
 Borrowed from `affaan-m/ECC` (MIT): `docs/agents/borrowed-guards.md` — what was
 taken, refused, the four tests.
 
-## The escalating fix loop (why it escalates by model)
+## The escalating fix loop (why it escalates by capability)
 
-Builders, reviewers, and verifiers all run the same local model
-(`qwen3.8-27b`). A builder and its reviewer are siblings, so a hard slice
-deadlocks: the model that wrote the bug is the model judging it. Repeating the
-same attempt cannot break that. Changing the model can.
-
-| Round | Who | Model |
-|---|---|---|
-| 1–3 | resume the original builder with findings verbatim | local `qwen3.8-27b` |
-| 4–5 | fresh builder + fresh reviewer | cloud `deepseek-v4.1-flash:cloud` |
-| breaker | orchestrator adjudicates each open finding | — |
-
-Every adjudication is a **ledger entry**, never a silent discard.
+A builder and its reviewer can end up as siblings — the model that wrote the bug
+judging it — and repeating an attempt cannot break that. Escalation changes the
+worker's capability ceiling instead, and `factory route --independence-of` keeps
+the reviewer off the implementer's model by name. Rounds 1–3 resume the original
+builder; 4–5 dispatch a fresh, higher-ceiling worker and a fresh reviewer; the
+orchestrator is the breaker. Every adjudication is a **ledger entry**, never a
+silent discard.
 
 ## The build law
 
@@ -188,7 +185,7 @@ Read it when its situation arrives — the pointer says when.
 | A slice touches an external API, library, or version-specific behavior | `docs/agents/grounding-gates.md` — Exa grounding before dispatch; findings into `research/` |
 | Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch mechanics, this session's migration/QA steps, fleet roles |
 | Running agents in Orca (worktrees, terminals, diff, browser) | `docs/agents/orca.md` — the workspace substrate, and what it must never own |
-| Changing agent models or debugging a lane's cost | `docs/agents/model-routing.md` — cloud/local split, NInfer specifics |
+| Changing a lane's model, or a lane is resource-blocked | `docs/agents/factory.md` — admission, capability routing, work state; model specifics in `docs/agents/model-routing.md` |
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |

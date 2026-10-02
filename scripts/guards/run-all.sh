@@ -36,6 +36,13 @@
 #                     copy of the regex-escape one-liner; a sixth copy fails
 #                     AND a zero fails (a needle that matched nothing is not
 #                     a clean repo)
+#   factory         docs/agents/factory.md                 — every model and every
+#                     task kind declares where its resource number came from;
+#                     every capability floor is meetable; no work item sits in an
+#                     unreachable lane state; acceptance is not `pass` while a
+#                     required lane is incomplete; and EVERY ARTIFACT A WORK ITEM
+#                     NAMES IS ON DISK. The registry is where the memory
+#                     arithmetic lives, so a silent error in it is a silent OOM.
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -71,7 +78,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard check-acceptance-greps regexp-escape-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard check-acceptance-greps regexp-escape-guard factory-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -118,6 +125,7 @@ run_check "copy-field-consumption-guard (behavior)" scripts/guards/copy-field-co
 run_check "check-acceptance-greps (behavior)" scripts/guards/check-acceptance-greps.check.mjs
 run_check "no-bypass-guard (stated blind spot)" scripts/guards/no-bypass-guard.check.mjs
 run_check "regexp-escape-guard (behavior)" scripts/guards/regexp-escape-guard.check.mjs
+run_check "factory-guard (behavior)" scripts/guards/factory-guard.check.mjs
 
 echo
 echo "==========================================================="

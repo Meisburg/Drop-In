@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "_why": "The factory's resource and capability registry. The orchestrator decides WHAT and WHY; this file plus scripts/factory/factory.mjs decide WHERE and WHEN. Nothing here is read by a language model as prose — scheduler.mjs reads it and refuses to start a task whose resources cannot coexist with what is already running. See docs/agents/factory.md.",
+
+  "machine": {
+    "reserve_gb": 4,
+    "_reserve_why": "Headroom the machine keeps for the desktop, the editor and the browser lanes. systemd-oomd acts on pressure and it kills the biggest cgroup — on 2026-10-02 that was the local model, four times. A task must leave this much available.",
+    "_ram_source": "/proc/meminfo MemAvailable — the reclaimable-inclusive figure, not `free`. Measured at admission time, never declared.",
+    "_vram_source": "nvidia-smi --query-gpu=memory.free"
+  },
+
+  "models": {
+    "strata-max/qwen3.8-flash-next-iq3_s": {
+      "provider": "local",
+      "label": "Qwen3.8-Flash-Next IQ3_S (Strata 'max')",
+      "endpoint": "http://127.0.0.1:8081/v1",
+      "service": "strata-max",
+      "resources": {
+        "ram_gb": 55,
+        "vram_gb": 30,
+        "exclusive": "local-inference",
+        "footprint_source": "measured",
+        "footprint_evidence": "The unit's own ExecStart banner: 'loading the experts into RAM (about 55 GB)'. systemd-oomd reported '53.8G memory peak' for the unit at the 2026-10-02 04:56 kill. VRAM 30 GB: nvidia-smi showed 31845 MiB used while serving, including ~1.5 GB of desktop."
+      },
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 131072
+      },
+      "cost_tier": 0
+    },
+
+    "ollama-cloud/deepseek-v4.1-flash:cloud": {
+      "provider": "cloud",
+      "label": "DeepSeek V4.1 Flash (Ollama Cloud)",
+      "endpoint": "https://ollama.com/v1",
+      "resources": {
+        "ram_gb": 1,
+        "vram_gb": 0,
+        "exclusive": null,
+        "footprint_source": "estimated",
+        "footprint_evidence": "The client process only; the model is remote. 1 GB is the agent process plus its tool subprocesses."
+      },
+      "capabilities": {
+        "reasoning": 3,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 1048576
+      },
+      "cost_tier": 2
+    },
+
+    "ninfer/qwen3.8-27b": {
+      "provider": "local",
+      "label": "Qwen3.8-27B NVFP4 (NInfer)",
+      "endpoint": "http://127.0.0.1:18080/v1",
+      "service": "ninfer-serve",
+      "resources": {
+        "ram_gb": null,
+        "vram_gb": 24,
+        "exclusive": "local-inference",
+        "footprint_source": "unmeasured",
+        "footprint_evidence": "VRAM 24 GB is measured (it held 23.4 GB of 32.6 GB when it starved strata-max into 55 crash-loops on 2026-10-02). RAM is NOT measured, and this registry refuses to guess: a null footprint is inadmissible, with that reason printed."
+      },
+      "capabilities": {
+        "reasoning": 3,
+        "coding": 3,
+        "tool_use": 2,
+        "context_window": 98304
+      },
+      "cost_tier": 0
+    },
+
+    "strata/qwen3.8-flash-next-coder-iq1_m": {
+      "provider": "local",
+      "label": "Qwen3.8-Flash-Next Coder IQ1_M (Strata)",
+      "endpoint": "http://127.0.0.1:8080/v1",
+      "service": "strata-serve",
+      "resources": {
+        "ram_gb": null,
+        "vram_gb": null,
+        "exclusive": "local-inference",
+        "footprint_source": "unmeasured",
+        "footprint_evidence": "Never measured. Unmeasured means inadmissible — measure it before routing here."
+      },
+      "capabilities": {
+        "reasoning": 1,
+        "coding": 3,
+        "tool_use": 2,
+        "context_window": 131072
+      },
+      "cost_tier": 0
+    },
+
+    "fr-1/glm-4.7-flash:latest": {
+      "provider": "cloud",
+      "label": "GLM-4.7-Flash 30B-A3B (FR-1 tailnet)",
+      "endpoint": "http://100.92.51.0:11434/v1",
+      "resources": {
+        "ram_gb": 1,
+        "vram_gb": 0,
+        "exclusive": null,
+        "footprint_source": "estimated",
+        "footprint_evidence": "Remote over the tailnet; only the client process is local and that number is an estimate."
+      },
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 2,
+        "tool_use": 2,
+        "context_window": 131072
+      },
+      "cost_tier": 1
+    }
+  },
+
+  "_capability_source": "These levels are DECLARED policy, not a benchmark. reasoning/coding/tool_use are 0-3 ordinals; context_window is the provider's own figure. A task kind's floor is a floor — raising one is how a maintainer says 'do not send this lane to a weaker model', and the router will then refuse rather than quietly pick something below it.",
+
+  "task_kinds": {
+    "builder": {
+      "label": "implements one bounded slice",
+      "role": "writer",
+      "capabilities": { "reasoning": 2, "coding": 3, "tool_use": 3, "context_window": 98304 },
+      "resources": { "ram_gb": 3, "exclusive": null, "footprint_source": "measured", "footprint_evidence": "Includes the gate it runs in-process. npm run verify peak: MemAvailable 50 GB -> 48 GB floor, sampled at 250 ms (/tmp/mem.sample), 2026-10-02. Declared 3 to cover sampling error." },
+      "runs_gate": true
+    },
+    "reviewer": {
+      "label": "fresh-context diff review",
+      "role": "reader",
+      "capabilities": { "reasoning": 3, "coding": 2, "tool_use": 3, "context_window": 98304 },
+      "resources": { "ram_gb": 2, "exclusive": null, "footprint_source": "estimated" },
+      "independence": { "required": true, "same_model": false, "same_run": false }
+    },
+    "verifier": {
+      "label": "runs the deterministic gate",
+      "role": "reader",
+      "capabilities": { "reasoning": 2, "coding": 1, "tool_use": 3, "context_window": 65536 },
+      "resources": { "ram_gb": 3, "exclusive": null, "footprint_source": "measured" },
+      "independence": { "required": true, "same_model": false, "same_run": false }
+    },
+    "explorer": {
+      "label": "read-only codebase research",
+      "role": "reader",
+      "capabilities": { "reasoning": 2, "coding": 1, "tool_use": 2, "context_window": 65536 },
+      "resources": { "ram_gb": 2, "exclusive": null, "footprint_source": "estimated" }
+    },
+    "researcher": {
+      "label": "open-web research with citations",
+      "role": "reader",
+      "capabilities": { "reasoning": 3, "tool_use": 2, "context_window": 131072 },
+      "resources": { "ram_gb": 1, "exclusive": null, "footprint_source": "estimated" }
+    },
+    "ocr": {
+      "label": "the machine review lane (own tool-use loop, own rules)",
+      "role": "reader",
+      "capabilities": { "reasoning": 2, "coding": 3, "tool_use": 3, "context_window": 65536 },
+      "resources": { "ram_gb": 2, "exclusive": null, "footprint_source": "estimated" },
+      "requires_local_inference": true,
+      "independence": { "required": true, "same_model": true, "same_run": false,
+                        "_why": "ocr is structurally independent — its own scaffolding, its own rule resolution — so it does NOT need model diversity. That is a capability, not a contradiction of the reviewer rule." }
+    },
+    "gate": {
+      "label": "npm run verify on its own",
+      "role": "check",
+      "capabilities": {},
+      "resources": { "ram_gb": 3, "exclusive": null, "footprint_source": "measured" }
+    },
+    "playtest": {
+      "label": "the browser lane (Playwright, Chrome, screenshots)",
+      "role": "check",
+      "capabilities": {},
+      "resources": { "ram_gb": 6, "exclusive": null, "footprint_source": "estimated",
+                     "footprint_evidence": "NOT measured. Playwright plus a real Chrome profile. Estimated, and the admission line says so — an estimate that reads as a measurement is the class this factory keeps paying for." }
+    }
+  },
+
+  "policies": {
+    "cost": "local-preferred",
+    "_cost_why": "cost_tier ascending when admissible: local is 0, tailnet 1, cloud 2. Local-first is the policy BECAUSE it is cheaper, not because it is better — and it is only chosen when it is admissible.",
+    "fallback": ["local", "cloud"],
+    "_fallback_why": "A cloud fallback is a SCHEDULING OUTCOME, not an incident. It belongs in the run log and the telemetry log; it is not a ledger entry and not an escalation. The ledger holds decisions.",
+    "independence": {
+      "reviewer": { "required": true, "same_model": false, "same_run": false },
+      "verifier": { "required": true, "same_model": false, "same_run": false }
+    },
+    "_independence_why": "The requirement is an independent REASONING PATH from the implementer, not a different machine. same_model:false and same_run:false are the mechanism; local-vs-cloud is one way to satisfy it and no longer the rule."
+  },
+
+  "lanes": ["implementation", "verification", "review", "visual_validation", "acceptance"],
+  "_lanes_why": "The lane set is declared once, here, so a work item cannot invent a lane and the acceptance gate cannot name one that does not exist.",
+
+  "lane_states": {
+    "pending": ["running", "blocked_resource"],
+    "running": ["complete", "failed", "blocked_resource"],
+    "failed": ["running", "blocked_resource"],
+    "blocked_resource": ["pending", "running"],
+    "complete": [],
+    "waived": []
+  },
+  "_lane_states_why": "States for a WORK lane. complete is terminal: evidence does not un-exist. failed is the honest state for a verdict of NEEDS_CHANGES — the lane ran and its outcome was negative, so acceptance stays blocked and the next fix round moves it failed -> running.",
+
+  "acceptance_states": {
+    "blocked": ["pass", "waived"],
+    "pass": [],
+    "waived": []
+  },
+  "_acceptance_states_why": "The acceptance lane has its own vocabulary on purpose: it is not work, it is the gate over the work. pass and waived are terminal, and waived requires a written reason — there is no silent path to green.",
+
+  "acceptance_gate": { "requires": ["implementation", "verification", "review"] }
+}
