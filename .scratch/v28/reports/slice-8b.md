@@ -450,3 +450,30 @@ green. Had they landed together, the guard would have been red from birth.
    with a small window plus a COARSE (whole-scan) tripwire — which trades the per-label tripwire away, the one
    D-030 property the round-5 reviewer explicitly asked for. Say which you prefer and I will re-cut it.
 
+
+## Anchor re-measurement — what stayed and what moved
+
+Every anchor was re-measured **by symbol, not by number**. Pre-edit file states: `factory-guard.mjs` at
+`6cef89d` (before item 5), `lib-sibling-guard.sh` at `ccd9c19` (before item 3), the sweep count at `aa331d0`.
+
+| symbol | finding's anchor | measured | verdict |
+|---|---|---|---|
+| `checkReportHeadCounts` early return | `factory-guard.mjs:1403-1406` | `:1403` | matched |
+| `LABEL_LINE` | `:1523` | `:1523` | matched |
+| the docblock label definition | `:1537-1538` | `:1537` | matched |
+| "the zero case is unreachable while a label is unread" | `:1550-1551` | `:1551` | matched |
+| the attribution window | `:1609-1612` | `:1610` | matched |
+| the quotation exemption | `:1644-1648` | `:1648` | matched |
+| the note's zero clause | `:1656` | `:1656` | matched |
+| `discloseScanProvenance`'s `git ls-files` | `:1679` | `:1679` | matched |
+| the claim universal | `:1719` | `:1719` | matched |
+| `lib-sibling-guard.sh` missing-`src/lib` SKIP | — (no number given) | `:33-34` | measured |
+| `lib-sibling-guard.sh` `ok — all $checked …` | `:105` (round-5 review) | `:100` | **corrected — the review's number had drifted by 5** |
+| the sweep count | 65 (dispatch), 78 (brief), 79 (ledger) | **78** (`src` 45, `e2e` 20, `scripts` 13) | **corrected — all three were stale** |
+| the tripwire's cost | "31 of 104 checks break" | **unreproducible** (round 5: 38/104); harness now 115 | **corrected — see item 5** |
+
+**So: the 8a findings' line numbers had NOT drifted** — they were written against `8006e03` and only the
+item-4 early-return edit sits between it and my measurement. **The drift was in the COUNTS**: the file count
+(four different values across three documents) and the harness cost (unreproducible). Two anchors did move by
+symbol: the `lib-sibling-guard.sh` `ok —` line (+5 against the review) and the harness size (104 → 115 by the
+end of this slice).
