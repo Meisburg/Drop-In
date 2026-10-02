@@ -108,3 +108,37 @@ CHECK EXIT=0
 
 Committed as: **see commit B below.**
 
+### Item 2 — `scripts/slice-diff.sh`
+
+**Re-measured anchors: the brief's claim that the file is missing is CONFIRMED** (`ls scripts/slice-diff.sh`
+→ `No such file or directory` at `aa331d0`). No line numbers to re-measure.
+
+The tool takes a SLICE NAME, not a base: it reads the ledger's `dispatched (base <sha>)` line, prints the
+resolved range in its header, and refuses rather than guessing.
+
+```
+$ bash scripts/slice-diff.sh 8b        # no base recorded for 8b — must refuse
+slice-diff: REFUSING — the ledger records no `dispatched (base <sha>)` line for slice '8b'.
+  A diff needs a base that was written down when the slice started; this tool will not invent one.
+  dispatch line(s) found for this slice, none naming a base:
+    7274:Slice 8b: dispatched. Scope = .scratch/v28/briefs/slice-8b.md …
+EXIT=1
+$ bash scripts/slice-diff.sh 1 -- scripts/guards/run-all.sh | head -3
+slice-diff: slice '1'  range '15ada15..3bd7eb3fae2aa4a77c0f4213749cae4d341e84f5'
+            base '15ada15' read from .scratch/v28/ledger.md (dispatch time, not typed now)
+===========================================================
+$ for id in 1 3 6c 8a 8b; do bash scripts/slice-diff.sh "$id" 2>&1 | head -1; done
+slice-diff: slice '1'  range '15ada15..3bd7eb3f…'
+slice-diff: slice '3'  range 'c9ab382..3bd7eb3f…'
+slice-diff: slice '6c'  range '68080b0..3bd7eb3f…'
+slice-diff: REFUSING — the ledger records no `dispatched (base <sha>)` line for slice '8a'.
+slice-diff: REFUSING — the ledger records no `dispatched (base <sha>)` line for slice '8b'.
+```
+
+Boundary measured, not assumed: `6c` has several dispatch lines but only ONE carries `(base …)`; the tool
+resolves it. A slice with two different recorded bases is a REFUSAL, not a coin-flip. The tool is named in
+`docs/agents/code-structure.md` under a new "How a diff is inspected", because a tool the next reviewer does
+not know about is a tool nobody runs.
+
+Committed as: **see commit 3 below.**
+

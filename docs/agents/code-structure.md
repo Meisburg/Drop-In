@@ -166,6 +166,18 @@ Against the diff, not the builder's description:
 
 Findings must cite `file:line`.
 
+## How a diff is inspected
+
+**A slice is diffed against the base it was DISPATCHED from, and the base is read from the ledger, not
+chosen from memory.** `scripts/slice-diff.sh <slice-id> [-- <path>...]` reads that slice's
+`dispatched (base <sha>)` line out of `.scratch/v28/ledger.md`, prints the resolved range in its header,
+and refuses rather than guessing when the ledger records no base (or more than one).
+
+The instance it prevents: the orchestrator diffed slice 2 against slice 1b's *parent* instead of its tip,
+attributed 1b's comment edit to slice 2, and wrote a false rule into the ledger. Both SHAs were legitimate
+ancestors, so ancestry was not the test — *choosing* was the failure, and a base written down at dispatch
+time is chosen by construction.
+
 ## The 5-minute read test
 
 A human should understand your full diff in a few minutes. If it takes longer,
