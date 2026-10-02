@@ -67,12 +67,34 @@ describe('hasAvatarUrl (the one avatar presence predicate)', () => {
  *     merely *quotes* the comparison is prose, not a restatement, and round 1's
  *     raw-text scan forced one such comment to be reworded.
  *
- * CEILING, stated rather than implied: this reads source TEXT, so it cannot see
- * semantics, and `codeOnly` is a scanner, not a parser — a REGEX LITERAL is not
- * tracked — measured, a grep for regex-literal shapes in src/pages/ProfilePage.tsx
- * returns none in the file this reads — and a call written through an alias still
- * passes leg 1,
- * which is intended: an alias call IS a call.
+ * CEILING, stated rather than implied — this reads source TEXT, so it cannot see
+ * semantics, and `codeOnly` is a scanner, not a parser. Three named limits, each
+ * MEASURED (fix round 3; the round-2 ceiling got the second one backwards):
+ *
+ *   1. A REGEX LITERAL IS NOT TRACKED. A regex containing `//` makes the scanner
+ *      over-blank the rest of its line, so a real call after one on the same line
+ *      is invisible — a false FAIL. Measured over the real file: `@babel/parser`
+ *      reports zero RegExpLiterals in `src/pages/ProfilePage.tsx`.
+ *   2. AN ALIASED CALLEE FAILS LEG 1 — it does not pass it. Measured with leg 1's
+ *      own regex: `import { hasAvatarUrl as pred } …; pred(x)` -> false;
+ *      `const p = hasAvatarUrl; p(x)` -> false. So this is a FALSE FAIL (the test
+ *      goes red on a refactor that still calls the predicate), and that is the
+ *      honest reading: fix the regex here, do NOT delete the leg. What DOES pass is
+ *      a call whose ARGUMENT is spelled differently — `hasAvatarUrl(a)`,
+ *      `hasAvatarUrl(x ?? '')` -> true — because the leg matches the callee's name,
+ *      not the argument list. (The round-2 ceiling said an aliased call passes: it
+ *      said the opposite of what the mechanism does.)
+ *   3. TWO FALSE-PASS VECTORS ARE REACHABLE IN PRINCIPLE, measured ABSENT here:
+ *      (a) a lone apostrophe in JSX TEXT desynchronises the scanner into its
+ *      single-quote state and it stops blanking comments for the rest of the file;
+ *      (b) string or template TEXT containing `hasAvatarUrl(` satisfies leg 1 with
+ *      no call. Absent, measured against `@babel/parser` over the real file: of
+ *      its 33,798 comment characters the scanner blanks 33,798, leaks 0 and
+ *      over-blanks 0 (so there is no desync), the file holds exactly ONE
+ *      `hasAvatarUrl(` and it is the real call at `ProfilePage.tsx:1227`, and the
+ *      file has no JSX-text apostrophe. A future edit that adds either vector
+ *      would change what the leg measures WITHOUT failing it — the residual risk
+ *      this paragraph exists to name.
  *
  * It is deliberately NOT a copy of firstRun.test.ts's `stripComments`: that one
  * returns a joined token stream for a purity scan and preserves string literals
