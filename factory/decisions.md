@@ -735,3 +735,35 @@ rule shapes: construct-presence, **check-file prose** (missing entirely), **pros
 after seven rounds *"the burden of proof has moved to anyone proposing an eighth manual sweep."*
 
 **Not doing anything further until the human rules.** No eighth sweep, no new round.
+
+## D-027 — the machine check measured: it catches phrasings, not the class — and that is now DECLARED
+
+**Verifier `VERIFY: PASS`; reviewer `NEEDS_CHANGES`, and the reviewer ruled the check the right SHAPE and said
+to keep it.** The failing part is the DECLARATION, not the rules.
+
+**The measurement, and it is the definitive statement of D-020's limit.** The reviewer constructed **eleven
+fresh instances of the class** that the mechanism does not support and ran the committed guard against each.
+**Eleven of eleven escaped** — exit 0, no finding. The reason is exact and now measured rather than argued:
+each of the four rules is **keyed to one literal phrasing** —
+
+| rule | its literal key |
+|---|---|
+| construct presence | `the only git call is`, `` `X` alternative `` |
+| check-file prose | `resolvable pointer` / `makes the claim checkable` / `the line that shows it` |
+| prose number vs artifact | `the baseline is N` |
+| transcript reproducibility | the `badc0de`-style sha line |
+
+— so a **restatement of the same shape in any other wording is invisible.** Escapes include a **check-NAME
+capability claim**, a **body-comment wrong number**, and **pasted transcripts that do not reproduce** — three
+shapes the second, third and fourth rules claim to cover.
+
+**The review's own words: *"Not by itself a defect (D-020 allows a declared ceiling)."*** A lexical detector
+over a semantic predicate is what D-020 said it could never be more than. The check is a **cheap literal-phrase
+first pass**, and the enforcement for the residue remains the lane hunt.
+
+**Ruling: fix the CLAIMS, not the rules — and do NOT add one phrasing per escape.** Adding coverage for each of
+the eleven would be the treadmill the human ruled to stop (D-026), and the next paraphrase escapes anyway. The
+deliverable is an honest declaration: each rule's literal key stated in the header, the residue named **with
+its number** (11 constructed, 11 escaped, listed), and §1/§2's "covers the shape" claims corrected to "detects
+the recorded phrasing". This is the ninth instance of the class in this slice, and it is closed the only way
+that works — by lowering the claim to the mechanism, not by raising the mechanism to the claim.
