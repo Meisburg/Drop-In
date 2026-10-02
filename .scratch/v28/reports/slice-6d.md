@@ -376,3 +376,31 @@ claim and the rest of the file is the mechanism. The check is one screen per rul
 registered const is not scanned** (§3, §4.1-4.2) — an inline string in a function, a `.tsx` placeholder, and
 any function-produced copy. Both are named rather than left to be discovered. What is in scope is checked in
 both directions, and every rule is proven to be able to fail.
+
+---
+
+## §9 The final gate, at the commit that carries this report
+
+`npm run verify` run once at **`2c2bc23`** (this report committed, working tree clean of source changes), raw output in
+`.scratch/v28/tmp/verify-final.log`:
+
+| what | at `ba4dd93` | at `6b6a630` | at `2c2bc23` (final) |
+|---|---|---|---|
+| exit code | 1 | 1 | **1** |
+| test files | 71 | 71 | `Test Files  71 passed (71)` |
+| tests | 2067 | 2067 | `Tests  2067 passed (2067)` |
+| lint warnings (`grep -c ': warning '`) | 81 | 81 | **81** |
+| lint errors (`grep -c ': error '`) | 0 | 0 | **0** |
+| AGENTS.md | 1789 / 1800 | 1789 / 1800 | `ok — AGENTS.md (1789 words, ceiling 1800)` |
+| `run-all.sh` | FAIL, 6 findings | FAIL, 5 findings | **FAIL, 5 findings** — all `factory-guard` / `lane-states-legal` on `factory/work/*.json` |
+| my guard, inside the gate | — | PASS | `PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and the copy names no category it did not declare.` |
+| my check, inside the gate | — | 23/23 | `copy-taxonomy-guard check: all 23 checks passed, 0 failed, across 22 guard invocations (6 of them against a mutated copy of the guard).` |
+| config guard | ok | ok | `ok — no protected check config changed` |
+| report provenance scan | 1 untracked report | 1 untracked report | `0 untracked, 0 tracked-but-absent` |
+
+**Exit code 1 is the five `factory/work/v28-r2-*.json` `acceptance: 'pending'` findings and nothing else** — the
+orchestrator's registry, measured identically at the base commit (§0). Every guard and every checker in the lane
+passes. If those five files are cleared, the same command returns `GUARDS: PASS` and exit 0 with no change to any
+file this slice touched.
+
+**Committed as:** `b92b83e`, `327b8a5`, `13af7a2`, `6b6a630`, `2c2bc23` (this report). Not pushed.
