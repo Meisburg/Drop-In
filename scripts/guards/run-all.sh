@@ -42,6 +42,10 @@
 #                     copy of the regex-escape one-liner; a sixth copy fails
 #                     AND a zero fails (a needle that matched nothing is not
 #                     a clean repo)
+#   trailing-newline scripts/guards/trailing-newline-guard.mjs — every tracked
+#                     text file under src/ e2e/ scripts/ ends its last line
+#                     with a newline, and a scan that read no text file at all
+#                     is a finding rather than a pass (D-030)
 #   factory         docs/agents/factory.md                 — every model and every
 #                     task kind declares where its resource number came from;
 #                     every capability floor is meetable; no work item sits in an
@@ -84,7 +88,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard factory-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard trailing-newline-guard factory-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -132,6 +136,7 @@ run_check "copy-taxonomy-guard (behavior)" scripts/guards/copy-taxonomy-guard.ch
 run_check "check-acceptance-greps (behavior)" scripts/guards/check-acceptance-greps.check.mjs
 run_check "no-bypass-guard (stated blind spot)" scripts/guards/no-bypass-guard.check.mjs
 run_check "regexp-escape-guard (behavior)" scripts/guards/regexp-escape-guard.check.mjs
+run_check "trailing-newline-guard (behavior)" scripts/guards/trailing-newline-guard.check.mjs
 run_check "factory-guard (behavior)" scripts/guards/factory-guard.check.mjs
 
 echo
