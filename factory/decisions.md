@@ -1108,3 +1108,38 @@ forbidden.**
 `transcript-summary-agrees` stops watching fenced fabricated-count arithmetic — **a class that paid off once for
 real.** So: **the rung is taken before the delete, and if the rung is skipped and a divergence recurs anyway, D-032's
 terminal clause fires — delete, record known-open, never silent.**
+
+## D-039 — the seventh divergence fired, and the rung was taken instead of the delete
+
+**Adjudicated at 8b round 6, on two lanes that converged again.** The verifier and the independent reviewer,
+working separately, both falsified the same sentence — and the reviewer found a **seventh fence-closure
+divergence**:
+
+**`factory-guard.mjs:1766`** — the marker regex ends `(.*)$` and nothing normalizes `\r`, so **in a CRLF file NO
+fence is recognized at all.** In a mixed scan (one LF report gives the scan a real block) the D-030 empty-set
+tripwire stays **silent** and a reference-fenced fabricated transcript **passes at exit 0**. Both references agree,
+the corpus is all-LF, and **D-037 §4 says latency does not exempt.**
+
+**And the same round falsified the sentence both lanes had been told to trust:** `:1671-1673` priced the opener
+over-read as *"recognising more openers reads MORE, which is the safe direction."* **Both lanes measured it false by
+construction** — an indented opener followed by a bare same-kind line **consumes the next fence's opener as its
+closer**, and a reference-fenced fabricated line lands in **no guard block**: `0 range summaries checked`, PASS,
+exit 0. 98 of 30 172 fuzz drops, **all opener-rooted, zero with conformant openers.**
+
+**So D-032/D-037 fired, and D-038's rung is what fires instead of the delete.** D-038 placed the rung **below** the
+stop deliberately: *"the rung is taken before the delete."* **Three rounds of clause-patching have now produced a
+divergence in the CLOSER (indentation, `\r` suffix) and a divergence in the OPENER (the over-read). The hand-written
+parser is the defect, not any single clause of it.** The rung: **share ONE fence scanner between the guard and the
+fixture, derived from the reference**, vendored with provenance under `docs/agents/borrowed-guards.md` — **not a
+dependency**, because a guard that changes meaning when a package bumps is the exact failure this suite exists to
+prevent.
+
+**Why the rung is decidable and not another guess:** the round-6 verifier re-ran the derivation and got a
+**byte-identical** table (26 cases, 0 reference-vs-reference disagreements), proved the table **fails when
+corrupted**, and proved the `new Function` anchor seam **throws rather than silently lifting nothing**. **The
+instrument that judges the swap is already built and already trusted.**
+
+**THE HARD LIMIT, recorded so it is a rule rather than an intention:** *if a divergence still appears AFTER the
+rung, it is not patched — the rule is deleted and the defect recorded known-open.* Deletion is not free (it stops
+watching fenced fabricated-count arithmetic, a class that paid off once for real), which is why the rung is tried
+first and the delete comes second — **never the reverse, and never silently.**
