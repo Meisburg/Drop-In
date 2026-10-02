@@ -5,9 +5,9 @@ branch `Meisburg/onboarding`. **Brief:** `.scratch/v28/briefs/slice-6d.md` (its 
 below). **Report status:** written FIRST, appended as produced.
 
 **Committed as:** `b92b83e` the rule in the build law · `327b8a5` the declaration · `13af7a2` the guard, its
-check and the gate registration · `6b6a630` two needless escapes · and this report, in the commit that carries it
-(named with the final gate numbers in §9). **Not pushed** — production is V27 and this batch does not push
-mid-batch.
+check and the gate registration · `6b6a630` two needless escapes · `2c2bc23` this report's first commit ·
+`79991bd` the accuracy fix · and this text, in the last commit of the slice (named in §9). **Not pushed** —
+production is V27 and this batch does not push mid-batch.
 **Tree measured for every number below:** `6b6a630` plus this report (prose only); the final gate run is §9.
 **Base I read:** `ba4dd93` (slice 6c close entry). While I was reading, the orchestrator committed `38eb722`
 ("work registry: initialize 6d/8a/8b/8c/8d …"), so the tree I built on is `38eb722`.
@@ -111,7 +111,7 @@ Copy-taxonomy guard — a category this copy names must be one the app has and o
   taxonomy: src/lib/places.ts
   kinds read: 10; offered: 8; words: 9
   scanned words: 9 (Park, Playground, Indoor play, Museum, Pool, Splash pad, Library, Beach, Trail)
-  limit—— kind "other" is not scannable: its word resolves to the label function's own default or is shared with another kind, so a match could not be attributed to it (see WHERE IT STOPS in the header)
+  limit—— kind "other" is not scannable: its word resolves to the label function's own default, so a match could not be attributed to it (see WHERE IT STOPS in the header)
   module: src/lib/firstRunCopy.ts
   copy consts read: 2; declared claims: 0 (none)
   module: src/lib/firstRunTour.ts
@@ -365,8 +365,8 @@ regardless.
 | `scripts/guards/copy-taxonomy-guard.check.mjs` | +368 |
 | `scripts/guards/run-all.sh` | +9 / −1 |
 
-sha256 of the instrument at `6b6a630`, so a reviewer can tell what they read:
-`copy-taxonomy-guard.mjs` `b502e79269985843…bbab5ae`, `copy-taxonomy-guard.check.mjs` `8448ebfccdee8067…530aec874`.
+sha256 of the instrument at `79991bd`, so a reviewer can tell what they read:
+`copy-taxonomy-guard.mjs` `fd52b49cc282400d…03cf0c2`, `copy-taxonomy-guard.check.mjs` `88c07af30cc696f5…3aedb1`.
 
 **The 5-minute read:** `docs/agents/code-structure.md`'s new section (the rule), then
 `src/lib/firstRunTour.ts:205` (the declaration), then the guard's header — "WHERE IT STOPS" is the coverage
@@ -379,12 +379,14 @@ both directions, and every rule is proven to be able to fail.
 
 ---
 
-## §9 The final gate, at the commit that carries this report
+## §9 The final gate, at `79991bd`, with this report on disk
 
-`npm run verify` run once at **`2c2bc23`** (this report committed, working tree clean of source changes), raw output in
-`.scratch/v28/tmp/verify-final.log`:
+`npm run verify` run once at **`79991bd`** (the guard's last change committed; this report on disk and uncommitted,
+which is the only part of the tree that is not code). The lines added to this report after that run are the table's
+final column and this sentence and the one below it, so the run and the artifact differ by nothing the gate reads
+except the report itself, whose own numbers are the ones below. Raw output in `.scratch/v28/tmp/verify-final2.log`:
 
-| what | at `ba4dd93` | at `6b6a630` | at `2c2bc23` (final) |
+| what | at `ba4dd93` | at `6b6a630` | at `79991bd` (final) |
 |---|---|---|---|
 | exit code | 1 | 1 | **1** |
 | test files | 71 | 71 | `Test Files  71 passed (71)` |
@@ -403,4 +405,28 @@ orchestrator's registry, measured identically at the base commit (§0). Every gu
 passes. If those five files are cleared, the same command returns `GUARDS: PASS` and exit 0 with no change to any
 file this slice touched.
 
-**Committed as:** `b92b83e`, `327b8a5`, `13af7a2`, `6b6a630`, `2c2bc23` (this report). Not pushed.
+**Committed as:** `b92b83e` the rule · `327b8a5` the declaration · `13af7a2` the guard, its check and the gate
+registration · `6b6a630` the escapes · `2c2bc23` the report's first commit · `79991bd` the accuracy fix · and the
+commit that carries this text, which is the last of the slice. **Not pushed** — production is V27.
+
+---
+
+## §10 One more change after the report was first committed, and why it is in the report
+
+Commit `79991bd` changes two SENTENCES in the guard and makes one of them true. Reading the guard against its own
+prose before handing over found exactly the class this batch spent eleven rounds on — a claim the mechanism does
+not support:
+
+- the ambiguous-word limit line said *a match is not attributed to either of them* while the scan still tested the
+  word and attributed it to the first kind. Two kinds sharing one word are now kept out of `kindsByLabel`
+  altogether, so the sentence and the code say the same thing. Unreachable on today's taxonomy — no two kinds
+  share a word — which is precisely why the sentence, and not a code path, is what needed the change; the seed
+  that prints the line covers the reachable half (`other`, whose word is the label function's default).
+- the unreadable-declaration finding said the const *is not an exported array of string literals* whether the const
+  was absent or merely held a non-literal element. It now names both causes instead of asserting one.
+
+Re-verified after that commit, raw: `node scripts/guards/copy-taxonomy-guard.mjs` → exit 0 (one line of its output
+changed — the limit line — and the pasted block in §2 is the output as it now reads);
+`node scripts/guards/copy-taxonomy-guard.check.mjs` → exit 0, `all 23 checks passed, 0 failed, across 22 guard
+invocations (6 of them against a mutated copy of the guard)`; `npx oxlint` on both files → no warning. The full gate
+was then re-run; its numbers are §9.
