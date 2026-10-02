@@ -189,3 +189,44 @@ had no independence at all.
 
 Does **not** authorize: inferring the model from the agent definition's `model:`
 default, which is a declared default and not the routed decision.
+
+## D-009 — a fix round can be written into the work state
+
+**Decided 2026-10-02, found by using the machinery.** `complete` was terminal with
+no way to represent a fix round: `factory work transition v28-r2-6c implementation
+running` was **REFUSED (exit 4)** during slice 6c fix round 3 — so the batch's own
+escalating fix loop, which exists *precisely* to re-run a completed lane, could not
+be written down at all.
+
+A re-open is now allowed and deliberately narrow: only `complete → running`, only
+when the caller passes `--reopen "<why>"`, and the reason is recorded **on the
+lane**. A silent re-open is still refused, so "evidence does not un-exist"
+survives — the previous round's artifacts stay named and the reason for re-opening
+joins them. Enforced by `lane_reopen` in the registry and pinned by a test.
+
+Does **not** authorize: re-opening any lane to any state, or re-opening without a
+reason.
+
+## D-010 — a lane carries the model that ran it
+
+**Decided 2026-10-02.** `--model` was recorded in the lane's **history entry** but
+not on the **lane**, and `implementerOf` reads `lanes.<lane>.model`. So the work
+item kept reading as "nobody implemented this" and independence stayed
+unenforceable — D-008 was recorded but not actually satisfiable.
+
+`running → running` is correctly refused as a transition, so a field-only write
+was needed: `factory work set <id> <lane> --model <m>`. The lane now carries the
+model, and it is reachable on a lane already sitting in the state a caller wants to
+announce itself in.
+
+With D-007, D-008, D-009 and D-010 together, independence works end to end and
+reports the truth rather than a comfortable answer:
+
+```
+$ factory route reviewer --independence-of v28-r2-6c
+route reviewer -> NO ELIGIBLE MODEL          exit 3
+  independence: excluded ollama-cloud/deepseek-v4.1-flash:cloud (same model as the implementer)
+```
+
+Does **not** authorize: leaving a lane's model empty and calling independence
+satisfied.
