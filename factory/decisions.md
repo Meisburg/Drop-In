@@ -415,3 +415,41 @@ lines — an exclusion that lives only in a guard's `ladder:` bullet is a silenc
 
 Does **not** authorize: editing `.scratch/v28/ledger.md` (D-002 keeps it as it is), or widening the
 scan to the ledger or to `plan.md` without its own work item.
+
+## D-019 — instrument coverage vs the violation class (the round-5 comparison, measured)
+
+**Requested by the human 2026-10-02.** The rule was matching *examples* of the class; round 5 made it
+structural. This is the coverage comparison, and **every row was measured by the orchestrator** against the
+committed instrument (`1282871`), independently of the builder's own claims. The class is the human's list.
+
+| Class shape | Covered? | Evidence |
+|---|---|---|
+| every occurrence on a line, not just the first | **yes** | `matchAll`; the reviewer's doubled-`265 at HEAD` line now fires |
+| `N … at HEAD` (any HEAD spelling) | **yes** | arm 1 `BARE_HEAD_COUNT_AT` |
+| `git <subcmd> … HEAD` (whatever the subcommand) | **yes** | arm 2 `BARE_HEAD_COUNT_CMD` — structural, not a list of six commands |
+| counted command defaulting to HEAD, no revision named | **yes** | arm 3 `BARE_HEAD_COUNT_WC` (`git log … \| wc -l`) |
+| `HEAD~1`, `HEAD^`, `HEAD@{…}` | **yes** | measured firing on a probe report |
+| **`@` — the git shorthand for HEAD** | **NO — declared but cannot fire** | see below. The worst row in this table. |
+| HEAD versus working tree | **partial** | a note fires when the root is not a git worktree; a working-tree count (`git status --porcelain \| wc -l`) is **not** flagged |
+| git content versus filesystem content | **partial** | the SCOPE block states the scan is presence-on-disk; measured 120 on disk / 120 tracked / 0 untracked |
+| other moving refs (branch, tag, `ORIG_HEAD`, `MERGE_HEAD`, `FETCH_HEAD`) | **no, disclosed** | named in the header's cannot-see list |
+| a count with no provenance at all | **no, disclosed** | named; this is why the `ok —` claim was reworded |
+| a named commit that is the WRONG commit | **no, disclosed** | naming a commit is necessary, not sufficient |
+| files outside scope (`ledger.md`, `plan.md`, older lanes) | **no, disclosed** | `ledger.md:7091` recorded known-open (D-018) |
+
+**The `@` row is a defect, not a disclosed limitation.** `MOVING_REV` explicitly lists `@` as a moving
+revision and it matches when tested alone — but the composed command arm never fires for it, because of a
+trailing `\b`: after `@` comes a space or a colon, both non-word, so no word boundary exists. Measured:
+
+    $ git ls-tree -r --name-only @ .scratch | wc -l   -> 280   NOT FLAGGED
+    AT   -> null  raw@matches: ["@"]        # declared, and dead
+    HEAD -> ["git ls-tree -r --name-only HEAD"]  raw@matches: ["HEAD"]
+
+**An arm the code claims to cover and cannot is the same defect shape as every previous round in this slice —
+a stated capability the mechanism does not have.** It is being repaired inside round 5's bounded repair, not
+deferred to a new round.
+
+**Verdict on the instrument: it now detects the class by structure rather than by example, and it states its
+own boundary in the guard header where the build law requires it.** Two of the human's named items remain
+open — the `@` arm (a bug, being fixed) and the working-tree count (a disclosed gap awaiting a ruling).
+The remaining rows are disclosed exclusions with reasons, not silences.
