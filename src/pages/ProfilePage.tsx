@@ -9,6 +9,7 @@ import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { useCropStep } from '../components/useCropStep'
 import { FamilyPhotoBlock } from '../components/ImageLightbox'
 import { ProfileView } from '../components/ProfileView'
+import { hasAvatarUrl } from '../lib/avatarUrl'
 import { galleryPhotosFrom } from '../lib/photoGallery'
 import {
   addKid,
@@ -1215,7 +1216,12 @@ export function ProfilePage() {
               mobile). No photo yet → a tappable "Add a photo" label (the same
               pattern). The circle also carries the page's identity render
               (HostAvatar's photo shape), so what you tap is what you get. */}
-          {profile !== null && profile.avatar_url !== null && profile.avatar_url !== undefined ? (
+          {/* V28 r2 slice 8a: THE PREDICATE, not an inline check. This branch
+              used to test `avatar_url !== null && !== undefined` — the
+              empty-string clause missing, which is the third-form drift
+              lib/avatarUrl.ts exists to stop: a row holding `''` rendered an
+              `<img src="">` instead of the "Add a photo" label below. */}
+          {profile !== null && hasAvatarUrl(profile.avatar_url) ? (
             <div className="group relative shrink-0">
               <label
                 data-testid="avatar-photo-trigger"

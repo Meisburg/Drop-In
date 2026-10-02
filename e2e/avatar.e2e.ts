@@ -165,6 +165,42 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await expect(page.locator('img.rounded-full').first()).toBeVisible()
 })
 
+test('an EMPTY avatar_url counts as NO photo: the identity card shows "Add a photo", never an <img src=""> (V28 r2 slice 8a)', async ({
+  page,
+}) => {
+  // THE RENDER-SITE PIN for the one presence predicate (lib/avatarUrl.ts).
+  // The branch used to test `avatar_url !== null && avatar_url !== undefined`
+  // inline — the empty-string clause missing — so a row holding '' rendered an
+  // <img src=""> where the parent should see the "Add a photo" label. The
+  // column is plain text, nullable, with no CHECK, so '' is a real state.
+  //
+  // THIS TEST FAILS WITHOUT THE WIRE: restore the inline check and the img is
+  // back on the page (and the label is gone). It is the only browser-level
+  // proof that ProfilePage CALLS the predicate rather than restating it.
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const headers: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+  }
+  const patch = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    // `return=minimal`: a write must not be sent through RETURNING (the same
+    // rule e2e/places-map-view.e2e.ts records for its own column write). The
+    // afterEach below nulls the column again, so nothing is left behind.
+    headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ avatar_url: '' }),
+  })
+  expect(patch.ok, `the marker row accepts '' (HTTP ${patch.status})`).toBe(true)
+
+  await page.goto('/profile')
+  await openProfileEditor(page)
+
+  await expect(page.getByTestId('avatar-photo')).toHaveCount(0)
+  await expect(page.getByTestId('avatar-photo-trigger')).toHaveCount(0)
+  await expect(page.getByText('Add a photo', { exact: true })).toBeVisible()
+})
+
 test.afterEach(async () => {
   // Best-effort cleanup (per ticket): storage object + avatar_url + the
   // marker's playdate rows, via the marker's own JWT. Logged, never fatal.
