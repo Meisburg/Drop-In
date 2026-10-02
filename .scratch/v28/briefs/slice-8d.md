@@ -8,32 +8,35 @@ You are `orchestrator-builder`. **Read `docs/agents/code-structure.md` before wr
 
 ## What I measured, so you do not re-derive it
 
+**⚠️ ANCHORS RE-MEASURED BY SYMBOL on this tree before dispatch, and EVERY ONE OF THEM HAD DRIFTED** — the
+first draft's numbers were off by **+15 early and +28 late**, because the file grew above them. Use the SYMBOL:
+
 `src/pages/OnboardingPage.tsx`:
 
 ```
-:881  async function handleAreaFinish() {
-:883    const typedZip = homeZip.trim()
-:884    if (typedZip !== '') {
-:885      const zipProblem = validateHomeZip(homeZip, knownZips)
-:886      if (zipProblem !== null) {
-:887        setZipError(zipProblem)
-:888        return
-:889      }
-:890      await saveLocation(typedZip)
+:896  async function handleAreaFinish() {
+:898    const typedZip = homeZip.trim()
+:899    if (typedZip !== '') {
+:900      const zipProblem = validateHomeZip(homeZip, knownZips)
+:901      if (zipProblem !== null) {
+:902        setZipError(zipProblem)
+:903        return
+:904      }
+:905      await saveLocation(typedZip)
 ```
 
 and the error's **only** render site:
 
 ```
-:1579  data-testid="area-zip-fallback-note"      <- the note BLOCK
-:1594    (zipError !== null ? 'border-red-400' : 'border-slate-300')
-:1596    value={homeZip}                          <- the zip INPUT
-:1607  {zipError !== null ? (
-:1608    <p role="alert" id={errorId('zip')} ...>{zipError}</p>
+:1607  data-testid="area-zip-fallback-note"      <- the note BLOCK
+:1622    (zipError !== null ? 'border-red-400' : 'border-slate-300')
+:1624    value={homeZip}                          <- the zip INPUT
+:1635  {zipError !== null ? (
+:1636    <p role="alert" id={errorId('zip')} ...>{zipError}</p>
 ```
 
 **The error renders INSIDE the fallback-note block.** And slice 4 established that **an edited address
-invalidates the note** (`:1490`, and the fix-3 pin leg at `:1531-1532`). So the shape is:
+invalidates the note** (`:1518`, and the fix-3 pin leg at `:1546-1548`). So the shape is:
 
 ## Defect 1 — an error set where nobody can see it
 
@@ -56,12 +59,13 @@ and this batch has already paid for one "fix" that was pure theatre:
 `typedZip` is read from `homeZip` **at tap**, and then `await saveLocation(typedZip)` runs. **During that await the
 zip input is not disabled**, so the parent can type a different zip while the first is being written — **the save
 writes one value while the field shows another.** That is **the save-path face of slice 4's invariant**, which its
-own fix already applied to the *address* path (`:904`-onward, the re-check at the point of use) and **not** to the
+own fix already applied to the *address* path (`:930-950`, the re-check at the point of use) and **not** to the
 typed-zip path.
 
-**Slice 4's ruling is the precedent, and its two rejected shapes are worth reading before you choose** (`:913-930`):
+**Slice 4's ruling is the precedent, and its two rejected shapes are worth reading before you choose** (`:936-941`):
 it **refused to lock the field** for the duration of a Finish-initiated operation (*"a new stuck-state surface —
-this batch has found three walls"*) and **chose a re-check at the point of use** instead. **Match that reasoning,
+this batch has found three walls"*) and **chose a re-check at the point of use** instead — the re-check lives at
+`:930-950` and is the `if (addressAtTap !== areaAddressRef.current) return` on `:950`. **Match that reasoning,
 or beat it with a better one — and say which you chose and why.** Whatever you choose, **it must not create a
 fourth wall**, and the parent must stay usable on every path.
 

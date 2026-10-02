@@ -21,8 +21,14 @@ expect(
 ## ⚠️ WHAT I MEASURED, AND — IMPORTANTLY — WHAT I DID NOT
 
 **Measured, so you can rely on it:**
-- The mint is **batched**, not per-path: `useKidPhotoUrls.ts:20` — *"One `createSignedUrls` call for the whole kid
-  list, never one [per kid]"*. The spec counts requests to `/object/sign/` (`:259-261`).
+**⚠️ ANCHORS RE-MEASURED BY SYMBOL on this tree before dispatch** — `grep` for the symbol, not the line number, in
+case the file grows under you again:
+
+- The mint is **batched**, not per-path: **`src/components/useKidPhotoUrls.ts:20`** — *"One `createSignedUrls` call
+  for the whole kid list, never one [per kid]"*. **The first draft of this brief implied the hook lived in
+  `src/hooks/`; the line number was right and the DIRECTORY was wrong, which is the drift that sends a builder to
+  a file that does not exist.** Its sibling is `src/components/useFamilyPhotoUrl.ts:18` (same batching shape).
+  The spec counts requests to `/object/sign/` (`:259-261`).
 - **The `src` assertion is NOT the strong one — the COUNT is.** `:278-282` asserts
   `signRequests.length - mintsBeforeKeystrokes` **`.toBe(0)`**. So if a re-mint did happen, the count catches it
   **independently of whether the URL changed.**
