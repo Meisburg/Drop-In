@@ -793,3 +793,32 @@ reader what the instrument does; a *number* or a *line* in it is a claim that wi
 moves, and every rot is a false statement. The durable form is fewer, coarser claims — which is also why the
 guard's own header is the authoritative statement of scope (`code-structure.md:121-127`) rather than a report's
 prose: it must stay small enough to stay true.
+
+## D-029 — a constructor whose default output its own validator rejects
+
+**Found live 2026-10-02** by slice 6d's builder returning **BLOCKED**: `npm run verify` exited 1 for a cause
+*outside* the slice — five `lane-states-legal` findings on `factory/work/v28-r2-*.json`, measured identically at
+the base commit. **The orchestrator had produced them minutes earlier by running `factory work init`.**
+
+**The defect.** `newWorkItem` (`scripts/factory/state.mjs`) defaulted *every* lane — including `acceptance` — to
+`pending`. But `factory-guard.mjs` reads each lane's legal set from a different table: work lanes from
+`lane_states`, and **the acceptance lane from `acceptance_states` = `{blocked, pass, waived}`**, because
+acceptance is the gate *over* the work and has its own vocabulary. `pending` is not in it. So
+**`factory work init` produced a repo `npm run guards` called illegal — on every item, every time.**
+
+**Why it went unnoticed until now:** slice 6c is the only pre-existing item, and its acceptance had already
+reached a legal terminal state (`pass`) before the rule could see it. The defect was invisible until the
+registry held an item that was *actually new*.
+
+**Repair:** the constructor now emits `acceptance: { state: 'blocked' }` — the vocabulary's own "not yet
+decided", which can only go to `pass` or `waived`. The five items are repaired (recorded in each item's own
+history with the reason). A regression test mirrors the guard's rule against `realConfig`, and is
+**mutation-proven**: restoring the old default makes it fail with
+`expected ['blocked','pass','waived'] to include 'pending'`.
+
+**Why this is D-025's class again, and worth a name of its own.** It is *a stated capability the mechanism does
+not have* — here, "this tool creates a work item" while what it actually created was something the repo's own
+gate rejects. The two agents and the guard had been pointed at **product** code for eleven rounds while the
+instrument that *creates the record of the work* disagreed with the instrument that *checks it*. **A guard is
+only as good as its coverage, and the orchestrator's own tooling was outside it.** Worth asking of every
+generator in this repo: *does its default output satisfy its own validator?*

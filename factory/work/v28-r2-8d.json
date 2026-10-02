@@ -39,7 +39,7 @@
       "evidence": []
     },
     "acceptance": {
-      "state": "pending",
+      "state": "blocked",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -47,5 +47,15 @@
       "reason": null
     }
   },
-  "history": []
+  "history": [
+    {
+      "at": "2026-10-02T16:44:02.662Z",
+      "lane": "acceptance",
+      "from": "pending",
+      "to": "blocked",
+      "note": "repair: newWorkItem defaulted acceptance to pending, which its own guard rejects (lane-states-legal). Constructor fixed; this item repaired.",
+      "actor": null,
+      "model": null
+    }
+  ]
 }

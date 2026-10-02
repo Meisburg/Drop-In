@@ -96,7 +96,17 @@ export function newWorkItem({ id, title, planRef, track = null, base = null, dep
       verification: lane(),
       review: lane(),
       visual_validation: lane(),
-      acceptance: lane({ reason: null }),
+      // The acceptance lane has its OWN vocabulary (`acceptance_states`), because
+      // it is the gate over the work rather than work — so it cannot start at
+      // `pending` the way a work lane does. Found live: this defaulted to
+      // `pending`, and the guard's `lane-states-legal` rule reads the acceptance
+      // lane's legal set from `acceptance_states` = {blocked, pass, waived}.
+      // `factory work init` therefore produced a repo `npm run guards` called
+      // illegal, on every item, every time — an instrument whose default output
+      // its own validator rejects. Slice 6d's builder hit it as a BLOCKED gate
+      // on the orchestrator's freshly-initialized registry. `blocked` is the
+      // vocabulary's own "not yet decided": it can only go to pass or waived.
+      acceptance: lane({ state: 'blocked', reason: null }),
     },
     history: [],
   }

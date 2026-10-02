@@ -392,6 +392,25 @@ describe('the registry itself', () => {
     expect(item.history.at(-1).note).toMatch(/no state change/)
   })
 
+  it('creates work items in states its OWN guard calls legal (constructor vs validator)', () => {
+    // Found live by slice 6d's builder as a BLOCKED gate, on the orchestrator's
+    // freshly-initialized registry: `newWorkItem` defaulted every lane — including
+    // `acceptance` — to `pending`, while the guard's `lane-states-legal` rule reads
+    // the acceptance lane's legal set from `acceptance_states` = {blocked,pass,waived},
+    // which has no `pending`. So `factory work init` produced a repo its own guard
+    // called illegal, on every item, every time — an instrument whose default output
+    // its own validator rejects. 6c escaped notice only because its acceptance had
+    // already reached a legal terminal state. This mirrors the guard's rule so the
+    // constructor cannot drift away from its validator again.
+    const item = newWorkItem({ id: 'fresh', title: 't', planRef: 'p' })
+    const workStates = Object.keys(realConfig.lane_states)
+    const acceptanceStates = Object.keys(realConfig.acceptance_states)
+    for (const [lane, value] of Object.entries(item.lanes)) {
+      const legal = lane === 'acceptance' ? acceptanceStates : workStates
+      expect(legal, `lane '${lane}' starts at '${value.state}', which its vocabulary cannot reach`).toContain(value.state)
+    }
+  })
+
   it('gives every model a capability set, a footprint source and a cost tier', () => {
     for (const [key, model] of Object.entries(realConfig.models)) {
       expect(model.capabilities, key).toBeTruthy()
