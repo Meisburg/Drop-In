@@ -75,7 +75,7 @@
  * fixture-marker guard that keeps this spec inside it.
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
-import { readMarkerMeta } from './fixtures'
+import { NOMINATIM_ROUTE, readMarkerMeta } from './fixtures'
 // The tour's WORDS and the guard's DERIVATION are both data in
 // src/lib/firstRunTour (slice 5). Restating them here meant a legitimate copy
 // change needed three edits, and the spec built its OWN copy of the
@@ -94,8 +94,9 @@ import {
   withheldCategoryPattern,
 } from '../src/lib/firstRunTour'
 
-/** The card's Nominatim request (lib/geocode's searchFirst, one URL shape). */
-const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
+// NOMINATIM_ROUTE comes from ./fixtures — the one copy (V28 r2 slice 8a fix
+// round 1). This file held a byte-identical second copy of the same regex, in a
+// slice whose whole argument was anti-duplication.
 /** The address both legs type — the card's own placeholder, a real street. */
 const ADDRESS = '1200 1st Ave S, Seattle'
 

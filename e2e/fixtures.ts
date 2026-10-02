@@ -22,8 +22,15 @@ import { TIME_STEP_MINUTES, formatTimeLabel, stepTimeMinutes } from '../src/lib/
 
 const CWD = process.cwd()
 
-/** The card's Nominatim request (lib/geocode's searchFirst, one URL shape). */
-const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
+/** The card's Nominatim request (lib/geocode's searchFirst, one URL shape).
+ *
+ *  EXPORTED, and the ONE copy (V28 r2 slice 8a fix round 1, one-copy rule):
+ *  `e2e/signup-zip-fallback.e2e.ts` held a byte-identical second copy, and this
+ *  module is the channel every spec already imports from. The app's own URL
+ *  literal lives in `src/lib/geocode.ts` (`NOMINATIM_URL`, not exported) and a
+ *  divergence from it is LOUD rather than silent: `finishSignup`'s stub asserts
+ *  that it fired, so a pattern that stops matching fails the walk in ~5s. */
+export const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
 /**
  * The address `finishSignup` types into the area card. A REAL street, because
  * the answer the fixture returns claims it (postcode + house_number 1200, the
