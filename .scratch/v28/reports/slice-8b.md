@@ -965,3 +965,127 @@ VERIFY EXIT=0                     RUNALL EXIT=0
 checkers: factory-guard 130/130, trailing-newline 10/10, lib-sibling 8/8
 baselines as printed: no-bare-head-count 671 ; transcript-summary-agrees 2 ; LOST COVERAGE 0
 ```
+
+---
+
+# FIX ROUND 4 — the baseline family gets one empty-record form, and the last four non-blocking findings land
+
+Scope: **BLK3** (the third baseline's zero state) plus **NB-a, NB-b, NB-c, NB-d**. D-032's rule shape is untouched
+— round 3's review ruled it sound and this round did not go near it. The absorber's design is untouched, the
+declared path-occupancy boundary is still declared and still open, and no lane report and no `factory/` file was
+edited.
+
+## BLK3 — one shared empty-record mechanism, routed through by all three baselines
+
+The empty-record finding existed for two baselines and not for the third: `UNRESOLVABLE_SHA_BASELINE` still passed
+at nothing-recorded while the claim list published `no count's provenance sha unresolvable beyond the recorded
+records` over the empty record. A third hand-written condition would have been the same defect one round later, so
+the finding is now **one shared mechanism in the guard**, `recordIsAbsorbable(check, record, size)`: it returns
+`true` when there is a record, and on an empty record it files **that record's own finding** and returns `false`.
+Each of the three baselines prints its coverage note **only inside that call**, so the empty decision and the note it
+suppresses are the same form rather than two conditions that can drift. The comment states why the form is shared:
+three copies of one condition is the defect the fourth record is written without.
+
+Raw evidence — each map emptied over a clean throwaway root, then the same seed with that record's own call to the
+shared mechanism neutered:
+
+| record | emptied map | emptied, call neutered |
+|---|---|---|
+| `BARE_HEAD_BASELINE` | exit 1, `the recorded baseline is EMPTY` | exit 0 |
+| `UNRESOLVABLE_SHA_BASELINE` | exit 1, `the unresolvable-sha record is EMPTY` | exit 0 |
+| `TRANSCRIPT_QUOTATION_BASELINE` | exit 1, `the quotation baseline is EMPTY` | exit 0 |
+
+The emptied map is reached with `emptyMapCopy` — the seam a textual anchor cannot reach — and the harness carries
+all three in **one loop** (map, check, record), three seeds and three mutations whose exit code moves `1 -> 0`.
+The third baseline now has a seed and a mutation where it had neither.
+
+## NB-a — the harness's own sentences come down to the measured boundary
+
+The `UNFORGEABILITY` comment asserted a blanket property ("a baseline entry must NOT be reachable by writing a
+file") and the mutation's check name said the FILE in the key "makes the record unforgeable". Both are flatly
+contradicted by the declared boundary and by the measured path-occupancy direction — a fabrication written at a
+recorded path is absorbed. The heading, the clause and the check name now say the measured thing,
+**`NOT REACHABLE BY CONTENT`**: a new path quoting the same text still fires, and the comment states in words that
+a rewrite AT a recorded path is absorbed, so nothing there claims the record is unforgeable. No machinery was added
+to this one, as instructed — it is a sentence.
+
+## NB-b — the mid-line member of the unfenced ceiling, named and seeded
+
+Round 3 said the ambiguous shape was "declared and seeded as such", but the seed carried was the *indented*
+variant; the member the round-2 review actually read — **a fence marker with text before it on the line** — still
+escaped and had no seed. It is now named in the rule's ceiling list (a marker is read only at the start of a line,
+after leading whitespace) **and seeded**: the seed exits 0 with the block count printed and no finding, and a
+mutation that reads markers anywhere on the line makes the same content FIRE (exit 1). So the round-3 sentence is
+now true by measurement rather than corrected by wording.
+
+## NB-c — the orphaned JSDoc
+
+The `mutatedGuard` docblock sat directly above `emptyMapCopy`, the helper this diff's earlier round had inserted
+between them, leaving `mutatedGuard` documented by nothing. It is moved back above `mutatedGuard`; no sentence was
+changed.
+
+## NB-d — the range-claim gate gets a check
+
+The summary publishes "every step-range-and-count line read inside a fenced block agrees with its own count" only
+when range lines were actually read. That gate stops the universal claim being asserted over zero comparisons, and
+no seed re-ran it. It is a **claim gate, not a finding, so its mutation moves the published claim and not an exit
+code** — which is exactly why it needs a check: an edit dropping the gate would keep the harness green while the
+claim was asserted over nothing. The new checks are check 16's shape for the range claim: at zero range lines the
+run prints that nothing was compared and does **not** assert the ranges agree; with a range line read it **does**;
+and a mutation that drops the gate asserts the claim over zero comparisons, so the seed can fail.
+
+## RAW VERIFY (fresh, at the committed state)
+
+```
+ Test Files  71 passed (71)
+      Tests  2063 passed (2063)
+ oxlint: 81 warning lines, 0 errors
+  ok — AGENTS.md (1789 words, ceiling 1800)
+PASS — steering layer is clean.
+GUARDS: PASS — all deterministic rules hold.
+VERIFY EXIT=0
+RUNALL EXIT=0  (bash scripts/guards/run-all.sh)
+STEERING EXIT=0  (bash scripts/steering-lint.sh)
+checkers: factory-guard 137/137 (was 130), trailing-newline 10/10, lib-sibling 8/8
+baselines as the run prints them: no-bare-head-count 671 of the 671 recorded occurrence(s) matched
+this scan (LOST COVERAGE 0) ; transcript-summary-agrees quotation baseline holds 2 recorded site(s) ;
+count-provenance 10 recorded unresolvable-sha record(s) absorbed
+```
+
+## Baselines re-derived — all three, twice, lost coverage 0
+
+Blanked-map re-derivation of each record, over this corpus, with the parser keyed to the same key each map uses
+(`file::text`, `file::sha`, `file::line-text`), compared against the committed map:
+
+| record | committed | derived | lost | gained | changed | equal |
+|---|---|---|---|---|---|---|
+| bare-head | 437 key(s), 671 occurrence(s) | 437, 671 | 0 | 0 | 0 | true |
+| unresolvable-sha | 2 key(s), 10 occurrence(s) | 2, 10 | 0 | 0 | 0 | true |
+| quotation | 2 key(s), 2 occurrence(s) | 2, 2 | 0 | 0 | 0 | true |
+
+Run twice at the committed state; the printed derivation is byte-identical across the two runs.
+
+## "Which set did I just stop watching?" — round 4's answers
+
+1. **The third record's zero state** — now a finding with its own seed and an exit-moving mutation; it was the
+   blocking gap.
+2. **The shared empty-record mechanism** — one form, three call sites, one loop in the harness; a fourth record
+   enters by one call whose finding and note-suppression come together.
+3. **The mid-line member of the unfenced ceiling** — named in the ceiling list and seeded, with a mutation that
+   makes it fire. It remains open by declaration.
+4. **The range-claim gate at zero comparisons** — now re-run by a check; the mutation moves the claim, not the
+   exit code, and that is stated rather than hidden.
+5. **The path-occupancy boundary** — untouched, still declared, still not closed (D-033's ruling).
+6. **`factory/`'s corrected ruling** — not mine to edit; untouched this round.
+
+## Fix-round-4 risks
+
+- **NB-d's check asserts a claim, not a verdict.** A claim gate cannot redden a run by construction, so its
+  mutation moves the *published claim* and not an exit code. This is the one new check whose mutation does not move
+  the exit code; every new finding check (three empty-record seeds, the mid-line ceiling seed) does.
+- **The shared mechanism is a function, not a loop in the guard.** The reviewer's rung was a shared form; the form
+  is `recordIsAbsorbable`, and the loop lives in the harness over the three records. The guard cannot loop over the
+  notes themselves because each note reads a different counter at a different point in the scan; the call site is
+  the unit that keeps the finding and the note-suppression together.
+- **`ponytail:`** — the derivation comparison is a script under `/tmp`, not a committed instrument; a future round
+  must re-derive rather than trust this number. The committed maps are still the only absorber.

@@ -156,6 +156,32 @@ const FACTORY = join(ROOT, 'factory')
 const findings = []
 const fail = (check, msg) => findings.push({ check, msg })
 
+/**
+ * THE EMPTY-RECORD FINDING, IN ONE PLACE FOR EVERY RECORD (D-030).
+ *
+ * WHY THIS IS SHARED. Round 3 of this slice wrote the empty-record condition by
+ * hand into two of the three baselines and left the third — the unresolvable-sha
+ * record — still passing at `0 of 0`, a coverage clause printed over the maximal
+ * version of the failure a record exists to catch. The missing instance was the
+ * symptom; THREE COPIES OF ONE CONDITION was the defect, because the fourth
+ * record is written without it. So the decision lives here once: the emptiness
+ * check and the finding are one form, and each record's coverage note is printed
+ * only when this function says there is a record to cover.
+ *
+ * `true` means there is a record, so the caller may print its coverage note.
+ * `false` means the record is EMPTY: the finding has been filed and the caller
+ * must NOT print the note, because a number over no record reads exactly like a
+ * number over a full one.
+ */
+function recordIsAbsorbable(check, record, size) {
+  if (size > 0) return true
+  fail(
+    check,
+    `the ${record} is EMPTY — there is no record to absorb anything with, so a run must not print a coverage clause over it as if the record were fully covered (D-030)`,
+  )
+  return false
+}
+
 // ---------------------------------------------------------------------------
 
 function readConfig() {
@@ -1521,19 +1547,23 @@ function checkReportHeadCounts() {
   // root is not it). What it must not do is print the greenest value over NO
   // record at all: `0 of 0` cannot be told from fully-covered, so an EMPTY record
   // is a FINDING (D-030) and the clause is printed only when there is a record.
-  if (BARE_HEAD_BASELINE_SIZE === 0) {
-    fail(
-      'no-bare-head-count',
-      'the recorded baseline is EMPTY — there is no record to absorb anything with, so a run must not print a coverage clause over it as if the record were fully covered (D-030)',
-    )
-  } else {
+  // That decision is `recordIsAbsorbable`'s, shared with every other record in
+  // the family, so the empty state cannot be added to one and forgotten for the
+  // next.
+  if (recordIsAbsorbable('no-bare-head-count', 'recorded baseline', BARE_HEAD_BASELINE_SIZE)) {
     console.log(`  note — no-bare-head-count: ${bareHeadAbsorbed} of the ${BARE_HEAD_BASELINE_SIZE} recorded occurrence(s) matched this scan (LOST COVERAGE ${BARE_HEAD_BASELINE_SIZE - bareHeadAbsorbed})`)
   }
   if (repo) {
     const label = relative(ROOT, repo)
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
   }
-  console.log(`  note — count-provenance: ${UNRESOLVABLE_SHA_BASELINE_SIZE} recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding${absorbed === UNRESOLVABLE_SHA_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${UNRESOLVABLE_SHA_BASELINE_SIZE} matched this scan`}`)
+  // The same shared decision one record over: an empty unresolvable-sha record
+  // used to print this note over `0 of 0` and pass, while `provenanceChecked`
+  // published a universal over it. Now the empty state is a finding and the note
+  // is printed only when there is a record to cover.
+  if (recordIsAbsorbable('count-provenance-unresolvable', 'unresolvable-sha record', UNRESOLVABLE_SHA_BASELINE_SIZE)) {
+    console.log(`  note — count-provenance: ${UNRESOLVABLE_SHA_BASELINE_SIZE} recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding${absorbed === UNRESOLVABLE_SHA_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${UNRESOLVABLE_SHA_BASELINE_SIZE} matched this scan`}`)
+  }
   return { reportFiles: files.length, provenanceChecked: Boolean(repo), transcriptsChecked, rawSummaryLines }
 }
 
@@ -1633,9 +1663,11 @@ function checkTranscripts(files) {
  *     This corpus holds a genuine range/count contradiction in one
  *     (`.scratch/v28/reports/slice-8a-verify-4.md:122`, an indented QUOTATION of
  *     the seed). Declared, not hidden;
- *   - a block with NO fence at all (prose, a table cell, an inline code span) is
- *     not read: the rule reads fenced blocks, and an unfenced `✓ A–B … (all N)`
- *     line escapes it. That is the boundary the next reader should attack;
+ *   - a block with NO fence at all (prose, a table cell, an inline code span, or
+ *     a fence marker with TEXT BEFORE IT on the line — a marker is read only at
+ *     the start of a line, after leading whitespace) is not read: the rule reads
+ *     fenced blocks, and an unfenced `✓ A–B … (all N)` line escapes it. That is
+ *     the boundary the next reader should attack;
  *   - the scan set is the top-level `*.md` of `.scratch/v28/reports` and
  *     `.scratch/v28/briefs` only — a block anywhere else is invisible;
  *   - nothing is re-run: the block's own arithmetic is checked, not whether the
@@ -1789,16 +1821,14 @@ function checkRawBlockSummaries(files) {
   // over the maximal version of the failure this clause exists to catch — a record
   // that shrank to nothing reads exactly like a record that is fully covered — so
   // the empty record is a FINDING (D-030) and the clause is printed only when
-  // there IS a record to cover. The number printed is `size − ABSORBED` (absorbed
-  // FINDINGS, not matched sites: a line whose arithmetic had become correct would
-  // return before the count and read as lost coverage).
-  if (TRANSCRIPT_QUOTATION_BASELINE_SIZE === 0) {
-    fail(
-      'transcript-summary-agrees',
-      'the quotation baseline is EMPTY — there is no record for this rule to absorb anything with, so a run that printed its coverage over that state would assert a property it does not have (D-030)',
-    )
+  // there IS a record to cover. The decision is `recordIsAbsorbable`'s, the same
+  // shared form the other records in this family use. The number printed is
+  // `size − ABSORBED` (absorbed FINDINGS, not matched sites: a line whose
+  // arithmetic had become correct would return before the count and read as lost
+  // coverage).
+  if (recordIsAbsorbable('transcript-summary-agrees', 'quotation baseline', TRANSCRIPT_QUOTATION_BASELINE_SIZE)) {
+    console.log(`  note — transcript-summary-agrees: quotation baseline holds ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} recorded site(s), re-derived and never hand-added; a NEW site, or a second occurrence of a recorded one in the same file, is a finding${absorbed < TRANSCRIPT_QUOTATION_BASELINE_SIZE ? ` — ${absorbed} of the ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} ABSORBED this scan (LOST COVERAGE ${TRANSCRIPT_QUOTATION_BASELINE_SIZE - absorbed})` : ''}`)
   }
-  console.log(`  note — transcript-summary-agrees: quotation baseline holds ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} recorded site(s), re-derived and never hand-added; a NEW site, or a second occurrence of a recorded one in the same file, is a finding${TRANSCRIPT_QUOTATION_BASELINE_SIZE > 0 && absorbed < TRANSCRIPT_QUOTATION_BASELINE_SIZE ? ` — ${absorbed} of the ${TRANSCRIPT_QUOTATION_BASELINE_SIZE} ABSORBED this scan (LOST COVERAGE ${TRANSCRIPT_QUOTATION_BASELINE_SIZE - absorbed})` : ''}`)
   return ranges
 }
 

@@ -64,15 +64,6 @@ function run(mutate, { guard = GUARD, args = [], report = true } = {}) {
   }
 }
 
-/**
- * A throwaway COPY of the instrument with named textual mutations applied. This
- * is how a check proves it CAN fail: mutate the mechanism the check names, run
- * the same seeded root against the mutant, and require the seed's verdict to
- * flip. A check whose named failure mode cannot be reached by any mutation is a
- * claim, not a check — which is why the mutation count is asserted here: an
- * anchor that no longer exists is a silent no-op, and a silent no-op would make
- * every mutation check below pass vacuously.
- */
 /** A throwaway copy of the guard with a named `new Map([...])` literal EMPTIED,
  * and optionally one anchor replaced by `if (false) {`. Emptying a map is the
  * seam a textual anchor cannot reach — the body is hundreds of lines — and it is
@@ -96,6 +87,15 @@ function emptyMapCopy(mapVar, alsoNeuter = '') {
 }
 
 const SCRATCH_DIRS = [] // mutant copies AND scratch roots — not only mutants (D-024)
+/**
+ * A throwaway COPY of the instrument with named textual mutations applied. This
+ * is how a check proves it CAN fail: mutate the mechanism the check names, run
+ * the same seeded root against the mutant, and require the seed's verdict to
+ * flip. A check whose named failure mode cannot be reached by any mutation is a
+ * claim, not a check — which is why the mutation count is asserted here: an
+ * anchor that no longer exists is a silent no-op, and a silent no-op would make
+ * every mutation check below pass vacuously.
+ */
 function mutatedGuard(replacements) {
   let text = readFileSync(GUARD, 'utf8')
   for (const [from, to] of replacements) {
@@ -1507,9 +1507,11 @@ console.log('===========================================================')
     `exit ${absorbedMiss.exit}`,
   )
 
-  // UNFORGEABILITY — the requirement that decides whether D-033 was honoured. A
-  // baseline entry must NOT be reachable by writing a file: the key carries the
-  // FILE, so the same text in a new file is a new key and still fires.
+  // NOT REACHABLE BY CONTENT — the direction D-033 names and this check
+  // measures. The key carries the FILE, so the same text written into a NEW file
+  // is a new key and still fires. This is the CONTENT half only: a rewrite AT a
+  // recorded path is absorbed (the declared path-occupancy boundary, measured by
+  // the check above), so nothing here claims the record is unforgeable.
   const newcomerSeed = '# a NEW report quoting the same text\n\n```\n' + BASELINED_LINE + '\n```\n'
   const forged = run((ctx) => {
     cleanRoot()(ctx)
@@ -1517,7 +1519,7 @@ console.log('===========================================================')
     ctx.write('.scratch/v28/reports/zz-new-quoter.md', newcomerSeed)
   }, { report: false, args: ['--repo', REPO] })
   check(
-    'UNFORGEABILITY: a NEW file quoting the SAME text still FIRES, and the recorded file does not',
+    'NOT REACHABLE BY CONTENT: a NEW file quoting the SAME text still FIRES, and the recorded file does not',
     forged.exit === 1 && /zz-new-quoter\.md:4: a fenced block's summary line covers 7 entries/.test(forged.out) && !/slice-8a-verify-5\.md:\d+: a fenced block's summary line covers/.test(forged.out),
     `exit ${forged.exit}`,
   )
@@ -1535,7 +1537,7 @@ console.log('===========================================================')
     ctx.write('.scratch/v28/reports/zz-new-quoter.md', newcomerSeed)
   }, { guard: forgeableKey, report: false, args: ['--repo', REPO] })
   check(
-    'MUTATION: an absorber keyed on the TEXT alone lets that newcomer pass (exit 1 -> 0) — the FILE in the key is what makes the record unforgeable',
+    'MUTATION: an absorber keyed on the TEXT alone lets that newcomer pass (exit 1 -> 0) — the FILE in the key is what keeps a NEW path a finding',
     forgedMiss.exit === 0,
     `exit ${forgedMiss.exit}`,
   )
@@ -1563,42 +1565,37 @@ console.log('===========================================================')
     `exit ${twiceMiss.exit}`,
   )
 
-  // THE RECORD CANNOT BE EMPTY (BLK2 / D-030). `0 of 0` used to print the greenest
-  // value over the maximal version of the failure the coverage clause exists to
-  // catch, and PASS. Emptying the map reaches that state; the mutation removes the
-  // finding and the same seed PASSES, so the verdict moves.
-  const emptyBareHead = run((ctx) => {
-    cleanRoot()(ctx)
-  }, { guard: emptyMapCopy('BARE_HEAD_BASELINE') })
-  check(
-    'an EMPTY bare-head record is a FINDING (D-030: 0 of 0 cannot read as fully covered)',
-    emptyBareHead.exit === 1 && /recorded baseline is EMPTY/.test(emptyBareHead.out),
-    `exit ${emptyBareHead.exit}`,
-  )
-  const emptyBareHeadMiss = run((ctx) => {
-    cleanRoot()(ctx)
-  }, { guard: emptyMapCopy('BARE_HEAD_BASELINE', 'if (BARE_HEAD_BASELINE_SIZE === 0) {') })
-  check(
-    'MUTATION: dropping that finding lets the empty record PASS (exit 1 -> 0 — a DETECTION flip)',
-    emptyBareHeadMiss.exit === 0,
-    `exit ${emptyBareHeadMiss.exit}`,
-  )
-  const emptyQuotation = run((ctx) => {
-    cleanRoot()(ctx)
-  }, { guard: emptyMapCopy('TRANSCRIPT_QUOTATION_BASELINE') })
-  check(
-    'an EMPTY quotation record is a FINDING (D-030), the same shape one rule over',
-    emptyQuotation.exit === 1 && /quotation baseline is EMPTY/.test(emptyQuotation.out),
-    `exit ${emptyQuotation.exit}`,
-  )
-  const emptyQuotationMiss = run((ctx) => {
-    cleanRoot()(ctx)
-  }, { guard: emptyMapCopy('TRANSCRIPT_QUOTATION_BASELINE', 'if (TRANSCRIPT_QUOTATION_BASELINE_SIZE === 0) {') })
-  check(
-    'MUTATION: dropping that finding lets the empty quotation record PASS (exit 1 -> 0 — a DETECTION flip)',
-    emptyQuotationMiss.exit === 0,
-    `exit ${emptyQuotationMiss.exit}`,
-  )
+  // THE RECORD CANNOT BE EMPTY, FOR EVERY RECORD IN THE FAMILY (BLK2/BLK3, D-030).
+  // `0 of 0` printed the greenest value over the maximal version of the failure a
+  // coverage clause exists to catch, and PASSED. Round 3 fixed that for two
+  // baselines and left the third, so this loop carries all three as one form: a
+  // fourth record enters by adding a row, not by remembering a condition. Emptying
+  // the map reaches the state; neutering that record's own call to the guard's
+  // shared `recordIsAbsorbable` removes the finding, and the same seed PASSES —
+  // so the verdict moves for every member of the family.
+  const emptyRecords = [
+    ['BARE_HEAD_BASELINE', 'no-bare-head-count', 'recorded baseline'],
+    ['UNRESOLVABLE_SHA_BASELINE', 'count-provenance-unresolvable', 'unresolvable-sha record'],
+    ['TRANSCRIPT_QUOTATION_BASELINE', 'transcript-summary-agrees', 'quotation baseline'],
+  ]
+  for (const [mapVar, checkName, recordLabel] of emptyRecords) {
+    const emptied = run((ctx) => {
+      cleanRoot()(ctx)
+    }, { guard: emptyMapCopy(mapVar) })
+    check(
+      `an EMPTY ${recordLabel} is a FINDING (D-030: 0 of 0 cannot read as fully covered)`,
+      emptied.exit === 1 && emptied.out.includes(`${recordLabel} is EMPTY`),
+      `exit ${emptied.exit}`,
+    )
+    const neutered = run((ctx) => {
+      cleanRoot()(ctx)
+    }, { guard: emptyMapCopy(mapVar, `if (recordIsAbsorbable('${checkName}', '${recordLabel}', ${mapVar}_SIZE)) {`) })
+    check(
+      `MUTATION: dropping the ${recordLabel} finding lets the empty record PASS (exit 1 -> 0 — a DETECTION flip)`,
+      neutered.exit === 0,
+      `exit ${neutered.exit}`,
+    )
+  }
 
   // THE INDENTED-CODE BOUNDARY, DECLARED (D-033 item 3). This rule reads FENCED
   // blocks; an indented code block is outside its scan set. That is also how a
@@ -1625,6 +1622,70 @@ console.log('===========================================================')
     'MUTATION: reading unfenced content makes that indented fabrication FIRE (exit 0 -> 1) — the fenced boundary is what keeps it out',
     indentedMiss.exit === 1 && /covers 7 entries/.test(indentedMiss.out),
     `exit ${indentedMiss.exit}`,
+  )
+
+  // THE UNFENCED CEILING'S MID-LINE MEMBER, DECLARED AND SEEDED (review NB-b). A
+  // fence marker is read only at the START of a line, so a marker with TEXT
+  // BEFORE IT is not a fence and the line it would open is outside the scan set —
+  // the indented ceiling's sibling, now named in the rule's ceiling list and
+  // carried here as a seed. The block holds no fence of its own, so the
+  // empty-block tripwire is not the thing under test; the closing marker at line
+  // start still opens a block, or the seed would read zero blocks.
+  const midLineSeed = '# zz mid-line marker\n\nproof — raw: ```\n✓ 7–13 zz-spec.e2e.ts (all six legs)\n```\n'
+  const midLineOutside = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', midLineSeed)
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'the DECLARED ceiling: a fence marker with TEXT BEFORE IT is not a fence, so its content is OUTSIDE the scan set (no finding)',
+    midLineOutside.exit === 0 && /1 fenced block\(s\) read/.test(midLineOutside.out),
+    `exit ${midLineOutside.exit}`,
+  )
+  const readsMidLineMarkers = mutatedGuard([['const marker = /^\\s*(```|~~~)/.exec(line)', 'const marker = /.*(```|~~~)/.exec(line)']])
+  const midLineMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', midLineSeed)
+  }, { guard: readsMidLineMarkers, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: reading a mid-line marker makes that content FIRE (exit 0 -> 1) — reading markers only at line start is what keeps it out',
+    midLineMiss.exit === 1 && /covers 7 entries/.test(midLineMiss.out),
+    `exit ${midLineMiss.exit}`,
+  )
+
+  // THE CLAIM GATE AT ZERO COMPARISONS (review NB-d). The summary publishes
+  // "every step-range-and-count line read … agrees with its own count" only when
+  // `rawSummaryLines` is non-zero; at zero the run says NOTHING was compared and
+  // passes. A claim gate cannot move an exit code, which is exactly why it needs
+  // a check: an edit dropping `if (rawSummaryLines)` would keep the harness green
+  // while the claim is published over zero comparisons. Check 16 is the same
+  // shape for the headers claim; this is the range claim.
+  const zeroRange = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', '# zz zero ranges\n\n```\nno step range in this block\n```\n')
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'at zero range lines the summary prints NOTHING was compared and does NOT claim the ranges agree',
+    zeroRange.exit === 0 && /NOTHING was compared/.test(zeroRange.out) && !/step-range-and-count line read/.test(zeroRange.out),
+    `exit ${zeroRange.exit}`,
+  )
+  const oneRange = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', '# zz one range\n\n```\n✓ 1–2 a.e2e.ts (all two legs)\n```\n')
+  }, { report: false, args: ['--repo', REPO] })
+  check(
+    'with a range line read the summary DOES claim the ranges agree (control)',
+    oneRange.exit === 0 && /step-range-and-count line read/.test(oneRange.out),
+    `exit ${oneRange.exit}`,
+  )
+  const ungatedClaim = mutatedGuard([['if (rawSummaryLines) claims.push("every step-range-and-count line read', 'if (true) claims.push("every step-range-and-count line read']])
+  const zeroRangeMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', '# zz zero ranges\n\n```\nno step range in this block\n```\n')
+  }, { guard: ungatedClaim, report: false, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the gate publishes the range claim over ZERO comparisons (so the seed can fail)',
+    zeroRangeMiss.exit === 0 && /step-range-and-count line read/.test(zeroRangeMiss.out),
+    `exit ${zeroRangeMiss.exit}`,
   )
 
   // THE REPORT/BRIEF SCAN'S OWN ZERO CASE (D-030). The scan used to print
