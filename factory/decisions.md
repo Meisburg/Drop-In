@@ -693,3 +693,45 @@ checkable in the narrow form that would have caught blocking 1 (the string `@\{�
 for "the prose is true" — the same lexical/semantic limit D-020 identified applies — but it converts the
 *cheapest, commonest* instance of the class into a machine check. **Queue it as a factory-hardening item after
 6c closes, not now.**
+
+## D-026 — ESCALATION (D-016 invoked a second time): the prose-repair instrument is not converging
+
+**Verdicts: verifier `VERIFY: FAIL`, reviewer `NEEDS_CHANGES`. Both fail on the CLASS, not on behaviour.**
+The verifier's own words: *"not on behaviour, and not on the two blocking sentences, which are now TRUTHFUL… It
+fails on the pass's own purpose: **the class is not eliminated**."*
+
+**The measured hit rate of the instrument we have been using.** The builder swept the whole header and all 74
+check names and found **five**. The reviewer's independent sweep of the same two files found **four more** —
+one **introduced by the sweep's own rewritten text**, two contradicted by the commit subject that claims they
+were fixed. **5 found / 4 missed.** Seven rounds, eight instances, and the instrument that catches them is a
+human reading prose.
+
+**The invariant** (unchanged, and never the thing that failed): *every claim about the instrument — a header
+sentence, a check name, a section comment, a written number, a pasted transcript — must be backed by the
+mechanism it describes.*
+
+**The detection rule today:** a human reading prose, once per round. **No machine rule covers it.**
+
+**The missed shapes, measured this pass** (all in `scripts/guards/factory-guard.mjs` /
+`factory-guard.check.mjs`):
+1. a **construct named in prose but absent from the source** (the `@{…}` alternative — deleted in the same
+   commit, and the same file contradicted itself 60 lines later);
+2. **check-file prose is not read at all** — `instrument-headers-honest` scans only the *leading comment block*
+   of `scripts/guards/*.mjs`, so check names and body comments are unguarded, and two of the four new instances
+   are there;
+3. a **written number that the artifact contradicts** (a "baseline is 4" and a "20" that the map and the run
+   disagree with);
+4. a **pasted transcript that does not reproduce** (the pass's R15 block);
+5. a **check name left stating a formula the header had just abandoned** — the sibling was renamed, this one
+   was not, in the same commit;
+6. **"the only git call is `cat-file -e <sha>^{commit}`"** in the SCOPE block, against a real
+   `git ls-files -z` at `:1272` that runs on every scan.
+
+**The reviewer's judgement, which is the useful return:** *"another prose repair is not the right instrument
+for the class — it is the right instrument for these six instances, and it should be the last one done this
+way. D-025's proposed check is the correct move and needs to be broader than D-025 wrote it."* It names four
+rule shapes: construct-presence, **check-file prose** (missing entirely), **prose-number-vs-artifact**, and
+**transcript reproducibility**. The honest limit stands (D-020): no machine decides "the prose is true" — but
+after seven rounds *"the burden of proof has moved to anyone proposing an eighth manual sweep."*
+
+**Not doing anything further until the human rules.** No eighth sweep, no new round.
