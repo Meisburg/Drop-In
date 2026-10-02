@@ -7110,3 +7110,48 @@ has **no case at the sandbox root's depth** to pin it; **`.cts` is stated and ne
 **AND THE INCREMENTAL-EVIDENCE RULE EARNED ITS KEEP:** the OOM-killed builder left **both guard files edited
 on disk and a `.scratch/v28/reports/slice-6c-fix-2.md` skeleton with its per-finding table already filled in**,
 because it was told to write the report FIRST and append as it went. *The lane died; its evidence did not.*
+
+## 2026-10-02 — factory architecture: decisions D-001..D-010 (recorded, three of them built)
+
+Human ruled on the five open questions. Recorded in `factory/decisions.md` — a
+decision log separate from work state, run telemetry and resource telemetry.
+
+- D-001 strata-max RESIDENT, ninfer-serve/strata-serve ON-DEMAND. Built: `residency`
+  per model, drift reporting in `doctor`, guard refuses two declared residents.
+  ninfer-serve was NOT reclaimed as instructed (restarted after a demo stopped it).
+- D-002 the 7,112-line ledger left INTACT, not retro-split. Forward-only.
+- D-003 availability is part of admission. Built: `health.probe`, gated on `tcp` for
+  remote, deliberately NOT gated for local (a stopped service is a planned start,
+  already charged by its footprint). MEASURED: fr-1 is cost_tier 1 and UNREACHABLE
+  (tcp 100.92.51.0:11434) — it was the preferred fallback and would have failed a
+  whole slice later.
+- D-004 reclaim opt-in; `reclaimCandidates` refuses to stop a model a live
+  reservation holds.
+- D-005 ~/.pi/agent/agents inspected before any enforcement: ~/.pi is NOT a git repo,
+  12 .bak-* machine-local files beside the 5 authoritative ones, and those 5 contain
+  ZERO machine-local content. Tracking `agents/*.md` alone is safe; enforcement
+  deliberately deferred.
+- D-006 admission-token / dispatch-interception layer = next infrastructure task,
+  NOT built.
+- D-007 independence reports instead of passing. MEASURED: the reviewer floor is
+  cleared by EXACTLY ONE model, so `same_model:false` is unsatisfiable by
+  construction — and the work item recorded `model: null`, so `--independence-of`
+  excluded nothing while looking honoured. `route` now exits 3 naming it; guard
+  fails an unacknowledged gap.
+- D-008 every dispatch records the model that ran it.
+- D-009 `complete` was terminal so a fix round could not be written down — found by
+  USING it (`work transition` REFUSED exit 4). Narrow exception: `complete -> running`
+  only with `--reopen "<why>"`, reason recorded on the lane.
+- D-010 a lane could not carry its model (`--model` went to history, not the lane);
+  `factory work set <id> <lane> --model <m>` added.
+
+Found live, again by running rather than reasoning: `scheduler.mjs` imported
+`execFileSync` but called `spawnSync`, so EVERY remote health probe threw and read
+as "unknown" — which admission counts as unreachable, i.e. the guard would have
+silently disabled every remote model.
+
+Commits: `8e7f89a`, `a4b3cf5`, `0591bf1` (fix-3 brief), `1281c9b`, `68080b0`.
+Gate at each: `npm run verify` exit 0, 81 warnings / 0 errors, GUARDS PASS.
+
+Slice 6c: fix round 3/5 dispatched (base `68080b0`, model cloud `deepseek-v4.1-flash:cloud` — the local `strata-max` worker is resource-blocked by `ninfer-serve`'s VRAM claim, which the scheduler stated rather than the orchestrator guessing). Run `18740387`.
+Slice 6c: routing deviation stands — with cloud implementing, the reviewer lane has NO independently-qualified model (D-007), so round 3's review will be a SIBLING and that is recorded, not glossed.
