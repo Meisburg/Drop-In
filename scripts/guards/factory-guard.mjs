@@ -1701,9 +1701,8 @@ function checkTranscripts(files) {
  *     the boundary the next reader should attack;
  *   - a fence marker INSIDE an HTML block is ALSO read: the scanner carries no
  *     HTML state, so a marker a raw HTML block swallows is opened as a fence
- *     where both references derive none. It is an OVER-read by construction — it
- *     can only ADD a read, so it cannot produce the `NOTHING was compared`
- *     signature this rule exists to close (D-037 §3);
+ *     where both references derive none. A DECLARED boundary, not a covered
+ *     shape — the guarantee stops here;
  *   - the scan set is the top-level `*.md` of `.scratch/v28/reports` and
  *     `.scratch/v28/briefs` only — a block anywhere else is invisible;
  *   - nothing is re-run: the block's own arithmetic is checked, not whether the

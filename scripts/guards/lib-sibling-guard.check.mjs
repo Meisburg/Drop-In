@@ -20,7 +20,11 @@
 //   6. the REACH matches the NAME: `src/lib/*.mjs` and `scripts/lib/*.mjs`
 //      are each scanned, and dropping either scan lets its orphan escape
 //      (slice 8b — the guard read `src/lib/*.ts` alone, so a `lib/` module one
-//      directory over was invisible)                                     (2 seeds + 2 mutations).
+//      directory over was invisible)                                     (2 seeds + 2 mutations);
+//   7. the D-030 empty-scan tripwire is PER SCAN SET (slice 8b close-out): a
+//      populated `scripts/lib` no longer masks an empty `src/lib`, and a
+//      `scripts/lib` holding only exempt modules is its own finding
+//                                                                         (2 seeds + 2 mutations).
 //
 // Usage: node scripts/guards/lib-sibling-guard.check.mjs
 // Exit:  0 = every check ran and passed, 1 = at least one is not doing its job
@@ -116,9 +120,9 @@ const exempt = run(rootWith({ 'src/lib/types.ts': 'export type T = 1\n' }))
 check('a module on the EXEMPT list is skipped, not failed', !/MISSING/.test(exempt.out), `exit ${exempt.exit}`)
 
 // 4. D-030: exempt-only src/lib ⇒ checked=0 ⇒ FINDING, and it must have been 0.
-check('the exempt-only root really did examine zero modules (the premise check 4 asserts)', exempt.exit === 1 && /the scan read nothing/.test(exempt.out), `exit ${exempt.exit}`)
+check('the exempt-only root really did examine zero src/lib modules (the premise check 4 asserts)', exempt.exit === 1 && /holds no non-exempt module/.test(exempt.out), `exit ${exempt.exit}`)
 
-const noZeroCheck = mutatedGuard('elif [ "$checked" -eq 0 ]; then', 'elif [ "x" = "y" ]; then')
+const noZeroCheck = mutatedGuard('if [ "$checked" -eq 0 ]; then', 'if [ "x" = "y" ]; then')
 const exemptMiss = run(rootWith({ 'src/lib/types.ts': 'export type T = 1\n' }), noZeroCheck)
 check('MUTATION: dropping the empty-scan test lets that seed PASS (so check 4 can fail)', exemptMiss.exit === 0, `exit ${exemptMiss.exit}`)
 
@@ -133,7 +137,7 @@ check('a MISSING src/lib is a FINDING, not a SKIP', noLib.exit === 1 && /does no
 // exit code must move for the check to be load-bearing.
 const noZeroPaths = mutatedGuard2([
   ['if [ ! -d "$LIB_DIR" ]; then', 'if [ "x" = "y" ]; then'],
-  ['elif [ "$checked" -eq 0 ]; then', 'elif [ "x" = "y" ]; then'],
+  ['if [ "$checked" -eq 0 ]; then', 'if [ "x" = "y" ]; then'],
 ])
 const noLibMiss = run(noLibRoot, noZeroPaths)
 check('MUTATION: dropping BOTH zero-checks lets that seed PASS (exit 1 -> 0, a DETECTION flip)', noLibMiss.exit === 0, `exit ${noLibMiss.exit}`)
@@ -164,9 +168,12 @@ const scriptLibRoot = rootWith({
 const scriptLibOrphan = run(scriptLibRoot)
 check('a scripts/lib/*.mjs module with no sibling check is CAUGHT and named', scriptLibOrphan.exit === 1 && /MISSING: scripts\/lib\/orphan\.mjs has no scripts\/lib\/orphan\.check\.mjs/.test(scriptLibOrphan.out), `exit ${scriptLibOrphan.exit}`)
 
-const noScriptLib = mutatedGuard('scan_set "scripts/lib" ".mjs" ".check.mjs"', ': # the scripts/lib scan is dropped by this mutation')
+const noScriptLib = mutatedGuard2([
+  ['scan_set "$SCRIPTS_LIB_DIR" ".mjs" ".check.mjs"', ': # the scripts/lib scan is dropped by this mutation'],
+  ['if [ -d "$SCRIPTS_LIB_DIR" ] && [ "$checked_scripts" -eq 0 ]; then', 'if [ "x" = "y" ]; then'],
+])
 const scriptLibMiss = run(scriptLibRoot, noScriptLib)
-check('MUTATION: dropping the scripts/lib scan lets that seed PASS (exit 1 -> 0, a DETECTION flip)', scriptLibMiss.exit === 0, `exit ${scriptLibMiss.exit}`)
+check('MUTATION: dropping the scripts/lib scan AND its own empty-set check lets that seed PASS (exit 1 -> 0, a DETECTION flip)', scriptLibMiss.exit === 0, `exit ${scriptLibMiss.exit}`)
 
 // 7. Control: the scripts/lib convention (a sibling .check.mjs, not a .test.ts)
 // is honored, so the new reach is not simply always red.
@@ -177,6 +184,36 @@ const scriptLibClean = run(rootWith({
   'scripts/lib/ok.check.mjs': 'console.log("ok")\n',
 }))
 check('control: a scripts/lib module WITH its .check.mjs sibling passes', scriptLibClean.exit === 0 && /all 2 non-exempt module\(s\)/.test(scriptLibClean.out), `exit ${scriptLibClean.exit}`)
+
+// 8. D-030 IS PER SCAN SET (slice 8b close-out). The widening made `checked` the
+// UNION of the scan sets, so a hollow src/lib beside a populated scripts/lib
+// passed silently (`ok — all 1 non-exempt`, exit 0). Each set now carries its own
+// count, so neither can mask the other. Both arms are seeded, with the mutation
+// that removes that set's own check.
+const maskedRoot = rootWith({
+  'src/lib/types.ts': 'export type T = 1\n',
+  'scripts/lib/keep.mjs': 'export const x = 1\n',
+  'scripts/lib/keep.check.mjs': 'console.log("ok")\n',
+})
+const masked = run(maskedRoot)
+check('a hollow src/lib beside a populated scripts/lib is CAUGHT (the count is per set, not the union)', masked.exit === 1 && /src\/lib holds no non-exempt module/.test(masked.out), `exit ${masked.exit}`)
+
+const noLibSet = mutatedGuard('if [ "$checked" -eq 0 ]; then', 'if [ "x" = "y" ]; then')
+const maskedMiss = run(maskedRoot, noLibSet)
+check('MUTATION: dropping the src/lib set check lets that seed PASS (exit 1 -> 0, a DETECTION flip)', maskedMiss.exit === 0, `exit ${maskedMiss.exit}`)
+
+// The other arm: a scripts/lib that holds only exempt modules read nothing.
+const emptyScriptsRoot = rootWith({
+  'src/lib/ok.ts': 'export const x = 1\n',
+  'src/lib/ok.test.ts': 'test("x", () => {})\n',
+  'scripts/lib/fence-scanner.mjs': 'export const y = 2\n', // on the EXEMPT list
+})
+const emptyScripts = run(emptyScriptsRoot)
+check('a scripts/lib whose only module is exempt is a FINDING for that set (D-030, per set)', emptyScripts.exit === 1 && /scripts\/lib holds no non-exempt module/.test(emptyScripts.out), `exit ${emptyScripts.exit}`)
+
+const noScriptsSet = mutatedGuard('if [ -d "$SCRIPTS_LIB_DIR" ] && [ "$checked_scripts" -eq 0 ]; then', 'if [ "x" = "y" ]; then')
+const emptyScriptsMiss = run(emptyScriptsRoot, noScriptsSet)
+check('MUTATION: dropping the scripts/lib set check lets that seed PASS (exit 1 -> 0, a DETECTION flip)', emptyScriptsMiss.exit === 0, `exit ${emptyScriptsMiss.exit}`)
 
 for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true })
 

@@ -1718,20 +1718,22 @@ swallows. Measured end-to-end this turn — the shape, then the two references, 
               covers 7 entries (7–13) but states "(all six" — ...
       exit 1
 
-Both references derive no fenced block there; the guard fires on a line both keep unfenced. That is an OVER-read,
-so per D-037 §3 it can never produce the `NOTHING was compared` escape signature the whole family exists to close —
-it only ADDS a read. It is therefore DECLARED, not fixed and not deleted: D-028's direction, the smallest true
-sentence, naming the boundary and its direction.
+Both references derive no fenced block there; the guard fires on a line both keep unfenced. That boundary is
+DECLARED, not fixed and not deleted.
 
-`factory-guard.mjs`'s CEILING now carries one new bullet (no neighbouring bullet reworded, no mechanism added):
+**CORRECTED IN THE CLOSE-OUT BELOW.** This round added a bullet that also claimed the DIRECTION — that the
+over-read "can only ADD a read, so it cannot produce the `NOTHING was compared` signature". That claim was
+falsified in the same round by a sharper construction (a fence marker inside a raw HTML block opens a phantom
+fence whose closer is the next real bare opener, so a reference-fenced fabricated line lands in no block), and
+per D-028 it is DELETED, not restated. `factory-guard.mjs`'s CEILING bullet now reads (no neighbouring bullet
+reworded, no mechanism added):
 
     - a fence marker INSIDE an HTML block is ALSO read: the scanner carries no
       HTML state, so a marker a raw HTML block swallows is opened as a fence
-      where both references derive none. It is an OVER-read by construction — it
-      can only ADD a read, so it cannot produce the `NOTHING was compared`
-      signature this rule exists to close (D-037 §3);
+      where both references derive none. A DECLARED boundary, not a covered
+      shape — the guarantee stops here;
 
-That is the whole change: five comment lines in `factory-guard.mjs`, zero behavioural lines.
+That is the whole change: the bullet in `factory-guard.mjs`, zero behavioural lines.
 
 ## Item 2 — the sibling rule's reach now matches its name
 
@@ -1744,9 +1746,11 @@ pair, each with that directory's own sibling convention:
     src/lib/*.mjs      -> <base>.test.ts    (the vanilla-JS escape hatch; vitest)
     scripts/lib/*.mjs  -> <base>.check.mjs  (standalone gate checkers, run by run-all.sh)
 
-What it already covered is unchanged: the `src/lib/*.ts` set and its EXEMPT list behave exactly as before, the
-missing-`src/lib` finding and the D-030 zero-scan finding are untouched, and the run now reads 57 non-exempt
-modules (55 before + `escapeForRegExp.mjs` + `sweep-e2e.mjs`). The one module under `scripts/lib/` with no sibling
+What it already covered is unchanged: the `src/lib/*.ts` set and its EXEMPT list behave exactly as before, and the
+missing-`src/lib` finding is untouched. The D-030 zero-scan finding is NOT untouched: `checked` became the UNION of
+the scan sets, so a hollow `src/lib` beside a populated `scripts/lib` passed silently — the CLOSE-OUT below
+restores it per set. The run reads 57 non-exempt modules (55 before + `escapeForRegExp.mjs` +
+`sweep-e2e.mjs`). The one module under `scripts/lib/` with no sibling
 of its own — `fence-scanner.mjs`, whose behaviour test is `factory-guard.check.mjs`'s fixture block — carries a
 WRITTEN exemption naming that test, so its absence is declared rather than silently uncovered; the next module
 there with no sibling is caught.
@@ -1836,6 +1840,145 @@ rose 8 -> 13: five checks for the widened reach (two seeds, two exit-moving muta
   doc rather than closing it; closing it means moving the module under `scripts/guards/` or widening the header
   rule, which is a larger change than this round was authorised for.
 - **`scripts/lib` has no missing-directory finding.** If that directory vanished, the reach would silently shrink
-  back to `src/lib`; only the global D-030 zero-check would notice a fully empty scan. Deliberate: a
-  missing-`scripts/lib` finding would red every existing checker seed (which roots carry only `src/lib`).
+  back to `src/lib`; only a fully empty scan would notice. Deliberate: a missing-`scripts/lib` finding would red
+  every existing checker seed (which roots carry only `src/lib`). The empty-scan tripwire is per scan set as of the
+  CLOSE-OUT below, so a *present* but empty `scripts/lib` is now its own finding.
 
+
+---
+
+# CLOSE-OUT — the two small items, and the slice closes
+
+Scope: **Item A** (delete the false ceiling sentence, per D-028) and **Item B** (the D-030 empty-scan tripwire
+made PER SCAN SET). No scanner change, no fixture change, no new mechanism, no `factory/` file and no ledger
+edited. The fence family stays closed — 0 divergences over 160 000 inputs, verified both ways — and neither item
+goes near it. The two lanes split on the same sentence and each was right about a different thing: round 8's
+review tested the HTML over-read with its own construction and found no escape, and round 8's verification found
+the escape with a sharper one. The sharper construction wins, and this round acts on it.
+
+## Item A — the ceiling sentence is DELETED (D-028)
+
+The failing sentence was the round-8 CEILING bullet in `scripts/guards/factory-guard.mjs`: a fence marker inside a
+raw HTML block is "an OVER-read by construction — it can only ADD a read, so it cannot produce the `NOTHING was
+compared` signature". The construction that falsifies it, for the next reader to re-run (indented, so this
+report does not itself fall inside the rule it describes — each `FENCE` stands in for a triple-backtick fence
+marker, and `FENCEmd` for one with the `md` info string) — re-measured this turn:
+
+    <div class=x>                          raw HTML block (type 6), ends at the blank line
+    FENCEmd                                inside the HTML: both references open NOTHING;
+                                           the scanner (no HTML state) OPENS a fence here
+    raw html line 1
+    raw html line 2
+                                           blank line ends the HTML block
+    FENCE                                  reference OPENS the real fence; the scanner
+                                           CLOSES its phantom fence on this line
+    ✓ 7–13 zz-spec.e2e.ts (all six legs)   reference: inside the fence; scanner: in NO block
+    FENCE                                  reference closes; scanner opens an empty block
+
+The marker inside the raw HTML block opens a **phantom fence** whose closer is the *next real bare opener*. That
+is not an addition — it is a **normalisation** of the block boundaries: the phantom fence's span consumes the real
+opener, so the next run of fence lines is re-paired and a reference-fenced fabricated line lands in **no** block.
+Both references read that line as fenced (commonmark `sourcepos` 6–8; marked a `code` token); the scanner reads it
+in neither of its blocks (`[[2,5],[8,9]]`). So the HTML boundary **can** produce the `NOTHING was compared`
+signature the sentence denied. The builder's own over-read seed fired correctly only because it had **no later
+opener** — the one case the sentence generalised from.
+
+    $ node scripts/guards/factory-guard.mjs --root <root holding the cascade> --repo .
+      note — transcript-summary-agrees: 704 fenced block(s) read, 10 range summaries checked   # +2 blocks, +0 summaries
+      PASS — the registry can be trusted and no work item claims evidence it does not have.     exit 0, 0 findings
+    # run on the real tree + the cascade in a detached worktree, re-measured this turn; the same shape
+    # in a standalone root prints the signature verbatim:
+      note — transcript-summary-agrees: 2 fenced block(s) read, 0 range summaries checked — NOTHING was compared
+
+Per D-028 the fix is a **DELETION**, not a restatement. The bullet now states the boundary and stops:
+
+    - a fence marker INSIDE an HTML block is ALSO read: the scanner carries no
+      HTML state, so a marker a raw HTML block swallows is opened as a fence
+      where both references derive none. A DECLARED boundary, not a covered
+      shape — the guarantee stops here;
+
+Five comment lines became four; net prose shrank; no neighbouring bullet was reworded. **No seed was added for
+this** — it is a declared boundary, not a watch, and `factory`-guard's checker is unchanged at 185.
+
+## Item B — the empty-scan tripwire is PER SCAN SET again
+
+The widening (final round, Item 2) made `checked` the UNION of the scan sets, which demoted the D-030 tripwire to
+union granularity. Reproduced against the pre-close-out guard (`397cf42`): a hollow `src/lib` beside a populated
+`scripts/lib` passed silently, where the pre-widening guard at `7811a18` filed a finding.
+
+    $ bash <397cf42 guard> /tmp/lbs-mask     # src/lib/types.ts (exempt) + a clean scripts/lib pair
+      ok — all 1 non-exempt module(s) have a sibling test
+    PASS — build law holds.        EXIT=0     <- the exact hazard D-030 names
+
+The guard now carries **one count per scan set** (`checked` for `src/lib`, both its globs; `checked_scripts` for
+`scripts/lib`; `scan_set` leaves its own count in `SET_COUNT`, the caller attributes it to the set it scans) and
+each set's own count is checked. Both arms of the per-set rule, SEED then MUTATION (`/tmp/lbs-*` throwaway roots):
+
+    # SEED: hollow src/lib beside a CLEAN, populated scripts/lib
+    $ bash scripts/guards/lib-sibling-guard.sh /tmp/lbs-mask
+      FINDING: src/lib holds no non-exempt module — that scan set read nothing.
+    FAIL — build law violated.        EXIT=1
+    # the same with an EMPTY src/lib directory (not just an exempt-only one): the same finding, EXIT=1
+
+    # MUTATION: the src/lib set's own check dropped
+    $ bash <guard with the src/lib check neutered> /tmp/lbs-mask
+      ok — all 1 non-exempt module(s) have a sibling test
+    PASS — build law holds.           EXIT=0     (a DETECTION flip)
+
+    # SEED: the other arm — scripts/lib holding only the EXEMPT module
+    $ bash scripts/guards/lib-sibling-guard.sh /tmp/lbs-scripts
+      FINDING: scripts/lib holds no non-exempt module — that scan set read nothing.
+    FAIL — build law violated.        EXIT=1
+
+    # MUTATION: the scripts/lib set's own check dropped
+    $ bash <guard with the scripts/lib check neutered> /tmp/lbs-scripts
+      ok — all 1 non-exempt module(s) have a sibling test
+    PASS — build law holds.           EXIT=0     (a DETECTION flip)
+
+Three artifacts that still described the old granularity are corrected: the header's ZERO paragraph (now "counted
+PER SCAN SET"), the branch message (now names `$LIB_DIR` or `$SCRIPTS_LIB_DIR` — the set that is empty, no longer
+only `src/lib`), and the FINAL ROUND's "D-030 … untouched" claim (corrected above, where it contradicted the same
+section's own Risks line).
+
+**The three globs are two sets, and that is deliberate.** The two `src/lib` globs share one directory, one sibling
+convention (`<base>.test.ts`) and one population, so the tripwire counts them together; `scripts/lib` (sibling
+`<base>.check.mjs`) is the other set. Per-GLOB emptiness was rejected because it fires on a legitimately empty
+extension subset — a tree with no `src/lib/*.mjs`, which is not an empty scan but an absent kind — while the hazard
+D-030 names is the cross-set masking, which this closes. `scripts/lib` is checked when the directory is present; a
+*missing* `scripts/lib` still has no finding of its own (named in the FINAL ROUND Risks and unchanged — adding one
+would red every existing checker seed).
+
+Checker: **13 -> 17 checks**. Two new seeds (the masked `src/lib`, the exempt-only `scripts/lib`) each carry an
+exit-moving mutation; one existing reach mutation now also removes its set's empty-set branch, because dropping a
+*present* scan's reach is itself caught by that set's empty-set finding. No fixture changed, no new file.
+
+## Gate (fresh, this turn)
+
+    $ npm run verify
+     Test Files  71 passed (71)
+          Tests  2063 passed (2063)
+      lint            81 warnings, 0 errors
+      ok — AGENTS.md (1789 words, ceiling 1800)
+      factory-guard check: all 185 checks passed.
+      GUARDS: PASS — all deterministic rules hold.
+    VERIFY EXIT=0
+
+    $ node scripts/guards/factory-guard.check.mjs      -> all 185 checks passed.          EXIT=0  (185 ✓ lines)
+    $ node scripts/guards/lib-sibling-guard.check.mjs  -> all 17 checks.                  EXIT=0  (17 ✓ lines)
+    $ node scripts/guards/factory-guard.mjs            -> PASS, 0 findings.               EXIT=0
+    $ bash scripts/guards/lib-sibling-guard.sh         -> ok — all 57 non-exempt module(s) have a sibling test.
+                                                                                           EXIT=0
+
+Zero guard findings on the real tree (the `transcript-summary-agrees` baseline's `LOST COVERAGE 1` is the
+pre-existing declared snapshot, a note and not a finding — the run exits 0). No lane report was edited by another
+lane, and this close-out touched only this lane's own report.
+
+## Close-out risks
+
+- **The over-read boundary remains DECLARED, not measured.** The HTML direction can now also produce an under-read
+  (measured above); the bullet is honest about being a boundary and makes no direction claim. It is not seeded —
+  declared boundaries are not watches — so a future edit that gives the scanner HTML state would remove the
+  boundary harmlessly, and a future edit that makes it worse has the round-8 verifier's construction to answer to.
+- **A *missing* `scripts/lib` is still unwatched.** A present-but-empty `scripts/lib` is now its own finding; a
+  deleted one would shrink the reach back to `src/lib` silently. Deliberate (a finding would red every checker seed
+  whose root carries only `src/lib`), named here and in the FINAL ROUND Risks rather than closed.

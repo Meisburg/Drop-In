@@ -21,17 +21,21 @@
 # so `scripts/lib/fence-scanner.mjs` — a `lib/` module with no sibling file — was
 # invisible, and would have hidden the next one. There are two `lib/`
 # directories and two module extensions here, and the sibling convention differs
-# per directory, so there are three scan sets:
+# per directory, so the guard reads three globs across the two `lib/` directories:
 #
 #   src/lib/*.ts       -> <base>.test.ts    (the build law's own sentence; vitest)
 #   src/lib/*.mjs      -> <base>.test.ts    (the vanilla-JS escape hatch; vitest)
 #   scripts/lib/*.mjs  -> <base>.check.mjs  (standalone gate checkers, run by run-all.sh)
 #
-# ZERO IS A FINDING (D-030). If the scan examines no non-exempt module — an
-# empty or missing src/lib, or a src/lib whose every entry is exempt or a test —
-# the run FAILS. It has not established that the build law holds; it has
-# established that it did not look, and an empty scan looks exactly like a clean
-# repo. See `lib-sibling-guard.check.mjs` for the seed and the mutation.
+# ZERO IS A FINDING (D-030), counted PER SCAN SET: one set per `lib/` directory,
+# since the two `src/lib` globs share a sibling convention and a population. If a
+# set examines no non-exempt module — every entry exempt or a test, or its
+# directory empty — the run FAILS, and a populated `scripts/lib` no longer excuses
+# an empty `src/lib`. A missing `src/lib` is its own finding below; `scripts/lib`
+# is checked when that directory is present. It has not established that the build
+# law holds; it has established that it did not look, and an empty scan looks
+# exactly like a clean repo. See `lib-sibling-guard.check.mjs` for each set's seed
+# and mutation.
 #
 # PROVENANCE: pattern borrowed from affaan-m/ECC's PostToolUse guard hooks
 # (`scripts/hooks/quality-gate.js`, `config-protection.js`), reimplemented for
@@ -53,6 +57,7 @@ else
 fi
 
 LIB_DIR="src/lib"
+SCRIPTS_LIB_DIR="scripts/lib"
 FAIL=0
 
 # Declared exemptions, keyed by path from the root. Every entry must carry a
@@ -91,12 +96,15 @@ is_exempt() {
   return 1
 }
 
-checked=0
+checked=0           # src/lib (both module extensions) — one scan set
+checked_scripts=0   # scripts/lib                      — the other scan set
 missing=""
+SET_COUNT=0
 
 # scan_set <dir> <module-suffix> <sibling-suffix>: the sibling test of
 # `<dir>/<name><module-suffix>` is `<dir>/<base><sibling-suffix>`, where `<base>`
-# is the name without the module suffix.
+# is the name without the module suffix. It leaves the number of non-exempt
+# modules it read in SET_COUNT, so each caller can keep its own scan set's count.
 scan_set() {
   local dir="$1" mod="$2" sibling="$3"
   local f name base
@@ -110,7 +118,7 @@ scan_set() {
 
     is_exempt "$dir/$name" && continue
 
-    checked=$((checked + 1))
+    SET_COUNT=$((SET_COUNT + 1))
     base="${name%"$mod"}"
 
     if [ ! -f "$dir/$base$sibling" ]; then
@@ -135,9 +143,9 @@ fi
 echo "Build-law guard — sibling tests under src/lib/ and scripts/lib/"
 echo "==========================================================="
 
-scan_set "$LIB_DIR" ".ts" ".test.ts"
-scan_set "$LIB_DIR" ".mjs" ".test.ts"
-scan_set "scripts/lib" ".mjs" ".check.mjs"
+SET_COUNT=0; scan_set "$LIB_DIR" ".ts" ".test.ts";            checked=$((checked + SET_COUNT))
+SET_COUNT=0; scan_set "$LIB_DIR" ".mjs" ".test.ts";           checked=$((checked + SET_COUNT))
+SET_COUNT=0; scan_set "$SCRIPTS_LIB_DIR" ".mjs" ".check.mjs"; checked_scripts=$SET_COUNT
 
 if [ -n "$missing" ]; then
   printf '%s' "$missing"
@@ -147,15 +155,23 @@ if [ -n "$missing" ]; then
   echo "  Fix: write the sibling the module's own directory uses, or add the module"
   echo "       to EXEMPT in scripts/guards/lib-sibling-guard.sh WITH a written reason."
   FAIL=1
-elif [ "$checked" -eq 0 ]; then
-  # D-030. Every module in the scan set was skipped (exempt, or a *.test.ts), so
-  # the run examined nothing and the old `ok — all 0 module(s)` line reported
-  # health over an empty measurement. Zero is a finding, never a pass.
-  echo "  FINDING: src/lib holds no non-exempt module — the scan read nothing."
+fi
+
+# D-030, PER SCAN SET (see the header). Each set's own count is checked, so a
+# populated `scripts/lib` cannot mask an empty `src/lib`.
+if [ "$checked" -eq 0 ]; then
+  echo "  FINDING: $LIB_DIR holds no non-exempt module — that scan set read nothing."
   echo "  An empty scan is not a clean repo (D-030)."
   FAIL=1
-else
-  echo "  ok — all $checked non-exempt module(s) have a sibling test"
+fi
+if [ -d "$SCRIPTS_LIB_DIR" ] && [ "$checked_scripts" -eq 0 ]; then
+  echo "  FINDING: $SCRIPTS_LIB_DIR holds no non-exempt module — that scan set read nothing."
+  echo "  An empty scan is not a clean repo (D-030)."
+  FAIL=1
+fi
+
+if [ "$FAIL" -eq 0 ]; then
+  echo "  ok — all $((checked + checked_scripts)) non-exempt module(s) have a sibling test"
 fi
 
 echo
