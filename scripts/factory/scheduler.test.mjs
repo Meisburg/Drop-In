@@ -245,10 +245,40 @@ describe('capability routing', () => {
     expect(result.modelKey).not.toBe(LOCAL)
   })
 
-  it('requires local inference for the ocr lane and never routes it to cloud', () => {
-    const result = selectModel({ config: realConfig, kind: 'ocr', probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }) })
-    expect(result.modelKey).toBe(LOCAL)
-    expect(result.rejected.find((r) => r.modelKey === CLOUD).why).toMatch(/requires local inference/)
+  it('requires local inference when a lane declares it, and lets the ocr lane reach cloud while that policy is waived', () => {
+    // PART 1 — THE MECHANISM, against an explicit FIXTURE. A lane that declares
+    // `requires_local_inference` rejects EVERY non-local model by name, before
+    // the capability floor is consulted (`scheduler.mjs:517`). The fixture — not
+    // the ocr lane — is the subject, so a later human-authorized flip of ocr's
+    // flag cannot silently disable this invariant. Remove that check and CLOUD
+    // becomes a candidate, so `rejected.find(...)` is undefined: the assertion
+    // is not vacuous.
+    const localOnly = {
+      ...realConfig,
+      task_kinds: { ...realConfig.task_kinds, 'local-only': { ...realConfig.task_kinds.ocr, requires_local_inference: true } },
+    }
+    const strict = selectModel({ config: localOnly, kind: 'local-only', probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(strict.modelKey).toBe(LOCAL)
+    expect(strict.rejected.find((r) => r.modelKey === CLOUD).why).toMatch(/requires local inference/)
+
+    // PART 2 — THE CURRENT POLICY, against the real registry, asserted separately
+    // so the two cannot be mistaken for one another (the defect this rewrite
+    // repairs: the old test's NAME claimed the mechanism while its BODY asserted
+    // a policy value). `ec47f15` (human-authorized, D-017) set
+    // `task_kinds.ocr.requires_local_inference` false so the lane can run at all:
+    // the only local model clearing ocr's floor holds 49.2 GB and cannot coexist
+    // with a satisfiable admission reserve at 62 GB (D-012). Cloud is therefore
+    // now an ADMISSIBLE candidate for ocr, and on a machine where the local model
+    // is blocked the lane falls back to it. RESTORE the flag to true when the
+    // human says so; this half then goes back to asserting CLOUD is rejected and
+    // LOCAL is the only option.
+    const roomy = selectModel({ config: realConfig, kind: 'ocr', probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(roomy.modelKey).toBe(LOCAL)
+    expect(roomy.rejected.find((r) => r.modelKey === CLOUD)).toBeUndefined()
+
+    const blockedLocal = selectModel({ config: realConfig, kind: 'ocr', probes: machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(blockedLocal.modelKey).toBe(CLOUD)
+    expect(blockedLocal.fallback).toBe(true)
   })
 
   it('reports a capability gap when no model can meet the floor', () => {

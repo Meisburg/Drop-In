@@ -45,12 +45,12 @@
 //                         time, and a claim about its own text names the commit
 //                         or the line that shows it
 //   no-bare-head-count    no report or brief resolves a count through bare
-//                         HEAD — an "N … at HEAD" label (any HEAD spelling),
-//                         a `git … HEAD` read whatever the subcommand, or a
-//                         counted command that defaults to HEAD with no
-//                         revision named (`git log … | wc -l`) — instead of
-//                         naming the commit it was measured at. Such a count is
-//                         unreproducible by construction: the commit carrying
+//                         HEAD — an "N … at HEAD" label (any HEAD spelling, or
+//                         the `@` shorthand), a `git … HEAD` read whatever the
+//                         subcommand, or a counted command that defaults to HEAD
+//                         with no revision named (`git log … | wc -l`) — instead
+//                         of naming the commit it was measured at. Such a count
+//                         is unreproducible by construction: the commit carrying
 //                         the sentence is the one that moves HEAD. Forward-only,
 //                         and the run prints the size of the recorded baseline
 //                         it passes.
@@ -380,9 +380,14 @@ function checkInstrumentHeaders() {
  * could not see: a tree count written `git ls-tree … HEAD | wc -l` (whose
  * `HEAD .scratch` argument the old pattern never reached), and a committed-blob
  * read written `git show HEAD:<path>`. The rule is named for the class — a count
- * whose provenance is bare HEAD — so the match now covers all three: an
- * `N … at HEAD` count label, a `git ls-tree … HEAD` listing, and a
- * `git show HEAD:<path>` read.
+ * whose provenance is a bare moving revision — so the match now covers all
+ * three: an `N … at HEAD` count label (also `at @`, the git shorthand for HEAD),
+ * a `git ls-tree … HEAD` listing, and a `git show HEAD:<path>` read. A revision
+ * token ends at a word boundary OR at any non-word character — `(?![\w])`, not
+ * `\b` — because `@` itself ends in a non-word character, so a trailing `\b`
+ * silently dropped the entire `@` arm while the code still declared it. That is
+ * the same defect shape as every earlier round: a capability written down that
+ * the mechanism does not have.
  *
  * WHAT IT STILL CANNOT SEE, stated rather than implied — the exact shapes, so
  * this can be judged rather than trusted:
@@ -396,6 +401,14 @@ function checkInstrumentHeaders() {
  *     summary line no longer claims otherwise.
  *   - A WRONG NAMED COMMIT: `… at 71bdd55` passes whether or not 71bdd55 is the
  *     tree measured. Naming a commit is necessary, not sufficient.
+ *   - WORKING-TREE GIT COUNTS: `git status --porcelain | wc -l` (the
+ *     orchestrator's measured case). `git status` reads the working tree/index,
+ *     not HEAD, so it is NOT arm 3 (whose list is commands that resolve HEAD by
+ *     default) and it is NOT flagged. It is a KNOWN GAP, named on its own rather
+ *     than folded into the filesystem bullet below: a working-tree count is
+ *     reproducible in this worktree and at no commit, and the human's "HEAD
+ *     versus working tree" half is classification, not enforcement, here. The
+ *     same holds for `git ls-files | wc -l`, `git diff | wc -l`, `git grep | wc`.
  *   - FILESYSTEM COUNTS: `ls | wc -l`, `wc -l < file`. They read the working
  *     tree, which is at no commit, but they are also the guard's own basis, and
  *     forbidding them would forbid every verify run. They are NOT flagged.
@@ -427,14 +440,14 @@ const FIXED_SHA = /\b[0-9a-f]{7,40}\b/
 // Shape 1 — a count whose LABEL is a moving revision: "N … at HEAD" (any HEAD
 // spelling), "N … at @", "N … at the working tree".
 const BARE_HEAD_COUNT_AT = new RegExp(
-  String.raw`(?<![\d/.\w])\d+(?![/\d])\s+(?:[a-z` + '`' + String.raw`][\w` + '`' + String.raw`.-]*\s+){0,4}\bat (?:the )?(?:${MOVING_REV}|working (?:tree|copy|directory))\b`,
+  String.raw`(?<![\d/.\w])\d+(?![/\d])\s+(?:[a-z` + '`' + String.raw`][\w` + '`' + String.raw`.-]*\s+){0,4}\bat (?:the )?(?:${MOVING_REV}|working (?:tree|copy|directory))(?![\w])`,
   'g',
 )
 // Shape 2 — a git read whose REVISION is a moving one, whatever the subcommand:
 // `git ls-tree … HEAD`, `git show HEAD:<path>`, `git rev-parse HEAD`,
 // `git diff HEAD`, `git cat-file -p HEAD:<path>`. Structural, not the list of
 // six command strings that happened to fail a review.
-const BARE_HEAD_COUNT_CMD = new RegExp(String.raw`\bgit\s+[a-z][a-z-]*[^\n|` + '`' + String.raw`]*?\s(?:${MOVING_REV})\b`, 'g')
+const BARE_HEAD_COUNT_CMD = new RegExp(String.raw`\bgit\s+[a-z][a-z-]*[^\n|` + '`' + String.raw`]*?\s(?:${MOVING_REV})(?![\w])`, 'g')
 // Shape 3 — a COUNT taken from a git command that defaults to HEAD and names no
 // revision at all: `git log … | wc -l`, `git rev-list … | wc -l`. The `| wc`
 // requirement is what keeps this arm to counts and off ordinary prose.

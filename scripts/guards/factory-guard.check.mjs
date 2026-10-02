@@ -446,6 +446,43 @@ console.log('===========================================================')
     doubled.exit === 1 && /no-bare-head-count/.test(doubled.out),
     `exit ${doubled.exit}`,
   )
+
+  // The `@` shorthand — a declared arm that used to be DEAD. Both composed
+  // patterns ended in `\b`, and `@` ends in a non-word character, so the `@`
+  // arm matched nothing while MOVING_REV still listed it. It is now `(?![\w])`.
+  // These two cases are the fix's own guard: the first goes red if `@` stops
+  // matching; the second goes red if the wider boundary starts firing on an
+  // email address, a decorator, or a bare reflog. Neither is vacuous.
+  const atForm = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-head-at.md',
+      '$ git ls-tree -r --name-only @ .scratch | wc -l\n280\n' +
+        '$ git show @:scripts/guards/factory-guard.mjs | wc -l\n500\n' +
+        '280 tracked files at @\n',
+    )
+  })
+  check(
+    'the `@` shorthand (a git read and a count label) is CAUGHT',
+    atForm.exit === 1 && /no-bare-head-count/.test(atForm.out),
+    `exit ${atForm.exit}`,
+  )
+
+  const notARevision = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write(
+      '.scratch/v28/reports/zz-not-a-rev.md',
+      'write to user@example.com about it\n' +
+        'the @decorator style is used\n' +
+        'the @{2} form means no revision here\n' +
+        'the count is 5 at user@example.com\n',
+    )
+  })
+  check(
+    'email, @decorator and bare @{…} are NOT flagged (control)',
+    notARevision.exit === 0,
+    `exit ${notARevision.exit}`,
+  )
 }
 
 console.log()

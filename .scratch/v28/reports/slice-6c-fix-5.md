@@ -58,6 +58,12 @@ and its *defaulted-reference* shape (a git command that resolves to `HEAD`/the w
    but they are also the guard's own basis, and forbidding them would forbid every verify run. Not flagged.
 5. **Files outside SCOPE**: `.scratch/v28/ledger.md:7091` (recorded known-open in `factory/decisions.md`
    D-018), `plan.md`, older V28 lanes, and every non-`.md` extension.
+6. **Working-tree git counts** (added in the Bounded repair, from the orchestrator's measurement):
+   `git status --porcelain | wc -l`. `git status` reads the working tree/index, not `HEAD`, so it is not arm 3
+   (whose list is commands that resolve `HEAD` by default) and it is **not flagged**. It is named on its own
+   rather than folded into item 4: the same classification-not-enforcement applies to `git ls-files | wc -l`,
+   `git diff | wc -l`, and `git grep | wc`. The human's "HEAD versus working tree" half is a *classification*
+   the instrument can make, not an *enforcement* it performs.
 
 This is a DETECTOR over the class's shapes, not a proof that no other shape exists.
 
@@ -434,3 +440,133 @@ $ grep -c 'check(' scripts/guards/factory-guard.check.mjs
 - **`ladder:` the F2 behaviour seed pins the baseline count of `slice-6c-fix-1-review.md::265 at <HEAD>` at 4.**
   If that historical file's count ever moves, the seed must move with it; it is a recorded historical file, so
   it should not.
+
+---
+
+## Bounded repair (orchestrator-owned damage + one dead arm — NOT a fix round, NOT a finding)
+
+**Scope:** repair of the orchestrator's own `ec47f15` and one arm the round-5 instrument *declared* but could
+not fire. The round-5 findings and verdict above are **unchanged**.
+
+### R1 — `scripts/factory/scheduler.test.mjs:246-252`: policy asserted inside a mechanism test
+
+The old test's NAME claimed the mechanism ("requires local inference … never routes it to cloud") while its
+BODY asserted a POLICY value (ocr is local). `ec47f15` (human-authorized, D-017) set
+`task_kinds.ocr.requires_local_inference` false, so `selectModel` stopped rejecting CLOUD for ocr and the line
+`expect(result.rejected.find(r => r.modelKey === CLOUD).why)` threw
+`TypeError: Cannot read properties of undefined (reading 'why')`.
+
+Rewritten as ONE test — the file's count stays `37` — with two clearly separated halves:
+
+- **PART 1 — the MECHANISM, against an explicit FIXTURE.** A `local-only` task kind declared with
+  `requires_local_inference: true`; cloud must be rejected by name with `toMatch(/requires local inference/)`.
+  Remove the check at `scheduler.mjs:517` and CLOUD becomes a candidate, so `rejected.find(...)` is `undefined`
+  and the test goes red. It is not vacuous, not deleted, and not loosened to match-anything.
+- **PART 2 — the CURRENT POLICY, against the real registry, asserted separately.** With the waiver in place,
+  CLOUD is an admissible candidate for ocr (`rejected.find(CLOUD)` is `undefined`), and on a machine where the
+  local model is blocked the lane falls back to CLOUD. The comment names D-017, why the waiver exists, and
+  what to restore when the human reverses it. `factory/config.json` was **not touched**.
+
+```
+$ npx vitest run scripts/factory/scheduler.test.mjs
+ Test Files  1 passed (1)
+      Tests  37 passed (37)
+```
+
+### R2 — `factory-guard.mjs`: the `@` arm was DECLARED but DEAD
+
+`MOVING_REV` lists `@` (git's shorthand for HEAD) and `@` matches alone — but both composed arms ended in
+`\b`, and `@` ends in a non-word character, so the composed arms could never fire on it. An arm written down
+that cannot fire is the same defect shape as every earlier round. Fixed by ending each arm with `(?![\w])` — a
+correct end-of-token assertion for a non-word token, equivalent to `\b` for word-terminated ones like `HEAD` —
+which also restored `HEAD^` and `HEAD@{2}` (both were silently dropped by the same `\b`).
+
+Measured, current guard (the `@` token rendered `<@>` here, as `HEAD` is rendered `<HEAD>`; the seeds carried
+the literal):
+
+```
+zz-head-at.md:1  "git ls-tree … <@>"       CAUGHT
+zz-head-at.md:3  "git show <@>"             CAUGHT
+zz-head-at.md:5  "280 tracked files at <@>" CAUGHT
+```
+
+And the **same root against a copy with `\b` restored: `0` findings, exit `0`** — so the new behaviour check
+can fail. Raw:
+
+```
+$ node /tmp/guard-dead-at.mjs --root /tmp/v28-6c5-at | grep -c 'FINDING \[no-bare-head-count\]'
+0
+$ node scripts/guards/factory-guard.mjs --root /tmp/v28-6c5-at | grep -c 'FINDING \[no-bare-head-count\]'
+3
+```
+
+**False positives verified explicitly** (the root passes, exit `0`):
+
+```
+write to user@example.com about it            not flagged
+the @decorator style is used                  not flagged
+the @{2} form means no revision here         not flagged
+the count is 5 at user@example.com           not flagged
+```
+
+New behaviour checks (each can fail): `the `@` shorthand (a git read and a count label) is CAUGHT` and
+`email, @decorator and bare @{…} are NOT flagged (control)`. **Check count `31` → `33`.**
+
+**Baseline: DID NOT MOVE — still `87` occurrences / `47` keys.** Re-derived independently under the fixed
+boundary and diffed against the in-file Map: `occurrences 87 keys 47`, `diffs: 0`. No `@`, `HEAD^` or
+`HEAD@{…}` occurrence exists in the current reports+briefs, so the fix adds coverage without adding records.
+
+### R3 — `git status --porcelain | wc -l` named as its own known gap
+
+Added to the guard header and to item 6 of the list above: a count taken from the *working tree*, not from
+bare `HEAD`, so it
+is not arm 3 and is not flagged. Recorded as a distinct KNOWN GAP with its own reason rather than folded into
+the filesystem bullet.
+
+### R4 — the reported flake: an environmental git-clone hardlink race, not a symptom
+
+`scripts/guards/no-bypass-guard.test.mjs` failed once in a full run with:
+
+```
+Error: clone failed (128): fatal: hardlink different from source at
+'/tmp/nb-plain-…/clone/.git/objects/info/commit-graphs/tmp_graph_…'
+```
+
+That is `plainClone()`'s local `git clone` racing a concurrent git write on a `commit-graphs/tmp_graph_*` file:
+git's local-clone hardlink path aborts when the source file is a temp file another git process is still
+writing. It lives in the test's own scaffolding, touches nothing in this diff (no git objects, no
+no-bypass code), and passes alone (`26 passed`) and on re-run. **A real flake, environmental, not a symptom.**
+
+Raw counts, five full-suite runs (two from round 5, three from this repair):
+
+```
+round-5 run A: 2 failed | 69 passed (71)   [scheduler] + [no-bypass hardlink race]
+round-5 run B: 1 failed | 70 passed (71)   [scheduler]
+repair run 1:  71 passed (71) | 2067 passed (2067)
+repair run 2:  71 passed (71) | 2067 passed (2067)
+repair run 3:  71 passed (71) | 2067 passed (2067)
+```
+
+The test was not deleted, skipped, retried-until-green, or marked flaky.
+
+### Repair verification — raw
+
+```
+$ npx vitest run scripts/factory/scheduler.test.mjs
+ Test Files  1 passed (1)
+      Tests  37 passed (37)
+
+$ npm run verify            # EXIT 0
+ Test Files  71 passed (71)
+      Tests  2067 passed (2067)
+ warnings 81, errors 0
+   ok — AGENTS.md (1789 words, ceiling 1800)
+   factory-guard check: all 33 checks passed.
+ GUARDS: PASS
+
+$ bash scripts/guards/run-all.sh   # EXIT 0
+ GUARDS: PASS — all deterministic rules hold.
+```
+
+**Test count:** `2067` did **not** move. The broken test was rewritten in place (mechanism half + policy half
+inside one `it`), so the file stays at `37` and the suite at `2067`.
