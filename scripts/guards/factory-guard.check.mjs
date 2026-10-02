@@ -1193,6 +1193,47 @@ console.log('===========================================================')
     transcriptMiss.exit === 0,
     `exit ${transcriptMiss.exit}`,
   )
+
+  // RULE 5 — a block introduced as `raw:`/`verbatim` claims CAPTURED output, so its
+  // own arithmetic has to hold: a step RANGE and the count it states must agree.
+  // The seed is the shape V28 r2 slice 8a's §3 block carried for three review
+  // rounds (✓ 7–13, seven entries, "all six legs"); the control is the same line
+  // with the count right, which proves the rule is not merely a fence detector.
+  const rawSeed =
+    '# zz-seeded raw block\n\n' +
+    'proof — raw:\n\n' +
+    '```\n' +
+    'Running 3 tests using 1 worker\n' +
+    '✓ 7–13 zz-spec.e2e.ts (all six legs)\n' +
+    '```\n'
+  const raw = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed)
+  }, { args: ['--repo', REPO] })
+  check(
+    "a raw block's step range contradicting its own count is CAUGHT (transcript-summary-agrees)",
+    raw.exit === 1 && /transcript-summary-agrees/.test(raw.out),
+    `exit ${raw.exit}`,
+  )
+  const noRawSummaries = mutatedGuard([['if (count === undefined || count === span) continue', 'if (true) continue']])
+  const rawMiss = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed)
+  }, { guard: noRawSummaries, args: ['--repo', REPO] })
+  check(
+    'MUTATION: dropping the range/count agreement lets that seed PASS (so the check can fail)',
+    rawMiss.exit === 0,
+    `exit ${rawMiss.exit}`,
+  )
+  const rawControl = run((ctx) => {
+    cleanRoot()(ctx)
+    ctx.write('.scratch/v28/reports/zz-raw.md', rawSeed.replace('(all six legs)', '(all seven legs)'))
+  }, { args: ['--repo', REPO] })
+  check(
+    'control: the same raw block with its count RIGHT passes (so the rule is not just a fence detector)',
+    rawControl.exit === 0,
+    `exit ${rawControl.exit}`,
+  )
 }
 
 process.on('exit', () => {

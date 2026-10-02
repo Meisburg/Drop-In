@@ -1314,6 +1314,22 @@ const BARE_HEAD_BASELINE = new Map([
   // exactly as the lane reports above were.
   [".scratch/v28/reports/slice-8a.md::199`. True at `508d656`, stale at HEAD", 1],
   [".scratch/v28/reports/slice-8a.md::git diff ae578c2..HEAD", 2],
+  // V28 r2 slice 8a fix round 3: the two round-3 LANE REPORTS quote the flagged
+  // spellings as their evidence (ten in the verification report, one in the review
+  // report), which re-grows this red BY DESIGN — a rule a lane can dodge by not
+  // quoting what it measured is a rule nobody can audit. Absorbed from the
+  // instrument's own matches, keys and counts alike, with COVERAGE LOSS REPORTED
+  // (0 keys, and no shared count moved): a re-derivation that quietly dropped keys
+  // would make this guard green on a smaller corpus.
+  [".scratch/v28/reports/slice-8a-review-3.md::HEAD) \u2192 empty; emptied-map run \u2192 658", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::199`. True at `508d656`, stale at HEAD", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::2 is 3 commits at HEAD", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::git diff --stat 1c30d6a..HEAD", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::git diff 4d3af39..HEAD", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::git diff <tip>..HEAD", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::git diff ae578c2..HEAD", 3],
+  [".scratch/v28/reports/slice-8a-verify-3.md::git ls-files .scratch/v28/reports/ | wc", 1],
+  [".scratch/v28/reports/slice-8a-verify-3.md::git rev-parse --short HEAD", 1],
 ])
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)
@@ -1391,6 +1407,7 @@ function checkReportHeadCounts() {
   }
   discloseScanProvenance(files)
   const transcriptsChecked = checkTranscripts(files)
+  const rawSummaryLines = checkRawBlockSummaries(files)
 
   // THE DECIDABLE HALF. Every count's provenance token is resolved against a
   // real repository; a sha that is not a commit there is a finding. The ONE
@@ -1462,7 +1479,7 @@ function checkReportHeadCounts() {
     console.log(`  note — count-provenance: ${provenanceTokens} provenance token(s) in the scan, ${shaIsCommit.size} distinct sha(s) resolved with \`git cat-file -e <sha>^{commit}\` against ${label && !label.startsWith('..') ? label : repo} (${why}) — ${unresolvable} unresolvable`)
   }
   console.log(`  note — count-provenance: ${UNRESOLVABLE_SHA_BASELINE_SIZE} recorded unresolvable-sha record(s) absorbed (historical lane records that QUOTE a probe seed, by re-derivation); a NEW unresolvable sha, or a second occurrence of a recorded one in the same file, is a finding${absorbed === UNRESOLVABLE_SHA_BASELINE_SIZE ? '' : ` — ${absorbed} of the ${UNRESOLVABLE_SHA_BASELINE_SIZE} matched this scan`}`)
-  return { reportFiles: files.length, provenanceChecked: Boolean(repo), transcriptsChecked }
+  return { reportFiles: files.length, provenanceChecked: Boolean(repo), transcriptsChecked, rawSummaryLines }
 }
 
 /**
@@ -1500,6 +1517,67 @@ function checkTranscripts(files) {
     }
   }
   return true
+}
+
+/**
+ * A BLOCK INTRODUCED BY `raw:`/`verbatim` CLAIMS CAPTURED OUTPUT, and a captured
+ * output's own arithmetic is checkable without re-running anything: a summary line
+ * that names a step RANGE and states how many entries it covers must agree with
+ * the range. The class this exists for is V28 r2 slice 8a's §3 block, which stood
+ * under `— raw:` for THREE review rounds as `✓ 7–13 … (all six legs)` — seven
+ * entries, six counted. The block itself is deleted (D-028: a fabricated
+ * transcript cannot be corrected into a true one); this rule is what stops the
+ * SHAPE from needing a fourth review round.
+ *
+ * CEILING, named rather than implied — the exact shapes:
+ *   - it reads ONE shape: a `✓ N–M` range beside an `all <count>` on the same
+ *     line, inside a block whose introducing line carries `raw:` or `verbatim`. A
+ *     fabrication written any other way escapes this detector;
+ *   - a block that names no command is NOT checked: reproducibility in full means
+ *     re-running the command, which a credential-free gate cannot do;
+ *   - the scan's size is printed every run, INCLUDING zero, and the zero case says
+ *     in words that NOTHING was checked — the guard's claim list only names checks
+ *     that ran, so a zero here cannot be read as this rule having vouched for
+ *     anything.
+ */
+function checkRawBlockSummaries(files) {
+  const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 }
+  let blocks = 0
+  let ranges = 0
+  for (const path of files) {
+    const rel = relative(ROOT, path)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    let labelled = false
+    for (const [index, line] of lines.entries()) {
+      if (/^\s*```/.test(line)) {
+        // The introducing line is the last NON-EMPTY line above the fence (a blank
+        // between the two is how half this corpus writes it).
+        const intro = lines
+          .slice(Math.max(0, index - 4), index)
+          .reverse()
+          .find((l) => l.trim() !== '') ?? ''
+        labelled = !labelled && /raw:|verbatim/i.test(intro)
+        if (labelled) blocks += 1
+        continue
+      }
+      if (!labelled) continue
+      const range = /✓\s*(\d+)\s*[–—-]\s*(\d+)\b/.exec(line)
+      if (!range) continue
+      const span = Number(range[2]) - Number(range[1]) + 1
+      const stated = /\(all\s+([a-z]+|\d+)\b/i.exec(line)
+      if (!stated) continue
+      ranges += 1
+      const word = stated[1].toLowerCase()
+      const count = /^\d+$/.test(word) ? Number(word) : WORDS[word]
+      if (count === undefined || count === span) continue
+      fail(
+        'transcript-summary-agrees',
+        `${rel}:${index + 1}: a raw block's summary line covers ${span} entr${span === 1 ? 'y' : 'ies'} (${range[1]}–${range[2]}) but states "${stated[0]}" — a block claiming to be raw must reproduce its own arithmetic`,
+      )
+    }
+  }
+  console.log(`  note — transcript-summary-agrees: ${blocks} block(s) introduced as raw:/verbatim read, ${ranges} range summar${ranges === 1 ? 'y' : 'ies'} checked${ranges === 0 ? ' — NOTHING was checked: no raw-labelled range summary exists in this scan' : ''}`)
+  return ranges
 }
 
 /**
@@ -1547,7 +1625,7 @@ checkRegistry(config)
 checkWorkItems(config)
 checkAgentModels(config)
 const headerFiles = checkInstrumentHeaders()
-const { reportFiles, provenanceChecked, transcriptsChecked } = checkReportHeadCounts()
+const { reportFiles, provenanceChecked, transcriptsChecked, rawSummaryLines } = checkReportHeadCounts()
 
 if (!findings.length) {
   const items = existsSync(join(FACTORY, 'work')) ? readdirSync(join(FACTORY, 'work')).filter((f) => f.endsWith('.json')).length : 0
@@ -1561,6 +1639,7 @@ if (!findings.length) {
   if (reportFiles) claims.push('no report or brief count resolved through bare HEAD beyond the recorded baseline')
   if (provenanceChecked) claims.push("no count's provenance sha unresolvable beyond the recorded records (the records are historical lane reports that QUOTE a probe seed, absorbed by re-derivation — a NEW unresolvable sha still fails)")
   if (transcriptsChecked) claims.push('every pasted provenance transcript that cites a `.scratch/` file still carries the sha it names (or is marked historical; other paths and other rules are ceilings)')
+  if (rawSummaryLines) claims.push('every step-range summary inside a raw-/verbatim-labelled block agrees with its own "all N" count (the range shape only — see transcript-summary-agrees\'s ceiling)')
   console.log(`  ok — ${models} model(s), ${kinds} task kind(s), ${items} work item(s); ${claims.join(', ')}`)
   console.log()
   console.log('PASS — the registry can be trusted and no work item claims evidence it does not have.')
