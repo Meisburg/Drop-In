@@ -29,17 +29,21 @@
       ]
     },
     "verification": {
-      "state": "pending",
+      "state": "running",
       "owner": null,
-      "model": null,
-      "artifacts": [],
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d-verify.md"
+      ],
       "evidence": []
     },
     "review": {
-      "state": "pending",
+      "state": "running",
       "owner": null,
-      "model": null,
-      "artifacts": [],
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d-review.md"
+      ],
       "evidence": []
     },
     "visual_validation": {
@@ -112,6 +116,42 @@
       "note": "slice 6d built, proven and reported: the repo-wide copy-taxonomy guard (4 rules both directions, seed+mutation per rule, registered in run-all.sh in both places), the tour card's declaration, the rule in code-structure.md, and Tier 2 declared as an explicit ceiling rather than half-built. BLOCKED at handover was environmental and became D-029 (the registry's own constructor emitted acceptance:pending, which factory-guard rejects); the gate reads exit 0 / GUARDS: PASS at fa3f24b with all six files this slice touched blob-identical across the fix. Not pushed.",
       "actor": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:51:25.668Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:51:25.699Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "running",
+      "note": "fresh verifier dispatched: gate, run-all, guard + check; must re-derive 2 mutation proofs and verify the blob-id table",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:51:25.726Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:51:25.756Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "running",
+      "note": "fresh reviewer dispatched: briefed to hunt THE CLASS in the new guard (each claim vs the code below it), and to label findings WRONG NUMBER / UNDER-DECLARED BOUNDARY / FALSE CLAIM / MECHANISM",
+      "actor": null,
+      "model": null
     }
   ]
 }
