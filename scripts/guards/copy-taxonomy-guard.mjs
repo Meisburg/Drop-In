@@ -452,13 +452,13 @@ for (const entry of COPY_MODULES) {
   for (const kind of declared) {
     const word = wordOf(kind)
     if (!allKindSet.has(kind)) {
-      // A kind the taxonomy does not have is RULE 1's finding, not this
-      // counter's: counting it here would make one defect fire two rules and
-      // would leave each of their mutations unable to clear its seed alone. It
-      // is printed with its OWN reason, not the generic one (round-3 review F6).
+      // A kind the taxonomy does not have is not this counter's to enforce:
+      // counting it here would make one defect fire two rules and would leave
+      // each of their mutations unable to clear its seed alone. It is printed
+      // with its OWN reason, not the generic one (round-3 review F6).
       console.log(
         `  limit—— ${entry.module}: the declared kind "${kind}" is not scannable: the taxonomy has no kind ` +
-          `"${kind}" at all, which is rule 1's finding, so rule 3 has nothing to check`,
+          `"${kind}" at all, so rule 3 has nothing to check`,
       )
       continue
     }

@@ -1289,6 +1289,11 @@ const BARE_HEAD_BASELINE = new Map([
   [".scratch/v28/reports/slice-6d-verify-3.md::2 is at HEAD", 1],
   [".scratch/v28/reports/slice-6d-verify-3.md::git diff --stat a6d72f6 HEAD", 1],
   [".scratch/v28/reports/slice-6d-verify-3.md::git rev-parse HEAD", 1],
+  // Fix round 4: the round-4 verification report's own revision probe, absorbed by
+  // RE-DERIVING this map from the instrument's own matches (D-011 item 2 / D-021
+  // item 2 — a historical record keeps its label). Never typed, never
+  // hand-extended — the run prints the size below instead.
+  [".scratch/v28/reports/slice-6d-verify-4.md::git rev-parse HEAD", 1],
 ])
 
 const BARE_HEAD_BASELINE_SIZE = [...BARE_HEAD_BASELINE.values()].reduce((sum, n) => sum + n, 0)

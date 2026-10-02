@@ -261,7 +261,10 @@ try {
     clean.exit === 0 &&
       /kinds read: 10; offered: 8; words: 9/.test(clean.out) &&
       /declared claims: 3 \(playground, pool, beach\)/.test(clean.out) &&
-      /copy consts read: 4 of 4 named; declared claims: 3/.test(clean.out),
+      /copy consts read: 4 of 4 named; declared claims: 3/.test(clean.out) &&
+      // round-4 review N5: the round-3 printed pair is asserted like the counters
+      // printed beside it, so a line that stops printing N of M cannot read as clean.
+      clean.out.includes('declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts'),
     `exit ${clean.exit}: ${clean.out.split('\n').slice(2, 6).join(' | ')}`,
   )
   check(
@@ -410,6 +413,10 @@ try {
     'a declared claim rule 3 cannot CHECK is a FINDING, not a limit line (B2b)',
     r.exit === 1 &&
       r.out.includes('1 declared claim(s) this guard accepted as kinds could not be CHECKED by rule 3') &&
+      r.out.includes('declared claims CHECKED by rule 3: 2 of 3 the taxonomy accepts') &&
+      // round-4 review N4: the finding's COUNT comes from one accumulator and its
+      // NAMES from another; asserting both here is what ties them together.
+      r.out.includes('src/lib/firstRunTour.ts claims "beach"') &&
       r.out.includes('limit—— kind "beach" is not scannable') &&
       r.out.includes('the declared kind "beach" is not scannable, so rule 3 does not check its claim'),
     `exit ${r.exit}: ${findingLines(r.out) || '(no findings)'}`,
