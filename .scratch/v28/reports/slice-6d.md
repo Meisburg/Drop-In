@@ -453,3 +453,96 @@ the new guard `PASS` and its check `23/23` inside the lane; `run-all.sh` `GUARDS
 findings: - factory-guard`, the same five registry lines. `bash scripts/steering-lint.sh` run on its own:
 exit 0. Nothing this slice touched changed any of them, and the raw output is
 `.scratch/v28/tmp/verify-end.log`.
+
+---
+
+## §11 Unblocked at `35e3f20`: the BLOCKED verdict was the finding, and the gate is green
+
+### What the BLOCKED verdict turned out to be
+
+The return reported that `npm run verify` exits 1 at this slice's final commit for five
+`factory/work/v28-r2-*.json` `lane-states-legal` findings — measured at `ba4dd93` before the first edit (§0). It was
+not a slice defect and not a slice of mine to repair; it was a live defect in the **constructor of the registry
+the gate reads**, now recorded as **D-029** and fixed in `35e3f20`. Read out of the code rather than out of the
+commit message:
+
+- `scripts/factory/state.mjs` built every lane of a new item with one default, so `acceptance` started at
+  `pending`. It now constructs `acceptance: lane({ state: 'blocked', reason: null })`, with the reason inline at
+  the site.
+- `factory/config.json` declares `acceptance_states = {blocked: [pass, waived], pass: [], waived: []}`, and
+  `factory-guard.mjs` reads exactly that for this one lane (`const legal = lane === 'acceptance' ?
+  acceptanceStates : workStates`) — because acceptance is the gate OVER the work and has its own vocabulary.
+  `pending` is not in it, so `factory work init` produced a registry its own validator rejects, on every item,
+  every time. Slice 6c escaped notice only because its acceptance had already reached a legal terminal state.
+- The five items now read `acceptance: blocked` and each carries the repair in its own history
+  (`repair: newWorkItem defaulted acceptance to pending, which its own guard rejects …`); `v28-r2-6c.json` is
+  unchanged at `acceptance: pass`.
+- `scripts/factory/scheduler.test.mjs` gains one test that mirrors the rule against `realConfig`, so the
+  constructor cannot drift from its validator again. That test is why the suite below reads `2068`, one more than
+  `2067` at `ba4dd93`: **the delta is D-029's, not this slice's** — test FILES stay at 71, and no vitest file of
+  mine was added.
+
+**The verdict was environmental, and it was the most useful thing here**: the gate could not be green while the
+registry's own constructor emitted an illegal state, and the report's job was to say so with the raw output rather
+than to absorb it or to "fix" a file that belongs to the orchestrator. §0 and §9 named the file and the owner and
+left it alone.
+
+### The gate at `35e3f20`, run as mine: exit 0
+
+`npm run verify`, one run, raw tail:
+
+```
+factory-guard check: all 90 checks passed.
+
+===========================================================
+GUARDS: PASS — all deterministic rules hold.
+EXIT=0
+```
+
+Same run, the numbers this slice is accountable for: `Test Files  71 passed (71)`, `Tests  2068 passed (2068)`,
+81 warnings (`grep -c ': warning '`), 0 errors, `ok — AGENTS.md (1789 words, ceiling 1800)`, zero `FINDING` lines
+in the whole gate, my guard `PASS — every declared taxonomy claim exists, is offered, is backed by the copy, and
+the copy names no category it did not declare.` and my check
+`copy-taxonomy-guard check: all 23 checks passed, 0 failed, across 22 guard invocations (6 of them against a
+mutated copy of the guard).`
+
+### And no file this slice touched changed
+
+Not "the diffs look equivalent" — the blob ids, read with `git rev-parse <commit>:<path>`:
+
+| file (mine) | blob id at `7564034` | blob id at `35e3f20` |
+|---|---|---|
+| `scripts/guards/copy-taxonomy-guard.mjs` | `21f53d8` | `21f53d8` |
+| `scripts/guards/copy-taxonomy-guard.check.mjs` | `186062c` | `186062c` |
+| `src/lib/firstRunTour.ts` | `ccea378` | `ccea378` |
+| `docs/agents/code-structure.md` | `d28e159` | `d28e159` |
+| `scripts/guards/run-all.sh` | `9d69ea1` | `9d69ea1` |
+| `.scratch/v28/reports/slice-6d.md` | `37bc9a5` | `37bc9a5` |
+
+All six identical across the fix that unblocked the gate. That is the pairing worth having on the record: the
+files were green the whole time, and the red was in the tooling that initializes the registry.
+
+### The two rulings, recorded as ceilings (both were already the state of the tree)
+
+**Ceiling 1 — Tier 2 (live-count claims) is NOT built, and it stays stopped.** The reason, unchanged from §5.1:
+a count claim in copy ("184 of 239 rows have hours") can only be asked of the live database;
+`src/lib/db.ts:117` throws at module load without its environment, which `.github/workflows/verify.yml:24-25`
+records in the CI's own words; so an in-gate count check adds a live dependency to the gate, and a committed dated
+report rots with the suite green — the slice-5 review defect the brief quotes. **An instrument that cannot run in
+the gate must not be claimed by the gate.** No half-version will be built. Count claims in copy therefore remain
+unchecked by anything, declared as such in §3 and in the guard's WHERE IT STOPS.
+
+**Ceiling 2 — the unscanned copy stays REPORTED, not fixed.** Named ceilings, with `file:line`, and the scanner
+is NOT widened to catch them this slice (that is the treadmill, and D-027 already ruled the widening away):
+`src/lib/feed.ts:918`; `src/components/LocationModal.tsx:39`; `src/components/PlaydateFormFields.tsx:339` and
+`:919`; `src/pages/PlaceDetailsPage.tsx:617`; `src/lib/vibeChips.ts:34`; and the function-produced copy
+(`rsvpConfirmationCopy`, `kindEmptyCopy` and its siblings). Whether `feed.ts:918`'s "park" becomes true is a
+product question, not a mechanism question, and it is the orchestrator's to route.
+
+### One cleanup, and it is mine
+
+`35e3f20` also swept in `.scratch/v28/tmp/firstRunTour.pristine.ts` — my hand-restore snapshot from the seed
+proofs. Measured: byte-identical to `src/lib/firstRunTour.ts`, referenced by nothing in the tree. A duplicate of a
+live module is a trap for the next reader, and this report states that directory is uncommitted scratch, so the
+file and the rest of that scratch directory are removed in the commit that carries this section. Every log it held
+is quoted verbatim in the sections that cite it, which is why the pointers to it are convenience and not evidence.
