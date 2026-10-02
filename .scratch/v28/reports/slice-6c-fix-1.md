@@ -11,9 +11,18 @@ that left a warning in a return message that never reached an artifact. **Everyt
 of a command run in this round.**
 
 **Two rounds of work are in this commit.** The four on-disk files were the previous builder's
-(+181/−19, uncommitted, verified by re-measurement rather than trusted); this round closed the two gaps
+(`+181/−19` in the handover — `HANDOVER.md:42` is where that figure comes from — and verified by
+re-measurement rather than trusted; **the committed four-file diff is `+191/−19`**
+(`git diff --numstat c484648 c2ec32e -- <the four files>`), and the pre-round working-tree state was
+never committed, so 181 is **unreproducible by construction** — fix round 2 measured this and labelled
+it rather than moving it); this round closed the two gaps
 it left — the missing report (GAP A) and a stale number in the guard's own SCOPE header (GAP B) — and
 ran the gate.
+
+**Case numbers below are fix round 1's.** Fix round 2 split the case-4 git premise into its own named
+check and added a nested-`.vitest` and a `.d.cts` case, so what this report calls case 4/5/6
+(`.scratch`, `.vitest`, `.d.mts`) are cases 5/6/8 in `regexp-escape-guard.check.mjs` at HEAD, which
+prints **12** checks. Kept as written as that round's record, with this pointer added by fix round 2.
 
 ---
 

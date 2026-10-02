@@ -263,16 +263,21 @@ It also deliberately avoids the trap I fell into in §1: it **walks the filesyst
 file the author has not staged is caught. Its scope is written down (a list of directory **NAMES**,
 plus the code extensions; `.scratch` skipped whole and stated as uncounted) and the header states it.
 
-**⚠️ CORRECTION — fix round 1.** The parenthetical above once read "skips generated and gitignored
-harness dirs", which was FALSE twice over, and the reviewer measured both directions: git TRACKS 260
-files under `.scratch/` (23 of them `.mjs`), so a copy seeded in one passed silently while the header
-called that directory gitignored harness state; and `.vitest/`, which IS gitignored, was **not**
-skipped, so a generated cache file holding the literal **failed the lane**. The header and the
-printed scope line now state the mechanism (directory names, `.scratch` uncounted and why,
-`.vitest` skipped), `.mts`/`.cts` joined the scanned extensions, and
-`regexp-escape-guard.check.mjs` pins both directions in three new cases — **9 checks, not 6**, so the
-`all 6 checks passed` line quoted below is the `ce3479c` tail, not today's. Current tails:
-`.scratch/v28/reports/slice-6c-fix-1.md`.
+**⚠️ CORRECTION — fix round 1, re-corrected in fix round 2.** The parenthetical above once read "skips
+generated and gitignored harness dirs", which was FALSE twice over, and the reviewer measured both
+directions: `.scratch` is skipped WHOLE while git tracks code files inside it — 23 of them `.mjs` — so a
+copy seeded in one passed silently while the header called that directory gitignored harness state; and
+`.vitest/`, which IS gitignored, was **not** skipped, so a generated cache file holding the literal
+**failed the lane**. The tracked-file count itself lives in the header's SCOPE, dated, with the command
+that re-measures it (`regexp-escape-guard.mjs`), because it grows with every committed report. This
+paragraph used to state that count as "the reviewer measured", and it reproduced at no commit — 262 at
+`c484648`, 259 at `ce3479c`/`32e9f48`, 265 at HEAD — with no such reviewer measurement on record, so
+fix round 2 **deleted the number** rather than restating it at today's value. The header and the
+printed scope line state the mechanism (directory names, `.scratch` uncounted and why, `.vitest`
+skipped), `.mts`/`.cts` joined the scanned extensions, and `regexp-escape-guard.check.mjs` pins both
+directions — **12 checks after fix round 2, not 6** — so the `all 6 checks passed` line quoted below is
+the `ce3479c` tail, not today's. Current tails: `.scratch/v28/reports/slice-6c-fix-2.md` (fix round 2)
+and `.scratch/v28/reports/slice-6c-fix-1.md`.
 
 **What the drift the two review lanes named actually is:** `ocr` said *"implementations that drift
 independently — a missed metacharacter in one silently over-matches the pin."* With **one**
@@ -541,7 +546,7 @@ Two blockers and two smaller items, all fixed in this round. Measurements and ra
 
 | Finding | Status |
 |---|---|
-| **G1** — the guard's stated scope was not `SKIP_DIRS`: a copy in a TRACKED `.scratch` code file was uncounted while the header called that directory gitignored, AND a generated `.vitest` cache file failed the lane | **fixed** — the sentence and the mechanism now say the same thing (skip is by directory NAME; `.scratch` skipped whole, uncounted, with the number and the reason; `.vitest` added). Both directions are pinned in the check, which now runs 9 cases |
+| **G1** — the guard's stated scope was not `SKIP_DIRS`: a copy in a TRACKED `.scratch` code file was uncounted while the header called that directory gitignored, AND a generated `.vitest` cache file failed the lane | **fixed** — the sentence and the mechanism now say the same thing (skip is by directory NAME; `.scratch` skipped whole, uncounted, with the number and the reason; `.vitest` added). Both directions are pinned in the check, which then ran 9 cases and runs **12** after fix round 2 (`slice-6c-fix-2.md`) |
 | **G2** — the `git grep` after-count above was presented as one and had become sixteen | **fixed** — correction inline in §1, naming `scripts/guards/regexp-escape-guard.mjs` as the authoritative instrument |
 | **G3** — `.mts` excluded from `SCAN_EXT` | **fixed** — `.mts`/`.cts` are scanned; a seeded `.d.mts` copy is caught, and that case is proven load-bearing |
 | **G4** — the batch's guard-authoring rule (write the rule into `docs/` first) was unmet | **fixed** — `docs/agents/code-structure.md`, new section "The one-copy rule" |

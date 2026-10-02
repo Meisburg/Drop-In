@@ -8,9 +8,11 @@
  * `src/lib/firstRunTour.ts`, a private function in `e2e/weekly-series.e2e.ts`,
  * an inline one in `e2e/place-directory-in-new.e2e.ts`, and inline ones in
  * `scripts/guards/stale-locator-guard.mjs` and
- * `scripts/guards/vacuous-absence-guard.mjs`. Two independent review lanes
- * called that a drift risk: "a missed metacharacter in one silently
- * over-matches the pin". Slice 6c collapsed all five onto ONE module —
+ * `scripts/guards/vacuous-absence-guard.mjs`. Two lanes reached that from
+ * opposite directions: `ocr` called the copies "implementations that drift
+ * independently — a missed metacharacter in one silently over-matches the pin",
+ * and the reviewer flagged the same duplication as a drift risk. Slice 6c
+ * collapsed all five onto ONE module —
  * `src/lib/escapeForRegExp.mjs`, which the app, the e2e suite AND these plain
  * `.mjs` guards can all import because it is vanilla JS.
  *
@@ -55,7 +57,11 @@
  *     supabase/functions/ — and in any untracked file outside the skipped dirs
  *     that the author has not `git add`ed yet. It is NOT counted anywhere under
  *     `.scratch`, `.qa`, `.agents`, `.omo`, `.vitest`, or build output. Both
- *     directions are pinned by `regexp-escape-guard.check.mjs`.
+ *     directions are pinned by `regexp-escape-guard.check.mjs`, along with the
+ *     "any depth" half of this sentence and both declaration spellings
+ *     (`.d.mts`, `.d.cts`) — each of those three has a case that FAILS against
+ *     an implementation that drops it, which is what makes them pinned rather
+ *     than seeded.
  *
  * A note on this file's own prose: it does not write the one-liner out with its
  * `g` flag, so that THIS file does not itself contain the literal it searches
@@ -71,9 +77,12 @@
  * rather than escape them. A different character class and replacement, so
  * merging them would be a behaviour change.
  *
- * Behavior is proven by `regexp-escape-guard.check.mjs` (seeded sixth copy in
- * e2e/ AND in scripts/, a deleted implementation, a lone copy in the wrong
- * file), which run-all.sh runs in the same gate.
+ * Behavior is proven by `regexp-escape-guard.check.mjs` — seeded sixth copies
+ * in e2e/ AND in scripts/, a `.scratch` copy, `.vitest` at the root and nested,
+ * a `.d.mts` and a `.d.cts` copy, a deleted implementation, a lone copy in the
+ * wrong file. It prints its own case count rather than quoting one here, because
+ * a typed count in this header went stale once already. run-all.sh runs it in
+ * the same gate.
  *
  * Usage:  node scripts/guards/regexp-escape-guard.mjs [root]
  * Exit:   0 = exactly one copy, in the sanctioned file; 1 = otherwise
@@ -145,8 +154,8 @@ const onlyCopy = hits.length === 1 && hits[0].startsWith(`${SANCTIONED}:`)
 
 if (onlyCopy) {
   console.log(`  ok — one implementation, at ${hits[0]}`)
-  console.log('  ok — every other caller imports it (scope: the tree minus build output and the')
-  console.log('       harness dirs named in SCOPE — `.scratch` skipped whole and uncounted)')
+  console.log('  ok — that is the whole of what this instrument establishes: one occurrence, in the sanctioned file.')
+  console.log('  ok — scope: the tree minus build output and the harness dirs named in SCOPE; `.scratch` is skipped whole and uncounted.')
   console.log()
   console.log('PASS — the escape has exactly one home.')
   process.exit(0)

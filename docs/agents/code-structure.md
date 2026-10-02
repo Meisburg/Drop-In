@@ -97,8 +97,10 @@ one-liner is a module, not a habit.**
 
 The escape one-liner — `value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')`, "escape
 a value before interpolating it into a `RegExp`" — was written in five files
-(V28 slice 6c). Two review lanes named the risk in the same words: *a missed
-metacharacter in one copy silently over-matches the pin it builds*. It now lives
+(V28 slice 6c). Two lanes reached it from opposite directions: `ocr` called the
+copies *"implementations that drift independently — a missed metacharacter in one
+silently over-matches the pin"*, and the reviewer flagged the same duplication as
+a drift risk. It now lives
 once, in `src/lib/escapeForRegExp.mjs`, and every caller — the app, the e2e
 suite, and the plain-`.mjs` guards in `scripts/guards/` — imports it. One module
 is reachable from all three because it is vanilla JS: a `.mjs` guard cannot
