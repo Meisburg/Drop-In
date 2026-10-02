@@ -688,7 +688,14 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
 
-### 8b INHERITS slice 8a's guard rule, with its findings enumerated (D-031)
+### Slice 8a — CLOSED 2026-10-02 (source + spec hygiene, and the guard rule's failure)
+
+**Product work, verified across five rounds:** the wire-or-delete list resolved (with `hasAvatarUrl` **wired** rather than deleted, slice 2 getting first refusal), the `finishSignup` stub's address intercept **given a tripwire and its written zip PINNED** — the mutation proving it: with the stub answering a *different seeded* zip the walk completes and the pin fails (`Expected 98107 / Received …Near 98104 · within 5 miles`). The `hasAvatarUrl` **call** is pinned by source-level legs that a faithful restatement fails. Gate green: 71 files / 2063 tests / 81 warnings / 0 errors.
+
+**The guard rule it added is the cautionary tale.** Added mid-slice to retire a fabricated transcript *structurally*, it worked — the rule **fired on the live defect before the deletion**. Then round 4 closed two real holes and **created a reachable escape**: exempting quotation-introduced labels to stop the tripwire firing on its own repo meant a fabricator reaches a pass by **prefixing `>`** (`0 raw-labelled block(s) read … NOTHING was checked`, exit 0). It also **lost coverage** — three genuine raw blocks stopped being read.
+
+**Round-5 verification FAILED and review returned NEEDS_CHANGES, both solely on that rule.** The breaker (**D-031**) adjudicated those internals to **8b**, which owns guards: *a repair that trades a small hole for a reachable escape is a net regression, and a sixth patch inside a product slice would be a third attempt at the same rule in three rounds.* The rule's two real fixes are kept; its escape, coverage loss and claims are **8b's, enumerated, to be fixed**.
+
 
 The `transcript-summary-agrees` rule 8a added has a **reachable escape** (a quotation exemption a fabricator reaches by prefixing `>` — measured PASS exit 0 with "NOTHING was checked"), **coverage loss** (the narrowed label form dropped three genuine raw-labelled blocks), an **unwatched exempt set**, several **false claims**, an **unreproduced number**, and a **missing mutation**. All enumerated in `factory/work/v28-r2-8b.json`. **8b fixes them** — the breaker's method ruling is to take the rule back to its last reviewed-good form where that is simpler than a fourth condition, because a repair that trades a small hole for a reachable escape is a net regression.
 
