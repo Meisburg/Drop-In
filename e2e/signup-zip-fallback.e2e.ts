@@ -117,7 +117,7 @@ async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () 
  * association breaks, the profile row is never created, the cards never
  * render, and this helper hangs at its first wait. That is what makes it
  * the pin for the association. The Skip writes NOTHING (no kid rows — the
- * deterministic no-kids path the 17-spec helper
+ * deterministic no-kids path the 18-spec helper
  * `finishSignup` uses).
  */
 async function signUpToAreaCard(

@@ -138,7 +138,7 @@ test('the name card photo lands on the profiles row (object in the bucket + avat
   // --- Land on the NAME card (no profiles row yet — this card creates it). ---
   await createAccountToNameCard(page, { email: viewerEmail, password: viewerPassword })
 
-  // Fill the two name fields (the given/family inputs the 17-spec helper drives
+  // Fill the two name fields (the given/family inputs the 18-spec helper drives
   // the same way). The name is the required half; the photo is the optional one.
   const space = viewerName.indexOf(' ')
   const first = space === -1 ? viewerName : viewerName.slice(0, space)

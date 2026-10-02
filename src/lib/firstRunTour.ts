@@ -206,7 +206,7 @@ export const TOUR_TAXONOMY_CLAIMS: readonly PlaceKind[] = ['playground', 'pool',
 
 /**
  * The CTA. ⚠️ LOAD-BEARING: `e2e/auth.setup.ts` (EVERY spec's setup),
- * `e2e/fixtures.ts` (17 consumers of `finishSignup`) and
+ * `e2e/fixtures.ts` (18 consumers of `finishSignup`) and
  * `e2e/signup-zip-fallback.e2e.ts` locate this button by
  * `getByRole('button', { name: 'Go to your feed' })`. Renaming it breaks the
  * shared setup of the whole e2e suite. Pinned below for exactly that reason —

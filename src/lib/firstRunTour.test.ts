@@ -391,7 +391,7 @@ describe('the built-but-invisible capability is named, and named truly', () => {
 
 describe('the pinned chrome', () => {
   // ⚠️ LOAD-BEARING: e2e/auth.setup.ts (every spec's setup), e2e/fixtures.ts
-  // (finishSignup, 17 consumers) and e2e/signup-zip-fallback.e2e.ts all locate
+  // (finishSignup, 18 consumers) and e2e/signup-zip-fallback.e2e.ts all locate
   // this button by getByRole('button', { name: 'Go to your feed' }). Same
   // class as the name card's /^Continue/ pin.
   it('keeps the "Go to your feed" CTA the e2e suite clicks', () => {

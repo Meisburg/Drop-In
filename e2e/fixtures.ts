@@ -487,11 +487,22 @@ export async function signUpViewer(
  * slice 1b; the photo now joins the name card in slice 2.) The Skip
  * button (FirstRunCard's chrome) is the card's only control
  * that advances without touching the DB, which keeps the 18 specs that
- * consume this helper (measured: `grep -rln 'await finishSignup(' e2e/*.ts |
- * wc -l` → 18) on the deterministic no-kids path: their assertions
+ * consume this helper on the deterministic no-kids path: their assertions
  * about kids (kid-names-privacy and friends) create their kids through the
  * /profile editor or REST, never through onboarding. A spec that wants the
  * kids WRITE is one that should not be using this helper.
+ *
+ * THE COUNT, and the instrument that does not count itself (round 1: the number
+ * 17 sat in five other comments, and this slice's own 18th consumer —
+ * e2e/auth.setup.ts — made every one of them stale):
+ *
+ *     grep -rln "finishSignup(" e2e/*.ts | grep -v "/fixtures.ts" | wc -l
+ *
+ * That is files which MENTION the call, minus this module (the definer, which
+ * mentions it in this very paragraph): 17 at `8d1170d`, 18 at `ae578c2` and now.
+ * Writing the command literally here is safe precisely BECAUSE the definer is
+ * excluded — a metric written into the file it counts is otherwise the
+ * self-matching instrument this batch keeps finding.
  *
  * It NEVER forces a reload: a spec that counts requests during the cold load
  * still counts only the cold load's.

@@ -28,7 +28,7 @@ import {
  *
  * ⚠️ THE testid is STILL `first-run-finish-card`, on purpose. It is asserted
  * by `e2e/auth.setup.ts` (EVERY spec's setup), `e2e/fixtures.ts`
- * (`finishSignup`, 17 consumers) and `e2e/signup-zip-fallback.e2e.ts`. The
+ * (`finishSignup`, 18 consumers) and `e2e/signup-zip-fallback.e2e.ts`. The
  * component's name changed with its job; the locator did not, because renaming
  * it would break the shared setup of the whole e2e suite.
  */
