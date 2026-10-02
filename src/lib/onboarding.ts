@@ -26,11 +26,6 @@ export const ONBOARDING_PATH = '/onboarding'
 /** Home (today's feed) — where a completed onboarding sends the user. */
 export const HOME_PATH = '/'
 
-/** A signed-in user needs onboarding exactly when their home zip is unset. */
-export function needsOnboarding(homeZipSet: boolean): boolean {
-  return !homeZipSet
-}
-
 /**
  * Where a protected route should send a user. Always returns a string —
  * the intended path itself when the route may render as-is.

@@ -116,10 +116,15 @@ async function openMapView(page: Page): Promise<void> {
  * `home_zip` does two different jobs in this app, and the dead-map branch needs
  * only the second one to be empty:
  *
- *  1. THE ONBOARDING GATE keys on it (`needsOnboarding(homeZipSet)`, `App.tsx`),
- *     so a NULL home zip bounces every protected route to `/onboarding` — a
- *     viewer who cannot reach `/browse` proves nothing about the map. The value
- *     must therefore be SET.
+ *  1. BROWSE NEEDS IT TO BE REACHABLE AT ALL: a settled NO-zip parent gets the
+ *     shared location notice in place of the directory (`RadiusEmptyState`'s
+ *     early return, V28 slice 2c — via Browse's `radiusReason`), so the search,
+ *     the map toggle and every locator this spec drives would be absent. The
+ *     value must therefore be SET. (This is a CONTENT requirement, not a gate:
+ *     the app-wide wall that used to bounce a NULL home zip was removed in
+ *     slice 2b — see docs/adr/0001-home-zip-stops-being-a-gate.md — and the
+ *     `needsOnboarding(homeZipSet)` helper this note used to cite was deleted
+ *     in V28 r2 slice 8a, measured at 8d1170d: it had zero callers.)
  *  2. THE HOME PIN resolves it through the gazetteer (`BrowsePage.tsx`, the
  *     `homePinCoords` block), and a zip ABSENT from that extract yields
  *     `homePin === null` — the branch under test.
@@ -140,7 +145,9 @@ const NO_HOME_PIN_ZIP = '00000'
  * `undefined` means THE READ FAILED (network, RLS, a rotated project) — as
  * distinct from `null`, which is a real stored value. The caller must not
  * confuse the two: treating a failed read as "the marker has no zip" would make
- * the restore write `null` and break the onboarding gate for every later spec.
+ * the restore write `null` and leave every later spec's viewer on the no-zip
+ * location notice instead of the feed it asserts (there has been no zip GATE
+ * since slice 2b — the zip is a content requirement, not a door).
  */
 async function readMarkerHomeZip(): Promise<string | null | undefined> {
   const { url, anonKey } = readSupabaseEnv()

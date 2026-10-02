@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   HOME_PATH,
-  needsOnboarding,
   resolveOnboardingGate,
   resolveOnboardingRedirect,
   resolveProtectedRedirect,
@@ -18,15 +17,12 @@ import {
  * page's own finish card, never a feed bounce).
  */
 
-describe('needsOnboarding', () => {
-  it('is true when the user has no home zip', () => {
-    expect(needsOnboarding(false)).toBe(true)
-  })
-
-  it('is false when the user has a home zip', () => {
-    expect(needsOnboarding(true)).toBe(false)
-  })
-})
+// V28 r2 slice 8a: `needsOnboarding(homeZipSet)` (`!homeZipSet`) was DELETED —
+// the two tests below were its only callers, measured at 8d1170d. It was the
+// last fragment of the app-wide home-zip gate slice 2b removed (the
+// requirement lives on the write paths now — docs/adr/0001-home-zip-stops-
+// being-a-gate.md), so a one-line predicate nothing called was a claim about a
+// gate the app no longer has.
 
 describe('resolveProtectedRedirect (protected routes)', () => {
   it('sends signed-out users to /login', () => {
