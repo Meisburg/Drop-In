@@ -49,26 +49,17 @@
 //                         concrete construct is backed by that construct in the
 //                         file's own source. Read over every comment line and
 //                         each check name on the line that opens the call, not
-//                         only the leading block — a name split across lines is
-//                         NOT read (26 of the 90 names in this file, measured).
-//                         KEYED TO LITERAL PHRASINGS, and this is the boundary
-//                         MEASURED rather than implied (D-020's lexical/semantic
-//                         limit): the exclusive form ("the only git call is"
-//                         plus a backticked command — `git ls-files` beside it
-//                         was the live miss), "X is its own alternative" and a
-//                         backticked token followed by the word alternative, a
-//                         phrase this file records as narrowed, the
-//                         pointer-is-resolvable family (`resolvable-pointer`,
-//                         `claim-checkable`, `line-shows-it`), and "the baseline
-//                         is N". A PARAPHRASE OF THE SAME SHAPE ESCAPES: eleven
-//                         fresh class instances were built and all eleven escaped
-//                         — an absent-construct claim in other words, an
-//                         alternative phrase ordered differently, a "sole git
-//                         invocation", a wrong number phrased as "the map holds
-//                         N", a check-name capability claim, a split check name,
-//                         a transcript of a different rule, and a citation
-//                         outside `.scratch/`. This is a detector over the named
-//                         spellings, never a decision procedure for the prose.
+//                         only the leading block; a name split across lines is
+//                         not read. The rule is KEYED TO LITERAL PHRASINGS — the
+//                         exclusive form "the only git call is" plus a backticked
+//                         command, "X is its own alternative" and a backticked
+//                         token before the word alternative, a phrase this file
+//                         records as narrowed, a claim that the header pointer
+//                         resolves what it names, and "the baseline is/holds N" —
+//                         so a paraphrase of the same shape ESCAPES: eleven fresh
+//                         class instances were built and all eleven escaped. A
+//                         detector over the named spellings, never a decision
+//                         procedure for the prose.
 //   no-bare-head-count    no report or brief resolves a count through bare
 //                         HEAD — an "N … at HEAD" label (any HEAD spelling, or
 //                         the `@` shorthand), a `git … HEAD` read whatever the
@@ -90,14 +81,13 @@
 //                         absorbed by re-derivation (D-021 item 2, ruled for
 //                         this half by D-023), and every occurrence beyond the
 //                         recorded count still fails.
-//   transcript-reproduces a pasted `count-provenance-unresolvable` transcript
-//                         that cites a file under `.scratch/` must cite a line
-//                         that carries the sha it names, or be marked historical —
-//                         a transcript written before a later edit and never
-//                         re-taken is a claim the committed artifact contradicts.
-//                         A citation of any OTHER path (e.g. `scripts/…`) is NOT
-//                         checked, and neither is a transcript of a different
-//                         rule: both are named ceilings, not covered shapes.
+//   transcript-reproduces a pasted `count-provenance-unresolvable` finding whose
+//                         sha is named and whose cited `.scratch/` file is on disk
+//                         must carry that sha on the cited line, unless the
+//                         transcript is marked historical. Anything else — any
+//                         other path, a cited file not on disk, a finding that
+//                         names no sha, another rule's transcript — is a named
+//                         ceiling, not a covered shape.
 //
 // SCOPE — the boundary this instrument reads, and therefore the boundary of its
 // claims. `docs/agents/code-structure.md` makes THIS header, not any report's
@@ -1423,17 +1413,13 @@ function checkReportHeadCounts() {
 /**
  * A pasted run is a claim that the command in it produces the lines under it.
  * The decidable subset this rule can check without re-running anything: a
- * `count-provenance-unresolvable` finding pasted into a report that cites a file
- * under `.scratch/` must cite a line that carries the sha the finding names.
- * A citation of any OTHER path (e.g. `scripts/…`) is NOT checked, and neither is
- * a transcript of a different rule — both are named ceilings, not covered shapes.
- * The sha half is mechanical — the finding names one, the line either has it or
- * not — so a transcript that cites a line without it did not come from this
- * commit. A draft transcript written before a later edit is allowed to stay, but
- * it must SAY it is a draft: a `historical`/`superseded` marker within the dozen
- * lines above the finding stands it down. Ceiling (D-020): the detector half's
- * matched-text and cross-file citations are not re-derived here — only the
- * decidable half's own sha is checked. See `factory/decisions.md` D-025/D-026.
+ * `count-provenance-unresolvable` finding pasted into a report whose cited
+ * `.scratch/` file is on disk and whose sha is named must carry that sha on the
+ * cited line. Anything else — another path, a cited file not on disk, a finding
+ * that names no sha, another rule's transcript — is a named ceiling. A draft
+ * transcript may stay if it SAYS it is a draft: a `historical`/`superseded`
+ * marker within the dozen lines above the finding stands it down. See
+ * `factory/decisions.md` D-025/D-026.
  */
 function checkTranscripts(files) {
   for (const path of files) {

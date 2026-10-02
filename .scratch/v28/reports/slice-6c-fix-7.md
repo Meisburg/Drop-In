@@ -43,15 +43,14 @@ ceiling* (D-020's honest limit stands: no machine decides "the prose is true").
 | **1b** | construct presence — a named alternative must exist in the source | *the `ZZQ` alternative matches the label* with no `ZZQ` in the file's mechanism code → `FINDING zz-alternative.mjs:2` | the alt test → `if (false) {` | the `@{…}`-style claim (no live instance this round; the fix landed in round 6) |
 | **1c** | construct presence — a phrase the instrument records as *narrowed away* must not be restated as current | one file abandons `"zz-old formula"`, a second restates it → `FINDING zz-reuse.mjs:2` | the `indexOf` scan → `for (let at = -1; …)` | `factory-guard.mjs:683`, `factory-guard.check.mjs:678` |
 | **1d** | construct presence — a capability claim the rule lacks: the header pointer "resolves" what it names | *the rule is about a resolvable pointer* while the rule shape-tests (`HEADER_POINTER`) → `FINDING zz-resolution.mjs:2` | the capability test → `if (false) {` | `factory-guard.mjs:48` (+`:337`), `factory-guard.check.mjs:325` |
-| **2** | **check-file prose** — read body comments, and check NAMES **on the line that opens the call** (26 of this file's 90 names; a name split across lines escapes — probe F) | a claim carried by a `check('…')` NAME on the opening line → `FINDING zz-by-name.check.mjs:5` | stop reading names (`^check(` → `^zznevercheck(`) | `factory-guard.check.mjs:678` |
+| **2** | **check-file prose** — read body comments, and check NAMES **on the line that opens the call** (a name split across lines escapes — probe F) | a claim carried by a `check('…')` NAME on the opening line → `FINDING zz-by-name.check.mjs:5` | stop reading names (`^check(` → `^zznevercheck(`) | `factory-guard.check.mjs:678` |
 | **3** | **prose number vs artifact** — a stated derived quantity must equal the map/run | *the baseline is 999 recorded occurrences* vs the map's 628 → `FINDING zz-number.mjs:2` | the number test → `if (false) {` | `factory-guard.check.mjs:460` |
 | **4** | **transcript reproducibility** — a pasted `count-provenance-unresolvable` transcript citing a file under `.scratch/` must cite a line carrying its sha, or be marked historical (a citation of any other path is a ceiling) | a pasted finding cites its own `:9`, which does not name the sha → `FINDING …zz-transcript.md:5` | the reproduction test → `if (false) {` | `.scratch/v28/reports/slice-6c-fix-6.md:1360` |
 
 Rules 1 and 2 share the prose collector: rule 1 supplies the *claim tests* over every comment line; **rule 2
 extends coverage to the check NAMES written on the line that opens the call** — body comments and those names
-were read by nothing before this pass. A name split across lines (`check(\n  '…'`) is still NOT read: 26 of
-this file's 90 names are read, 64 are not (probe F). The commit split is per rule; intermediate commits are
-green.
+were read by nothing before this pass. A name split across lines (`check(\n  '…'`) is still NOT read (probe F).
+The commit split is per rule; intermediate commits are green.
 
 ---
 
@@ -127,9 +126,8 @@ FAIL — 7 factory finding(s).
 ```
 
 **7 findings, mapping to every instance the human and reviewer had found by hand, and two more they had
-named but the machine had never caught together.** No mechanism was widened to produce them: the fourteen
-matcher constants are untouched by this pass (the diff to `factory-guard.mjs` is prose, the new rule functions,
-and no edit inside the constants block).
+named but the machine had never caught together.** No matcher was widened to produce them: the diff to
+`factory-guard.mjs` is prose and the new rule functions, with no pre-existing matcher constant edited.
 
 ---
 
@@ -227,8 +225,8 @@ against their bodies found **two** things the machine rules do not decide, plus 
    the sha is then verified separately, so the pair closes the hole. Left as-is, flagged here.
 
 After those, **a re-read of the same two files, their body comments and all their check names found no further
-instance** — by eye: the machine itself reads only 26 of the 90 names (see §10.2), so this part of the sweep is
-human, not machine. The header, the constants comments, the ceilings, the SCOPE list and the names it read now
+instance** — by eye: the machine reads only names on a call's opening line, so this part of the sweep is human,
+not machine. The header, the constants comments, the ceilings, the SCOPE list and the names it read now
 state what the mechanism does.
 
 ---
@@ -300,9 +298,9 @@ mutation pairs above plus the two that close the pre-existing vacuity.
   registered after the checks. Mechanism deliberately untouched this pass.
 - **The position-(b) hole stays open by ruling:** `git diff 1c3471a..deadbee | wc -l` passes with `deadbee`
   unchecked. No matcher was widened (D-024), and the header still names the ceiling.
-- **Rule 2 coverage is check names on the call's opening line — 26 of the 90 names, 64 unread (71 %).**
-  A name split across lines (`check(\n  '…'`) is not read; the SCOPE line and the report now say exactly that,
-  with the measured count, so no sentence claims the wider rule.
+- **Rule 2 coverage is check names on the call's opening line.** A name split across lines
+  (`check(\n  '…'`) is not read; the SCOPE line and the report now say exactly that, so no sentence claims the
+  wider rule.
 - **The one-copy guard earned its keep this pass:** my first implementation of rule 1c inlined the
   `replace(/[.*+?^${}()|[\]\\]/g, '\\$&')` escape, and `regexp-escape-guard.check.mjs` failed it (5 findings)
   before the shared helper was avoided in favour of an `indexOf` scan. Recorded, not silenced.
@@ -314,7 +312,7 @@ mutation pairs above plus the two that close the pre-existing vacuity.
 | requirement (the brief) | status | evidence |
 |---|---|---|
 | Rule 1 construct presence — a named construct must exist in the file's source | **built** | §1, §2; finds `:88`, `:683`, `:48`/`:325` |
-| Rule 2 check-file prose — read `*.check.mjs` names and body comments | **partially met** | body comments read; check NAMES on the opening line only (26/90; probe F escapes) — §1, §2, §10.2 |
+| Rule 2 check-file prose — read `*.check.mjs` names and body comments | **partially met** | body comments read; check NAMES on the opening line only (a split name escapes; probe F) — §1, §2, §10.1 |
 | Rule 3 prose number vs artifact | **built (one phrasing)** | `the baseline is/holds N`; any other number phrasing escapes (probe D) — §1, §2, §10.2 |
 | Rule 4 transcript reproducibility | **built (`.scratch/` citations only)** | a non-`.scratch/` citation or another rule's transcript escapes (probes E, M) — §1, §2, §10.2 |
 | Each rule: a seeded violation that fires AND a mutation that stops it | **met** | §2, raw output shown for all seven |
@@ -375,7 +373,7 @@ E and M are shapes rules 2/3/4 claim), which these eleven refute.
 | 1b named alternative | a backticked token immediately followed by the word *alternative* / "X is its own alternative" | "an alternative for `X`" (G) |
 | 1c abandoned formula | a phrase the file records with *used to claim* / *was narrowed*, restated as current | a phrase not so recorded (no other abandonment is detected) |
 | 1d capability claim | *resolvable pointer*, *makes the claim checkable*, *the line that shows it* | "the pointer is checked against git" (N), "resolved against the index" (B) |
-| 2 check-file prose | body comments (any); check NAMES **on the call's opening line** (26 of 90 here) | a split check name (F); a capability claim in a name (C) |
+| 2 check-file prose | body comments (any); check NAMES **on the call's opening line** (a split name escapes) | a split check name (F); a capability claim in a name (C) |
 | 3 prose number | *the baseline is N* / *the baseline holds N* | "the map holds 999" (D); any non-baseline number |
 | 4 transcript | a pasted `count-provenance-unresolvable` finding citing `.scratch/`, whose sha is absent from the cited line | another rule's transcript (E); a non-`.scratch/` citation (M) |
 
@@ -393,23 +391,17 @@ ruling stopped; the deliverable is this declared ceiling, with its measurement.
 ### §10.3 The two fresh class instances in THIS pass's own artifacts — found and fixed
 
 1. **B1 — the rule-2 coverage claim was false.** §1 row 2 said "read check NAMES and every body comment" and §2
-   said rule 2 "extends coverage to the check NAMES — exactly the hole the review named". Measured: the name is
-   read only on the line that opens the call — **26 of the 90 names, 64 unread (71 %)**; the same claim split
-   across lines escapes (probe F). **Fixed:** §1, §2, §5, §8 and §9 now state the measured coverage; the SCOPE
-   line already named the boundary but the headline did not.
+   said rule 2 "extends coverage to the check NAMES — exactly the hole the review named". The name is read only
+   on the line that opens the call; a name split across lines escapes (probe F). **Fixed:** §1, §2, §5, §8 and
+   §9 now state that boundary; the SCOPE line already named it but the headline did not.
 2. **B2 — the `transcript-reproduces` sentence misstated its mechanism.** The header bullet, the JSDoc and the
-   `ok —` claim said a transcript "that cites a file IN this repository"; the mechanism checks only `.scratch/`
-   citations (`factory-guard.mjs:1424` skips every other path). Probe M (`scripts/guards/p.mjs:99`, bogus sha) →
-   exit 0. **Fixed:** all three now say "cites a file under `.scratch/`", with other paths and other rules named
-   as ceilings.
-3. **N3 — a written number the artifacts disagreed on.** §3 said "the thirteen matcher constants"; the ledger
-   said 14; the measured artifact is **14**. Corrected to fourteen — and N3 was itself an instance of the class
-   (a written number the artifact contradicts).
+   `ok —` claim said a transcript "that cites a file IN this repository"; the mechanism checks only a citation
+   under `.scratch/`. Probe M (`scripts/guards/p.mjs:99`, bogus sha) → exit 0. **Fixed:** all three now say the
+   boundary in words, with the other paths and other rules named as ceilings.
 
 ### §10.4 What was corrected, and what was kept
 
-- **Corrected (claims only):** report §1 rows 2 and 4; §2's rule-2 sentence; §3's count (thirteen → fourteen);
-  §5's "no further instance" (now names the machine's 26/90 and says this part of the sweep is human); §8's
+- **Corrected (claims only):** report §1 rows 2 and 4; §2's rule-2 sentence; §5's "no further instance"; §8's
   rule-2 and residue bullets; §9's traceability rows; the guard's `instrument-headers-honest` bullet and its
   `transcript-reproduces` bullet, docstring and `ok —` claim.
 - **Kept:** the four rules (each fires on its seed and stops on its mutation — §1/§2); the first-run **7**
@@ -437,3 +429,16 @@ oxlint errors   (`: error `)    0
 
 The claim changes move no matcher and add no bare-HEAD occurrence: the baseline is unchanged at **628
 occurrences / 399 keys** (absorber **10 records / 2 keys**), so no re-derivation was required.
+
+---
+
+## §11 FINAL — deleted, not corrected (the method change)
+
+Restating a false claim produced a fresh instance each round, so this pass DELETES unreproducible claims:
+the wrong pointer to the transcript rule's skip (stated in words); "the fourteen matcher constants" (§3 now
+says only "no matcher was widened"); the 26/90 ratio everywhere (the boundary "a name split across lines is not
+read" is the claim); the stale "(see §10.2)"; §10.3 item 3.
+
+Net words: guard header block **1289 → 1199 (−90)**; corrected report sections **3224 → 3108 (−116)**. Gates:
+guard 0, check 0 (90), regexp 12/12, run-all PASS, verify 0 (71/2067/81/0, AGENTS 1789/1800); baseline
+unchanged.
