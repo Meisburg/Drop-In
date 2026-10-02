@@ -657,3 +657,39 @@ installed.
 a failure-read-as-result, and an unpaired check whose section claims otherwise. The agent lanes found the
 prose/class defects `ocr` is blind to. **Neither is a substitute for the other** (D-022 made the same point
 from the other direction).
+
+## D-025 — the recurring class, named at last: a stated capability the mechanism does not have
+
+**Recorded 2026-10-02, after the seventh instance.** The round-6 repair review returned NEEDS_CHANGES on
+**two header/implementation disagreements** and nothing else — and it reproduced every mechanism measurement as
+correct. Its words: *"The MECHANISM is right… What fails is the HEADER, and it fails in the one way
+`docs/agents/code-structure.md:121-127` calls the defect: the header still states a capability the mechanism
+does not have."*
+
+**Every round of this slice has failed on this one shape — never on behaviour:**
+
+| round | the claim | the reality |
+|---|---|---|
+| 1-2 | a typed test count in a docstring | the count was stale / derived elsewhere |
+| 3 (B1) | "went stale", "used to be" — no pointer | nothing a reader could check |
+| 4 | a bare `HEAD` count label | 280 at the commit carrying the sentence is 281 |
+| 5 | "both were silently dropped by the `\b`" | they were caught, with a truncated label |
+| 6 (B1/B2) | the header accepts count dress; "either word order" | the token refused both |
+| 6-repair (1) | "`@{…}` is matched by its own alternative" | the alternative was deleted in the same commit, and the same file says so at `:619-621` |
+| 6-repair (2) | position (b) verifies "the revision of a counted git command" | a range endpoint escapes (`git diff 1c3471a..deadbee \| wc -l`) |
+
+**The instrument for catching this class is currently a human-invoked review, not a guard.** Every instance was
+found by the reviewer by hand, one round at a time — which is exactly the situation D-020 described for the
+`HEAD` class before the human made the form decidable. **The same move is available here:** make the
+*mechanism-vs-prose* relation decidable, so a header claim that names a concrete construct must be backed by
+that construct.
+
+**The proposed systemic fix (NOT built — the human said not to redesign the factory while 6c is in flight).**
+Extend `instrument-headers-honest` from *count* claims to *mechanism* claims: a guard header that names a
+regex construct — an alternative (`X is matched by its own alternative`), a lookahead, a subcommand list, a
+character class — must have that construct present in the file's own source, or fail. This is mechanically
+checkable in the narrow form that would have caught blocking 1 (the string `@\{…\}` named in prose, absent from
+`MOVING_REV`) and in the form that would have caught several earlier rounds. It is **not** a decision procedure
+for "the prose is true" — the same lexical/semantic limit D-020 identified applies — but it converts the
+*cheapest, commonest* instance of the class into a machine check. **Queue it as a factory-hardening item after
+6c closes, not now.**
