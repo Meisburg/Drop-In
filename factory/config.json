@@ -169,7 +169,8 @@
       "role": "reader",
       "capabilities": { "reasoning": 2, "coding": 3, "tool_use": 3, "context_window": 65536 },
       "resources": { "ram_gb": 2, "exclusive": null, "footprint_source": "estimated" },
-      "requires_local_inference": true,
+      "requires_local_inference": false,
+      "_requires_local_inference_why": "TEMPORARY ROUTING CHANGE, slice 6c fix round 5 only, human-authorized 2026-10-02: set false so the ocr lane can run at all. It was pinned to the one local model clearing its floor (strata-max, 49.2 GB private, D-012), and that model and a satisfiable admission reserve are mutually exclusive at 62 GB. REVERT to true when the human says so. NOTE what this does NOT buy: with ocr routed to cloud it shares a model with the builder, so this yields SCAFFOLDING diversity (own tool-use loop, own rule resolution, own rules file), NOT model independence. See D-015.",
       "independence": { "required": true, "same_model": true, "same_run": false,
                         "_why": "ocr is structurally independent — its own scaffolding, its own rule resolution — so it does NOT need model diversity. That is a capability, not a contradiction of the reviewer rule." }
     },
