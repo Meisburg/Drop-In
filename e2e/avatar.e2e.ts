@@ -178,9 +178,15 @@ test('an EMPTY avatar_url counts as NO photo: the identity card shows "Add a pho
   // <img src=""> where the parent should see the "Add a photo" label. The
   // column is plain text, nullable, with no CHECK, so '' is a real state.
   //
-  // THIS TEST FAILS WITHOUT THE WIRE: restore the inline check and the img is
-  // back on the page (and the label is gone). It is the only browser-level
-  // proof that ProfilePage CALLS the predicate rather than restating it.
+  // WHAT THIS PROVES, AND WHAT IT CANNOT (V28 r2 slice 8a fix round 1). It
+  // FAILS if the render site stops BEHAVING as the predicate says: restore the
+  // pre-slice inline check and the img is back on the page with the label gone.
+  // But a FAITHFUL restatement of the one-liner — same check, empty-string
+  // clause included — passes it, so this leg cannot prove the site CALLS
+  // `hasAvatarUrl`. That half is pinned in src/lib/avatarUrl.test.ts (the
+  // source-level legs), which fail on a restatement. Two instruments, two
+  // different claims; an earlier draft of this comment claimed this one proved
+  // both.
   const { url, anonKey } = readSupabaseEnv()
   const { accessToken, userId } = readMarkerSession()
   const headers: Record<string, string> = {

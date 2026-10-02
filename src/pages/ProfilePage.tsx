@@ -1217,10 +1217,13 @@ export function ProfilePage() {
               pattern). The circle also carries the page's identity render
               (HostAvatar's photo shape), so what you tap is what you get. */}
           {/* V28 r2 slice 8a: THE PREDICATE, not an inline check. This branch
-              used to test `avatar_url !== null && !== undefined` — the
-              empty-string clause missing, which is the third-form drift
-              lib/avatarUrl.ts exists to stop: a row holding `''` rendered an
-              `<img src="">` instead of the "Add a photo" label below. */}
+              used to test the column for null and undefined right here — the
+              empty-string clause missing — which is the second of the three
+              drifted forms lib/avatarUrl.ts exists to stop: a row holding `''`
+              rendered an `<img src="">` instead of the "Add a photo" label
+              below. `lib/avatarUrl.test.ts` pins that this CALL happens and that
+              no comparison on the column comes back, because neither a unit leg
+              nor the browser leg can tell a call from a faithful restatement. */}
           {profile !== null && hasAvatarUrl(profile.avatar_url) ? (
             <div className="group relative shrink-0">
               <label
