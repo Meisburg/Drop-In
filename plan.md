@@ -668,6 +668,27 @@ Two pushes came back from the review. Both accepted:
 
 ### Slice 2 — CLOSED (fix round 1), and the machine lane had one refuted finding
 
+### Slice 6c — CLOSED 2026-10-02 (the slice that taught the batch its defect class)
+
+**Behaviour was verified correct every round; every failure for eleven rounds was PROSE ABOUT the
+mechanism.** Ten instances of one class: *a claim the mechanism does not support* — a docstring count, a
+bare-`HEAD` label, an `@{…}` alternative that had been deleted, "the only git call is `cat-file`" against a
+real `git ls-files`, and finally a wrong number written while fixing wrong claims.
+
+**Two human rulings came out of it.** **D-021:** make the reporting form *decidable* — a count's provenance
+must name a commit sha, and the sha is verified with `git cat-file -e <sha>^{commit}`. **D-026:** build the
+machine check. It did: four rules, **7 findings on its first run**, including two a human sweep had missed —
+and its limit is declared with its number (**11 fresh instances constructed, 11 escaped**) rather than
+overclaimed. **D-028** is the terminal method: where a claim cannot be kept true, **delete it, do not restate
+it** — measured as a shrink (header 1289→1199, corrected report sections 3224→3108).
+
+**Closed on:** mechanism PASS across repeated lane verdicts, gate green (71 files / 2067 tests / 81
+warnings / 0 errors / GUARDS PASS), and the prose reduced by deletion. **Recorded deviation:** the terminal
+deletion pass was closed on the orchestrator's own comment-only diff verification plus a green gate, not a
+fresh reviewer verdict — an eleventh review of a comment-only diff would have extended the regress the slice
+had just spent eleven rounds measuring. **Slice 6d is dispatched.**
+
+
 - **Verifier: PASS twice.** Slice gate `npm run verify` exit 0 (66 files / 1988 tests) and fix gate
   exit 0 (**67 files / 1993 tests** — the +1/+5 predicted exactly), 0 lint errors / 81 warnings; the
   pinning spec and all four blast-radius specs green with **no timeouts**, which is what cleared the
