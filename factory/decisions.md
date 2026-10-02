@@ -453,3 +453,63 @@ deferred to a new round.
 own boundary in the guard header where the build law requires it.** Two of the human's named items remain
 open — the `@` arm (a bug, being fixed) and the working-tree count (a disclosed gap awaiting a ruling).
 The remaining rows are disclosed exclusions with reasons, not silences.
+
+## D-020 — ESCALATION: the `no-bare-head-count` specification is the wrong object (D-016 invoked)
+
+**Round 5 came back NEEDS_CHANGES, and per D-016 the orchestrator did NOT start a sixth fix round.** The
+reviewer was instructed to return the invariant / rule / missed-shape triple instead, and did. Verifier
+`VERIFY: PASS`; reviewer `NEEDS_CHANGES`.
+
+**(a) The invariant it encodes.** Every count in a report or brief must be attributable to a fixed, immutable
+revision — a commit named by sha — because a count whose provenance is a *moving* revision (`HEAD`, `@`,
+`HEAD~n`, `HEAD^n`, `HEAD@{…}`, the working tree, or any ref a push/fetch can move) cannot be reproduced by a
+reader and moves under the very commit that carries the sentence.
+
+**(b) The detection rule it implements.** One per-line regex over `.scratch/v28/{reports,briefs}/*.md`, ORing
+three **lexical** arms — a number ≤4 words before `at <rev>`; `git <subcmd> … <moving rev>`; and
+`git <one-of-eight-names> … | wc` — with every match counted into a per-`(file::matched-text)` baseline, and a
+finding only when a file's running count exceeds the recorded one.
+
+**(c) The shapes it missed — 15 measured, in one probe set invented for the purpose.**
+- **Arm 3 is a hand-typed list of eight subcommand names, and is wrong in BOTH directions.** It misses four
+  commands that genuinely resolve HEAD by saying nothing — `git show | wc -l` (327), `git reflog | wc -l` (281),
+  `git blame <file> | wc -l` (55), `git annotate <file> | wc -l` (55) — and it fires on two that do not resolve
+  HEAD at all: `git branch | wc -l`, `git stash | wc -l`. A structural arm cannot be wrong in both directions;
+  a list can.
+- **Arm 1 is a set of English phrasings, and a live member of the class escapes it.** `.scratch/v28/reports/slice-6b-fix-1.md:292`
+  reads *"at HEAD the corpus reports 90 documents / 7 claims / 97 quotations"* — three counts whose stated
+  provenance is bare HEAD. The guard returns **PASS** on a root holding that file alone. **This shape was
+  already recorded one round earlier**, in `.scratch/v28/reports/slice-6c-fix-4.md:81`, and round 5's own ceiling
+  list does not mention it. Round 5 widened the arm's *ref spellings* and left its *word order* untouched.
+- **Arm 2 cannot see a global option or a quoted rev**: `git --no-pager log HEAD | wc -l`,
+  `git -C <dir> show HEAD:p`, `git -c core.pager=cat show HEAD`, `git show "HEAD"`, `git rev-parse 'HEAD'`.
+
+**Why this is a specification defect and not a builder defect.** Six rounds have each widened the instrument by
+exactly the shapes the *previous review* measured. The invariant is **semantic**; the detector is **lexical**,
+and no amount of widening makes a regex a decision procedure for a semantic predicate. Two independent signs
+that the search is not converging: (i) the human's own standard contains a member the instrument deliberately
+*cannot* enforce — the HEAD-versus-working-tree distinction, because enforcing it would fail every verify lane
+and the guard's own `ls | wc -l` basis — so the specification contradicts itself; and (ii) rounds 4 and 5
+disagreed about which dimension of arm 1 was incomplete, and round 5's ceiling list omitted the shape round 4
+had already named.
+
+**The contradiction, measured.** Recording the reviewer's report into `.scratch/v28/reports/` (as the batch
+requires — lane evidence must persist) took the guard from **8 findings to 98**, because every report *about*
+this class quotes the class. **The instrument's own evidence files are its red.** A rule whose baseline is
+forward-only, over a corpus that must accumulate discussions of the rule, cannot converge.
+
+**The three options — the human's ruling, not the orchestrator's.**
+1. **Make the reporting form decidable.** Require counts in reports/briefs to carry provenance in a canonical,
+   machine-checkable token (`N at <sha>`, or an explicit annotation), and make the rule about *that form*: a
+   count without a canonical token fails; a token naming a sha is checkable with `git cat-file -e <sha>^{commit}`.
+   **The only design under which "detects the class" is achievable rather than asymptotic.**
+2. **Keep the detector, strike the overclaim.** Amend D-019 and the round-5 report to say plainly: a detector
+   over named shapes with a declared ceiling; it does not detect the class. Every miss becomes a disclosed
+   ceiling instead of an instance.
+3. **Keep a human in the loop for the residue.** The lane's hunt caught the last six instances; leave the
+   instrument as a cheap first-pass and the hunt as the enforcement.
+
+**A sixth round is the wrong move** and would look like this: add `show|reflog|blame|annotate` to arm 3, add an
+order alternative and a wider word class to arm 1, allow `--no-pager`/`-C`/quotes in arm 2 — after which arm 3
+is *still* a list (any command can be absent), arm 1 *still* a phrase set (any phrasing can be absent), and the
+round would again find a fresh instance of the class in its own report (it did, in rounds 1-6).
