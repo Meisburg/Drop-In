@@ -286,10 +286,9 @@ try {
     'a declaration naming a category the taxonomy does not have',
     [
       'the declaration names the category "zoo", which PLACE_KINDS does not have',
-      // F6 (round-3 review): the limit line for that claim names ITS OWN case —
-      // the taxonomy lacks the kind, so rule 1 owns it — not the generic reason
-      // the attribution cases use.
-      'the declared kind "zoo" is not scannable: the taxonomy has no kind "zoo" at all',
+      // F6 (round-3 review): the limit line for that claim names ITS OWN case,
+      // not the generic reason the attribution cases use.
+      'the declared kind "zoo" is not scannable: the taxonomy walk found no kind "zoo"',
     ],
     [['declared.filter((kind) => !allKindSet.has(kind))', 'declared.filter(() => false)']],
     () => editFile(TOUR, DECLARES, "export const TOUR_TAXONOMY_CLAIMS: readonly PlaceKind[] = ['playground', 'pool', 'beach', 'zoo']"),

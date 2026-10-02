@@ -925,7 +925,7 @@ own edit touched, not only the sets it listed.**
 Raw, on a declaration extended with a kind `PLACE_KINDS` does not have:
 
 ```
-  limit—— src/lib/firstRunTour.ts: the declared kind "zoo" is not scannable: the taxonomy has no kind "zoo" at all, so rule 3 has nothing to check
+  limit—— src/lib/firstRunTour.ts: the declared kind "zoo" is not scannable: the taxonomy walk found no kind "zoo", so rule 3 has nothing to check
   declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts
 FAIL — 1 finding(s):
   - src/lib/firstRunTour.ts: the declaration names the category "zoo", which PLACE_KINDS does not have — a category this copy names must be one of the kinds the app has
@@ -946,11 +946,10 @@ it is what a sweep should be subjected to.
 **What it does not cover, stated because a sweep that claims completeness is the next instance of this class.**
 The sweep covers the sets it lists: the measurements on this guard's own path that a copy module's words can
 empty. It does not cover **the sets its own diff touched** (`ambiguousWords` is the proof — found by review, not
-by the sweep); **the instruments' own counters**, whose emptiness is a print rather than a verdict; or
-**coverage as opposed to emptiness** — the one substantive gap, and a declared one: non-declared kinds sharing a
-word leave the scan set non-empty, so the run still passes while rule 4 covers none of them. That reduction is
-printed per kind in the run's own output and is not tripwired; rule 3's coverage prints as a ratio, and rule
-4's does not.
+by the sweep) or **coverage as opposed to emptiness** — the one substantive gap, and a declared one: non-declared
+kinds sharing a word leave the scan set non-empty, so the run still passes while rule 4 covers none of them. That
+reduction is printed per kind in the run's own output and is not tripwired; rule 3's coverage prints as a ratio,
+and rule 4's does not.
 
 So the sweep is an enumeration of the path its author looked at. It is not a proof of completeness, and the
 falsification — not the table — is what makes it worth anything.
@@ -994,7 +993,7 @@ run afterwards, verbatim.
 
 **Reviewed:** `.scratch/v28/reports/slice-6d-review-4.md` — **NEEDS_CHANGES**: it reproduced the check summary,
 the clean run, the zoo seed and both deletion claims, and falsified the counter's zero-denominator edge itself
-(*no reachable `claimsAccepted === 0` state passes — rule 1 owns it*). **Base:** `915be5e`. Rules 1/2/4's
+(*no reachable `claimsAccepted === 0` state passes*). **Base:** `915be5e`. Rules 1/2/4's
 semantics, the declaration, both ceilings and the scanner's scope are untouched; no rule was weakened to make
 anything pass.
 
@@ -1015,12 +1014,11 @@ exit=1
 
 The five numbered items were a claim per line, and two were wrong: item 2 named a counter (`extras`) that lives in
 a different instrument's check, and item 3 miscounted `factory-guard`'s baseline maps. **That is the D-028 trap: a
-long enumerated prose list rots line by line.** §14's boundary is now three coarse exclusions — the sets the diff
-itself touched, the instruments' own counters, and coverage as opposed to emptiness — plus the one substantive gap
-the reviewer itself measured, ruled defensible and left declared. No file paths, no counts, no item that needs a
-name to resolve.
+long enumerated prose list rots line by line.** §14's boundary is now coarse exclusions — the sets the diff
+itself touched, and coverage as opposed to emptiness, the one substantive gap the reviewer itself measured, ruled
+defensible and left declared. No file paths, no counts, no item that needs a name to resolve.
 
-**§14 word count, measured:** `1615 → 1465` (−150 words).
+**§14 word count, measured:** `1615 → 1451` (−164 words).
 
 ### N1 — a printed reason that was false in one state, deleted
 
@@ -1031,17 +1029,15 @@ which is false whenever the taxonomy walk comes back empty — rule 1's subject 
 ```
 $ node scripts/guards/copy-taxonomy-guard.mjs /tmp/rev5/D > /tmp/rev5/D.out 2>&1; echo D_EXIT=$?
 D_EXIT=1
-  limit—— src/lib/firstRunTour.ts: the declared kind "playground" is not scannable: the taxonomy has no kind "playground" at all, so rule 3 has nothing to check
+  limit—— src/lib/firstRunTour.ts: the declared kind "playground" is not scannable: the taxonomy walk found no kind "playground", so rule 3 has nothing to check
 FAIL — 2 finding(s):
 ```
 
 The run still fails (the taxonomy-walk finding and the scan-set tripwire), and no line in that output mentions
 rule 1. §14's F6 paste was refreshed against a live zoo run and compared verbatim.
 
-### N3, N4, N5, N8 — each fixed by deletion or by a pin, never by a third sentence
+### N4, N5, N8 — each fixed by deletion or by a pin, never by a third sentence
 
-- **N3** (the counter's own empty denominator was not in the boundary list) is inside the new coarse exclusion:
-  the boundary now says the instruments' own counters are outside the sweep instead of enumerating them.
 - **N4** (two accumulators, nothing tying them): the B2b seed now asserts the finding's NAME beside its COUNT
   (`src/lib/firstRunTour.ts claims "beach"`), so number and names cannot diverge silently. **Proved** with a
   guard copy whose names push is deleted: that seed goes red on exactly this assertion, printing the diverged
