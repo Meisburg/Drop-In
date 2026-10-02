@@ -222,8 +222,8 @@ Settled before a line was written, by structured Q&A with the product owner.
 | Question | Answer |
 |---|---|
 | Does it build, test, and lint clean? | Yes — **2,068 automated tests** and zero lint errors, measured 2026-10-02 at `8d1170d` (the count moves with every commit; 1,989 was the v1-era snapshot). |
-| Does the whole app still work? | Yes — **175 end-to-end browser tests** across 60 files, measured 2026-10-02 (`npx playwright test --list`). The lane that ran them green was 161 at v1. |
-| Did a real person walk it? | **Yes** — the product owner completed all five cards plus the finish card on a phone. Screenshots in §2. |
+| Does the whole app still work? | Yes — the full e2e lane ran green at v1 (**161 browser tests**), and the suite is now **175 tests across 60 files**, counted 2026-10-02 by enumeration (`npx playwright test --list` — that lists them and runs NOTHING; the v1 number is the one a run produced, and the r2 subset the hygiene slice ran is listed in its own report, not here). |
+| Did a real person walk it? | **Yes — v1's five cards plus its finish card**, on a phone, by the product owner (that is the walk §2's screenshots record; **r2's four-card run has not been walked by a human** — see the open question below). |
 | Do any screens throw errors in a real browser? | No — **9/9 routes, zero JavaScript errors**. |
 | Is the ending honest? | Yes — and since V28 r2 the question is moot: the places claim and the list behind it both left the run (the ending is the "How Drop In works" card, §3). v1 made the claim conditional on the list, which was a *found and fixed* defect, not an assumption. |
 | Did anyone get stuck? | No wall, no dead end — but see the gap below. |

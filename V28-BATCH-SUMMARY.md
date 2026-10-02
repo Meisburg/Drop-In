@@ -145,10 +145,12 @@ measurements every line has to pass).
 
 **Two copy defects found by reading the screen** (real, small — **both fixed since**,
 measured 2026-10-02: the taken-name message no longer names a middle-name field, and the
-name card's body no longer says "A first name is plenty"):
-1. On a taken display name the app advises *"try adding a middle name or initial"* — and
-   **no such field exists.**
-2. The name card says *"A first name is plenty"* directly above a **Last name** field.
+name card's body no longer says "A first name is plenty"). Quoted in the past tense they
+were reported in, because the present tense of a fixed defect is a claim about the app
+that is no longer true:
+1. On a taken display name the app **advised** *"try adding a middle name or initial"* —
+   and **no such field exists.**
+2. The name card **said** *"A first name is plenty"* directly above a **Last name** field.
 
 **Two new features requested:**
 - **Find a parent by name.** You can already message a parent from their page
