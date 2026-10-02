@@ -6984,3 +6984,46 @@ truth was already on screen: the journal said `ready`, and the header said `acti
 
 **AND: a wrong "not answering" would have had me restart a healthy server and possibly kill a 47 GB load** -- *the
 failure mode is not the wasted minutes, it is the destructive remedy applied to a healthy system.*
+
+## 🔴 I DAMAGED A MACHINE CONFIG WITH A BULK EDIT, AND CAUGHT IT ONE TURN LATER. THE WHOLE STRETCH WAS ONE LESSON.
+
+**What I was asked:** *"is strata stopped? start it for the next session."*
+**What the final, verified state is:** `strata-max` **ACTIVE and serving** -- `{"id":"chatcmpl-cc69f951f31047ff99dfc45b","model":"qwen3.8-flash-next-iq3_s"}` -- started
+in ~40 s, `ready` in its journal, `:8081`, context 131072, idle-unload 1 h. **`ninfer-serve` stopped on purpose**: the
+unit's config says they are mutually exclusive, so it cannot serve at the same time. **`strata-serve` (`:8080`) also
+went inactive**, which is the same exclusion doing its job. `models.json` and `opencode.json` are **byte-equivalent to
+their backups** -- restored.
+
+### The four instrument failures, and they are ONE failure with four faces
+
+| # | instrument | the proxy it answered | the question it was asked | damage if believed |
+|---|---|---|---|---|
+| 1 | `systemctl is-active` **== `active`** | "is the state *exactly* `active`" | "did it come up" | quit after 5 s on a service loading exactly as designed |
+| 2 | `http` **== `200`** | "is the status *exactly* 200" | "is it answering" | **declared "still not answering" about a server `ready` since second 40** -- would have restarted a healthy 47 GB load |
+| 3 | a regex for `"apiKey"` | "the **first** apiKey in the file" | "the **one for `:8081`**" | concluded `models.json` was stale -- **it was correct all along; the `:8081` block already held the right 15-char key** |
+| 4 | a bulk `re.sub` over the whole file | "replace the first occurrence" | "replace the one belonging to the provider I am actually fixing" | ✗✗ **WROTE THE LOCAL KEY INTO FIVE OTHER PROVIDERS** -- two remote `:8080` keys and the tailnet Ollama key, all of which are someone's credentials |
+
+**RULED -- and I am writing it as one rule because it is one thing: A CHECK MUST BE A PREDICATE OVER THE STATES THE
+SYSTEM CAN LEGALLY BE IN, NEVER AN EQUALITY AGAINST THE ONE STATE YOU HAPPEN TO EXPECT.** `activating` is legal
+during a 55 GB load; `401` is the healthy answer from a keyed server; a file may hold seven `apiKey`s and only one of
+them is the one you are fixing. **The tell is identical every time: the instrument answers a PROXY, prints a verdict,
+and the verdict is *about your expectation*, not about the world.** *In cases 1 and 4 the truth was already on screen
+-- the header said `activating`; the key table I printed myself showed `:8081` was already correct -- and I read my own
+condition instead.*
+
+### ⚠️ AND THE HARDER HALF: #4 IS THE *DESTRUCTIVE* CLASS
+
+**A wrong reading wastes minutes. A wrong reading followed by a bulk write destroys credentials.** *I took a backup in
+the same command -- which is the only reason this is a story about a restore and not about lost keys -- and then I
+diffed backup against result before walking away, which is how five clobbered keys were found rather than five
+mystery breakages next week.*
+
+**PROCESS RULE (new, and it is the strongest one this stretch produced): WHEN A DIAGNOSIS ENDS IN A WRITE TO A SHARED
+CONFIG, THE WRITE MUST BE SCOPED TO THE BLOCK IDENTIFIED BY A STRUCTURAL KEY -- the provider whose URL you measured --
+NOT BY `replace the first match`, AND THE BACKUP MUST BE TAKEN BY THE SAME COMMAND THAT WRITES.** *A finding is not a
+licence for a bulk edit; it is a licence for one scoped edit, and a verification, and a restore path.*
+
+**AND, honestly:** *the machine was never broken.* `strata-max` was crash-looping because of a VRAM conflict, which is
+a real problem I did fix; but **`models.json` needed no change at all**, and the most consequential thing I did in this
+stretch was damage it and undo it. *The correct output of "is it stopped?" was three lines: it is crash-looping,
+NInfer holds the VRAM, here is the fix -- not a config rewrite.*

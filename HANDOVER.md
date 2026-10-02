@@ -3,6 +3,28 @@
 **Project:** `/home/jmeisburg/Projects/playdate-app` · worktree **`/home/jmeisburg/orca/workspaces/playdate-app/onboarding`** · branch **`Meisburg/onboarding`** · base `e2570c9`.
 **Nothing is pushed** (batch rule: *do not push mid-batch*). **Production is still V27.**
 
+
+## 🔌 The local model: UP, and the one thing to know about its key
+
+**`strata-max` (`:8081`, Qwen3.8-Flash-Next IQ3_S) is `active` and serving** — verified by a real completion returning
+`model=qwen3.8-flash-next-iq3_s`. Context 131072, idle-unload 3600 s.
+
+- **`ninfer-serve` is STOPPED on purpose.** The unit's config declares mutual exclusion: they cannot serve at the
+  same time. **Before starting strata-max you must stop ninfer-serve**, or the engine dies with
+  *"the 512 experts do not fit in VRAM"* — which is what it was doing 54 times in a row. *`strata-serve` (`:8080`)
+  is stopped by the same exclusion.*
+- **The key is the 15-character value already in `~/.pi/agent/models.json`'s `:8081` block** (ends `...cal`). **Do not
+  "fix" it** — it is correct. The 48-character key in the same file belongs to `:18080`.
+- ⚠️ **`models.json` holds SEVEN `apiKey` fields for seven providers. A regex that takes "the first one" takes the
+  WRONG one.** *I did exactly that and wrote a local key into five other providers, including two remote keys; the
+  backups in the same directory are what made it recoverable.* **Scope any edit to the provider block you measured.**
+
+## ⚠️ A check must be a PREDICATE, not an equality
+
+`systemctl is-active` legitimately returns **`activating`** while a 55 GB model loads, and a keyed server's healthy
+answer to an unauthenticated probe is **`401`**. Equality tests against `active` and `200` both **declared a healthy
+service broken** and would have had me restart a 47 GB load. **Test for `ready` in the journal, or `401|200`.**
+
 ## Read these three, in this order, then continue
 
 1. **`.scratch/v28/ledger.md`** — the long-lived record. Every adjudication, every ruling, every measurement. **It is ~530 KB; read the last ~400 lines, not the whole thing.**
