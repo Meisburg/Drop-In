@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router'
+import { Navigate } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
+// ⚠️ V28 r3-6 (r3-D3): `HowItWorksCard` is deliberately NOT rendered by this page
+// any more (the run navigates to the feed), and deliberately NOT deleted — r3-7's
+// tooltips are its likely consumer and r3-8 owns the `TOUR_TAXONOMY_CLAIMS`
+// reconciliation. The import is retained so that ownership stays visible here
+// rather than being rediscovered; `void` keeps it from being reported unused.
 import { HowItWorksCard } from '../components/HowItWorksCard'
+
+void HowItWorksCard
 import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
@@ -242,20 +249,23 @@ function KidRowPhoto({
  * (V28 decision 15 —
  * it stays on /settings and the V27 parent-card editor, never a column).
  *
- * V28 slice 6 (plan defect #19) → V28 r2 slice 5: the run's OWN ending. When
- * the required cards are answered (lib/firstRun's `nextUnfinishedCard` returns
- * null — the single source of truth), the page renders the ending card in
- * place: the "How Drop In works" TOUR (lib/firstRunTour's five lines — the
- * four tabs and the Post action — plus the two Profile capabilities), not the
- * places list r1 shipped. There is NO places read on this path any more: the
- * card teaches what each control DOES rather than naming parks this parent may
- * not have, plus the one CTA that carries the parent to the feed. The re-keyed
- * guard (lib/onboarding's resolveOnboardingRedirect)
- * no longer bounces the finished parent off /onboarding to the feed, and
- * the area card's save no longer navigates — this card IS the landing.
+ * V28 slice 6 (plan defect #19) → V28 r2 slice 5 → **V28 r3-6 (r3-D3)**: the run's
+ * ENDING. When the required cards are answered (lib/firstRun's `nextUnfinishedCard`
+ * returns null — the single source of truth), the page used to render the "How
+ * Drop In works" TOUR card in place, and that card's own CTA carried the parent to
+ * the feed.
+ *
+ * **r3-6 removes that screen and navigates straight to the feed instead**, on the
+ * human's phone walk: the first run should end by letting a parent EXPLORE other
+ * people's drop-ins rather than by reading a card about the app. The tour copy and
+ * `HowItWorksCard` are NOT deleted — r3-7's tooltips are their likely consumer and
+ * `TOUR_TAXONOMY_CLAIMS` is guard-coupled to r3-8 (see the finish branch below).
+ *
+ * ⚠️ THIS REVERSES #19's "no feed bounce", deliberately. `resolveOnboardingRedirect`
+ * still returns null for a signed-in parent — that contract is unchanged; the
+ * bounce lives on the page that finishes the run.
  */
 export function OnboardingPage() {
-  const navigate = useNavigate()
   const { session, loading, profile, homeZipSet, refresh } = useSessionContext()
 
   // V4 slice 4 — the handle step.
@@ -1470,8 +1480,38 @@ export function OnboardingPage() {
   // here would report a failure on a card this parent is no longer on.
   // (Pre-existing ordering; V28 r2 slice 5 only removed the places read that
   // used to sit on this path.)
+  // ⚠️ V28 r3-6 (r3-D3) — THE RUN NOW ENDS IN THE APP, AND THAT REVERSES
+  // V28 SLICE 6's DEFECT #19. Recorded deliberately; do not "restore" the ending
+  // card without reading this.
+  //
+  // #19 made the run end on its OWN card and explicitly removed the "feed
+  // bounce" (its words), so a finished parent was never redirected off
+  // /onboarding: `resolveOnboardingRedirect` returns null for anyone signed in
+  // (`lib/onboarding.ts:69-72`, pinned by `onboarding.test.ts:64`).
+  //
+  // The human's phone walk reversed that: the first run should end by letting a
+  // parent EXPLORE other people's drop-ins, not by reading a card about the app.
+  // So the bounce #19 removed is deliberately reinstated HERE, on the finish
+  // path only — and it is a NAVIGATION, not a render, because there is no card
+  // left to render.
+  //
+  // WHY THIS IS NOT `resolveOnboardingRedirect`: that function's contract is the
+  // signed-out guard, and widening it to also bounce finished parents would move
+  // a decision into a pure helper that other callers (`App.tsx:405`) share for a
+  // different question. The bounce belongs to the page that finishes the run.
+  //
+  // ⚠️ `HowItWorksCard` and `firstRunTour.ts` are NOT deleted (r3-D3): r3-7's
+  // tooltips are their likely consumer, and `TOUR_TAXONOMY_CLAIMS` is read by
+  // `copy-taxonomy-guard`, whose reconciliation r3-8 owns. Deleting them here
+  // would pre-decide r3-7.
+  //
+  // The `loadError` branch below stays AFTER this one, deliberately, exactly as
+  // the tour card did: `homeZipSet` comes from the DB profile read, so a returning
+  // parent whose `loadZipCodes()` fails resolves to 'finish' AND carries a
+  // `loadError` — and they are finished, so they leave for the feed rather than
+  // being shown the area card's error for a card they are no longer on.
   if (paintedView === 'finish') {
-    return <HowItWorksCard onGoToFeed={() => navigate('/', { replace: true })} />
+    return <Navigate to="/" replace />
   }
 
   if (loadError !== null) {

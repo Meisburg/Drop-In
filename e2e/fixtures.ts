@@ -473,13 +473,22 @@ export async function signUpViewer(
  * helper no longer re-walks the empty leg for the 18 specs that never asserted
  * it.
  *
- * THE ENDING CARD (V28 slice 6, plan defect #19 → V28 r2 slice 5): the area
- * card's save no longer navigates — the re-keyed guard renders the run's OWN
- * ending card on /onboarding. That card is the "How Drop In works" TOUR (one
- * line per nav control); r1's list of real places near the parent is gone, and
- * so is the places read behind it. Its testid is STILL `first-run-finish-card`
- * and its CTA is STILL "Go to your feed", which is what this helper taps so
- * every consumer still lands on the feed exactly as before.
+ * THE LANDING (V28 slice 6, plan defect #19 → V28 r2 slice 5 → **V28 r3-6**):
+ * the area card's save does not navigate; the page resolves the run as finished
+ * and **navigates straight to the feed**.
+ *
+ * ⚠️ V28 r3-6 (r3-D3) REMOVED the ending card this helper used to tap. Until
+ * r3-6 the page rendered the "How Drop In works" tour in place and this helper
+ * waited for `first-run-finish-card`, then tapped its "Go to your feed" CTA. The
+ * human's phone walk reversed that: the run now ends IN the app. So the walk's
+ * last hop is gone — **the feed itself is the assertion**, which is stricter than
+ * the old wait-then-tap because it proves the landing rather than a card's
+ * presence.
+ *
+ * (`HowItWorksCard` and `firstRunTour.ts` still exist and are deliberately NOT
+ * deleted — r3-7's tooltips are their likely consumer. No spec references their
+ * testid any more except the one that pins the OLD behaviour's absence; see
+ * `signup-zip-fallback.e2e.ts`.)
  *
  * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
  * control — writing NOTHING (no kid rows) — and proceeds to the AREA card.
@@ -599,14 +608,11 @@ export async function finishSignup(
     })
     .toBeGreaterThan(0)
 
-  // V28 slice 6 (defect #19) → V28 r2 slice 5: the area card's save renders
-  // the run's ENDING CARD (the tour) on /onboarding, never a feed bounce —
-  // tap its CTA to land.
-  const finishCard = page.getByTestId('first-run-finish-card')
-  await finishCard.waitFor({ timeout: 30_000 })
-  await page.getByRole('button', { name: 'Go to your feed' }).click()
-
-  // A signed-in, onboarded parent now stands on the feed.
+  // V28 r3-6 (r3-D3): the area card's save now lands the parent DIRECTLY on the
+  // feed — the run's ending screen is gone, and the page navigates itself. There
+  // is no card to wait for and no CTA to tap; the feed's arrival IS the
+  // assertion, and it is the stricter one (the old shape proved a card rendered,
+  // this proves the run actually finished and left).
   await feed.waitFor({ timeout: 30_000 })
 
   // The stub's job is over: it answered the walk's ONE request, and leaving it

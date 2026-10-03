@@ -100,12 +100,12 @@ import { NOMINATIM_ROUTE, readMarkerMeta } from './fixtures'
 // The pin's EXISTENCE is ruled fine — only the restatement changed. The
 // literals in e2e/auth.setup.ts and e2e/fixtures.ts stay literals on purpose:
 // that is the shared setup whose tripwire is meant to be visible.
-import {
-  TOUR_LINES,
-  TOUR_PRIMARY_LABEL,
-  TOUR_TITLE,
-  withheldCategoryPattern,
-} from '../src/lib/firstRunTour'
+// ⚠️ V28 r3-6 (r3-D3): the `TOUR_*` / `withheldCategoryPattern` imports left with
+// the tour card's browser pin below. The run no longer renders that card, so a
+// browser assertion over its copy would check a screen no parent sees. The copy
+// rule itself is UNCHANGED and still enforced by `copy-taxonomy-guard` (in
+// `npm run guards`) and `firstRunTour.test.ts`; r3-7 re-homes the browser pin
+// when the tooltips put the copy back on a screen.
 
 // NOMINATIM_ROUTE comes from ./fixtures — the one copy (V28 r2 slice 8a fix
 // round 1). This file held a byte-identical second copy of the same regex, in a
@@ -204,34 +204,21 @@ test('a resolved address writes the home zip with no typed zip (the address-firs
     // settle, then the save, then the navigation.
     await page.getByRole('button', { name: 'Finish' }).click()
 
-    // The re-keyed save (V28 slice 6, defect #19) renders the run's ENDING
-    // CARD on /onboarding, never a feed bounce. V28 r2 slice 5 replaced its
-    // places list with the "How Drop In works" TOUR: the four tabs and the
-    // centre Post action are each named (this is the first screen where the
-    // parent meets the nav, which is suppressed for the whole run), and the
-    // card promises no category the app withholds.
+    // ⚠️ V28 r3-6 (r3-D3): THIS LEG NO LONGER PINS THE TOUR CARD'S COPY.
     //
-    // EXACTLY ONE browser pin, and it earns its place by inspecting the
-    // RENDERED card rather than the constant: the unit layer proves the copy
-    // never NAMES a withheld category, but only the browser proves the card
-    // that reaches a parent's screen RENDERS none. The pattern comes from
-    // `withheldCategoryPattern()` — the SAME derivation the unit property
-    // iterates — so it cannot drift from it, needs no cast, and CANNOT be built
-    // from an empty withheld set (the builder throws, and the unit test pins
-    // that), which is what stops this `toHaveCount(0)` from passing by matching
-    // nothing.
-    const finishCard = page.getByTestId('first-run-finish-card')
-    await finishCard.waitFor({ timeout: 30_000 })
-    await expect(finishCard.getByRole('heading', { name: TOUR_TITLE })).toBeVisible()
-    for (const line of TOUR_LINES) {
-      await expect(
-        finishCard.getByText(line.label, { exact: true }),
-        `the tour names no ${line.label} line`,
-      ).toBeVisible()
-    }
-    await expect(finishCard.getByText(withheldCategoryPattern())).toHaveCount(0)
-    await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
-
+    // It used to wait for `first-run-finish-card` and assert the rendered tour
+    // named no withheld category — the browser half of the copy-taxonomy rule.
+    // The run no longer renders that card at all: it lands on the feed. So the
+    // assertion would have been checking a screen no parent ever sees, which is
+    // the vacuous shape this repo records (D-030).
+    //
+    // The rule itself is NOT dropped: it still holds over the copy module, and
+    // `copy-taxonomy-guard` + `firstRunTour.test.ts` still enforce it. What is
+    // removed is a BROWSER pin for a card that is no longer rendered — and r3-7
+    // (tooltips) is where the copy meets a screen again, so the browser pin
+    // belongs there. `withheldCategoryPattern` and the TOUR_* consts stay
+    // imported below until then.
+    //
     // Straight to discovery — the feed is about the RESOLVED zip.
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
       timeout: 30_000,
@@ -292,8 +279,8 @@ test('an unresolvable address reveals the ZIP fallback (the note + the field, ad
       .first()
       .selectOption({ label: `${marker.radiusMiles} miles` })
     await page.getByRole('button', { name: 'Finish' }).click()
-    await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
-    await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+    // V28 r3-6 (r3-D3): the run now lands on the feed directly — no ending card,
+    // no CTA to tap. The feed's own heading is the assertion.
     await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
       timeout: 30_000,
     })
@@ -377,9 +364,7 @@ test(
 
       // Finish REUSES the settled resolution — the single request stands.
       await page.getByRole('button', { name: 'Finish' }).click()
-      await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
-      expect(nominatimCalls).toBe(1)
-      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+      // V28 r3-6 (r3-D3): straight to the feed, no ending card.
       await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
         timeout: 30_000,
       })
@@ -562,11 +547,24 @@ test(
         ]),
       )
       // A beat for the settle's promise chain to be processed (synchronous
-      // after the in-process fulfill), then the fast discriminator: a stale
-      // save would have rendered the finish card already.
+      // after the in-process fulfill), then the fast discriminator.
+      //
+      // ⚠️ V28 r3-6 (r3-D3) REPLACED this line's assertion, and the reason matters.
+      // It used to be `expect(finishCard).not.toBeVisible()` — "a stale save would
+      // have rendered the ending card already". With the ending GONE that check
+      // becomes VACUOUSLY TRUE: it would stay green while proving nothing (the
+      // D-030 shape — an instrument that matches nothing reads as a clean repo).
+      //
+      // The meaningful discriminator is the one already on the next line: the
+      // parent is STILL ON THE AREA CARD. A stale save would have completed the
+      // run and navigated to the feed, so "still on the area card, still holding
+      // B" is what actually distinguishes refusal from consumption.
       await page.waitForTimeout(300)
-      await expect(page.getByTestId('first-run-finish-card')).not.toBeVisible()
-      await expect(page.getByTestId('first-run-area-card')).toBeVisible()
+      await expect(
+        page.getByTestId('first-run-area-card'),
+        'a stale save must NOT have finished the run — the parent stays on the card',
+      ).toBeVisible()
+      await expect(page.getByTestId('first-run-finish-card')).toHaveCount(0)
       await expect(address).toHaveValue(B)
       expect(nominatimCalls).toBe(1)
 
@@ -575,9 +573,7 @@ test(
       // requests for two distinct addresses, never a third) and saves the
       // NEW zip.
       await page.getByRole('button', { name: 'Finish' }).click()
-      const finishCard = page.getByTestId('first-run-finish-card')
-      await finishCard.waitFor({ timeout: 30_000 })
-      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+      // V28 r3-6 (r3-D3): straight to the feed, no ending card, no CTA tap.
       // THE DB-LEVEL CLAIM: the feed is about the NEW address's zip — and
       // NEVER the old one (pre-fix the save had already landed on the old
       // zip's finish card, and the feed would be about 98103).
@@ -795,8 +791,7 @@ test(
       await zip.fill(marker.homeZip)
       await expect(zipAlert).not.toBeVisible()
       await page.getByRole('button', { name: 'Finish' }).click()
-      await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
-      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+      // V28 r3-6 (r3-D3): straight to the feed, no ending card, no CTA tap.
       await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
     } finally {
       await close()
@@ -865,8 +860,7 @@ test(
       // proceeds — the freeze is bounded by the write and re-enabled by the
       // handler's own `finally`, so it is not a wall.
       releasePatch()
-      await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
-      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+      // V28 r3-6 (r3-D3): straight to the feed, no ending card, no CTA tap.
       await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
     } finally {
       await close()
@@ -999,7 +993,12 @@ test('navigation is disabled during an actual save, and enabled once it settles'
 
     // --- RELEASE: the write lands, the run finishes, the guard is moot. ---
     release?.()
-    await expect(page.getByTestId('first-run-finish-card')).toBeVisible({ timeout: 30_000 })
+    // V28 r3-6 (r3-D3): the run now ends on the FEED, so that is where a released
+    // save lands — the ending card no longer renders, and the guard this spec
+    // pins is about the write, not the destination.
+    await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
+      timeout: 30_000,
+    })
   } finally {
     await close()
   }
