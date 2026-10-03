@@ -244,4 +244,21 @@ No red run was observed; none of the five named flake modes fired.
 ## 8. Unresolved questions
 
 - Should the same-second re-pick product window (#3) be closed with `cacheNonce`, or left latent? Owner: orchestrator.
-- Should S1 be deleted (it can only false-pass) rather than labelled? The brief says "say so in the message", so I kept it; the label is the honest form.
+- Should S1 be deleted rather than labelled? The brief says "say so in the message", so I kept it; the label is the honest form. **Correction (see the closing note):** the earlier phrasing "it can only false-pass" was a false universal — S1 is masked only on a *same-second* re-mint, and it correct-fails on a cross-second one (a different `iat`/`exp` yields a different token, so `.toBe(srcAfterAdd)` fails), so its DOM leg is real coverage, not a dead assertion.
+
+---
+
+## Closing note — the one-word scope fix (round 2)
+
+Both lanes independently converged on the same sentence and the same repair. `slice-8c-verify.md` (§6) and `slice-8c-review.md` (blocking finding) each measured that `e2e/onboarding-kid-photo.e2e.ts:292`'s *"This assertion therefore cannot see a re-mint the count catches"* dropped the same-second qualifier its own premise at `:291` carries, and read absolutely claimed a limit the mechanism does not have — the exact D-025/D-028 class this slice exists to remove.
+
+**Both lanes' evidence that the absolute claim is false:**
+
+- **Review** (`slice-8c-review.md`): a re-mint crossing the second boundary yields a different `iat`/`exp`, hence a different token, hence a different URL — and this assertion's own `.toBe(srcAfterAdd)` at `:294-296` fails on it. That capability is not theoretical: it is the pre-fix measured symptom the file's untouched observation comment records at `:248-256`.
+- **Verifier** (`slice-8c-verify.md` §5): with a 1500 ms render wait added under the app mutation, S1 **FAILS with two different tokens** (the two tokens carry `iat` values two seconds apart). So the assertion is not blind — it is blind only to a re-mint that lands in the SAME second.
+
+**Fix applied:** `:292` now reads "…cannot see a **same-second** re-mint the count catches." One word; zero behavioural change; `:294-296` and test 5 untouched. The cross-second arm is real coverage — the reason S1 is KEPT rather than deleted — and its DOM leg (watching the visible `src` while M1 watches the network) is independent of the count.
+
+**Corrected §8 sentence.** The old bullet asked *"Should S1 be deleted (it can only false-pass)?"* — that universal was the same error in another place. Corrected: *"Should S1 be deleted rather than labelled? Kept — S1 is masked only on a same-second re-mint and correct-fails on a cross-second one, so its DOM leg is real coverage; the brief says 'say so in the message', and the label is the honest form."*
+
+Nothing else in this report changes; the mechanism findings in §2–§7 stand.

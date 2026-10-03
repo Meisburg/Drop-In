@@ -289,7 +289,7 @@ test('a kid added with a photo lands in kid-photos and Continue never double-wri
   // `{url, scope, iat, exp}` with whole-second timestamps and nothing else
   // varying per mint (decode any token from DevTools to check the shape) —
   // so two mints of the same path inside one second return BYTE-IDENTICAL
-  // bytes. This assertion therefore cannot see a re-mint the count catches.
+  // bytes. This assertion therefore cannot see a same-second re-mint the count catches.
   expect(
     (await img.getAttribute('src')) ?? '',
     'the settled signed URL stays put across keystrokes — corroboration of the mint-count assertion above, which is the evidence (the count catches a re-mint however the URL fell); this equality alone could not: a signed-URL token is second-granular, so a same-second re-mint is byte-identical',
