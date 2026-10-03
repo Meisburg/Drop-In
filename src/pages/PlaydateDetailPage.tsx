@@ -1954,15 +1954,28 @@ export function PlaydateDetailPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* A14 (V15 ticket 08): the ping/RSVP block is the page's PRIMARY
-          action — the founder's note is "they should be at the very top of
-          the page", and the button's own comment calls it "the one control
-          the page exists for". It used to render after the title/status
-          chip, the place line, the date/time card and the host info card;
-          it now renders FIRST and everything else shifts down. Pure
-          render-order move: both branches (the host's own-post panel and
-          the non-host RSVP block), the toggle logic and every viewer
-          branch are byte-for-byte unchanged. */}
+      {/* ------------------------------------------------------------------
+          ⚠️ THE ORDER HERE WAS REVERSED TWICE, DELIBERATELY. Do not "fix" it
+          back without reading this.
+
+          A14 (V15 ticket 08) moved the ping/RSVP block to the very top, on the
+          founder's note that it "should be at the very top of the page": it used
+          to render AFTER the title/status chip, the place line, the date/time
+          card and the host info card.
+
+          r3-D1 (V28 r3-3, 2026-10-03) REVERSED THAT, on the human's later phone
+          walk: "a user decides whether they are going AFTER reading about the
+          event." The control now renders after the event's information -- title,
+          place, date/time, description, host -- and before the comments. The
+          later, in-context observation supersedes the V15 note.
+
+          A14 was not wrong that this block is the page's PRIMARY action; it was
+          wrong about WHEN a parent is ready to take it. The verb, the fill and
+          weight treatment, and every state branch are unchanged: this is a
+          RENDER-ORDER move. Recorded in .scratch/v28/reports/r3-3-decision.md.
+
+          The host's own-post panel keeps its position -- the host cannot ping,
+          and that panel is not the RSVP block. ------------------------- */}
       {isHost ? (
         // The host sees an explicit "This is your post" panel with the going
         // count and a Duplicate action (V2 slice 1) — no ping button (the
@@ -2111,82 +2124,7 @@ export function PlaydateDetailPage() {
             </div>
           ) : null}
         </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            aria-pressed={going}
-            /* V8 ticket 02: a FAILED count read no longer disables this
-               button. `count === null` meant "the going count did not load",
-               and the button then sat there dead with no explanation — the one
-               control the page exists for, disabled by an unrelated read, with
-               "I'm going" as the only thing a visitor came to do. The write
-               path never needed the count (togglePing upserts/deletes on its
-               own), so the button stays enabled and the unknown count is
-               reported honestly BELOW it, with a Retry. */
-            disabled={pingBusy}
-            onClick={() => void handlePingToggle()}
-            autoFocus={confirmPing}
-            /* V6 (design jury item 5): the primary action leads by FILL and
-               WEIGHT, not by being taller. It was the same weight as its
-               outlined siblings and 2px shorter than them (they carry a
-               border), which is backwards: the most important control on the
-               page should not be the smallest one. The verb also now matches
-               the card's pill — "I'm going" / "Going" — instead of introducing
-               a third word for the same intent. */
-            className={`rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50${
-              going ? ' bg-green-700' : ' bg-indigo-600'
-            }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
-          >
-            {pingBusy
-              ? 'Updating…'
-              : confirmPing
-                ? 'Tap to confirm you’re coming'
-                : going
-                  ? '✓ Going'
-                  : 'I’m going'}
-          </button>
-          {/* V28 slice 2a: the no-home-zip notice — shown only after a blocked
-              SETTING tap AND while the zip is still unset (a zip landing via
-              refresh clears it); clearing a ping never raises it. */}
-          {pingLocationNotice && !hasHomeZip(profile?.home_zip) ? (
-            <LocationRequiredNotice />
-          ) : null}
-          {count !== null ? (
-            <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>
-          ) : (
-            /* V8 ticket 02: the honest line where the count would be — the
-               read failed, so the page says so instead of showing nothing (the
-               old silence next to a dead button was the whole complaint). */
-            <div
-              data-testid="going-count-unavailable"
-              className="mt-2 flex flex-wrap items-center gap-2"
-            >
-              <p className="text-sm text-slate-600">Couldn’t load how many families are going.</p>
-              <button
-                type="button"
-                disabled={countRetryBusy}
-                onClick={() => void handleRetryGoingCount()}
-                className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
-              >
-                {countRetryBusy ? 'Retrying…' : 'Retry'}
-              </button>
-            </div>
-          )}
-          {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
-          {/* V6: only once you're actually going, and only if you have kids to
-              bring — otherwise there is nothing to ask. */}
-          {going && myKids.length > 0 && id !== undefined ? (
-            <KidsComingPicker
-              playdateId={id}
-              kids={myKids}
-              selected={myPingKids}
-              onChange={setMyPingKids}
-              onSaved={() => setKidsReloadToken((token) => token + 1)}
-            />
-          ) : null}
-        </div>
-      )}
+      ) : null}
 
       <div>
         {/* V3 slice 2 (ticket 02; V3 slice 3, migration 0019 trimmed it to
@@ -2322,6 +2260,87 @@ export function PlaydateDetailPage() {
           {renderShareFallback(getShareUrl(detail.id))}
         </div>
       </div>
+
+      {/* The RSVP block — the page's primary action, rendered for every viewer who
+          is NOT the host (the host sees "This is your post" above instead and cannot
+          ping their own post). r3-D1 moved it here, after the event's information;
+          see the order note at the top of this render. */}
+      {!isHost ? (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            aria-pressed={going}
+            /* V8 ticket 02: a FAILED count read no longer disables this
+               button. `count === null` meant "the going count did not load",
+               and the button then sat there dead with no explanation — the one
+               control the page exists for, disabled by an unrelated read, with
+               "I'm going" as the only thing a visitor came to do. The write
+               path never needed the count (togglePing upserts/deletes on its
+               own), so the button stays enabled and the unknown count is
+               reported honestly BELOW it, with a Retry. */
+            disabled={pingBusy}
+            onClick={() => void handlePingToggle()}
+            autoFocus={confirmPing}
+            /* V6 (design jury item 5): the primary action leads by FILL and
+               WEIGHT, not by being taller. It was the same weight as its
+               outlined siblings and 2px shorter than them (they carry a
+               border), which is backwards: the most important control on the
+               page should not be the smallest one. The verb also now matches
+               the card's pill — "I'm going" / "Going" — instead of introducing
+               a third word for the same intent. */
+            className={`rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50${
+              going ? ' bg-green-700' : ' bg-indigo-600'
+            }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
+          >
+            {pingBusy
+              ? 'Updating…'
+              : confirmPing
+                ? 'Tap to confirm you’re coming'
+                : going
+                  ? '✓ Going'
+                  : 'I’m going'}
+          </button>
+          {/* V28 slice 2a: the no-home-zip notice — shown only after a blocked
+              SETTING tap AND while the zip is still unset (a zip landing via
+              refresh clears it); clearing a ping never raises it. */}
+          {pingLocationNotice && !hasHomeZip(profile?.home_zip) ? (
+            <LocationRequiredNotice />
+          ) : null}
+          {count !== null ? (
+            <p className="mt-2 text-sm text-slate-600">{goingCountLine(count)}</p>
+          ) : (
+            /* V8 ticket 02: the honest line where the count would be — the
+               read failed, so the page says so instead of showing nothing (the
+               old silence next to a dead button was the whole complaint). */
+            <div
+              data-testid="going-count-unavailable"
+              className="mt-2 flex flex-wrap items-center gap-2"
+            >
+              <p className="text-sm text-slate-600">Couldn’t load how many families are going.</p>
+              <button
+                type="button"
+                disabled={countRetryBusy}
+                onClick={() => void handleRetryGoingCount()}
+                className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+              >
+                {countRetryBusy ? 'Retrying…' : 'Retry'}
+              </button>
+            </div>
+          )}
+          {pingError !== null ? <p className="mt-2 text-sm text-red-600">{pingError}</p> : null}
+          {/* V6: only once you're actually going, and only if you have kids to
+              bring — otherwise there is nothing to ask. */}
+          {going && myKids.length > 0 && id !== undefined ? (
+            <KidsComingPicker
+              playdateId={id}
+              kids={myKids}
+              selected={myPingKids}
+              onChange={setMyPingKids}
+              onSaved={() => setKidsReloadToken((token) => token + 1)}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {/* V8 ticket 09 (migration 0033): "Same time next week" — the loop
           closer. Rendered ONLY on a post that ENDED within the last 7 days,

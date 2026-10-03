@@ -124,6 +124,71 @@ async function openViewerOnDetail(
   return { context: viewerContext, page: viewerPage }
 }
 
+/**
+ * V28 r3-3 (r3-D1) — WHERE THE RSVP CONTROL SITS ON THE PAGE.
+ *
+ * The human's phone walk: "a user decides whether they are going AFTER reading
+ * about the event." This REVERSES A14 (V15 ticket 08), which had moved the block
+ * to the very top on the founder's earlier note. The reversal is deliberate and
+ * recorded in `.scratch/v28/reports/r3-3-decision.md`; the code comment above the
+ * render says so too.
+ *
+ * PINNED IN DOM ORDER, not by a screenshot: `compareDocumentPosition` is the same
+ * mechanism `e2e/kids-surface.e2e.ts` uses, and DOM order is also the a11y reading
+ * order — which is the half a visual check cannot see.
+ */
+test('the RSVP control renders AFTER the event information, not above it', async ({
+  page,
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const title = `e2e ${marker.displayName} rsvp order`
+  const viewerName = `e2e-v-${epoch}-rsvp-order`
+  const viewerEmail = `e2e-v-${epoch}-rsvp-order@gmail.com`
+  const viewerPassword = `e2e-v-pw-${epoch}-rsvp-order`
+
+  await seedPostViaUi(page, title)
+  const playdateId = await latestMarkerPlaydateIdByTitle(title)
+
+  const viewer = await openViewerOnDetail(
+    browser,
+    playdateId,
+    viewerName,
+    viewerEmail,
+    viewerPassword,
+    marker.homeZip,
+    marker.radiusMiles,
+  )
+  const viewerPage = viewer.page
+  const goingButton = viewerPage.getByRole('button', { name: /^I’m going$/ })
+  await expect(goingButton).toBeVisible()
+
+  const order = await viewerPage.evaluate(() => {
+    const rsvp = document.querySelector('button[aria-pressed]')
+    const title = document.querySelector('h1')
+    const host = Array.from(document.querySelectorAll('a')).find((a) =>
+      (a.textContent ?? '').startsWith('Hosted by @'),
+    )
+    if (rsvp === null || title === null || host === undefined) return null
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
+    return {
+      // Both must FOLLOW the title: (title before rsvp) and (title before host).
+      titleBeforeRsvp: (title.compareDocumentPosition(rsvp) & FOLLOWING) !== 0,
+      titleBeforeHost: (title.compareDocumentPosition(host) & FOLLOWING) !== 0,
+      // And the host line must come before the control — the control is last.
+      hostBeforeRsvp: (host.compareDocumentPosition(rsvp) & FOLLOWING) !== 0,
+    }
+  })
+
+  expect(order).not.toBeNull()
+  expect(order).toEqual({
+    titleBeforeRsvp: true,
+    titleBeforeHost: true,
+    hostBeforeRsvp: true,
+  })
+})
+
 test('an RSVP raises one lightbox, Escape closes it, and it never comes back for that yes', async ({
   page,
   browser,
