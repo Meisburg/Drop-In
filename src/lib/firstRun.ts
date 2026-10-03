@@ -161,3 +161,44 @@ export function resolveCard(
 export function progressLabel(card: FirstRunCardId): string {
   return `${FIRST_RUN_CARDS.indexOf(card) + 1} of ${FIRST_RUN_CARDS.length}`
 }
+
+/**
+ * V28 r3-5 (r3-D2) — THE PURE ORDERED NEIGHBOURS, for the run's back/forward move.
+ *
+ * WHY THESE LIVE HERE. The page renders `resolveCard`'s answer and stores no
+ * position (r2 slice 8a moved the view ladder out of the `.tsx` precisely because
+ * a ladder of `if`s encoding a rule is a rule decided in a component — see
+ * `docs/agents/code-structure.md`). A neighbour rule is the same kind of rule, so
+ * it is here, pure, with a table of inputs and no React.
+ *
+ * THEY READ `FIRST_RUN_CARDS`, never a literal index — the invariant
+ * `progressLabel` already obeys, so a future card change cannot leave the
+ * neighbours behind while the label moves.
+ *
+ * `null` MEANS "no move in that direction", never "stay": the first card has no
+ * previous and the last has no next, and the caller renders no control for a
+ * `null` side rather than a disabled one. The ENDING is not a card and is not in
+ * `FIRST_RUN_CARDS`, so a card's `next` is the next CARD — the step from the last
+ * card to the ending belongs to that card's own primary action, not to an arrow.
+ *
+ * ⚠️ THE POSITION IS THE CALLER'S AND IS NEVER PERSISTED. These functions answer
+ * "which card is adjacent to this one", not "where is this parent" — no profile
+ * column, no migration, no session step. See r3-D2 in
+ * `.scratch/v28/reports/r3-5-rescope.md` for why that distinction is what keeps
+ * these compatible with the "do NOT add a step column" ruling at `:80-85`.
+ */
+export function previousCard(card: FirstRunCardId): FirstRunCardId | null {
+  const index = FIRST_RUN_CARDS.indexOf(card)
+  return index > 0 ? FIRST_RUN_CARDS[index - 1] : null
+}
+
+/** The card after `card`, or null when `card` is last. See `previousCard`. */
+export function nextCard(card: FirstRunCardId): FirstRunCardId | null {
+  const index = FIRST_RUN_CARDS.indexOf(card)
+  // `index === -1` (a card not in the list) is NOT last: it has no neighbours at
+  // all, and +1 would silently return FIRST_RUN_CARDS[0] — a wrong card rather
+  // than no card. Unreachable for a typed `FirstRunCardId`, and answered the
+  // honest way regardless.
+  if (index < 0) return null
+  return index < FIRST_RUN_CARDS.length - 1 ? FIRST_RUN_CARDS[index + 1] : null
+}

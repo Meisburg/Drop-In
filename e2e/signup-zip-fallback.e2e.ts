@@ -873,3 +873,134 @@ test(
     }
   },
 )
+
+/**
+ * V28 r3-5 (r3-D2) — THE NAVIGATION GUARD, pinned against a REAL in-flight save.
+ *
+ * THE INVARIANT: **navigation is disabled while `saving === true`, and enabled
+ * otherwise.**
+ *
+ * WHY THIS SPEC EXISTS AND WHY IT HOLDS THE WRITE OPEN. A back arrow lets a parent
+ * leave a card *while `updateHomeZipRadius` is in flight* — a network write. The
+ * defect that produces is the silent one: the write lands, the card the parent
+ * navigated to no longer reflects it, and nothing says so. Asserting the control
+ * is enabled on an idle card proves nothing about that; the guard only has
+ * meaning DURING a save. So the `profiles` PATCH is intercepted and held, which
+ * makes `saving === true` an observable, stable state rather than a race the spec
+ * would have to win.
+ *
+ * ⚠️ MUTATION-TESTED, and the mutation is the point: with the `saving` term
+ * removed from `goBack`/`goForward` AND from `backDisabled`/`forwardDisabled`,
+ * this spec FAILS (the control is enabled mid-write, and the tap moves the card).
+ * A pin that cannot fail is not a pin.
+ */
+test('navigation is disabled during an actual save, and enabled once it settles', async ({
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const { page, close } = await signedOutPage(browser)
+  try {
+    // Answer the card's ONE Nominatim request EMPTY, so the fallback reveals its
+    // ZIP field — the typed zip is what makes the area card's primary WRITE
+    // (`updateHomeZipRadius`), which is the write this spec holds open. (The
+    // address-resolved leg is equally real but geocodes first, which would put a
+    // second in-flight request between the tap and the save.)
+    await page.route(NOMINATIM_ROUTE, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    )
+
+    // HOLD THE WRITE. `saving` is only observable while `updateHomeZipRadius` is
+    // genuinely in flight, so the PATCH is intercepted and held; `release` below
+    // lets it land. ⚠️ ONLY the home-zip write is held: `profiles` is also
+    // PATCHed by `touchLastSeen` during ordinary app use, and holding that would
+    // stall the signup walk before it ever reached this card.
+    let release: (() => void) | null = null
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let patchSeen = false
+    await page.route('**/rest/v1/profiles**', async (route) => {
+      if (route.request().method() !== 'PATCH') return route.fallback()
+      if (!(route.request().postData() ?? '').includes('home_zip')) return route.fallback()
+      patchSeen = true
+      await held
+      return route.fallback()
+    })
+
+    await signUpToAreaCard(page, {
+      name: `e2e-az-${epoch} Marker`,
+      email: `e2e-az-${epoch}@gmail.com`,
+      password: `e2e-az-pw-${epoch}`,
+    })
+
+    // Walk BACK first, so a FORWARD control exists to check as well — the guard
+    // must hold in both directions.
+    //
+    // ⚠️ The neighbour of `area` is `kids` (FIRST_RUN_CARDS order is
+    // account → name → kids → area), NOT `name`: the run reached the area card
+    // because this helper SKIPPED the kids card, and `previousCard` reports the
+    // ORDER, not the path this parent walked. Asserting the kids card here is
+    // correct; asserting the name card was this spec's own bug, caught by running
+    // it rather than by reading it.
+    const back = page.getByRole('button', { name: 'Back' })
+    await expect(back).toBeVisible()
+    await back.click()
+    await expect(
+      page.getByTestId('first-run-kids-card'),
+      'the card before area is kids',
+    ).toBeVisible()
+    const forward = page.getByTestId('first-run-forward')
+    await expect(forward, 'a forward control exists after going back').toBeVisible()
+
+    // Return to the AREA card, so the primary tapped below is the one that SAVES.
+    await forward.click()
+    await expect(page.getByTestId('first-run-area-card')).toBeVisible()
+
+    // Reveal the fallback's ZIP field, then fill it.
+    await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill(ADDRESS)
+    await page.getByRole('button', { name: 'Finish' }).click()
+    const zip = page.getByPlaceholder('e.g. 98107')
+    await expect(zip).toBeVisible()
+    await zip.fill(marker.homeZip)
+
+    // --- THE SAVE BEGINS AND IS HELD. ---
+    await page.getByRole('button', { name: 'Finish' }).click()
+    await expect.poll(() => patchSeen, {
+      message: 'the save must actually reach the network, or this spec proves nothing',
+    }).toBe(true)
+
+    // ⚠️ THE ASSERTION. Both controls are DISABLED while the write is open.
+    await expect(
+      page.getByRole('button', { name: 'Back' }),
+      'Back must be disabled while a write is in flight',
+    ).toBeDisabled()
+    // ⚠️ There is NO forward control at this point, BY DESIGN: the forward
+    // control exists only to UNDO a back move, and we walked forward before
+    // saving. So this asserts its ABSENCE rather than a disabled state — and the
+    // disabled half is pinned separately, on the BACK control, which is always
+    // present. (A forward control that existed here would be a general "next"
+    // duplicating the Finish button's write, which is the defect `goForward`
+    // documents refusing.)
+    await expect(
+      forward,
+      'no forward control exists at the derived position — advancing is the card\'s write',
+    ).toHaveCount(0)
+
+    // THE HANDLER REFUSES INDEPENDENTLY of the disabled attribute — the visible
+    // half is not the guard. `force` bypasses the disabled state to prove the
+    // handler itself holds: a disabled button is not a wall, and a keyboard or a
+    // future caller reaches the handler directly.
+    await page.getByRole('button', { name: 'Back' }).click({ force: true }).catch(() => {})
+    await expect(
+      page.getByTestId('first-run-area-card'),
+      'a forced tap must NOT move the card while the write is in flight',
+    ).toBeVisible()
+
+    // --- RELEASE: the write lands, the run finishes, the guard is moot. ---
+    release?.()
+    await expect(page.getByTestId('first-run-finish-card')).toBeVisible({ timeout: 30_000 })
+  } finally {
+    await close()
+  }
+})

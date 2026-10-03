@@ -7,7 +7,16 @@ import { FirstRunCard } from '../components/FirstRunCard'
 import { useCropStep } from '../components/useCropStep'
 import { useKidPhotoUrls } from '../components/useKidPhotoUrls'
 import { addressFieldError, composeDisplayName, displayNameFieldError } from '../lib/account'
-import { progressLabel, resolveCard, SKIPPABLE_CARDS } from '../lib/firstRun'
+import {
+  FIRST_RUN_CARDS,
+  nextCard,
+  previousCard,
+  progressLabel,
+  resolveCard,
+  SKIPPABLE_CARDS,
+  type FirstRunCardId,
+  type FirstRunView,
+} from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
 import {
   addKid,
@@ -301,6 +310,24 @@ export function OnboardingPage() {
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * V28 r3-5 (r3-D2) — THE PARENT'S POSITION IN THE RUN, or `null` for "wherever
+   * `resolveCard` says".
+   *
+   * ⚠️ `null` IS THE DEFAULT AND THE DERIVED MODEL WINS. This is deliberately NOT
+   * a step column (see lib/firstRun.ts:80-85, "Do NOT add a step column"): it is
+   * in-memory, per mount, never persisted, and it can only ever move a parent
+   * BACKWARD to a card they already saw. Going forward CLEARS it, handing control
+   * straight back to `resolveCard`.
+   *
+   * Consequences, all intended:
+   * - a reload lands on `resolveCard`'s answer, never on a remembered arrow, so
+   *   the resume rule (resume never restarts) is untouched;
+   * - it cannot make the run finish differently — `resolveCard` still owns
+   *   answered/unanswered and the 'finish' clause;
+   * - like `homeZip`, `areaAddress` and `radiusMiles`, it dies with the mount.
+   */
+  const [position, setPosition] = useState<FirstRunCardId | null>(null)
   // V28 slice 5 — the area card's fields: the address (the card's primary
   // entry, decision 9) and the fallback's revealed state. The signup
   // address's one-shot flag (first-use audit, ticket 02) is gone — its
@@ -610,6 +637,34 @@ export function OnboardingPage() {
     { hasProfile: profile !== null, hasKids, hasZip: homeZipSet },
     kidsCardDone ? SKIPPABLE_CARDS : [],
   )
+
+  /**
+   * V28 r3-5 (r3-D2) — WHERE THE RUN ACTUALLY PAINTS.
+   *
+   * `resolveCard` is still the ONLY authority on what is answered; `position` is
+   * an override a tap can create, and it is honoured ONLY while it names a card
+   * the parent may legitimately be re-showing:
+   *
+   * - **`'finish'` is never overridden into a card.** Once the run is over the
+   *   ending owns the screen; a stale position must not paint a card behind it.
+   * - **`'kids-pending'` is never overridden either** — the lazy kids read has not
+   *   settled, and `resolveCard` returns it precisely so the kids card does not
+   *   render in that gap.
+   * - A position naming a card that is no longer reachable is simply ignored, so
+   *   the derived answer is always the fallback. **There is no state in which the
+   *   position makes the run render something `resolveCard` forbids.**
+   *
+   * ⚠️ `'account'` IS EXCLUDED, and the type makes it unrepresentable rather than
+   * relying on a cast: `FirstRunCardId` contains it (it is the first card), but
+   * `FirstRunView` does not — the account card is the REDIRECT GUARD's, rendered
+   * as `<Navigate>` above every branch here. A parent on `/onboarding` is signed
+   * in by definition, so there is no account card to go back to, and
+   * `previousCard('name')` correctly answers `null`.
+   */
+  const paintedView: FirstRunView =
+    position !== null && position !== 'account' && view !== 'finish' && view !== 'kids-pending'
+      ? position
+      : view
 
   // V28 r2 slice 5: the ending card needs NO read of its own. The places
   // selection this effect used to run (the directory read, ranked against the
@@ -1115,6 +1170,100 @@ export function OnboardingPage() {
   }
 
   /**
+   * The card ids `/onboarding` can actually PAINT. `FirstRunCardId` also carries
+   * `'account'`, which this route never renders (the redirect guard does), and
+   * `FirstRunView` carries `'finish'` and `'kids-pending'`, which are not cards —
+   * so the intersection is exactly the four below.
+   */
+  type RenderableCardId = Exclude<FirstRunCardId, 'account'>
+
+  /**
+   * Is this rendered view one of the RUN'S CARDS? (`'finish'` and
+   * `'kids-pending'` are views, not cards — see `FirstRunView`.)
+   *
+   * A narrowing guard rather than an `as` cast: the cast asserted the thing being
+   * checked, so a future view added to `FirstRunView` would be silently accepted
+   * by the neighbour functions and answered with a wrong neighbour. This makes
+   * the compiler force that decision instead.
+   */
+  function isFirstRunCard(view: FirstRunView): view is RenderableCardId {
+    return (FIRST_RUN_CARDS as readonly string[]).includes(view)
+  }
+
+  /**
+   * V28 r3-5 (r3-D2) — THE RUN'S ONE BACK MOVE, and why it is guarded.
+   *
+   * ⚠️ **THE GUARD IS THE POINT, not a detail.** A back arrow lets a parent leave
+   * a card *while a write is in flight*. `saving` is set by `saveLocation` around
+   * `updateHomeZipRadius` + `refresh()` — a network write — and the area card is
+   * exactly the card whose Continue triggers it. Moving away mid-write would let
+   * the parent act on state the write is about to change, and the failure it
+   * produces is the silent one: the write lands, the card the parent navigated to
+   * no longer reflects it, and nothing says so.
+   *
+   * So navigation is refused while `saving`, and **only** while. It is refused
+   * rather than disabled-in-the-UI alone, because a UI-only guard is a guard that
+   * a keyboard, a stale render or a future caller walks straight past — the
+   * handler is the true entry point (the same lesson V23's Enter-key finding
+   * recorded).
+   *
+   * ⚠️ THE RADIUS SELECT'S OWN EDIT-WHILE-SAVING DIVERGENCE IS NOT TOUCHED HERE.
+   * It is r2's recorded 8d open: the select is not disabled while `saving`, so it
+   * can move during the write. This guard does not widen it and does not fix it —
+   * see `.scratch/v28/reports/r3-5-stop.md`. If a later reader finds that this
+   * guard *cannot* hold without addressing it, that is a STOP, not a licence.
+   *
+   * The move itself is pure: `previousCard` owns the order. This function owns
+   * only the guard and the resulting position.
+   */
+  function goBack() {
+    if (saving) return
+    if (!isFirstRunCard(paintedView)) return
+    const target = previousCard(paintedView)
+    if (target === null) return
+    setPosition(target)
+    // A card's own error belongs to the card being left, not the one arriving.
+    setError(null)
+  }
+
+  /**
+   * The forward move — and it exists ONLY to undo a back move.
+   *
+   * ⚠️ THIS IS NOT "ADVANCE". On this run, advancing IS the card's write: the
+   * name card's Continue creates the profile, the kids card's Continue writes the
+   * rows, the area card's Finish saves the location. A forward control that
+   * merely moved the position would re-render the SAME card, because
+   * `resolveCard` derives the view from the FACTS and only the write changes
+   * them. So a general "next" arrow would have to duplicate every card's primary
+   * — two controls doing one write, which is precisely the defect r3-4 removed
+   * from the location dialog.
+   *
+   * Therefore **the forward control appears only when the parent has gone BACK**,
+   * where its one honest job is to return them to where the facts already say
+   * they are. It CLEARS the position rather than setting it, handing the screen
+   * straight back to `resolveCard` — the derived answer is the default, and the
+   * arrow only ever overrides it to go back.
+   *
+   * Guarded on the same `saving` term as `goBack`, deliberately: a move out of a
+   * card mid-write is the same hazard in either direction.
+   */
+  function goForward() {
+    if (saving) return
+    if (!isFirstRunCard(paintedView)) return
+    if (nextCard(paintedView) === null) return
+    setPosition(null)
+    setError(null)
+  }
+
+  /**
+   * Is there a forward move to offer? Only from a card the parent went BACK to:
+   * at the derived answer there is nothing ahead of them that a control could
+   * take them to (see `goForward`).
+   */
+  const canGoForward =
+    position !== null && isFirstRunCard(paintedView) && nextCard(paintedView) !== null
+
+  /**
    * The name card's photo picker (V28 r2 slice 2 — the deleted photo
    * card's `handlePhotoChange`, re-homed onto the card): the ≤5MB /
    * image-only gate and the decode run inside the crop step (beginCrop),
@@ -1200,7 +1349,7 @@ export function OnboardingPage() {
   // parent who skips the photo walks the hop exactly as before (e2e/fixtures'
   // signUpViewer fills the two name fields and clicks Continue with no photo
   // at all).
-  if (view === 'name') {
+  if (paintedView === 'name') {
     return (
       <FirstRunCard
         progressLabel={progressLabel('name')}
@@ -1214,6 +1363,18 @@ export function OnboardingPage() {
         // upload never traps the parent. A FAILED upload never gates: it is
         // settled, so `photoCrop.busy` is false by the time it matters.
         primaryDisabled={handleBusy || photoUploadBlocksContinue(photoCrop.busy, photoGateEscaped)}
+        // V28 r3-5 (r3-D2): the back move, drawn only when there IS one. The
+        // chrome renders no control for an absent handler, so the first card
+        // needs no special case here.
+        // V28 r3-5 (r3-D2): the run's back/forward move. The back control draws
+        // only when there IS a previous card; the forward control only when the
+        // parent has gone BACK (see canGoForward). Both are refused while a write
+        // is in flight — in the handler AND visibly here.
+        onBack={previousCard('name') !== null ? goBack : undefined}
+        backDisabled={saving}
+        onForward={canGoForward ? goForward : undefined}
+        forwardDisabled={saving}
+        forwardTestId="first-run-forward"
         testId="first-run-name-card"
       >
         <div className="flex flex-col gap-3">
@@ -1309,7 +1470,7 @@ export function OnboardingPage() {
   // here would report a failure on a card this parent is no longer on.
   // (Pre-existing ordering; V28 r2 slice 5 only removed the places read that
   // used to sit on this path.)
-  if (view === 'finish') {
+  if (paintedView === 'finish') {
     return <HowItWorksCard onGoToFeed={() => navigate('/', { replace: true })} />
   }
 
@@ -1355,14 +1516,14 @@ export function OnboardingPage() {
   // `!kidsCardDone && hasKids === null` — the rule and its table of inputs live
   // in lib/firstRun, and firstRun.test.ts pins each branch including the
   // 'kids-pending' gap.
-  if (view === 'kids-pending') {
+  if (paintedView === 'kids-pending') {
     return (
       <div className="flex min-h-64 items-center justify-center text-base text-slate-600">
         Checking your kids…
       </div>
     )
   }
-  if (view === 'kids') {
+  if (paintedView === 'kids') {
     const kidsCopy = FIRST_RUN_COPY.kids
     return (
       <FirstRunCard
@@ -1386,6 +1547,15 @@ export function OnboardingPage() {
         // label of its own), so the module's copy is what the button says —
         // and the e2e specs' getByRole('button', { name: 'Skip' }) targets it.
         skipLabel={kidsCopy.skipLabel}
+        // V28 r3-5 (r3-D2): the run's back/forward move — the same pair the
+        // name and area cards carry. `previousCard('kids')` is `'name'`, so the
+        // back control always draws here; the forward control draws only after a
+        // back move (see canGoForward).
+        onBack={previousCard('kids') !== null ? goBack : undefined}
+        backDisabled={saving}
+        onForward={canGoForward ? goForward : undefined}
+        forwardDisabled={saving}
+        forwardTestId="first-run-forward"
         testId="first-run-kids-card"
       >
         <div className="flex flex-col gap-2 text-sm">
@@ -1497,6 +1667,16 @@ export function OnboardingPage() {
       primaryLabel={geocoding ? 'Checking your address…' : saving ? 'Saving…' : areaCopy.primaryLabel}
       primaryDisabled={saving || geocoding || knownZips === null}
       onPrimary={() => void handleAreaFinish()}
+      // V28 r3-5 (r3-D2): the run's back/forward move. The back control draws
+      // only when there IS a previous card; the forward control only when the
+      // parent has gone BACK (see canGoForward). Both are refused while a write
+      // is in flight — in the handler AND visibly here. ⚠️ This is the card whose
+      // primary TRIGGERS the save, so it is the one the guard exists for.
+      onBack={previousCard('area') !== null ? goBack : undefined}
+      backDisabled={saving}
+      onForward={canGoForward ? goForward : undefined}
+      forwardDisabled={saving}
+      forwardTestId="first-run-forward"
       testId="first-run-area-card"
     >
       <div className="flex flex-col gap-2 text-sm">

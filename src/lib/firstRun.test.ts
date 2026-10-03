@@ -13,10 +13,13 @@ import firstRunSource from './firstRun.ts?raw'
 import {
   FIRST_RUN_CARDS,
   isSkippable,
+  nextCard,
   nextUnfinishedCard,
+  previousCard,
   progressLabel,
   resolveCard,
   SKIPPABLE_CARDS,
+  type FirstRunCardId,
   type FirstRunFacts,
   type FirstRunState,
 } from './firstRun'
@@ -336,5 +339,95 @@ describe('purity', () => {
       spy.mockRestore()
     }
     expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * V28 r3-5 (r3-D2) — the ordered neighbours the back/forward move reads.
+ *
+ * Table-driven, because these are pure and have no branches worth a bespoke test:
+ * every card in, its two neighbours out, plus the two ends.
+ */
+describe('previousCard / nextCard — the ordered neighbours', () => {
+  it('walks FIRST_RUN_CARDS in order and null-terminates both ends', () => {
+    const table: Array<[FirstRunCardId, FirstRunCardId | null, FirstRunCardId | null]> = [
+      ['account', null, 'name'],
+      ['name', 'account', 'kids'],
+      ['kids', 'name', 'area'],
+      ['area', 'kids', null],
+    ]
+    // The table is the WHOLE card list — a new card must be added here, so a
+    // card the neighbours silently skipped cannot pass.
+    expect(table.map(([card]) => card)).toEqual([...FIRST_RUN_CARDS])
+    for (const [card, previous, next] of table) {
+      expect(previousCard(card), `previousCard(${card})`).toBe(previous)
+      expect(nextCard(card), `nextCard(${card})`).toBe(next)
+    }
+  })
+
+  it('the ends are ONE null each — no card has two, and none wraps', () => {
+    const starts = FIRST_RUN_CARDS.filter((card) => previousCard(card) === null)
+    const ends = FIRST_RUN_CARDS.filter((card) => nextCard(card) === null)
+    expect(starts).toEqual(['account'])
+    expect(ends).toEqual(['area'])
+    // No wrap: the first card is never the last card's next, which a modular
+    // implementation would return.
+    expect(nextCard('area')).not.toBe(FIRST_RUN_CARDS[0])
+    expect(previousCard('account')).not.toBe(FIRST_RUN_CARDS[FIRST_RUN_CARDS.length - 1])
+  })
+
+  it("the neighbours are MUTUAL — b is a's next exactly when a is b's previous", () => {
+    for (const card of FIRST_RUN_CARDS) {
+      const next = nextCard(card)
+      if (next !== null) expect(previousCard(next), `${card} -> ${next}`).toBe(card)
+      const previous = previousCard(card)
+      if (previous !== null) expect(nextCard(previous), `${previous} -> ${card}`).toBe(card)
+    }
+  })
+
+  it('derives from FIRST_RUN_CARDS rather than a literal list', () => {
+    // The source reads the array and never an index literal — the invariant
+    // progressLabel already obeys, so a future card change cannot leave the
+    // neighbours behind while the label moves.
+    const block = firstRunSource.slice(firstRunSource.indexOf('export function previousCard'))
+    expect(block).toContain('FIRST_RUN_CARDS.indexOf')
+    expect(block).toContain('FIRST_RUN_CARDS.length')
+    // No hard-coded positional numbers in either body. ⚠️ COMMENTS ARE STRIPPED
+    // FIRST, because `nextCard`'s own comment quotes `FIRST_RUN_CARDS[0]` while
+    // explaining why it must never return it — a naive scan fires on the
+    // documentation of the rule it is checking. Same quotation-vs-claim
+    // distinction the acceptance-grep guard had to make.
+    const code = block
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
+      .join('\n')
+    expect(
+      /\[\s*[0-9]\s*\]/.test(code),
+      'a literal index is a second source of order',
+    ).toBe(false)
+  })
+
+  it('an unknown card has NO neighbours, rather than a wrong one', () => {
+    // Unreachable through the type, and answered honestly anyway: `indexOf`
+    // returns -1, and +1 would hand back FIRST_RUN_CARDS[0] — a wrong card
+    // rather than no card.
+    const bogus = 'not-a-card' as FirstRunCardId
+    expect(previousCard(bogus)).toBeNull()
+    expect(nextCard(bogus)).toBeNull()
+  })
+
+  it('is pure — no clock, and no mutation of the list it reads', () => {
+    const spy = vi.spyOn(Date, 'now')
+    const before = [...FIRST_RUN_CARDS]
+    try {
+      for (const card of FIRST_RUN_CARDS) {
+        previousCard(card)
+        nextCard(card)
+      }
+    } finally {
+      spy.mockRestore()
+    }
+    expect(spy).not.toHaveBeenCalled()
+    expect([...FIRST_RUN_CARDS]).toEqual(before)
   })
 })

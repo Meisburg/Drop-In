@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BackControl } from './BackControl'
+import { BackControl, ForwardControl } from './BackControl'
 
 /**
  * V28 slice 3a — the first-run card chrome.
@@ -56,6 +56,25 @@ export type FirstRunCardProps = {
   onBack?: () => void
   /** Back, link mode: the destination. Mutually exclusive with `onBack`. */
   backTo?: string
+  /**
+   * V28 r3-5 (r3-D2): refuse the back move while a write is in flight.
+   *
+   * A PROP, not a decision — the chrome draws the disabled control, it never
+   * decides when to. The caller owns both halves: this visible one and the
+   * handler-level refusal that actually enforces it.
+   */
+  backDisabled?: boolean
+  /**
+   * V28 r3-5 (r3-D2): the forward move, drawn only when the caller has one to
+   * offer. It exists to UNDO a back move — advancing on this run is the card's
+   * own write, so a forward control is never a general "next" (see `goForward`
+   * in OnboardingPage). Absent ⇒ no control, the same rule the back control uses.
+   */
+  onForward?: () => void
+  /** Refuse the forward move while a write is in flight. */
+  forwardDisabled?: boolean
+  /** Optional data-testid for the forward control. */
+  forwardTestId?: string
   /** Optional data-testid for specs. */
   testId?: string
 } & (
@@ -85,6 +104,10 @@ export function FirstRunCard({
   skipLabel,
   onBack,
   backTo,
+  backDisabled,
+  onForward,
+  forwardDisabled,
+  forwardTestId,
   testId,
 }: FirstRunCardProps) {
   const primaryClasses =
@@ -95,8 +118,20 @@ export function FirstRunCard({
   return (
     <div className="flex flex-col gap-4" data-testid={testId}>
       <div className="flex items-center gap-2">
-        {hasBack ? <BackControl onClick={onBack} to={backTo} /> : null}
+        {hasBack ? (
+          <BackControl onClick={onBack} to={backTo} disabled={backDisabled === true} />
+        ) : null}
         <p className="text-xs font-medium text-slate-500">{progressLabel}</p>
+        {/* The forward control sits AFTER the progress label, at the row's far
+            edge: back on the left, "2 of 4" in the middle, forward on the right —
+            the reading order of a step. Drawn only when the caller offers one. */}
+        {onForward !== undefined ? (
+          <ForwardControl
+            onClick={onForward}
+            testId={forwardTestId}
+            disabled={forwardDisabled === true}
+          />
+        ) : null}
       </div>
       <div className="flex flex-col gap-1">
         <h1 className="font-display text-xl font-semibold text-slate-900">{title}</h1>
