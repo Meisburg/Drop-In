@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useSessionContext } from '../components/SessionProvider'
-import { banProfile, hidePlaydate, listReports, type ModReport } from '../lib/db'
+import { PlacePhotoAdmin } from '../components/PlacePhotoAdmin'
+import { banProfile, hidePlaydate, listPlaces, listReports, type ModReport } from '../lib/db'
 import { canModerate } from '../lib/moderation'
+import type { Place } from '../lib/types'
 
 /**
  * /mod — moderator tools (slice 5): the report list (reason, reporter /
@@ -26,6 +28,23 @@ export function ModPage() {
   const [bannedProfileIds, setBannedProfileIds] = useState<ReadonlySet<string>>(new Set())
   const [confirmBanProfileId, setConfirmBanProfileId] = useState<string | null>(null)
 
+  /**
+   * V28 r4 — THE PLACE PHOTO TOOL's own state.
+   *
+   * `places` is the full directory (~239 rows), loaded ONLY when the moderator
+   * opens the tool: a page whose primary job is the report list must not pay for
+   * a 239-row read on every visit. `photoQuery` narrows by name, because
+   * scrolling 239 rows to find one park is not a tool anyone would use twice.
+   *
+   * After a save the edited row is patched IN PLACE rather than re-fetching the
+   * whole directory — one write should not cost 239 rows of read, and the patch
+   * is exactly what was just written.
+   */
+  const [photoToolOpen, setPhotoToolOpen] = useState(false)
+  const [places, setPlaces] = useState<Place[] | null>(null)
+  const [placesError, setPlacesError] = useState<string | null>(null)
+  const [photoQuery, setPhotoQuery] = useState('')
+
   // Load the report list once access is established (a moderator profile +
   // a live session). Re-runs when the profile refreshes (e.g. after the
   // shared session state re-fetches).
@@ -47,6 +66,27 @@ export function ModPage() {
       cancelled = true
     }
   }, [loading, session, profile])
+
+  /**
+   * V28 r4 — load the directory on FIRST OPEN of the photo tool, not on mount.
+   * `places === null` is the not-yet-loaded state and is distinct from `[]`.
+   */
+  useEffect(() => {
+    if (!photoToolOpen || places !== null || placesError !== null) return
+    let cancelled = false
+    listPlaces()
+      .then((rows) => {
+        if (!cancelled) setPlaces(rows)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setPlacesError(err instanceof Error ? err.message : 'Could not load places.')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [photoToolOpen, places, placesError])
 
   async function handleHide(item: ModReport) {
     const playdateId = item.report.playdate_id
@@ -112,6 +152,60 @@ export function ModPage() {
           Reports, newest first. Hiding a post and banning a profile are
           final in V1 — there is no unhide or unban yet.
         </p>
+      </div>
+
+      {/* V28 r4 — THE PLACE PHOTO TOOL.
+          The founder: *"many are not relevant or good so i want to be able to
+          swap them out myself as the admin."* It sits ABOVE the report list
+          because it is a maintenance tool the moderator reaches for
+          deliberately, not a queue that demands attention — and it is behind a
+          disclosure so the 239-row directory read happens only when opened. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <button
+          type="button"
+          data-testid="place-photo-tool-toggle"
+          onClick={() => setPhotoToolOpen((open) => !open)}
+          className="flex min-h-11 w-full items-center justify-between text-left"
+        >
+          <span className="text-sm font-medium text-slate-900">Fix a place photo</span>
+          <span className="text-sm text-slate-500">{photoToolOpen ? 'Hide' : 'Open'}</span>
+        </button>
+
+        {photoToolOpen ? (
+          <div className="mt-3 flex flex-col gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Find a place</span>
+              <input
+                type="search"
+                data-testid="place-photo-search"
+                value={photoQuery}
+                onChange={(e) => setPhotoQuery(e.target.value)}
+                placeholder="e.g. Green Lake"
+                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+              />
+            </label>
+
+            {placesError !== null ? (
+              <p role="alert" className="text-sm text-red-600">
+                {placesError}
+              </p>
+            ) : places === null ? (
+              <p className="text-sm text-slate-600">Loading places…</p>
+            ) : (
+              <PlacePhotoPicker
+                places={places}
+                query={photoQuery}
+                onSaved={(updated) =>
+                  setPlaces((current) =>
+                    current === null
+                      ? current
+                      : current.map((row) => (row.id === updated.id ? updated : row)),
+                  )
+                }
+              />
+            )}
+          </div>
+        ) : null}
       </div>
 
       {reportsError !== null ? (
@@ -272,6 +366,98 @@ function ReportCard({
         ) : null}
       </div>
       {actionError !== null ? <p className="text-sm text-red-600">{actionError}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * V28 r4 — the place picker behind the photo tool.
+ *
+ * ONE RESULT AT A TIME, deliberately. A grid of 239 editable rows invites
+ * bulk-editing a public directory by accident; the founder's situation is "I
+ * looked at this place and the picture is wrong", which is one place at a time.
+ * The search box exists because finding that one place among 239 by scrolling is
+ * not a tool anyone uses twice.
+ *
+ * Capped at 12 visible matches: enough to disambiguate a name, small enough that
+ * the list never becomes the thing you scroll. The count line says how many were
+ * hidden, so a moderator who typed "park" and sees 12 knows to type more.
+ */
+function PlacePhotoPicker({
+  places,
+  query,
+  onSaved,
+}: {
+  places: Place[]
+  query: string
+  onSaved: (updated: Place) => void
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [savedTick, setSavedTick] = useState(0)
+
+  const needle = query.trim().toLowerCase()
+  const matches = needle === ''
+    ? []
+    : places.filter((place) => place.name.toLowerCase().includes(needle))
+  const visible = matches.slice(0, 12)
+  const selected = places.find((place) => place.id === selectedId) ?? null
+
+  if (needle === '') {
+    return <p className="text-sm text-slate-500">Type a name to find a place.</p>
+  }
+
+  if (matches.length === 0) {
+    return <p className="text-sm text-slate-500">No place matches “{query.trim()}”.</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {selected === null ? (
+        <ul className="flex flex-col gap-1" data-testid="place-photo-results">
+          {visible.map((place) => (
+            <li key={place.id}>
+              <button
+                type="button"
+                data-testid={`place-photo-pick-${place.id}`}
+                onClick={() => setSelectedId(place.id)}
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+              >
+                <span className="truncate">{place.name}</span>
+                {place.photo_url === null || place.photo_url === '' ? (
+                  <span className="ml-auto shrink-0 text-xs text-amber-700">No photo</span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+          {matches.length > visible.length ? (
+            <li className="text-xs text-slate-500">
+              {matches.length - visible.length} more — keep typing to narrow it down.
+            </li>
+          ) : null}
+        </ul>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            data-testid="place-photo-back"
+            onClick={() => setSelectedId(null)}
+            className="min-h-11 self-start text-sm text-indigo-600"
+          >
+            ← Choose a different place
+          </button>
+          <PlacePhotoAdmin
+            key={`${selected.id}-${savedTick}`}
+            place={places.find((place) => place.id === selected.id) ?? selected}
+            onSaved={() => {
+              // The picker holds the ROW it is editing; a save must refresh it
+              // so the preview and the credit line show what was just written
+              // rather than the state that prompted the edit.
+              setSavedTick((tick) => tick + 1)
+              onSaved({ ...selected })
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }

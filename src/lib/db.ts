@@ -94,6 +94,9 @@ import {
   type ReportInsertPayload,
 } from './trust'
 import { issueModeratorUpdate, isProfileBanned } from './moderation'
+// V28 r4: the moderator's place-photo replacements. The pure path/patch builders
+// live beside their sibling test; db.ts only moves bytes and rows.
+import { placePhotoObjectPath, type PlacePhotoType } from './placePhotoAdmin'
 import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
 // V8 ticket 08: the notification kind guard + the fallback list's page size.
 // The push RULES themselves (payload copy, dedupe key, iOS detection, the
@@ -2345,6 +2348,57 @@ export async function banProfile(profileId: string): Promise<void> {
   await issueModeratorUpdate(supabase, 'profiles', profileId, {
     banned_at: new Date().toISOString(),
   })
+}
+
+/**
+ * V28 r4 — set a place's photo (moderator op).
+ *
+ * ⚠️ THIS IS THE FIRST WRITE PATH TO `places` IN THE APP'S HISTORY, and it is
+ * not a plain update like its siblings above. `places` carried ONLY a SELECT
+ * policy from 0029 until migration 0062 added `places_update_moderators`, and
+ * 0029's header is explicit that this was deliberate: *"no INSERT/UPDATE/DELETE
+ * policy exists anywhere, and RLS denies by default, so writes stay
+ * postgres-only."* So a call to this function from a NON-moderator is rejected
+ * by the database, not by this code — the guard below exists to fail early with
+ * a clear error, never to be the security boundary. RLS is the boundary.
+ *
+ * The patch is built by `placePhotoPatch` (pure, tested) rather than inline, so
+ * the "all five columns together" rule has one home.
+ */
+export async function setPlacePhoto(
+  placeId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await issueModeratorUpdate(supabase, 'places', placeId, patch)
+}
+
+/**
+ * V28 r4 — upload a moderator's replacement image, then point the place at it.
+ *
+ * THE PATH CARRIES A GENERATION (`placePhotoObjectPath`), which is what makes a
+ * replaced photo actually re-render: the object path is deterministic per
+ * place+generation, so bumping the generation produces a NEW URL and neither the
+ * browser nor the CDN keeps serving the old bytes. `uploadAvatarObject` below
+ * solves the same problem with a `?v=` query; this uses a path segment instead
+ * because the generation is also useful to a human reading the bucket.
+ *
+ * `upsert: false` is deliberate: the generation is unique per replacement, so a
+ * collision means a caller reused a generation — a bug worth failing on rather
+ * than silently overwriting an image somebody may already be reviewing.
+ */
+export async function uploadPlacePhoto(
+  placeId: string,
+  file: File,
+  generation: number,
+): Promise<string> {
+  const type = file.type as PlacePhotoType
+  const objectPath = placePhotoObjectPath(placeId, type, generation)
+  const { error } = await supabase.storage
+    .from('place-photos')
+    .upload(objectPath, file, { contentType: type, upsert: false })
+  if (error) throw error
+  const { data } = supabase.storage.from('place-photos').getPublicUrl(objectPath)
+  return data.publicUrl
 }
 
 // ---------------------------------------------------------------------------

@@ -55,8 +55,16 @@ export function isProfileBanned(profile: BannableProfile | null): boolean {
  * profiles p where p.id = auth.uid() and p.moderators)`). No migration
  * needed, and the plain chain below keeps the 42501 lesson's promise: no
  * .select(), so no RETURNING read-back under the SELECT policy.
+ *
+ * V28 r4 adds `places`: the founder wants to swap a bad directory photo by hand,
+ * and migration 0062 created `places_update_moderators` — the SAME
+ * actor-is-a-moderator subquery on both USING and WITH CHECK that 0009
+ * established for the two original tables. It belongs in this union because the
+ * union is what makes "the mod tools may only touch these tables" a CHECKED
+ * fact rather than a convention: before 0062, `places` had no update policy at
+ * all and a write would have been rejected by RLS.
  */
-export type ModeratorTable = 'playdates' | 'profiles' | 'comments'
+export type ModeratorTable = 'playdates' | 'profiles' | 'comments' | 'places'
 
 /**
  * Issue a moderator update on a plain chain (no .select()).
