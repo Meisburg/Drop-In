@@ -11,21 +11,24 @@
   "created_at": "2026-10-02T16:22:52.170Z",
   "lanes": {
     "implementation": {
-      "state": "pending",
+      "state": "complete",
       "owner": null,
-      "model": null,
-      "artifacts": [],
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        "e2e/onboarding-kid-photo.e2e.ts",
+        ".scratch/v28/reports/slice-8c.md"
+      ],
       "evidence": []
     },
     "verification": {
-      "state": "pending",
+      "state": "complete",
       "owner": null,
-      "model": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [],
       "evidence": []
     },
     "review": {
-      "state": "pending",
+      "state": "complete",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -39,7 +42,7 @@
       "evidence": []
     },
     "acceptance": {
-      "state": "blocked",
+      "state": "pass",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -54,6 +57,87 @@
       "from": "pending",
       "to": "blocked",
       "note": "repair: newWorkItem defaulted acceptance to pending, which its own guard rejects (lane-states-legal). Constructor fixed; this item repaired.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:17:29.268Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-03T00:17:29.291Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:17:29.320Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": "07c683e: the brief's second-granularity question SETTLED by measurement (825/825 same-server-second mint pairs byte-identical, 0 differing); two src-equality assertions relabelled as CORROBORATION of the mint count with their limit stated; test 5's swap made deterministically observable (1100ms past the token boundary). Non-vacuity both halves pasted. Gate exit 0, checkers 185 + 17. SCOPE: one product consequence REPORTED not built (same-second re-pick leaves the fresh photo invisible for the rest of the mount; structural fix would be cacheNonce) -- reported rather than expanded, per the brief.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:17:29.347Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-03T00:17:29.376Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "running",
+      "note": "round-1 lanes dispatched; the reviewer is also asked to give its own recommendation on the two open questions the builder raised",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:34:00.415Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": "the FAIL was a SENTENCE, not a mechanism; fixed at b7db5b7 (+1/-1, comment only) and both lanes named the exact correction in advance.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:34:00.445Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "running",
+      "note": "round-1 independent review NEEDS_CHANGES on the same line; it VERIFIED the reporting-not-building call (checked the product consequence end-to-end in code: OnboardingPage.tsx:470-482 / useKidPhotoUrls.ts:78-94 / db.ts:2857, no cacheNonce), confirmed coverage was preserved one-for-one in the relabelling, and sharpened the product consequence as UNDER-sold rather than over-sold (the same token is the CDN cache key, so old bytes are served up to the edge TTL).",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:34:00.475Z",
+      "lane": "review",
+      "from": "running",
+      "to": "complete",
+      "note": "resolved at b7db5b7. Its two recommendations were ADOPTED: (a) leave the same-second product window latent, pinned in the ledger at db.ts:2857 rather than fixed, because this batch does not change product behaviour; (b) KEEP S1 -- its cross-second arm is real coverage and its DOM leg is independent of the count. DEVIATION RECORDED: no re-verification lane for the +1/-1 comment fix -- both lanes named that exact correction in advance and the change is a word in a comment; the gate and the spec were re-run green by the builder at the committed content.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T00:34:00.504Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "pass",
+      "note": "accepted 2026-10-02. Known-opens: the same-second re-pick window (product, latent, pinned at db.ts:2857, fix would be cacheNonce); the count-provenance over-trigger, SPLIT OUT to v28-r2-8e as its own item because the brief said so.",
       "actor": null,
       "model": null
     }

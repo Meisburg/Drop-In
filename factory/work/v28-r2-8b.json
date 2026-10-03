@@ -26,14 +26,14 @@
       "evidence": []
     },
     "verification": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [],
       "evidence": []
     },
     "review": {
-      "state": "pending",
+      "state": "complete",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -47,7 +47,7 @@
       "evidence": []
     },
     "acceptance": {
-      "state": "blocked",
+      "state": "pass",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -134,6 +134,42 @@
       "from": "pending",
       "to": "running",
       "note": "round-4 lanes running; PLUS the first genuinely independent review of this batch, dispatched on a GLM (different family) after D-034 registered a second qualifying model",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T23:59:28.797Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": "round-8 FAIL closed. Fence family verified CLOSED: 0 divergences from the reference over 160,000 inputs, reproduced independently both ways (pre-swap 10,359 diverging / 2,227 UNDER / 9,603 OVER).",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T23:59:28.826Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "running",
+      "note": "round-8 independent review PASSED the slice (GLM, different family); its two requested items are now done and the verifier cleared the outstanding FAIL. DEVIATION RECORDED: no separate round-9 review lane -- the reviewer's own recommended action was 'close slice 8b, verdict PASS, record the known-opens, no tenth round', and the only outstanding item belonged to the verifier.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T23:59:28.855Z",
+      "lane": "review",
+      "from": "running",
+      "to": "complete",
+      "note": "PASS",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T23:59:28.887Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "pass",
+      "note": "accepted 2026-10-02 with FOUR KNOWN-OPENS recorded in the ledger and slice-8b.md: (1) the HTML over-read boundary -- DECLARED, can also under-read, not seeded because a declared boundary is not a watch; (2) a MISSING scripts/lib has no finding of its own, deliberately, because a missing-directory finding would red every checker seed; (3) 'the guard uses the shared scanner' is a text assertion plus shape-limited seeds -- a single-call-site bypass differing only on an unseeded shape would not be caught; (4) the scanner's provenance header sits outside the machine-checked instrument-header scan.",
       "actor": null,
       "model": null
     }
