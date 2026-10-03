@@ -703,20 +703,34 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   // V23 slice 4 — THE PANEL'S MAP-SEARCH FALLBACK IS GONE, on the founder's
   // instruction: *"I would remove the find it on the map button."*
   //
-  // `MARKER_PLACE_NAME` is a playground, and the reviewed backfill verifies an
-  // operator site for community centers, pools, beaches and libraries rather
-  // than for playgrounds — so before this slice the only link this panel could
-  // show WAS the derived OSM search. It now shows none, and that is correct:
-  // the panel floats over a map, so a link offering a map search duplicates
-  // the surface behind it.
+  // The panel floats over a map, so a link offering a MAP SEARCH duplicates the
+  // surface behind it. That is the rule, and it is `PlaceMap`'s own: it takes
+  // `placeLearnMoreLink` and keeps it only when `kind === 'website'`
+  // (`websiteLink`), so a derived map search can never reach this panel.
   //
-  // What must still hold is that the removal is PANEL-SCOPED: the "Details"
-  // door is the panel's route to the wider web, and the place PAGE keeps its
-  // own `place-learn-more` (asserted further down this file).
-  await expect(
-    info.getByTestId('learn-more'),
-    'the map-search fallback must not return to this panel',
-  ).toHaveCount(0)
+  // ⚠️ V28 r4 CORRECTED THIS ASSERTION'S PREMISE. It used to assert
+  // `learn-more` count 0, justified by: *"MARKER_PLACE_NAME is a playground, and
+  // the reviewed backfill verifies an operator site for community centers,
+  // pools, beaches and libraries RATHER THAN FOR PLAYGROUNDS — so before this
+  // slice the only link this panel could show WAS the derived OSM search."*
+  //
+  // The website backfill of 2026-10-03 verified 168 more operator pages,
+  // including 139 playgrounds, so `Ballard Corners Park` NOW HAS a real
+  // seattle.gov page and the panel correctly shows it. Count-0 became wrong
+  // while the product stayed right — a test pinned to the CONTENT of the world
+  // rather than to the RULE about it.
+  //
+  // So the assertion is rewritten to test the rule: whatever link appears here
+  // must be a stored operator website, never the derived map search. That holds
+  // for every place in the directory, whether or not it has a site, and it is
+  // what the slice actually decided.
+  const panelLearnMore = info.getByTestId('learn-more')
+  if ((await panelLearnMore.count()) > 0) {
+    const kind = await panelLearnMore.getAttribute('data-link-kind')
+    expect(kind, 'only a real operator site may appear on the map panel').toBe('website')
+    const href = (await panelLearnMore.getAttribute('href')) ?? ''
+    expect(href, 'a panel link must not be the derived map search').not.toContain('google.com/maps')
+  }
   const panelDetails = info.getByTestId('marker-details')
   await expect(panelDetails).toBeVisible()
   await expect(panelDetails.getAttribute('href')).resolves.toMatch(/^\/place\//)
