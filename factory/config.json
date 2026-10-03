@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "_why": "The factory's resource and capability registry. The orchestrator decides WHAT and WHY; this file plus scripts/factory/factory.mjs decide WHERE and WHEN. Nothing here is read by a language model as prose \u2014 scheduler.mjs reads it and refuses to start a task whose resources cannot coexist with what is already running. See docs/agents/factory.md.",
+  "machine": {
+    "reserve_gb": 4,
+    "_reserve_why": "Headroom the machine keeps for the desktop, the editor and the browser lanes. systemd-oomd acts on pressure and it kills the biggest cgroup \u2014 on 2026-10-02 that was the local model, four times. A task must leave this much available.",
+    "_ram_source": "/proc/meminfo MemAvailable \u2014 the reclaimable-inclusive figure, not `free`. Measured at admission time, never declared.",
+    "_vram_source": "nvidia-smi --query-gpu=memory.free"
+  },
+  "models": {
+    "strata-max/qwen3.8-flash-next-iq3_s": {
+      "provider": "local",
+      "label": "Qwen3.8-Flash-Next IQ3_S (Strata 'max')",
+      "endpoint": "http://127.0.0.1:8081/v1",
+      "service": "strata-max",
+      "residency": "resident",
+      "health": {
+        "probe": "service",
+        "timeout_ms": 2000
+      },
+      "resources": {
+        "ram_gb": 55,
+        "vram_gb": 30,
+        "exclusive": "local-inference",
+        "footprint_source": "measured",
+        "footprint_evidence": "MEASURED 2026-10-02 across four loads. The pinned host arena is 46.84 GiB ('loaded 46.84 GiB at 6.04 GiB/s' in the engine log), plus ~4.8 GB of weights and KV state = ~52 GB RSS, so 52 is the measured figure and the earlier 55 was the unit banner's estimate. VRAM 30-32 GB: the card is full (287 MiB free with everything loaded). The arena is FIXED and is NOT reduced by a bigger expert cache -- the cache is a GPU-resident COPY, not a relocation, proved by --kv q4_0 + a halved context growing the cache 11330->11989 slots while the arena stayed 46.84 GiB. Load 20 s. Generation 71.8 tok/s with MTP. Tool use verified 4/4 across two configurations. The binding constraint is RAM headroom, not the model."
+      },
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 131072
+      },
+      "cost_tier": 0,
+      "_config_note": "BEST MEASURED CONFIG 2026-10-02: --kv q4_0 --max-context 131072 --expert-cache auto (+659 resident expert slots vs --kv int8 at the same context, full 128K retained). --expert-cache-per-layer IS BUGGY on this pack: it fails its own ExpertCache::verify_slot ('slot 0 differs from the arena at byte 0') and the engine correctly refuses to serve. MAP_HUGETLB is unavailable (no hugetlb pool) so the 46.84 GiB arena is backed by 4 KB pages. ADMISSION: needs 52 + 4 reserve + 3 task = 59 GB; the machine reports ~2 GB available while the model runs, so the router must fall back. ADDING RAM is the fix, not a weaker reserve.",
+      "preference": -1,
+      "_preference_why": "TARGET PRIMARY builder/reasoner. This is the ONLY thing that makes it win the tie against ninfer deliberately. Both are cost_tier 0 and both clear the builder floor, and the fallback tie-break (capabilityHeadroom) sums RAW units -- ninfer's reasoning 3 against strata-max's context_window 131072 vs 98304 -- so strata-max wins today by 32768 points of accidental unit scale, not by intent. The preference makes it intentional and stops a future normalisation of that sum from silently flipping the factory's primary model. It is NOT a capability claim: no declared capability value was changed to produce this order (see the D-034 precedent).",
+      "unavailable_flags": [
+        {
+          "flag": "--expert-cache-per-layer",
+          "why": "BROKEN ON THIS PACK, measured 2026-10-02. Selects the R4.2g PER-LAYER policy ('each layer owns 250 slots (0..249)') and then fails the engine's OWN slot verification: 'ExpertCache::verify_slot: slot 0 differs from the arena at byte 0 (of 2662400)', after which the engine exits and serve/server.py raises 'the engine exited before it was ready'. The engine is right to refuse -- it will not serve corrupted expert data. DO NOT ENABLE until Strata fixes it. Note the trade it was reaching for: the default slot policy hands many slots to a few early layers, and per-layer was the fix for that, so this is a real capability currently unavailable, not a flag with no purpose."
+        }
+      ]
+    },
+    "ollama-cloud/deepseek-v4.1-flash:cloud": {
+      "provider": "cloud",
+      "label": "DeepSeek V4.1 Flash (Ollama Cloud)",
+      "endpoint": "https://ollama.com/v1",
+      "residency": "remote",
+      "health": {
+        "probe": "tcp",
+        "timeout_ms": 4000
+      },
+      "resources": {
+        "ram_gb": 1,
+        "vram_gb": 0,
+        "exclusive": null,
+        "footprint_source": "estimated",
+        "footprint_evidence": "The client process only; the model is remote. 1 GB is the agent process plus its tool subprocesses."
+      },
+      "capabilities": {
+        "reasoning": 3,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 1048576
+      },
+      "cost_tier": 2
+    },
+    "ninfer/qwen3.8-27b": {
+      "provider": "local",
+      "label": "Qwen3.8-27B NVFP4 (NInfer)",
+      "endpoint": "http://127.0.0.1:18080/v1",
+      "service": "ninfer-serve",
+      "residency": "on-demand",
+      "health": {
+        "probe": "service",
+        "timeout_ms": 2000
+      },
+      "resources": {
+        "ram_gb": 3,
+        "vram_gb": 24,
+        "exclusive": "local-inference",
+        "footprint_source": "measured",
+        "footprint_evidence": "MEASURED 2026-10-02. RAM 3 GB: systemctl --user show -p MemoryPeak --value ninfer-serve = 2.3 GB after loading and answering, rounded to 3 to cover sampling. VRAM 24 GB: nvidia-smi --query-compute-apps showed the ninfer-serve process holding 23934 MiB. This model is GPU-RESIDENT: it uses the card, not the machine's RAM, which is why it coexists with everything else where strata-max (51.4 GB RSS) could not."
+      },
+      "capabilities": {
+        "reasoning": 3,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 98304,
+        "_tool_use_source": "VERIFIED EMPIRICALLY 2026-10-02, the same method D-034 used for ollama-cloud/glm-5.3. Was declared tool_use: 2, which failed the builder/reviewer/verifier floor of 3 and sent every lane to cloud. One round trip to POST /v1/chat/completions with a report_days tool schema returned finish_reason=tool_calls and arguments {\"days\":28} with the right name. A model that emits a correct tool call is not tool_use 2. One round trip is evidence of the capability, NOT a benchmark of its reliability, and the distinction is kept.",
+        "_capability_source": "REASONING and CODING are DECLARED POLICY, not benchmarked (unchanged). TOOL_USE is VERIFIED EMPIRICALLY (see _tool_use_source). CONTEXT_WINDOW is READ from the server: the unit passes --max-context 98304 and /v1/models reports n_ctx 131072 at the engine level; the floor uses 98304, the conservative of the two."
+      },
+      "cost_tier": 0
+    },
+    "strata/qwen3.8-flash-next-coder-iq1_m": {
+      "provider": "local",
+      "label": "Qwen3.8-Flash-Next Coder IQ1_M (Strata)",
+      "endpoint": "http://127.0.0.1:8080/v1",
+      "service": "strata-serve",
+      "residency": "on-demand",
+      "health": {
+        "probe": "service",
+        "timeout_ms": 2000
+      },
+      "resources": {
+        "ram_gb": 48,
+        "vram_gb": 13,
+        "exclusive": "local-inference",
+        "footprint_source": "measured",
+        "footprint_evidence": "MEASURED 2026-10-02 (was: unmeasured, which made the one local model actually RUNNING inadmissible). RAM 48 GB: systemctl --user show -p MemoryPeak --value strata-serve = 50957361152 bytes = 47.5 GiB, rounded up to 48 to cover the sampling gap. VRAM 13 GB: nvidia-smi --query-compute-apps showed the strata engine process at 12730 MiB while serving. Both figures are of the RUNNING unit, not of the weights on disk. NOTE the consequence, which is real: at 48 GB against a 62 GB machine and a 4 GB reserve, this model is admissible only when little else is running."
+      },
+      "capabilities": {
+        "reasoning": 1,
+        "coding": 3,
+        "tool_use": 2,
+        "context_window": 131072
+      },
+      "cost_tier": 0
+    },
+    "fr-1/glm-4.7-flash:latest": {
+      "provider": "cloud",
+      "label": "GLM-4.7-Flash 30B-A3B (FR-1 tailnet)",
+      "endpoint": "http://100.92.51.0:11434/v1",
+      "residency": "remote",
+      "health": {
+        "probe": "tcp",
+        "timeout_ms": 4000
+      },
+      "resources": {
+        "ram_gb": 1,
+        "vram_gb": 0,
+        "exclusive": null,
+        "footprint_source": "estimated",
+        "footprint_evidence": "Remote over the tailnet; only the client process is local and that number is an estimate."
+      },
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 2,
+        "tool_use": 2,
+        "context_window": 131072
+      },
+      "cost_tier": 1
+    },
+    "ollama-cloud/glm-5.3": {
+      "provider": "cloud",
+      "label": "GLM-5.3 (Ollama Cloud)",
+      "endpoint": "https://ollama.com/v1",
+      "residency": "remote",
+      "health": {
+        "probe": "tcp",
+        "timeout_ms": 4000
+      },
+      "resources": {
+        "ram_gb": 1,
+        "vram_gb": 0,
+        "exclusive": null,
+        "footprint_source": "estimated",
+        "footprint_evidence": "The client process only; the model is remote. 1 GB is the agent process plus its tool subprocesses."
+      },
+      "capabilities": {
+        "reasoning": 3,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 1048576
+      },
+      "cost_tier": 2,
+      "_capability_source": "REGISTERED 2026-10-02 to make reviewer/verifier independence SATISFIABLE (D-007/D-008): the floor (reasoning 3 + tool_use 3) was cleared by exactly one model, which was also the implementer. Chosen for FAMILY independence, not size \u2014 GLM is a different family from the DeepSeek that implements, so this is real model diversity and not a second size of the same thing. PER AXIS: tool_use VERIFIED empirically, not assumed \u2014 a tool-call round trip against https://ollama.com/v1 returned HTTP 200 in 2099 ms with a correct tool_calls payload ({\"name\":\"report_days\",\"arguments\":{\"days\":28}}); context_window READ from the model's own metadata (glm_dsa_moe.context_length = 1048576 via /api/show), not typed; reasoning=3 and coding=3 are DECLARED POLICY from the model's class (753 GB FP8 frontier MoE), NOT benchmarked here \u2014 they are declarations and are labelled as such, which is what this field is for."
+    }
+  },
+  "_capability_source": "These levels are DECLARED policy, not a benchmark. reasoning/coding/tool_use are 0-3 ordinals; context_window is the provider's own figure. A task kind's floor is a floor \u2014 raising one is how a maintainer says 'do not send this lane to a weaker model', and the router will then refuse rather than quietly pick something below it.",
+  "_residency_why": "One local model is RESIDENT \u2014 the factory's own worker. The others are ON-DEMAND: they are legitimate models that must be explicitly started to be used, and their service being up is not the machine's normal state. residency is what the machine SHOULD look like; the probes report what it DOES look like, and `doctor` flags the difference rather than assuming it away. Only strata-max may be resident, because every local model declares exclusive local-inference and they cannot coexist: on 2026-10-02 ninfer-serve holding the GPU drove strata-max into 176 failed starts in 20 minutes.",
+  "_health_why": "A model is not eligible because it is cheap. fr-1 is cost_tier 1 and sits on the tailnet, and on 2026-10-02 it was UNREACHABLE \u2014 measured, TCP connect to 100.92.51.0:11434 timed out \u2014 while admission would happily have routed a builder to it as the preferred fallback. So availability is probed at admission and an unreachable model is REJECTED with that reason, which also means a tier-1 model is never treated as a reliable fallback on the strength of its tier. probe:service reads the systemd unit; probe:tcp derives host and port from `endpoint`, so there is one source of truth for where a model lives.",
+  "task_kinds": {
+    "builder": {
+      "label": "implements one bounded slice",
+      "role": "writer",
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 98304
+      },
+      "resources": {
+        "ram_gb": 3,
+        "exclusive": null,
+        "footprint_source": "measured",
+        "footprint_evidence": "Includes the gate it runs in-process. npm run verify peak: MemAvailable 50 GB -> 48 GB floor, sampled at 250 ms (/tmp/mem.sample), 2026-10-02. Declared 3 to cover sampling error."
+      },
+      "runs_gate": true
+    },
+    "reviewer": {
+      "label": "fresh-context diff review",
+      "role": "reader",
+      "capabilities": {
+        "reasoning": 3,
+        "coding": 2,
+        "tool_use": 3,
+        "context_window": 98304
+      },
+      "resources": {
+        "ram_gb": 2,
+        "exclusive": null,
+        "footprint_source": "estimated"
+      },
+      "independence": {
+        "required": true,
+        "same_model": false,
+        "same_run": false
+      },
+      "_independence_gap": "RESOLVED 2026-10-02 (was: MEASURED as UNSATISFIABLE). The floor (reasoning 3, tool_use 3) was cleared by exactly ONE registered model, which was also the implementer, so same_model:false could not be satisfied by construction. A SECOND model now clears it \u2014 ollama-cloud/glm-5.3 \u2014 chosen for FAMILY independence rather than a second size of the same family. The former note is kept in D-007/D-008 and factory/decisions.md; this field now records the resolution rather than the gap."
+    },
+    "verifier": {
+      "label": "runs the deterministic gate",
+      "role": "reader",
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 1,
+        "tool_use": 3,
+        "context_window": 65536
+      },
+      "resources": {
+        "ram_gb": 3,
+        "exclusive": null,
+        "footprint_source": "measured"
+      },
+      "independence": {
+        "required": true,
+        "same_model": false,
+        "same_run": false
+      }
+    },
+    "explorer": {
+      "label": "read-only codebase research",
+      "role": "reader",
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 1,
+        "tool_use": 2,
+        "context_window": 65536
+      },
+      "resources": {
+        "ram_gb": 2,
+        "exclusive": null,
+        "footprint_source": "estimated"
+      }
+    },
+    "researcher": {
+      "label": "open-web research with citations",
+      "role": "reader",
+      "capabilities": {
+        "reasoning": 3,
+        "tool_use": 2,
+        "context_window": 131072
+      },
+      "resources": {
+        "ram_gb": 1,
+        "exclusive": null,
+        "footprint_source": "estimated"
+      }
+    },
+    "ocr": {
+      "label": "the machine review lane (own tool-use loop, own rules)",
+      "role": "reader",
+      "capabilities": {
+        "reasoning": 2,
+        "coding": 3,
+        "tool_use": 3,
+        "context_window": 65536
+      },
+      "resources": {
+        "ram_gb": 2,
+        "exclusive": null,
+        "footprint_source": "estimated"
+      },
+      "requires_local_inference": false,
+      "_requires_local_inference_why": "TEMPORARY ROUTING CHANGE, slice 6c fix round 5 only, human-authorized 2026-10-02: set false so the ocr lane can run at all. It was pinned to the one local model clearing its floor (strata-max, 49.2 GB private, D-012), and that model and a satisfiable admission reserve are mutually exclusive at 62 GB. REVERT to true when the human says so. NOTE what this does NOT buy: with ocr routed to cloud it shares a model with the builder, so this yields SCAFFOLDING diversity (own tool-use loop, own rule resolution, own rules file), NOT model independence. See D-015.",
+      "independence": {
+        "required": true,
+        "same_model": true,
+        "same_run": false,
+        "_why": "ocr is structurally independent \u2014 its own scaffolding, its own rule resolution \u2014 so it does NOT need model diversity. That is a capability, not a contradiction of the reviewer rule."
+      }
+    },
+    "gate": {
+      "label": "npm run verify on its own",
+      "role": "check",
+      "capabilities": {},
+      "resources": {
+        "ram_gb": 3,
+        "exclusive": null,
+        "footprint_source": "measured"
+      }
+    },
+    "playtest": {
+      "label": "the browser lane (Playwright, Chrome, screenshots)",
+      "role": "check",
+      "capabilities": {},
+      "resources": {
+        "ram_gb": 6,
+        "exclusive": null,
+        "footprint_source": "estimated",
+        "footprint_evidence": "NOT measured. Playwright plus a real Chrome profile. Estimated, and the admission line says so \u2014 an estimate that reads as a measurement is the class this factory keeps paying for."
+      }
+    }
+  },
+  "policies": {
+    "cost": "local-preferred",
+    "_cost_why": "cost_tier ascending when admissible: local is 0, tailnet 1, cloud 2. Local-first is the policy BECAUSE it is cheaper, not because it is better \u2014 and it is only chosen when it is admissible.",
+    "fallback": [
+      "local",
+      "cloud"
+    ],
+    "_fallback_why": "A cloud fallback is a SCHEDULING OUTCOME, not an incident. It belongs in the run log and the telemetry log; it is not a ledger entry and not an escalation. The ledger holds decisions.",
+    "independence": {
+      "reviewer": {
+        "required": true,
+        "same_model": false,
+        "same_run": false
+      },
+      "verifier": {
+        "required": true,
+        "same_model": false,
+        "same_run": false
+      }
+    },
+    "_independence_why": "The requirement is an independent REASONING PATH from the implementer, not a different machine. same_model:false and same_run:false are the mechanism; local-vs-cloud is one way to satisfy it and no longer the rule.",
+    "reclaim": "opt-in",
+    "_reclaim_why": "Automatic reclamation is DELIBERATELY not enabled. Stopping a resident model is destructive and this scheduler does not yet have reliable liveness (is anything actually using it?) or ownership (who may be told to wait?) semantics. Until it does, reclaim is a human-typed command. The invariant that IS enforced now: reclaim refuses to stop a model a live reservation holds \u2014 it must never kill a model that is in use. See factory/decisions.md D-004.",
+    "residency": {
+      "resident": [
+        "strata-max/qwen3.8-flash-next-iq3_s"
+      ],
+      "on_demand": [
+        "ninfer/qwen3.8-27b",
+        "strata/qwen3.8-flash-next-coder-iq1_m"
+      ]
+    },
+    "remote_verification": "required",
+    "_remote_verification_why": "A remote model must pass its health probe to be selected. Cloud is verified by the same mechanism as the tailnet, for the same reason: an endpoint that cannot be reached is not a fallback, it is a delayed failure that costs a whole slice.",
+    "_preference_why": "Configured preference breaks a tie between models that are already equal on cost_tier and already past the capability floor. LOWER wins; the default is 0. It is applied AFTER cost_tier, so a preference can never promote a cloud model over a local one, and BEFORE capabilityHeadroom, whose raw-unit sum would otherwise decide the factory's primary model by accident. It changes ORDER among admissible models only -- it can never make an inadmissible model admissible, and it is never a capability claim."
+  },
+  "lanes": [
+    "implementation",
+    "verification",
+    "review",
+    "visual_validation",
+    "acceptance"
+  ],
+  "_lanes_why": "The lane set is declared once, here, so a work item cannot invent a lane and the acceptance gate cannot name one that does not exist.",
+  "lane_states": {
+    "pending": [
+      "running",
+      "blocked_resource"
+    ],
+    "running": [
+      "complete",
+      "failed",
+      "blocked_resource"
+    ],
+    "failed": [
+      "running",
+      "blocked_resource"
+    ],
+    "blocked_resource": [
+      "pending",
+      "running"
+    ],
+    "complete": [],
+    "waived": []
+  },
+  "_lane_states_why": "States for a WORK lane. complete is terminal: evidence does not un-exist. failed is the honest state for a verdict of NEEDS_CHANGES \u2014 the lane ran and its outcome was negative, so acceptance stays blocked and the next fix round moves it failed -> running.",
+  "lane_reopen": {
+    "from": [
+      "complete"
+    ],
+    "allowed": [
+      "running"
+    ],
+    "requires_reason": true,
+    "_why": "A fix round re-opens a COMPLETED lane, and that has to be representable or the batch's own escalating fix loop cannot be written down: found live when `factory work transition v28-r2-6c implementation running` was refused on a completed lane during slice 6c fix round 3. It is a deliberate exception, not a relaxation \u2014 it fires only when the caller passes --reopen \"<why>\", the reason is recorded on the lane, and the guard's reopen-has-reason re-checks that a re-opened lane carries one. A silent re-open is still refused, so 'evidence does not un-exist' survives: the previous round's artifacts stay named and the reason for reopening joins them."
+  },
+  "acceptance_states": {
+    "blocked": [
+      "pass",
+      "waived"
+    ],
+    "pass": [],
+    "waived": []
+  },
+  "_acceptance_states_why": "The acceptance lane has its own vocabulary on purpose: it is not work, it is the gate over the work. pass and waived are terminal, and waived requires a written reason \u2014 there is no silent path to green.",
+  "acceptance_gate": {
+    "requires": [
+      "implementation",
+      "verification",
+      "review"
+    ]
+  }
+}

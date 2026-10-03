@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build-law guard: every src/lib/*.ts module ships a sibling *.test.ts.
+# Build-law guard: every `lib/` module ships a sibling test.
 #
 # WHY THIS EXISTS: `docs/agents/code-structure.md` states the rule plainly —
 # "`src/lib/trust.ts` <-> `src/lib/trust.test.ts`. A new `lib/` module without a
@@ -16,36 +16,69 @@
 # anything (code-structure.md covers that: "A test that asserts nothing is a
 # defect"). It checks one thing: does the file exist.
 #
+# THE REACH MATCHES THE NAME (widened in slice 8b). "every `lib/` module" was
+# true of the convention and false of this guard: it read `src/lib/*.ts` alone,
+# so `scripts/lib/fence-scanner.mjs` — a `lib/` module with no sibling file — was
+# invisible, and would have hidden the next one. There are two `lib/`
+# directories and two module extensions here, and the sibling convention differs
+# per directory, so the guard reads three globs across the two `lib/` directories:
+#
+#   src/lib/*.ts       -> <base>.test.ts    (the build law's own sentence; vitest)
+#   src/lib/*.mjs      -> <base>.test.ts    (the vanilla-JS escape hatch; vitest)
+#   scripts/lib/*.mjs  -> <base>.check.mjs  (standalone gate checkers, run by run-all.sh)
+#
+# ZERO IS A FINDING (D-030), counted PER SCAN SET: one set per `lib/` directory,
+# since the two `src/lib` globs share a sibling convention and a population. If a
+# set examines no non-exempt module — every entry exempt or a test, or its
+# directory empty — the run FAILS, and a populated `scripts/lib` no longer excuses
+# an empty `src/lib`. A missing `src/lib` is its own finding below; `scripts/lib`
+# is checked when that directory is present. It has not established that the build
+# law holds; it has established that it did not look, and an empty scan looks
+# exactly like a clean repo. See `lib-sibling-guard.check.mjs` for each set's seed
+# and mutation.
+#
 # PROVENANCE: pattern borrowed from affaan-m/ECC's PostToolUse guard hooks
 # (`scripts/hooks/quality-gate.js`, `config-protection.js`), reimplemented for
 # this repo's layout and run as a batch gate rather than per-edit. See
 # docs/agents/borrowed-guards.md.
 #
-# Usage:  bash scripts/guards/lib-sibling-guard.sh
+# Usage:  bash scripts/guards/lib-sibling-guard.sh [root]
 # Exit:   0 = clean, 1 = findings
 
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-LIB_DIR="src/lib"
-FAIL=0
-
-if [ ! -d "$LIB_DIR" ]; then
-  echo "SKIP — $LIB_DIR not found"
-  exit 0
+# The scan root: an explicit argument wins, so the behaviour check can point the
+# guard at a throwaway tree the way the other guards' checkers do; otherwise this
+# repository.
+if [ -n "${1:-}" ]; then
+  cd "$1" || { echo "lib-sibling: cannot enter root '$1'"; exit 2; }
+else
+  cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
 
-# Declared exemptions. Every entry must carry a reason, because an unexplained
-# allowlist entry is how a guard quietly stops guarding. Adding a module here
-# is a deliberate, reviewable act; forgetting to write its test is not.
+LIB_DIR="src/lib"
+SCRIPTS_LIB_DIR="scripts/lib"
+FAIL=0
+
+# Declared exemptions, keyed by path from the root. Every entry must carry a
+# reason, because an unexplained allowlist entry is how a guard quietly stops
+# guarding. Adding a module here is a deliberate, reviewable act; forgetting to
+# write its test is not.
 #
-#   types.ts       — types and interfaces only, no runtime code paths.
-#   db.ts          — the Supabase-facing wrapper. code-structure.md names this
-#                    as the file that needs no test because it holds no
-#                    decisions; the decisions live in the domain modules.
-#   db-*.test.ts   — (test files themselves, skipped by the loop)
-#   pushClient.ts  — browser-touching half of web push; its own header states
-#                    the rules live in push.ts and it only wires them up.
+#   src/lib/types.ts       — types and interfaces only, no runtime code paths.
+#   src/lib/db.ts          — the Supabase-facing wrapper. code-structure.md names
+#                            this as the file that needs no test because it holds
+#                            no decisions; the decisions live in the domain
+#                            modules.
+#   src/lib/pushClient.ts  — browser-touching half of web push; its own header
+#                            states the rules live in push.ts and it only wires
+#                            them up.
+#   scripts/lib/fence-scanner.mjs — its behaviour test is NOT a file beside it:
+#                            factory-guard.check.mjs runs the scanner over the
+#                            reference-derived fence fixture inside this gate. A
+#                            second copy beside the module would be the
+#                            duplication the one-copy rule forbids, so the
+#                            exemption is recorded here rather than paid twice.
 #
 # geocode.ts was exempt until the first-use audit (ticket 02) found that the
 # exemption hid a real policy: the ZIP derivation's "is this match precise
@@ -53,51 +86,92 @@ fi
 # fallback depends on. It now ships geocode.test.ts, so the exemption is gone.
 # Removing a stale exemption is the point of the reason requirement: an
 # allowlist entry that outlives its justification is how a guard stops guarding.
-EXEMPT="types.ts db.ts pushClient.ts"
+EXEMPT="src/lib/types.ts src/lib/db.ts src/lib/pushClient.ts scripts/lib/fence-scanner.mjs"
 
 is_exempt() {
-  local name="$1" e
+  local key="$1" e
   for e in $EXEMPT; do
-    [ "$name" = "$e" ] && return 0
+    [ "$key" = "$e" ] && return 0
   done
   return 1
 }
 
-echo "Build-law guard — sibling tests under $LIB_DIR/"
+checked=0           # src/lib (both module extensions) — one scan set
+checked_scripts=0   # scripts/lib                      — the other scan set
+missing=""
+SET_COUNT=0
+
+# scan_set <dir> <module-suffix> <sibling-suffix>: the sibling test of
+# `<dir>/<name><module-suffix>` is `<dir>/<base><sibling-suffix>`, where `<base>`
+# is the name without the module suffix. It leaves the number of non-exempt
+# modules it read in SET_COUNT, so each caller can keep its own scan set's count.
+scan_set() {
+  local dir="$1" mod="$2" sibling="$3"
+  local f name base
+  for f in "$dir"/*"$mod"; do
+    [ -e "$f" ] || continue
+    name="$(basename "$f")"
+
+    # A sibling test or checker is the thing being checked FOR, not a module; a
+    # `*.d.*` is a type declaration, not runtime code. Neither can ship a test.
+    case "$name" in *.test.ts|*.check.mjs|*.d.mts|*.d.ts) continue ;; esac
+
+    is_exempt "$dir/$name" && continue
+
+    SET_COUNT=$((SET_COUNT + 1))
+    base="${name%"$mod"}"
+
+    if [ ! -f "$dir/$base$sibling" ]; then
+      missing="$missing  MISSING: $dir/$name has no $dir/$base$sibling
+"
+      FAIL=1
+    fi
+  done
+}
+
+if [ ! -d "$LIB_DIR" ]; then
+  echo "Build-law guard — sibling tests under src/lib/ and scripts/lib/"
+  echo "==========================================================="
+  echo "  FINDING: $LIB_DIR does not exist — the scan read no module at all."
+  echo "  Zero is a finding, never a pass (D-030): a guard that examined nothing has"
+  echo "  established nothing, which is exactly what a clean repo also looks like."
+  echo
+  echo "FAIL — build law not checked."
+  exit 1
+fi
+
+echo "Build-law guard — sibling tests under src/lib/ and scripts/lib/"
 echo "==========================================================="
 
-checked=0
-missing=""
-
-for f in "$LIB_DIR"/*.ts; do
-  [ -e "$f" ] || continue
-  name="$(basename "$f")"
-
-  # Test files are not modules; they are the thing being checked for.
-  case "$name" in *.test.ts) continue ;; esac
-
-  is_exempt "$name" && continue
-
-  checked=$((checked + 1))
-  base="${name%.ts}"
-
-  if [ ! -f "$LIB_DIR/$base.test.ts" ]; then
-    missing="$missing  MISSING: $LIB_DIR/$base.ts has no $LIB_DIR/$base.test.ts
-"
-    FAIL=1
-  fi
-
-done
+SET_COUNT=0; scan_set "$LIB_DIR" ".ts" ".test.ts";            checked=$((checked + SET_COUNT))
+SET_COUNT=0; scan_set "$LIB_DIR" ".mjs" ".test.ts";           checked=$((checked + SET_COUNT))
+SET_COUNT=0; scan_set "$SCRIPTS_LIB_DIR" ".mjs" ".check.mjs"; checked_scripts=$SET_COUNT
 
 if [ -n "$missing" ]; then
   printf '%s' "$missing"
   echo
   echo "  FINDING: $(printf '%s' "$missing" | grep -c 'MISSING') module(s) ship no sibling test."
   echo "  code-structure.md: an untested lib module is an incomplete slice."
-  echo "  Fix: write $LIB_DIR/<name>.test.ts, or add <name>.ts to EXEMPT in"
-  echo "       scripts/guards/lib-sibling-guard.sh WITH a written reason."
-else
-  echo "  ok — all $checked non-exempt module(s) have a sibling .test.ts"
+  echo "  Fix: write the sibling the module's own directory uses, or add the module"
+  echo "       to EXEMPT in scripts/guards/lib-sibling-guard.sh WITH a written reason."
+  FAIL=1
+fi
+
+# D-030, PER SCAN SET (see the header). Each set's own count is checked, so a
+# populated `scripts/lib` cannot mask an empty `src/lib`.
+if [ "$checked" -eq 0 ]; then
+  echo "  FINDING: $LIB_DIR holds no non-exempt module — that scan set read nothing."
+  echo "  An empty scan is not a clean repo (D-030)."
+  FAIL=1
+fi
+if [ -d "$SCRIPTS_LIB_DIR" ] && [ "$checked_scripts" -eq 0 ]; then
+  echo "  FINDING: $SCRIPTS_LIB_DIR holds no non-exempt module — that scan set read nothing."
+  echo "  An empty scan is not a clean repo (D-030)."
+  FAIL=1
+fi
+
+if [ "$FAIL" -eq 0 ]; then
+  echo "  ok — all $((checked + checked_scripts)) non-exempt module(s) have a sibling test"
 fi
 
 echo

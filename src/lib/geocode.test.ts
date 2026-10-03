@@ -1,19 +1,23 @@
 /**
- * The geocode seam's sibling test (first-use audit, ticket 02).
+ * The geocode seam's sibling test (first-use audit, ticket 02; V28 slice 5).
  *
  * WHY THIS FILE EXISTS, beyond the build law's "every lib module ships a test":
- * the audit's second finding is that a parent whose signup address did not
- * resolve to a ZIP was moved to a ZIP screen with no explanation. The fix is
- * only worth anything if the UNRESOLVED path is real and testable, and it was
- * not: `zipFromAddressQuery` hit Nominatim directly, so the only way to reach
- * the failure was for the network to fail. Nothing here touches the network —
+ * the audit's second finding is that a parent whose address did not
+ * resolve to a ZIP was moved to a ZIP screen with no explanation — since V28
+ * slice 5 that note is the AREA CARD's own (its bounded lookup's "absent"
+ * outcome). The fix is only worth anything if the UNRESOLVED path is real and
+ * testable, and it was
+ * not: the lookup hit Nominatim directly, so the only way to reach the failure
+ * was for the network to fail. Nothing here touches the network —
  * every case injects the lookup, which is the one dependency this module has.
  */
 import { describe, expect, it, vi } from 'vitest'
 import {
   coordinatesFromResult,
   geocodeAddress,
-  zipFromAddressQuery,
+  locationFromAddressQuery,
+  locationFromAddressQueryBounded,
+  locationFromResult,
   zipFromResult,
   type NominatimResult,
 } from './geocode'
@@ -44,7 +48,7 @@ describe('coordinatesFromResult', () => {
   })
 })
 
-describe('zipFromResult — the two outcomes the signup fallback depends on', () => {
+describe('zipFromResult — the two outcomes the area card\'s fallback note depends on', () => {
   it('RESOLVED: a street address with a recognised house number yields its ZIP', () => {
     expect(zipFromResult(SEATTLE, STREET_RESULT)).toBe('98105')
   })
@@ -95,27 +99,6 @@ describe('zipFromResult — the two outcomes the signup fallback depends on', ()
 // ---------------------------------------------------------------------------
 
 describe('the async wrappers inject exactly one dependency', () => {
-  it('zipFromAddressQuery passes the TRIMMED query and returns the pure decision', async () => {
-    const lookup = vi.fn(async () => STREET_RESULT)
-    expect(await zipFromAddressQuery(`  ${SEATTLE}  `, lookup)).toBe('98105')
-    expect(lookup).toHaveBeenCalledTimes(1)
-    expect(lookup).toHaveBeenCalledWith(SEATTLE)
-  })
-
-  it('zipFromAddressQuery short-circuits an empty query WITHOUT a lookup', async () => {
-    const lookup = vi.fn(async () => STREET_RESULT)
-    expect(await zipFromAddressQuery('   ', lookup)).toBe(null)
-    expect(lookup).not.toHaveBeenCalled()
-  })
-
-  it('zipFromAddressQuery survives a lookup that fails — the fallback path', async () => {
-    // This is the audit's unresolved branch for real: the dependency returns
-    // null (network error, non-OK, nothing found), and the caller must get a
-    // clean null so /onboarding can explain itself instead of crashing.
-    const lookup = vi.fn(async () => null)
-    expect(await zipFromAddressQuery(SEATTLE, lookup)).toBe(null)
-  })
-
   it('geocodeAddress uses the same injected seam', async () => {
     const lookup = vi.fn(async () => STREET_RESULT)
     expect(await geocodeAddress(SEATTLE, lookup)).toEqual({ lat: 47.6612, lng: -122.3255 })
@@ -124,5 +107,119 @@ describe('the async wrappers inject exactly one dependency', () => {
 
   it('geocodeAddress returns null when the lookup yields nothing', async () => {
     expect(await geocodeAddress(SEATTLE, async () => null)).toBe(null)
+  })
+})
+
+/** A city-level answer: Nominatim found the CITY, not the house number. */
+const CITY_RESULT: NominatimResult = {
+  lat: '47.6062',
+  lon: '-122.3321',
+  address: { postcode: '98101' },
+}
+
+describe('locationFromResult (V28 slice 4 — one Nominatim result, two extractions)', () => {
+  it('yields BOTH the zip and the pin from one street-address result', () => {
+    expect(locationFromResult(SEATTLE, STREET_RESULT)).toEqual({
+      zip: '98105',
+      coordinates: { lat: 47.6612, lng: -122.3255 },
+    })
+  })
+
+  it('a city-level answer: no zip (the fallback is the escape) but the pin is real', () => {
+    // The map CAN show a pin for a city-level match while the ZIP fallback
+    // stays the way the card finishes — the two fields are independent.
+    expect(locationFromResult(SEATTLE, CITY_RESULT)).toEqual({
+      zip: null,
+      coordinates: { lat: 47.6062, lng: -122.3321 },
+    })
+  })
+
+  it('a null result yields both nulls (absent is the only honest value)', () => {
+    expect(locationFromResult(SEATTLE, null)).toEqual({ zip: null, coordinates: null })
+  })
+
+  it('an empty query yields both nulls', () => {
+    expect(locationFromResult('   ', STREET_RESULT)).toEqual({ zip: null, coordinates: null })
+  })
+})
+
+describe('locationFromAddressQuery (V28 slice 4 — the injectable, one-request seam)', () => {
+  it('runs exactly ONE lookup and reads both fields off that one result', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    const result = await locationFromAddressQuery(SEATTLE, lookup)
+    expect(lookup).toHaveBeenCalledTimes(1)
+    expect(lookup).toHaveBeenCalledWith(SEATTLE)
+    expect(result).toEqual({ zip: '98105', coordinates: { lat: 47.6612, lng: -122.3255 } })
+  })
+
+  it('an empty query short-circuits without a lookup', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    expect(await locationFromAddressQuery('   ', lookup)).toEqual({ zip: null, coordinates: null })
+    expect(lookup).not.toHaveBeenCalled()
+  })
+})
+
+describe('locationFromAddressQueryBounded (V28 slice 4 — the card-gating lookup\'s bounded escape)', () => {
+  it('a fast lookup wins the race and leaves no timer behind', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(async () => STREET_RESULT)
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      expect(await pending).toEqual({ zip: '98105', coordinates: { lat: 47.6612, lng: -122.3255 } })
+      expect(lookup).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a never-settling lookup settles to the null shape at the deadline (the pending-state escape)', async () => {
+    vi.useFakeTimers()
+    try {
+      const neverSettled = new Promise<NominatimResult | null>(() => {})
+      const lookup = vi.fn(() => neverSettled)
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      vi.advanceTimersByTime(10_000)
+      expect(await pending).toEqual({ zip: null, coordinates: null })
+      expect(lookup).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a failed lookup settles to the null shape before the deadline (the fast fallback path)', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(async () => null)
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      expect(await pending).toEqual({ zip: null, coordinates: null })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a rejecting lookup rethrows (a real failure the caller may see — the card catches it)', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn(() => Promise.reject(new Error('boom')))
+      const pending = locationFromAddressQueryBounded(SEATTLE, 10_000, lookup)
+      await expect(pending).rejects.toThrow('boom')
+      // B3 (slice 4 fix 1): the REJECTION leg clears the deadline timer too —
+      // the same `vi.getTimerCount()` instrument the sibling's legs use, so
+      // "the timer was cleared" is pinned, not asserted in a comment.
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('an empty query short-circuits without a lookup (and without a timer)', async () => {
+    const lookup = vi.fn(async () => STREET_RESULT)
+    expect(await locationFromAddressQueryBounded('   ', 10_000, lookup)).toEqual({
+      zip: null,
+      coordinates: null,
+    })
+    expect(lookup).not.toHaveBeenCalled()
   })
 })

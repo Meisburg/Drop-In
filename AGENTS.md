@@ -36,6 +36,10 @@ mode" — confirm in one line, then revert to default style.
   builder dispatch. Template: `plan.template.md`.
 - `task-state.md` — current phase, slice states, evidence, risks, escalations.
   The orchestrator updates it after every phase transition.
+- `factory/work/<id>.json` — per-work-item lane state and artifacts; a worker
+  is disposable, this is not.
+- `factory/decisions.md` — append-only decisions about factory behaviour. The
+  batch ledger keeps slice rulings; its mixed history stays as it is.
 - Subagents get briefs pointing at files, never pasted chat history.
 - Each returns a structured report; the orchestrator routes on the report plus
   the files, not on vibes.
@@ -118,29 +122,21 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
 The three lanes above **judge**; none can *guarantee*. A reviewer misses files,
 `ocr` skips config and prose, the verifier runs only what it was handed. So
 `npm run guards` (inside `verify`) runs scripts that either find a violation or
-do not — no model, no tokens. Four rules: a `lib/` module needs its sibling
-test; a check-config change needs `ALLOW_CONFIG_CHANGE="<why>"`; tracked git
-hooks stay wired; every e2e fixture stays inside the sweep's marker convention
-(`docs/agents/e2e-fixture-convention.md`). Rules that parse source ship a
-`.check.mjs` proving the checker fires.
+do not — no model, no tokens. The rules and why each exists:
+`docs/agents/factory.md` (the factory's), `docs/agents/borrowed-guards.md`
+(provenance, and the four tests a new one passes), and
+`docs/agents/e2e-fixture-convention.md` (fixture markers). A rule that parses
+source ships a `.check.mjs` proving it can fire.
 
-Borrowed from `affaan-m/ECC` (MIT): `docs/agents/borrowed-guards.md` — what was
-taken, refused, the four tests.
+## The escalating fix loop (why it escalates by capability)
 
-## The escalating fix loop (why it escalates by model)
-
-Builders, reviewers, and verifiers all run the same local model
-(`qwen3.8-27b`). A builder and its reviewer are siblings, so a hard slice
-deadlocks: the model that wrote the bug is the model judging it. Repeating the
-same attempt cannot break that. Changing the model can.
-
-| Round | Who | Model |
-|---|---|---|
-| 1–3 | resume the original builder with findings verbatim | local `qwen3.8-27b` |
-| 4–5 | fresh builder + fresh reviewer | cloud `deepseek-v4.1-flash:cloud` |
-| breaker | orchestrator adjudicates each open finding | — |
-
-Every adjudication is a **ledger entry**, never a silent discard.
+A builder and its reviewer can end up as siblings — the model that wrote the bug
+judging it — and repeating an attempt cannot break that. Escalation changes the
+worker's capability ceiling instead, and `factory route --independence-of` keeps
+the reviewer off the implementer's model by name. Rounds 1–3 resume the original
+builder; 4–5 dispatch a fresh, higher-ceiling worker and a fresh reviewer; the
+orchestrator is the breaker. Every adjudication is a **ledger entry**, never a
+silent discard.
 
 ## The build law
 
@@ -188,7 +184,7 @@ Read it when its situation arrives — the pointer says when.
 | A slice touches an external API, library, or version-specific behavior | `docs/agents/grounding-gates.md` — Exa grounding before dispatch; findings into `research/` |
 | Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch mechanics, this session's migration/QA steps, fleet roles |
 | Running agents in Orca (worktrees, terminals, diff, browser) | `docs/agents/orca.md` — the workspace substrate, and what it must never own |
-| Changing agent models or debugging a lane's cost | `docs/agents/model-routing.md` — cloud/local split, NInfer specifics |
+| Choosing compute or a model, or a lane is resource-blocked | `docs/agents/compute-policy.md` — local-first routing, what exists; then `factory.md`, `model-routing.md` |
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |

@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "id": "v28-r2-8a",
+  "title": "Slice 8a — make the code and the record honest",
+  "plan_ref": "plan.md#slice-8a",
+  "track": null,
+  "base": null,
+  "depends_on": [
+    "v28-r2-6d"
+  ],
+  "created_at": "2026-10-02T16:22:52.115Z",
+  "lanes": {
+    "implementation": {
+      "state": "complete",
+      "owner": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        ".scratch/v28/reports/slice-8a.md"
+      ],
+      "evidence": []
+    },
+    "verification": {
+      "state": "complete",
+      "owner": null,
+      "model": null,
+      "artifacts": [
+        ".scratch/v28/reports/slice-8a-verify-5.md"
+      ],
+      "evidence": []
+    },
+    "review": {
+      "state": "complete",
+      "owner": null,
+      "model": null,
+      "artifacts": [
+        ".scratch/v28/reports/slice-8a-review-5.md"
+      ],
+      "evidence": []
+    },
+    "visual_validation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "acceptance": {
+      "state": "pass",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": [],
+      "reason": null
+    }
+  },
+  "history": [
+    {
+      "at": "2026-10-02T16:44:02.596Z",
+      "lane": "acceptance",
+      "from": "pending",
+      "to": "blocked",
+      "note": "repair: newWorkItem defaulted acceptance to pending, which its own guard rejects (lane-states-legal). Constructor fixed; this item repaired.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T18:22:30.162Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T18:22:30.188Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T18:22:30.214Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": "18 commits 8d1170d..ae578c2, 23 files, +606/-514; verify exit 0 with the test count at 2061 (delta -7, broken down and accounted); a real wire-revert mutation proof on e2e/avatar.e2e.ts; two brief-level deviations argued with measurements",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:29.420Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:29.447Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:31.789Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:31.816Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:31.846Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": "round 5 VERIFY: FAIL — the failure is entirely inside the GUARD RULE this slice added (a reachable escape via the quotation exemption: a fabricated transcript passes by prefixing '>'; plus coverage loss where the narrowed label form dropped three genuine raw blocks). The slice's PRODUCT work passed: the finishSignup pin, the avatarUrl call proof, the wire-or-delete list, and the gate (71 files / 2063 tests / 81 warnings / 0 errors / AGENTS.md 1789-1800).",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:31.873Z",
+      "lane": "review",
+      "from": "running",
+      "to": "complete",
+      "note": "round 5 review NEEDS_CHANGES, 5 blocking, ALL INSIDE THE GUARD RULE — adjudicated to 8b under D-031 with every finding enumerated in factory/work/v28-r2-8b.json",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T19:55:31.900Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "pass",
+      "note": "8a CLOSED on its PRODUCT work, which five rounds verified. RECORDED DEVIATION: round-5 verification FAILED and review returned NEEDS_CHANGES, both solely on the guard rule added mid-slice; the breaker (D-031) adjudicated those guard internals to 8b, which owns guards and already holds three checked=0 paths, because a sixth patch inside a product slice would be a third attempt at the same rule in three rounds. A repair that trades a small hole for a reachable escape is a net regression (D-031).",
+      "actor": null,
+      "model": null
+    }
+  ]
+}

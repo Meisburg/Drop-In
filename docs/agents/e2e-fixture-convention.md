@@ -31,6 +31,41 @@ cascade with them. The title marker is the **straggler** handle — it is what l
 a human read the production feed and the sweep's report and tell a fixture from a
 parent's post.
 
+## ⚠️ Scoping is not safety — the 2026-10-03 incident
+
+**A real parent lost a `going_pings` row to this sweep, and every marker-scoped
+check passed while it happened.** The chain:
+
+1. an `e2e-` account hosted a drop-in;
+2. a **real** parent pinged it — their `profile_id` is not a marker, so
+   `going_pings`' own clause never matched it and its marker count was a truthful
+   **zero**;
+3. the sweep deleted the marker-hosted drop-in;
+4. `ON DELETE CASCADE` destroyed the real parent's ping with it.
+
+**The lesson: deleting a marker PARENT can reach a non-marker CHILD.** Deleting
+rows that match `e2e-%` is necessary and not sufficient. Seventeen `CASCADE` edges
+reach the sweep's tables from a parent it deletes, and the two that can hit a real
+parent *without the parent being a marker* are
+`going_pings.playdate_id -> playdates` and `follows.* -> profiles`.
+
+**The sweep now refuses when this would happen.** A read-only collateral probe runs
+before any delete, and a single non-marker row behind a doomed parent aborts the
+run (exit 5). It cannot be bypassed by a flag. Full write-up:
+`.scratch/v28/reports/r3-1-incident.md`.
+
+## ⚠️ A sweep is a snapshot of a stream
+
+Measured: the 2026-10-03 sweep removed **1195** accounts, and roughly **40 more**
+were created by e2e runs in the ~90 minutes after it. Cleanup by manual sweep
+therefore means re-running a destructive production script before every release,
+forever — while fixtures keep appearing in the real discovery feed between runs.
+
+The durable fix is a **separate Supabase project or branch for e2e**, so the marker
+set and real parents are never in the same database. Until that exists, the
+collateral gate is what makes the sweep safe to run; it does not make it
+unnecessary.
+
 ## Rules a spec must satisfy
 
 1. **Every account it creates carries the account marker.** An account outside

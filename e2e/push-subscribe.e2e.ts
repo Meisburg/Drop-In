@@ -72,6 +72,13 @@ interface PushStubState {
   subscribes: number
   unsubscribes: number
   /**
+   * How many times `subscribe()` was called WITHOUT a VAPID key, and therefore
+   * REFUSED (V28 r3-2). A non-zero count against a build that has no key is the
+   * defect made visible; a non-zero count against a build that HAS one means the
+   * key never reached the client.
+   */
+  keylessSubscribeAttempts: number
+  /**
    * The document's `navigator.userActivation.isActive` AT THE MOMENT
    * `requestPermission()` was called (V25 ticket 15). The ticket's hard
    * constraint is that a browser grants push only on a user gesture, so this is
@@ -126,6 +133,7 @@ async function installPushStub(
         requests: restored.requests ?? 0,
         subscribes: restored.subscribes ?? 0,
         unsubscribes: restored.unsubscribes ?? 0,
+        keylessSubscribeAttempts: restored.keylessSubscribeAttempts ?? 0,
         requestActivation: restored.requestActivation ?? null,
         installed: false,
       }
@@ -140,6 +148,7 @@ async function installPushStub(
               requests: state.requests,
               subscribes: state.subscribes,
               unsubscribes: state.unsubscribes,
+              keylessSubscribeAttempts: state.keylessSubscribeAttempts,
               requestActivation: state.requestActivation,
               installed: state.installed,
             }),
@@ -175,7 +184,29 @@ async function installPushStub(
         async getSubscription() {
           return null
         },
-        async subscribe() {
+        /**
+         * ⚠️ THIS STUB MUST REFUSE A KEYLESS SUBSCRIBE (V28 r3-2).
+         *
+         * It used to accept ANY options and return a fake subscription — so a
+         * build with no VAPID key "succeeded" in every test while a real Chrome
+         * refused it outright with `Registration failed - missing
+         * applicationServerKey, and gcm_sender_id not found in manifest`. That
+         * is exactly why 2067 green tests shipped a broken notification opt-in:
+         * the stub modelled a browser more permissive than any real one.
+         *
+         * The refusal is modelled on Chromium's, and it is a REJECTION rather
+         * than a silent success, because the defect was the app recording a
+         * success that never happened.
+         */
+        async subscribe(options?: { applicationServerKey?: unknown }) {
+          if (options?.applicationServerKey === undefined) {
+            state.keylessSubscribeAttempts += 1
+            persist()
+            throw new DOMException(
+              'Registration failed - missing applicationServerKey, and gcm_sender_id not found in manifest',
+              'InvalidStateError',
+            )
+          }
           state.subscribes += 1
           persist()
           return new FakePushSubscription(config.endpoint)

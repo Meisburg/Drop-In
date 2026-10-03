@@ -46,8 +46,11 @@ export interface ZipCoords {
 
 /**
  * The viewer side of the radius filter (V2 slice 3): their home zip + the
- * radius they chose. `homeZip` null = not set (the onboarding gate keeps
- * that state out of the feed; the filter itself treats it as "no posts").
+ * radius they chose. `homeZip` null = not set, and the filter treats that as
+ * "no posts". (The old note "the onboarding gate keeps that state out of the
+ * feed" is gone: V28 slice 2b removed the gate, so a no-zip parent REACHES
+ * the feed now — its empty state renders the location notice via
+ * RadiusEmptyState's slice-2c early return, not a radius empty state.)
  */
 export interface RadiusViewer {
   homeZip: string | null

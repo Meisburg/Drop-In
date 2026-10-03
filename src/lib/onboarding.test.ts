@@ -1,73 +1,67 @@
 import { describe, expect, it } from 'vitest'
 import {
-  consumeSignupZipUnresolved,
   HOME_PATH,
-  markSignupZipUnresolved,
-  needsOnboarding,
-  ONBOARDING_PATH,
   resolveOnboardingGate,
   resolveOnboardingRedirect,
   resolveProtectedRedirect,
-  SIGNUP_ZIP_FALLBACK_KEY,
-  type FlagStorage,
   type OnboardingGateState,
 } from './onboarding'
 
 /**
- * Onboarding-gate tests (V2 slice 3: the gate keys on the home zip, not
- * memberships — neighborhoods are display labels only, discovery is
- * radius-based).
+ * Onboarding-gate tests. V28 slice 2b: the gate no longer keys on the home
+ * zip — the location requirement moved off the gate and onto the write
+ * paths (hasHomeZip, lib/homeZip.ts). What survives here: the signed-out
+ * /login leg, the cold-load 'loading' race, the suspended screen, and the
+ * /onboarding route's own redirect (V28 slice 6, defect #19: re-keyed —
+ * signed out → /login, signed in → render, finished runs end on the
+ * page's own finish card, never a feed bounce).
  */
 
-describe('needsOnboarding', () => {
-  it('is true when the user has no home zip', () => {
-    expect(needsOnboarding(false)).toBe(true)
-  })
-
-  it('is false when the user has a home zip', () => {
-    expect(needsOnboarding(true)).toBe(false)
-  })
-})
+// V28 r2 slice 8a: `needsOnboarding(homeZipSet)` (`!homeZipSet`) was DELETED —
+// the two tests below were its only callers, measured at 8d1170d. It was the
+// last fragment of the app-wide home-zip gate slice 2b removed (the
+// requirement lives on the write paths now — docs/adr/0001-home-zip-stops-
+// being-a-gate.md), so a one-line predicate nothing called was a claim about a
+// gate the app no longer has.
 
 describe('resolveProtectedRedirect (protected routes)', () => {
   it('sends signed-out users to /login', () => {
-    expect(resolveProtectedRedirect(false, false, '/')).toBe('/login')
-    expect(resolveProtectedRedirect(false, true, '/browse')).toBe('/login')
-    expect(resolveProtectedRedirect(false, true, '/u/jamie')).toBe('/login')
+    expect(resolveProtectedRedirect(false, '/')).toBe('/login')
+    expect(resolveProtectedRedirect(false, '/browse')).toBe('/login')
+    expect(resolveProtectedRedirect(false, '/u/jamie')).toBe('/login')
   })
 
-  it('lets signed-out visitors keep a public detail route (V2 slice 5 — no /onboarding detour)', () => {
-    // A signed-out visitor has no home zip — the onboarding bounce must NOT
-    // fire (it would detour through /onboarding, which bounces to /login —
-    // a redirect loop; the public detail page is the route's point).
-    expect(resolveProtectedRedirect(false, false, '/playdate/abc')).toBe('/playdate/abc')
+  it('lets signed-out visitors keep a public detail route (V2 slice 5 — no /login detour)', () => {
+    // The public detail page is the route's point: resolveAuthRedirect
+    // allows it signed-out, and the function above it never sends a
+    // signed-out visitor anywhere but /login (no location rule exists
+    // that could detour them at all).
+    expect(resolveProtectedRedirect(false, '/playdate/abc')).toBe('/playdate/abc')
   })
 
-  it('sends signed-in users without a home zip to /onboarding', () => {
-    expect(resolveProtectedRedirect(true, false, '/')).toBe(ONBOARDING_PATH)
-    expect(resolveProtectedRedirect(true, false, '/browse')).toBe(ONBOARDING_PATH)
-    expect(resolveProtectedRedirect(true, false, '/profile')).toBe(ONBOARDING_PATH)
+  it('lets signed-in users keep the intended route (V28 slice 2b — the location requirement lives at the writes, not a wall)', () => {
+    expect(resolveProtectedRedirect(true, '/')).toBe(HOME_PATH)
+    expect(resolveProtectedRedirect(true, '/browse')).toBe('/browse')
+    expect(resolveProtectedRedirect(true, '/profile')).toBe('/profile')
+    expect(resolveProtectedRedirect(true, '/u/jamie')).toBe('/u/jamie')
   })
 
-  it('lets signed-in users with a home zip keep the intended route', () => {
-    expect(resolveProtectedRedirect(true, true, '/')).toBe(HOME_PATH)
-    expect(resolveProtectedRedirect(true, true, '/browse')).toBe('/browse')
-    expect(resolveProtectedRedirect(true, true, '/u/jamie')).toBe('/u/jamie')
+  it("does not bounce a no-zip parent out of an \"I'm coming\" return target", () => {
+    expect(resolveProtectedRedirect(true, '/playdate/abc123')).toBe('/playdate/abc123')
   })
 })
 
 describe('resolveOnboardingRedirect (the /onboarding route)', () => {
-  it('sends signed-out users to /login', () => {
-    expect(resolveOnboardingRedirect(false, false)).toBe('/login')
-    expect(resolveOnboardingRedirect(false, true)).toBe('/login')
+  it('sends a signed-out visitor to /login', () => {
+    expect(resolveOnboardingRedirect(false)).toBe('/login')
   })
 
-  it('sends signed-in users with a home zip back to /', () => {
-    expect(resolveOnboardingRedirect(true, true)).toBe(HOME_PATH)
-  })
-
-  it('lets signed-in users without a home zip stay on /onboarding', () => {
-    expect(resolveOnboardingRedirect(true, false)).toBeNull()
+  it('renders a signed-in user, zip set or not — the finished run shows its own finish card, never a feed bounce (V28 slice 6, defect #19)', () => {
+    // The old `(signed in + zip set) → HOME_PATH` leg is GONE: it bounced a
+    // finished parent off the area card's save (the zip write creates
+    // exactly the state that triggered the bounce) and re-bounced any
+    // re-visit to /onboarding out of the run's own ending.
+    expect(resolveOnboardingRedirect(true)).toBeNull()
   })
 })
 
@@ -77,7 +71,6 @@ function gateState(over: Partial<OnboardingGateState> = {}): OnboardingGateState
     sessionLoading: false,
     profileLoading: false,
     signedIn: true,
-    homeZipSet: true,
     suspended: false,
     ...over,
   }
@@ -89,19 +82,14 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
   })
 
   it('renders the loading state while a signed-in user\'s profile fetch is in flight (the race)', () => {
-    // A stale homeZipSet=false must NOT bounce the user to /onboarding
-    // mid-load — that is the cold-load race this gate fixes.
-    expect(
-      resolveOnboardingGate(gateState({ profileLoading: true, homeZipSet: false })),
-    ).toBe('loading')
+    // profileLoading makes the gate render 'loading' instead of a route —
+    // that is the cold-load race this gate fixes (a stale session/profile
+    // read must never decide routing mid-load).
+    expect(resolveOnboardingGate(gateState({ profileLoading: true }))).toBe('loading')
   })
 
-  it('passes a settled signed-in user with a home zip', () => {
+  it('passes a settled signed-in user (V28 slice 2b — the gate no longer keys on the home zip)', () => {
     expect(resolveOnboardingGate(gateState({}))).toBe('pass')
-  })
-
-  it('sends a settled signed-in user without a home zip to /onboarding', () => {
-    expect(resolveOnboardingGate(gateState({ homeZipSet: false }))).toBe('onboard')
   })
 
   it('passes a settled signed-out user (the signed-out gate sends /login)', () => {
@@ -118,60 +106,12 @@ describe('resolveOnboardingGate (the shell gate, ticket 06 cold-load race)', () 
     ).toBe('suspended')
   })
 })
-// ---------------------------------------------------------------------------
-// The signup→onboarding handoff (first-use audit, ticket 02).
-//
-// The audit's finding was a silent transition: the address did not resolve, so
-// the parent met a ZIP screen with no explanation. These tests pin the two
-// things that make the fix trustworthy — it fires only for the failure case,
-// and it fires only ONCE.
-// ---------------------------------------------------------------------------
-
-/** A minimal in-memory storage, plus one that throws on every access. */
-function fakeStorage(seed: Record<string, string> = {}): FlagStorage & {
-  dump: () => Record<string, string>
-} {
-  const map = new Map(Object.entries(seed))
-  return {
-    getItem: (key) => map.get(key) ?? null,
-    setItem: (key, value) => void map.set(key, value),
-    removeItem: (key) => void map.delete(key),
-    dump: () => Object.fromEntries(map),
-  }
-}
-
-const throwingStorage: FlagStorage = {
-  getItem: () => {
-    throw new Error('SecurityError')
-  },
-  setItem: () => {
-    throw new Error('SecurityError')
-  },
-  removeItem: () => {
-    throw new Error('SecurityError')
-  },
-}
-
-describe('the signup ZIP fallback flag', () => {
-  it('reports the unresolved address exactly once', () => {
-    const storage = fakeStorage()
-    markSignupZipUnresolved(storage)
-    expect(consumeSignupZipUnresolved(storage)).toBe(true)
-    // The second read is a DIFFERENT visit: a stale cause must not be invented.
-    expect(consumeSignupZipUnresolved(storage)).toBe(false)
-    expect(storage.dump()[SIGNUP_ZIP_FALLBACK_KEY]).toBeUndefined()
-  })
-
-  it('says nothing when the signup address DID resolve', () => {
-    // The happy path writes nothing at all, which is what makes the note mean
-    // something when it does appear.
-    expect(consumeSignupZipUnresolved(fakeStorage())).toBe(false)
-  })
-
-  it('never throws into a signup or a render when storage is hostile', () => {
-    expect(() => markSignupZipUnresolved(throwingStorage)).not.toThrow()
-    expect(consumeSignupZipUnresolved(throwingStorage)).toBe(false)
-    expect(() => markSignupZipUnresolved(null)).not.toThrow()
-    expect(consumeSignupZipUnresolved(null)).toBe(false)
-  })
-})
+// V28 slice 5 retires the signup→onboarding ZIP fallback flag (the section
+// these tests used to pin): the signup form's address left /login in slice
+// 3b, so `SIGNUP_ZIP_FALLBACK_KEY` / `markSignupZipUnresolved` /
+// `consumeSignupZipUnresolved` were dead code — no producer, no consumer.
+// The fallback's coverage now lives in the AREA CARD: its in-card notice is
+// exercised by e2e/signup-zip-fallback.e2e.ts (a resolvable address writes
+// the home zip with no typed ZIP; an unresolvable one reveals the ZIP field
+// and the notice), and the card-gating lookup's timeout behavior is pinned
+// in geocode.test.ts (`locationFromAddressQueryBounded`'s legs).

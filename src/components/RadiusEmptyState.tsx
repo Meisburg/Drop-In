@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
+import { hasHomeZip } from '../lib/homeZip'
 import { emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
+import { LocationRequiredNotice } from './LocationRequiredNotice'
 
 /**
  * The empty-radius state (V8 ticket 02) — ONE implementation for the feed
@@ -58,6 +60,14 @@ import { useSessionContext } from './SessionProvider'
  * identical CTAs on the same screen — the exact "two post a drop-in buttons"
  * complaint this slice removes. The feed passes `showPostCta={false}`; Browse
  * keeps the default (the CTA is still the only way to post from /browse).
+ *
+ * V28 slice 2c: 2b removed the app-wide onboarding wall, so a SETTLED no-zip
+ * parent now reaches this state from BOTH callers (the feed's empty list and
+ * Browse's radiusReason) — where it used to be the radius empty state with
+ * every escape disabled: a lie ("Nothing within N miles yet.") whose only
+ * controls are inert. The component therefore early-returns the SHARED
+ * LocationRequiredNotice (slice 2a) for that case; with a zip present it
+ * renders exactly what it rendered before, unchanged.
  */
 export function RadiusEmptyState({
   radiusMiles,
@@ -78,16 +88,54 @@ export function RadiusEmptyState({
    * V8 ticket 02 REVIEW ROUND: an escape with nothing to widen FROM (no
    * session, no home zip) must not render as a live control — a button that
    * swallows its own tap is the "second dead end wearing a control's clothes"
-   * this component exists to remove. The shell's onboarding gate keeps that
-   * state off these pages, so this is a belt-and-braces guard, not a flow.
+   * this component exists to remove. V28 slice 2a fix 1/5: the zip half of the
+   * test goes through the ONE predicate (hasHomeZip) — same rule, one
+   * definition. V28 slice 2c (fix 1/5 correction): this guard covers BOTH the
+   * in-flight `session === null` case AND the in-flight PROFILE window — while
+   * the profile is in flight `homeZip` is `profile?.home_zip ?? ''`, and
+   * `!hasHomeZip('')` is true, so the clause EVALUATES true there too (the
+   * guard is not wrong — but it is UNREACHABLE there: no current caller
+   * renders this component while the profile is in flight, so nothing can
+   * actually hit this state with a null profile — the early return's note
+   * below carries the three caller citations; cross-referenced here, not
+   * restated, so the two comments cannot drift apart). (Slice 2c's first
+   * draft said "only the `session === null` case" — that was wrong — and fix
+   * 1/5's "the in-flight window is real on these pages" contradicted the early
+   * return's note, which fix 2/5 corrects. The settled no-zip parent — the
+   * case that matters — is diverted by the early return before the guard is
+   * ever consulted. */
+  const escapesDisabled = busyRadius !== null || session === null || !hasHomeZip(homeZip)
+
+  /**
+   * V28 slice 2c: a SETTLED no-zip parent (profile loaded, `home_zip` unset)
+   * gets the shared location notice, not this state — the radius copy would be
+   * false (the query returned [] because there is no zip to distance from) and
+   * every escape would be disabled above. Both callers (FeedPage, and Browse
+   * via radiusReason, whose null distances make the radius "the reason")
+   * render through this ONE component, so one early return fixes both.
+   * V28 slice 2c fix 1/5: the `profile !== null` half is deliberate
+   * belt-and-braces, not a hole a caller falls into — no surface renders this
+   * component while the profile is in flight: FeedPage renders "Loading…"
+   * while `posts === null` and its feed effect never runs before the profile
+   * settles (`FeedPage.tsx` feed effect's `profile === null` gate, ~line 495,
+   * empty-state branch ~1248), BrowsePage returns "Loading…" on a null profile
+   * (`BrowsePage.tsx` ~313), and NewPlaydatePage's embedded sheet sits behind
+   * its own `loading` guard (`NewPlaydatePage.tsx` ~1231). So the notice fires
+   * exactly when the state settles; the half only matters if a FUTURE caller
+   * forgets to guard on the profile — then it renders what this state always
+   * rendered (escapes disabled), never the notice.
    */
-  const escapesDisabled = busyRadius !== null || session === null || homeZip === ''
+  if (profile !== null && !hasHomeZip(profile.home_zip)) {
+    return <LocationRequiredNotice />
+  }
 
   async function handleEscape(target: number) {
     // One write at a time. An empty home zip cannot be widened FROM (the
-    // validator would reject it) — the onboarding gate keeps that state off
-    // these pages, and the button stays inert rather than inventing a zip.
-    if (session === null || homeZip === '' || busyRadius !== null) return
+    // validator would reject it) — since V28 slice 2b a settled no-zip parent
+    // never gets here (the early return above renders the location notice), so
+    // this guard is the defensive path only; the button stays inert rather
+    // than inventing a zip.
+    if (session === null || !hasHomeZip(homeZip) || busyRadius !== null) return
     setBusyRadius(target)
     setEscapeError(null)
     try {

@@ -23,6 +23,10 @@ import type {
 // frame the user chose rather than computing one of its own, and refuses a frame
 // that could not be drawn.
 import { isDrawableRect, type CropRect } from './photoCrop'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts) —
+// the gate's derivation below is built on it, so the guards in the pages can
+// never drift looser than the wall they replace.
+import { hasHomeZip } from './homeZip'
 import { acceptedCounterpartyForProfile, normalizeHandle, type LinkRowForView } from './links'
 // V9 ticket 11: where a family's images live and who may fetch each kind. The
 // paths are the pure seams (photoStorage.ts) so this file never spells one out.
@@ -263,7 +267,7 @@ export function useSession(): SessionState {
     // V2 slice 3: the onboarding gate keys on home_zip (off the same
     // profile row — no separate query; a failed/absent column settles as
     // unset, the documented DB-not-applied behavior).
-    setHomeZipSet(nextProfile?.home_zip != null && nextProfile.home_zip !== '')
+    setHomeZipSet(hasHomeZip(nextProfile?.home_zip))
     // Ticket 06: the profile load has settled for THIS user — the shell
     // gate may now redirect.
     setProfileSettledFor(uid)
@@ -333,8 +337,22 @@ export async function signInWithOAuthProvider(provider: OAuthProvider): Promise<
  * Idempotent: if the caller's row already exists (unique on id), returns it.
  * Throws HandleTakenError when the chosen display_name is already used by
  * another profile (unique on display_name, slice 2 migration 0004).
+ *
+ * V28 r2 slice 2: the optional `avatarUrl`. The parent's photo now lives on
+ * the NAME card — the card that CREATES this row — so the crop step runs
+ * BEFORE the row exists: `uploadAvatar`'s storage-object write lands anyway
+ * (the owner-scoped policy keys on auth.uid, not the row) but its
+ * profiles.avatar_url UPDATE matches zero rows, and PostgREST no-ops a
+ * 0-row update silently. The crop step hands its returned public URL in here
+ * so the INSERT carries the column — without this the confirmed photo would
+ * be an orphaned object in the avatars bucket (the column NULL on the new
+ * row, and every render surface reads the column). Omitted (or the caller
+ * picked no photo) inserts with avatar_url NULL exactly as before.
  */
-export async function createProfile(displayName: string): Promise<Profile> {
+export async function createProfile(
+  displayName: string,
+  avatarUrl?: string,
+): Promise<Profile> {
   const {
     data: { user },
     error: userError,
@@ -344,7 +362,11 @@ export async function createProfile(displayName: string): Promise<Profile> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .insert({ id: user.id, display_name: displayName })
+    .insert({
+      id: user.id,
+      display_name: displayName,
+      ...(avatarUrl !== undefined ? { avatar_url: avatarUrl } : {}),
+    })
     .select()
     .single()
 
@@ -2480,30 +2502,26 @@ export function validateKidAge(age: number): string | null {
 }
 
 /**
+ * The blank-age rule in ONE place (V28 r2 fix round 2, R4): a blank age
+ * INPUT maps to NaN, never `Number('')` === 0 — 0 is a LEGAL age
+ * (`validateKidAge` passes it), so a blank age must be REFUSED, not
+ * fabricated into an age-0 kid. NaN fails `validateKidAge`'s
+ * `Number.isInteger` check, which is the refusal. The onboarding kids card
+ * calls this at all three of its sites (the blank-row mirror, the photo
+ * confirm's write, and the Continue write — which pre-R4 used a bare
+ * `Number(row.age)` that was safe only because `invalidKidRows` ran first,
+ * an order of two unrelated statements that any future edit could delete).
+ */
+export function kidAgeFromInput(ageInput: string): number {
+  return ageInput.trim() === '' ? NaN : Number(ageInput)
+}
+
+/**
  * Pure kid-row validation (first name + age only — the privacy pin). Age is
  * a whole number in 0–17: these are kids.
  */
 export function validateKid(firstName: string, age: number): string | null {
   return validateKidName(firstName) ?? validateKidAge(age)
-}
-
-/**
- * The profile items missing for the /settings nudge banner (V2 ticket 02):
- * photo + kids all present dismisses it. `kidsCount` is null when the
- * kids load has not settled (it counts as not-present — the nudge is
- * best-effort, never hides what is there).
- */
-export type MissingProfileItem = 'photo' | 'kids'
-
-export function missingProfileItems(
-  profile: Pick<Profile, 'avatar_url'> | null,
-  kidsCount: number | null,
-): MissingProfileItem[] {
-  const missing: MissingProfileItem[] = []
-  const avatarUrl = profile?.avatar_url ?? null
-  if (avatarUrl === null || avatarUrl === '') missing.push('photo')
-  if (kidsCount === null || kidsCount === 0) missing.push('kids')
-  return missing
 }
 
 /**

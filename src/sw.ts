@@ -72,10 +72,15 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html')))
 
 /**
  * The VAPID public key, baked at build time. Empty when the deployment has not
- * finished the human-owned setup (docs/push-setup.md) — in that case
- * `subscribe()` is still attempted without `applicationServerKey`, which the
- * Web Push protocol allows, so a parent's opt-in is recorded and starts working
- * the moment a sender exists.
+ * finished the human-owned setup (docs/push-setup.md).
+ *
+ * ⚠️ AN EMPTY KEY MEANS NO SUBSCRIPTION, and this docblock used to claim the
+ * opposite (fixed V28 r3-2). It said `subscribe()` "is still attempted without
+ * `applicationServerKey`, which the Web Push protocol allows, so a parent's
+ * opt-in is recorded and starts working the moment a sender exists." It is NOT
+ * recorded: the browser refuses the call outright. The code below already did
+ * the honest thing — it passes no key rather than a bogus one — and only the
+ * comment was wrong.
  */
 const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? ''
 

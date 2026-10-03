@@ -1,1125 +1,837 @@
-# Implementation Plan: V27 — the Near you feed
+# Implementation Plan: V28 r3 — the phone walk's seven items
 
-> Owned by the orchestrator. V26 is CLOSED and preserved unchanged below this
-> section. This batch builds five slices, commits each on `Meisburg/Drop-Ins`,
-> and **never pushes** (the coordinator serializes merges to master). Default
-> slice gate is `npm run verify`.
+> Owned by the orchestrator. Written BEFORE any builder dispatch. r2's plan is preserved
+> as `plan-v28-r2-backup.md`; **r3 supersedes it for the seven items below and leaves
+> every r2 decision it does not name intact.**
 >
-> **The job:** a parent on Near you asks four questions — *what can we do in the
-> next two hours, will my kid have someone to play with, is the place worth
-> going, and is the host someone I'd want to meet.* Today the page answers none
-> of them at a glance, and an empty radius is a dead end.
+> The default slice gate is **`npm run verify`** (build + test + lint + a11y:focus +
+> steering-lint + guards). Anything extra is pinned per slice.
 
-## Cross-cutting environment facts (read before dispatching)
+**Bottom line:** a phone walk of the Vercel preview produced **seven product items**. Six are
+small and two of them **block publication**. This plan slices all seven, blockers first, with
+acceptance criteria and a verification command each — **before any builder is dispatched**,
+which is the human's explicit instruction.
 
-- **No `.env` in this workspace.** `src/lib/db.ts` throws at module load without
-  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`, so the base gate is red until a
-  gitignored placeholder `.env` exists (done; never committed).
-- **Targeted Playwright e2e CANNOT run in this workspace** — three independent
-  blockers: (a) no real Supabase credentials (`SUPABASE_ACCESS_TOKEN` empty,
-  placeholder URL), (b) no `e2e/.auth/marker-state.json` (the setup project
-  signs up against the live project), (c) port 4173 is held by another lane's
-  preview server. Every slice names its targeted spec; the blocker is recorded,
-  never silently skipped. `npm run verify` does not open a browser.
-
-### Slice 1: the empty-radius state is no longer a dead end
-
-- **Objective:** the feed's empty state offers the way out that Browse already
-  offers, and the location control reads as a control.
-- **Files in scope:** `src/pages/FeedPage.tsx`, `src/components/RadiusEmptyState.tsx`
-  (stale comment only), `e2e/feed-empty-state.e2e.ts`.
-- **Approach:** `FeedPage` passes `showEscapes={false}` on the strength of a
-  comment claiming a "persistent radius picker directly above" — the picker was
-  removed in V23 slice 1 and the control is now a modal-trigger button. The
-  suppression reason is void. Restore escapes (drop the prop / pass `true`) and
-  add a chevron affordance to `feed-location-control`. Keep `showPostCta={false}`:
-  the raised nav "+" is the persistent post action.
-- **Acceptance criteria:**
-  1. On `/` at radius 2 with nothing in range, `empty-radius-state` renders both
-     `Widen to 20 miles` and `See everything in Seattle`, enabled.
-  2. Tapping `Widen to 20 miles` writes `profiles.radius_miles = 20` and the copy
-     re-names to `emptyRadiusCopy(20)`.
-  3. `feed-location-control` still opens `location-modal`; its accessible name is
-     unchanged.
-  4. No `Post a drop-in` link inside the feed's empty state.
-  5. `/browse` empty state is unchanged.
-- **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/feed-empty-state.e2e.ts` (blocked here — see above).
-- **Ruling:** a control the parent cannot find is a dead end wearing a label.
-
-### Slice 2: the feed says what is happening *now*
-
-- **Objective:** every card inside the 60-minute window is flagged, and the time
-  to start/end is stated.
-- **Files in scope:** `src/lib/feed.ts`, `src/lib/feed.test.ts`,
-  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
-  `e2e/feed-ended-out.e2e.ts` (extended — it already posts a live drop-in;
-  a new spec would have duplicated that fixture).
-- **Approach:** add pure `feedCardCountdown(post, nowIso)` (→ `{ tone:'starting'|'ending', label }`
-  or null) and `feedNowSummary(posts, nowIso)` (→ `"N happening now · M today"`
-  or null). Replace the single-soonest `isStartingSoon` computation in
-  `FeedPage` with a per-card call. Render the countdown on its own
-  `data-testid="card-countdown"` line so the pinned when-line format is untouched.
-- **Acceptance criteria:**
-  1. `feedCardCountdown` returns `starts in 20 min` for a post 20 min out, `ends
-     in 25 min` for a live post, and null for anything else; boundary-tested at
-     exactly 60 min, at start, and after end.
-  2. Two posts each starting within 60 min both render `Starts soon` (today only
-     the soonest does).
-  3. `feedNowSummary` counts live + today correctly and is not rendered when both
-     are zero.
-  4. Present-tense labels never claim a state the clock has not reached.
-- **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/feed-ended-out.e2e.ts` (blocked here).
-- **As built:** the countdown rides its own `card-countdown` line; the live card
-  must contain `/ends in|ending/` (`e2e/feed-ended-out.e2e.ts:396`).
-- **Ruling:** the page is already soonest-first; the missing thing is telling the
-  parent *how soon*, not re-sorting.
-
-### Slice 3: the place is trust content, not a name
-
-- **Objective:** a place-backed card says what kind of place it is and whether it
-  is indoor or outdoor, without a tap.
-- **Files in scope:** `src/lib/feed.ts` (query embed), `src/lib/types.ts`,
-  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`, fixtures/tests that
-  pin the feed row shape.
-- **Approach:** embed the place on the feed query —
-  `place_ref:places!playdates_place_id_fkey ( id, kind, indoor )` — carry it on
-  `PlaydateWithNeighborhood`, and render `data-testid="card-place-trust"` with
-  `"{kindLabel} · {indoorLabel}"`. Null/place-less posts render nothing.
-- **Acceptance criteria:**
-  1. A place-backed row carries `place_ref.kind`/`indoor`; a place-less row
-     carries null and renders no trust line.
-  2. The trust line uses the existing pure `placeKindLabel`/`placeIndoorLabel`
-     seams — no new vocabulary.
-  3. No migration.
-- **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/post-location.e2e.ts` (blocked here).
-- **As built:** `places.placeTrustLine` is the pure seam; the feed select
-  appends the `place_ref` embed; the assertion lives in `post-location.e2e.ts`
-  (it actually posts a picked place), not `place-directory-in-new.e2e.ts`
-  (that spec never submits).
-- **Named gaps (not silently skipped):** *rating on the card* needs a batched
-  `review_summaries_for(uuid[])` (the 0052 RPC is per-place and the house rule is
-  one call per feed); *open/closed* has **no data source at all** — no
-  open-hours column exists anywhere, and an invented "Open" badge would break
-  `PRODUCT.md`'s honesty rule.
-
-### Slice 4: "will my kid have someone to play with"
-
-- **Objective:** the going line says the age BAND of the kids who are coming,
-  not just how many.
-- **PRIVACY CONSTRAINT (pinned):** `DropInCard`'s contract states *"decision #2
-  keeps names and ages off the card entirely — they reach only the host and the
-  people going."* This slice therefore exposes **only an aggregate min–max
-  band**, never a per-kid age and never a kid identity.
-- **Files in scope:** new `supabase/migrations/0056_kid_age_band_going.sql`,
-  `src/lib/db.ts`, `src/lib/feed.ts` (label seam), `src/lib/feed.test.ts`,
-  `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
-  `e2e/card-circles.e2e.ts` (the going-line spec; it pings without a kid, so the
-  band gets a documented TODO there — see As built).
-- **Approach:** mirror `0027`'s batched `count_kids_going_for` with a
-  `kid_age_band_going_for(uuid[])` returning
-  `(playdate_id, min_age, max_age)` from `ping_kids` join `kids`,
-  SECURITY DEFINER, authenticated-only, DROP+CREATE idempotent. One batched read
-  per feed; the card label is a pure seam. A single distinct age renders
-  `age 4`, two or more `ages 2–5`; a null age is dropped, never guessed. The
-  count is NOT returned: the existing 0027 count stays the one count source.
-- **Acceptance criteria:**
-  1. The RPC returns exactly one row per post that has pinged kids with a
-     non-null age, and no row for posts with none.
-  2. `db.ts` groups it to `Record<postId, {min, max}>`; a failed/pre-apply
-     read degrades to `{}` and every card simply omits the band.
-  3. The going label reads `3 going · 2 kids (ages 2–5)`.
-  4. No per-kid age or identity reaches the client; no per-card query.
-- **Verification command:** `npm run verify`; migration apply is **blocked —
-  `SUPABASE_ACCESS_TOKEN` is empty and the live dashboard is locked out** (the
-  V26 note); targeted `npx playwright test e2e/card-circles.e2e.ts` also
-  blocked, and the band's e2e fixture is a documented TODO. Code degrades
-  safely pre-apply.
-- **As built / GAP (named, not skipped):** migration `0056` is committed but
-  **not applied** (no token); the client settles to `{}` on the missing RPC, so
-  the band simply does not render live until a coordinator applies it.
-- **Ruling:** a count answers "is anyone going"; only a band answers "is anyone
-  *my kid's* age" — and the band, never the age list, is what decision #2 can
-  tolerate. This amends decision #2 for the aggregate band only, on the
-  coordinator's explicit V27 brief; flag for human review.
-
-### Slice 5: the host is a person, not a handle
-
-- **Objective:** the card states the common ground we already hold: whether the
-  viewer follows the host.
-- **Files in scope:** `src/components/DropInCard.tsx`, `src/pages/FeedPage.tsx`,
-  `src/lib/feed.ts` + `src/lib/feed.test.ts` (the pure line builder),
-  `e2e/card-circles.e2e.ts`.
-- **Approach:** the only input is the already-loaded `followeeIds`. Add pure
-  `hostCommonGroundLine(hostId, viewerId, followeeIds)` and render
-  `data-testid="card-host-common"`. No new query, no migration, no
-  social-proof fabrication (`PRODUCT.md` principle 3).
-- **Acceptance criteria:**
-  1. `You follow this host` renders when the host id is in `followeeIds` and the
-     post is not the viewer's own.
-  2. Hidden when the host is not followed, or the host is the viewer, or the set
-     is empty.
-  3. No new network read is issued.
-- **Verification command:** `npm run verify`; then
-  `npx playwright test e2e/card-circles.e2e.ts` (blocked here).
-- **Ruling (as built):** the line carries ONLY the follow edge. The host's
-  picked kids' ages already ride the card's `card-age-range` line (the same
-  `kidAgesByPostId` source), so repeating them would print the same ages twice
-  on one card — the duplicate-line failure the design reviews reject. Trust is
-  structural and honest: name what we *know*, never a verified/safety badge we
-  cannot back.
+- **Base:** `fac3c3d` on branch `Meisburg/onboarding` (working tree clean; nothing pushed to
+  production; production is still V27)
+- **Gate measured this turn, not remembered:** `npm run verify` → **exit 0**,
+  **71 test files / 2067 tests passed**, **81 lint warnings / 0 errors**,
+  `AGENTS.md` 1788 words against the 1800 ceiling, **GUARDS: PASS** (factory-guard checker:
+  **185 checks passed**). Baseline that must not regress: **71 / 2067 / 81 / 0**.
+- **Seven items, three coupled:** items 1–3 all touch the first-run flow and are sequenced
+  as **one track** (§4), not three independent slices.
 
 ---
 
-# Implementation Plan: V26 — the post-drop-in review prompt
-
-> Owned by the orchestrator. Written BEFORE any builder dispatch. Every slice
-> below must be executable without interpretation. If a slice cannot state its
-> acceptance criteria and verification command, it is not ready.
->
-> The default slice gate is `npm run verify` (build + test + lint). Anything
-> extra is pinned per slice.
->
-> **This file replaces the V22 design-quality batch plan, which is preserved
-> byte-identically at `plan-v22-backup.md` (verified `diff -q` clean at the time
-> of writing).**
-
 ## Goal
 
-A drop-in a parent said they were going to ends. Within one 5-minute cron tick
-of it ending, that parent gets **one** Web Push — or, if they have no device
-registered at all, one email through the existing fallback branch — inviting
-them to rate the place. Tapping it lands on `/place/<id>/details`, where the
-**existing** `ReviewForm` is already rendered, and the rating they leave is the
-**same row** the place page has always written (`reviews`, one row per
-(place, parent), migration 0052). No new table, no new form, no new route.
+The app a parent meets on a phone stops showing test data, stops claiming a notification
+capability it does not have, puts "I'm going" where a decision is actually made, gives
+set-location two buttons that do what they say, and replaces the first-run quiz-and-lecture
+ending with navigation arrows, no "You're all set" screen, and lightboxed tooltips.
 
-We will know it works when a seeded finished drop-in with a `place_id` produces
-exactly one `notification_log` row of kind `review_due` on the first run of
-`send-push` and zero on the second, and the row's `url` opens the review form.
+---
 
-## Non-goals
+## 1. What this revision is
 
-- **No new review model.** `reviews` stays place-level, one row per
-  (place, parent). No per-drop-in reviews, no attendance verification, no
-  "verified visit" badge. The review prompt and the place page write the same
-  record — that is a requirement, not an implementation detail (see Interfaces).
-- **No in-app "while you were away" prompt.** Push + email only. An in-app
-  banner is a separate ask if the push proves too quiet.
-- **No prompting when `place_id is null`.** Most drop-ins are at a typed
-  address with no directory place to attach stars to; the feature is silent
-  there. Accepted gap.
-- **No anti-nag beyond what exists.** The `(profile_id, kind, playdate_id)`
-  unique key already makes it once-per-drop-in, and the `/settings` per-kind
-  mute already covers "stop telling me". A weekly family at the same park gets
-  a weekly prompt; a "don't ask again for this place" rule is out of scope.
-- **No change to `notificationUrl(playdateId)`.** It is pinned by
-  `src/lib/push.test.ts:283` and five call sites use it. Add a sibling function
-  instead.
-- **No new route.** `/place/:id` and `/place/:id/details` both exist
-  (`src/App.tsx:511` and `:520`), so `routes.json` (the playtest lane) is
-  unchanged.
-- **No service-worker change.** `src/sw.ts:154` reads `data.url` generically.
+Seven items, **all from the human**, all on the Vercel preview of this branch, all with
+screenshots. None is started. The outgoing coordinator recorded them in
+`task-state.md` and in the batch ledger rather than planning them; this plan is that step.
 
-## Interfaces
+| # | Item | Size | Blocks publication? |
+|---|---|---|---|
+| 4 | Remove the three fake e2e drop-ins | data cleanup | 🔴 **YES** |
+| 6 | Notifications are genuinely broken | code + possibly a secret | 🔴 **YES** |
+| 5 | "I'm going" belongs below the event info | small UI move | no |
+| 7 | Set-location needs two buttons, not three | small, **two entry points** | no |
+| 1 | First-run navigation arrows | **riskiest** — touches `saving` semantics | no |
+| 2 | Delete the "You're all set" screen | coupled with 1 and 3 | no |
+| 3 | "How Drop In works" → lightboxed tooltips | guarded copy surface | no |
 
-The orchestrator pins these. Builders do not re-decide them.
+---
 
-**Kind name:** `'review_due'`. Deliberately **not** reusing `'ended'`, which
-already means *"the host ended it early — don't head out"* (`0041`, pin d) —
-different moment, different copy.
+## 2. Re-measurement of the handover (do not trust either document)
 
-**Copy** (the one place it lives, per `0032` pin i):
+Every number below was measured **this turn** against `fac3c3d`. Where a handover figure
+disagrees, the measured one wins and the disagreement is named.
 
-| Field | Value |
-|---|---|
-| push title | `How was "<subject>"?` |
-| push body | `You said you were going — rate the place.` |
-| url | `/place/<place_id>/details` |
-
-`<subject>` is the drop-in title, falling back to `'your drop-in'` — the
-existing `TITLE_FALLBACK` in `_shared/emailCopy.ts:55` (reviewer caught this
-plan citing `:44`, which is wrong at base `63ef790`).
-
-**The body says "you said you were going", not "you went".** `going_pings`
-(`0007`) has **no status column and no check-in exists** — a ping is a stated
-intention, not evidence of attendance. Copy that claims attendance would be
-false for every no-show. This is a hard rule for the reviewer, not a style note.
-
-**New pure function in `supabase/functions/_shared/pushCopy.ts`:**
-
-```ts
-export function reviewPromptUrl(placeId: string): string {
-  return `/place/${placeId}/details`
-}
-```
-
-`NotificationPayloadInput` gains exactly one optional field:
-
-```ts
-  /** The place to review. Only `review_due` uses it; null falls back. */
-  placeId?: string | null
-```
-
-`buildNotificationPayload` returns `reviewPromptUrl(placeId)` for `review_due`,
-and **falls back to the existing `notificationUrl(playdateId)` when `placeId` is
-null/empty** — never `/place/null/details`.
-
-**"Finished" means `status = 'on' and ends_at < now()`.** Nothing sets `'ended'`
-automatically (only a host ending early does, `0041`), so a naturally-expired
-drop-in keeps `status = 'on'` forever — that predicate is how "it's over" is
-expressed. **A `cancelled` or `ended` drop-in must never prompt for a review.**
-
-**Migration number: `0055`** (highest applied is `0054`; `0055` is next free).
-Live-database migration on real family data: every statement guarded, additive,
-re-paste-safe — follow `0052`'s structure, not its content.
-
-**The SEVEN hand-maintained lists that describe ONE database constraint.** All
-must agree. The explicit drift guard is `src/lib/email.test.ts:87`
-(`EMAIL_KINDS` must equal `NOTIFICATION_KINDS`); the `isNotificationKind` block
-in `src/lib/push.test.ts` (cited by symbol, not line — the file grew during this
-slice and a stale number is how this plan already produced two false citations)
-pins the same list from the app side (`isNotificationKind` accepts exactly
-these and rejects anything else):
-
-| # | Location | What |
+| Handover said | Measured | Note |
 |---|---|---|
-| 1 | `supabase/migrations/0041_end_event_early.sql:165` (widened by `0055`) | the `notification_log.kind` CHECK |
-| 2 | `supabase/functions/_shared/pushCopy.ts:27` | `NOTIFICATION_KINDS` |
-| 3 | `supabase/functions/_shared/pushCopy.ts` (`buildNotificationPayload`) | the copy branch |
-| 4 | `supabase/functions/_shared/emailCopy.ts:39` | `EMAIL_KINDS` — **same order** |
-| 5 | `src/lib/push.ts` | the `NotificationKind` union + `NOTIFICATION_KIND_COPY` (a `Record`, so TypeScript forces the entry) |
-| 6 | `supabase/migrations/0041_end_event_early.sql:246` (replaced by `0055`) | `public.notification_payload`'s `CASE` branches (the `ended` branch is at `:276`) |
-| 7 | `e2e/push-subscribe.e2e.ts:939-946` (the `const kinds` array; `'review_due'` at `:945`) | a hand-written five-name array + a docstring asserting "every NOTIFICATION_KIND renders a checkbox" / "all five start CHECKED" |
+| gate green at `f80835c` | gate green at **`fac3c3d`** | the handover's own commit is one *behind* HEAD — `fac3c3d` is the handover doc itself |
+| 71 files / 2067 tests | **71 / 2067** | confirmed |
+| 81 warnings / 0 errors | **81 / 0** | confirmed |
+| `AGENTS.md` 1788 / 1800 | **1788 / 1800** | confirmed — **12 words of room** |
+| working tree clean | **clean** | confirmed |
+| `src/sw.ts:74-80` | **`src/sw.ts:80`** is the const; the false comment is **`:73-78`** | the handover's range is off by a few lines; the *claim* is exact |
+| `PlaydateDetailPage.tsx:2147` | **`:2136-2151`** is the button block — the JSX opens above and the label renders at `:2146` | line drift, same site |
+| `LocationModal.tsx:260,271` | **`:252`** = `See places`, **`:262`** = `Apply radius` | the handover's numbers drifted; the *two buttons* are as described |
+| `FeedPage.tsx:992-1013` | **`:994-1030`**; the comment explaining the bug is **`:1013-1023`** | confirmed in substance |
+| `PlaceDirectory.tsx:1348` | **`:1352`** is the `LocationModal` mount; `onApplyRadius` at **`:1364`** | confirmed in substance |
+| `firstRunTour.ts:19` | **`:19`** carries r1's-ending comment | confirmed |
+| `HowItWorksCard.tsx` + `firstRunTour.ts` guard-coupled | **confirmed, and worse than stated** | see §3, fact 9 |
 
-**Row 7 was added by review, not by the author of this plan — and that is the
-point.** This inventory claimed "six" while the slice's own disease (a
-hand-maintained kind list that no longer matches the code) was sitting in an
-e2e spec the plan never named: `NotificationsSection` maps `NOTIFICATION_KINDS`,
-so a **sixth toggle renders with no assertion covering it** and its docstring
-became false the moment the kind list grew. `npm run verify` cannot see it —
-nothing under `scripts/` names the kinds, and e2e is a separate lane. **Any
-future kind change must sweep all seven rows.**
+### ⚠️ Fact: the gate is NOT the current tip's gate
 
-**The SQL payload branch is deliberately unreachable in production** and is
-added anyway for twin parity: `review_due` is clock-produced by the scan, which
-builds its payload in TypeScript exactly as `catchUpStartingSoon` does
-(`send-push/index.ts:269`), so no trigger ever calls `notification_payload`
-with this kind. Recording the reason beats a reviewer re-litigating it.
-
-**The email fallback needs almost nothing.** `EmailRow.url` is the relative path
-already stored on the `notification_log` row (`emailCopy.ts:77`) and
-`emailUrl(url, base)` only prefixes the base (`:124`), so a correct `url` on the
-row is all the email needs. Only `EMAIL_KINDS` gains the entry.
-
-**New constant `REVIEW_PROMPT_WINDOW_HOURS = 24` — and it lives in the PURE
-module, not in `send-push/index.ts`.** *Corrected while dispatching Slice 2:*
-this plan first put it beside `STARTING_SOON_WINDOW_MINUTES` (`send-push:133`),
-but a window is a **rule**, and Slice 2's acceptance criterion 4 has to test it —
-so a constant in the Deno wiring file would be unreachable from the vitest lane.
-It is therefore defined and exported in
-`supabase/functions/_shared/reviewScan.ts`, re-exported through
-`src/lib/reviewScan.ts`, and **imported** by `send-push/index.ts` in Slice 3.
-That is the same direction of dependency as `emailFallback.ts`.
-
-```ts
-/** Only drop-ins that ended within this many hours are considered. */
-export const REVIEW_PROMPT_WINDOW_HOURS = 24
-```
-
-The window keeps the scan bounded. Without it, the every-5-minutes query walks
-all history forever. Reuse the existing `MAX_SCAN_POSTS = 500` cap (`:142`).
-
-**Idempotence is the existing unique key, not new logic:**
-`upsert(rows, { onConflict: 'profile_id,kind,playdate_id', ignoreDuplicates: true })`.
-
-## Slices
-
-### Slice 1: the `review_due` kind exists, end to end, with no producer
-
-- **Objective:** migration `0055` widens the `notification_log.kind` CHECK and
-  completes the SQL twin; all six lists carry `'review_due'`; the pure copy and
-  URL rules exist and are unit-tested.
-- **Files in scope:**
-  - `supabase/migrations/0055_review_prompt.sql` (new)
-  - `supabase/functions/_shared/pushCopy.ts`
-  - `supabase/functions/_shared/emailCopy.ts`
-  - `src/lib/push.ts`
-  - `supabase/functions/send-push/index.ts` — **only** the `NotificationKind`
-    import/`isNotificationKind` surface if it does not compile; **no scan, no
-    wiring**
-  - `src/lib/push.test.ts`, `src/lib/email.test.ts`
-  - `e2e/push-subscribe.e2e.ts` — **added to scope by review ruling** (see
-    Interfaces row 7 and the Status log). Its :931-937 array and its :909/:916/
-    :920 docstring are place 7 of the same list; leaving them uncured would ship
-    a rendered-but-unasserted sixth toggle and a false docstring.
-  - `src/lib/db.ts` — **added to scope by review ruling**: the comment at :3640
-    reads "not one of the five" and the diff makes it stale. Comment-only fix.
-  - `supabase/migrations/0055_review_prompt.sql` must be mode **644**, matching
-    all 50 sibling migrations (it was created `600`; `find
-    supabase/migrations -name '*.sql' ! -perm 644` must return nothing).
-- **Approach:** mirror `0041`'s amendment structure exactly — `drop constraint
-  if exists` + re-`add` the widened CHECK inside the guarded `DO` block; `drop
-  function if exists public.notification_payload(text, uuid, text, text, int)`
-  then `create` with the `review_due` branch added and **every other branch
-  carried over char-for-char**. Re-grant exactly as `0032:268-271` does
-  (`service_role` only; `public`/`anon`/`authenticated` revoked). Append
-  `'review_due'` to `NOTIFICATION_KINDS` and `EMAIL_KINDS` in the **same
-  position in both**; add the `NOTIFICATION_KIND_COPY` entry; add the
-  `buildNotificationPayload` branch and `reviewPromptUrl`.
-- **Acceptance criteria:** criteria **1–3 are coordinator-applied** (after the
-  builder's gate, per `docs/agents/coordinator.md` step 3 — the live apply needs
-  the human's CDP browser and credentials, so no builder touches production);
-  criteria **4–7 are builder-owned** and must be green before the builder
-  returns.
-  1. *(coordinator)* `0055` applies clean to the live database and **applies a
-     second time with exit 0** (re-paste-safe).
-  2. *(coordinator)* Read-back proves `notification_log`'s kind CHECK
-     **accepts** `'review_due'` and **still rejects** a bogus kind — both
-     probed, not assumed.
-  3. *(coordinator)* Read-back proves `public.notification_payload` exists with
-     the same signature and `prosecdef`/`stable` as before, and that
-     `notification_payload('review_due', …)` returns non-empty
-     title/body/url.
-  4. `EMAIL_KINDS` and `NOTIFICATION_KINDS` are both **six** entries, in the
-     same order; both drift guards green.
-  5. `buildNotificationPayload({ kind: 'review_due', playdateId, postTitle: 'Green Lake', placeId })`
-     → `url === '/place/<placeId>/details'`, `title === 'How was "Green Lake"?'`.
-  6. `buildNotificationPayload({ kind: 'review_due', playdateId, placeId: null })`
-     → `url === '/playdate/<playdateId>'`, **never** `/place/null/details`; same
-     for `placeId: ''`.
-  7. Every test that pinned "the five kinds" becomes "the six kinds" —
-     **updated, never deleted**. This includes **all seven places in the
-     Interfaces inventory**, and specifically
-     `e2e/push-subscribe.e2e.ts:931-937` (append `'review_due'` to the array and
-     correct "five"/"all five" in its docstring) — which this plan originally
-     omitted from the file list. Post-diff positions the reviewer confirmed:
-     drift guard `src/lib/email.test.ts:85`, `notificationUrl` pin
-     `src/lib/push.test.ts:345`, `isNotificationKind` `:386` (round 2 inserted
-     the `reviewPromptUrl` block at `:349-384`, which moved it from `:360` —
-     a number this plan briefly asserted wrongly). The
-     `notificationUrl(POST_ID) === '/playdate/<id>'` assertion stays green and
-     unmodified.
-  8. *(builder)* The introduced-false comment is fixed: `notificationUrl` has
-     **one** call site, not five — "used by five call sites" at
-     `_shared/pushCopy.ts:53` and `src/lib/push.test.ts:351` is wrong; five
-     *kinds* flow through it. Also `src/lib/db.ts:3640` "one of the five" → six.
-  9. *(builder)* `0055`'s read-back **asserts** `prosecdef` rather than only
-     printing it (it already selects it into `v_prosecdef` and only checks
-     `provolatile` at `:298-300`). A value that is printed is a claim; a value
-     that is asserted is a proof — the repo's own "assert its own effect" rule
-     (`0052`). Expected value: **false**.
-  10. *(builder)* `0055_review_prompt.sql` is mode `644`, matching all 50
-      siblings; `find supabase/migrations -name '*.sql' ! -perm 644` returns
-      nothing.
-- **Verification command:** the **builder** runs, from the repo root:
-  ```bash
-  npm run verify
-  ```
-  and records its full output to `.scratch/v26/s1-verify.txt` (accepted:
-  `npm run verify` is build + vitest + oxlint + `a11y:focus` + steering-lint +
-  guards; **none of it opens a browser**, so a builder can run it without
-  touching the human's Chrome). The **coordinator** then applies `0055` live
-  **twice** via `bash scripts/db-sql.sh --file supabase/migrations/0055_review_prompt.sql`
-  — the **browserless** path, which needs no browser at all
-  (`docs/agents/browser-lanes.md` §7). **Do not use
-  `scripts/cdp-migration-tooling.sh` + `scripts/apply-migration.mjs` for this:**
-  the tooling script `pkill -9`s every `google/chrome` process, and the human
-  has a live Chrome session on this box, while `apply-migration.mjs` visibly
-  navigates a window they are working in. `db-sql.sh` uses the
-  `SUPABASE_ACCESS_TOKEN` already present in `.env` against `api.supabase.com`.
-  Record to `.scratch/v26/` the two `information_schema` / `pg_proc` read-backs
-  and both kind-CHECK probes.
-- **Budget:** one local builder context (~98k tokens, `qwen3.8-27b`).
-- **Depends on:** nothing.
-
-### Slice 2: the pure scan decision — who gets asked, and what the row says
-
-- **Objective:** the selection rule and the row mapping live in a pure module
-  with a sibling test, so the vitest lane can reach them.
-- **Files in scope:**
-  - `supabase/functions/_shared/reviewScan.ts` (new)
-  - `src/lib/reviewScan.ts` (new — the re-export)
-  - `src/lib/reviewScan.test.ts` (new — the sibling test `npm run guards`
-    requires for every `lib/*.ts`)
-- **Approach:** the proven seam in this repo, stated verbatim in
-  `send-push/index.ts:36-39`: *"The pure decisions live in
-  `../_shared/emailFallback.ts` (which the app's `src/lib/emailFallback.ts`
-  re-exports and `src/lib/emailFallback.test.ts` unit-tests), so this file is
-  wiring only."* Do exactly that. The module exports a pure
-  `isReviewPromptCandidate`-style predicate plus a `reviewPromptRow` mapper
-  taking already-fetched values (`{ profileId, playdateId, placeId, title }`)
-  and returning the `notification_log` insert shape. **No `Date.now()`, no
-  client, no I/O inside the pure functions** — `now` is an argument, the same
-  discipline the scan constants encode.
-- **Acceptance criteria:**
-  1. A drop-in that ended 2 hours ago with `status = 'on'` and a non-null
-     `place_id` is a candidate.
-  2. `status` of `'cancelled'` or `'ended'` is **not** a candidate, at any
-     `ends_at`.
-  3. `ends_at` in the future is **not** a candidate.
-  4. `ends_at` older than `REVIEW_PROMPT_WINDOW_HOURS` is **not** a candidate.
-  5. `place_id` null or empty is **not** a candidate.
-  6. The mapper produces `kind: 'review_due'`, the pinned title/body, and
-     `url === '/place/<placeId>/details'`.
-  7. The candidate predicate is **mutation-checked**: flipping any one of the
-     five conditions to always-true makes at least one test fail — the builder
-     records which test dies for each flip. (The repo requires a spec that can
-     actually fail for the defect it names.)
-- **Verification command:**
-  ```bash
-  npm run verify
-  ```
-  Evidence file in `.scratch/v26/` recording the five mutation flips and the
-  test that died for each.
-- **Budget:** one local builder context.
-- **Depends on:** Slice 1 (the `review_due` kind and `reviewPromptUrl`).
-
-### Slice 3: wire the scan in, and prove it on the live database
-
-- **Objective:** `send-push` gains `catchUpReviewDue`, runs it on every
-  invocation beside the `starting_soon` scan, and a real finished drop-in
-  produces exactly one row.
-- **Files in scope:**
-  - `supabase/functions/send-push/index.ts`
-  - `docs/push-setup.md` — only if the deploy note needs the new scan
-    documented; **no `pg_cron` change** (the job URL is unchanged, which is the
-    whole reason the function keeps its misleading name — `:37-42`)
-- **Approach:** `catchUpReviewDue(admin)` mirrors `catchUpStartingSoon`
-  (`:206-295`) step for step: one `going_pings` select with the `!inner` embed
-  on `playdates` (the `!inner` is what makes the filters restrict the join
-  rather than blank the embed — `:212`), the `.in()` exclusion on
-  `(kind = 'review_due', playdate_id)` over the **non-empty** id list, the
-  `told` set, then the `ignoreDuplicates` upsert. Call it in the handler next to
-  the existing scan and report its count in the same JSON summary. Keep the
-  whole thing **wiring only** — every decision is already in `reviewScan.ts`.
-
-- **GO-LIVE RUNBOOK — VERIFIED, BROWSERLESS, ONE COMMAND.** The deploy needs no
-  interactive login: `npx supabase` resolves CLI **2.118.0**, the
-  `SUPABASE_ACCESS_TOKEN` is already in `.env`, and although
-  `scripts/push-deploy.sh` reads `.env.push.local`, that file exists only to
-  **set** the three VAPID secrets — which `docs/push-setup.md:21` records as
-  already set and verified live. So:
-  ```bash
-  set -a; . ./.env; set +a
-  npx supabase functions deploy send-push --project-ref ayzvjwxbxyrcgyoeaxuk
-  ```
-  **Leave JWT verification ON** (the deploy default) — the function has its own
-  service-role wall on top. **And remember the cron:** this command *is* the
-  go-live, not a preparation for it.
-  **⚠️ TWO FOOTGUNS, BOTH VALIDATED AGAINST THE CLI (2.118.0), BOTH AVOIDED BY
-  THE COMMAND ABOVE:**
-  1. **NAME THE FUNCTION.** `functions deploy` documents *"Deploys all if
-     omitted"* — dropping `send-push` from the command would deploy **every**
-     function, including `prefill-playdate`, an unintended production change.
-  2. **`--project-ref` IS REQUIRED.** This checkout is not `supabase link`ed, so
-     without the flag the CLI errors *"Cannot find project ref. Have you run
-     supabase link?"*. Verified: an authenticated `projects list` with the
-     `.env` token succeeds non-interactively and resolves the project as
-     `ayzvjwxbxyrcgyoeaxuk` / "PlayDate", so **no `supabase login` is needed** —
-     the token is sufficient.
-  **POST-DEPLOY PROOF — three independent signals, all read from the live
-  project (no browser, read-only).** Recorded from the pre-deploy state, so the
-  "before" is a fact rather than a recollection:
-
-  | signal | BEFORE the deploy | expected AFTER |
-  |---|---|---|
-  | `version` | `5` | `6` (must increment) |
-  | `updated_at` | `1790450713441` (2026-09-26T19:25:13Z) | ≈ the deploy time |
-  | `ezbr_sha256` | `8d25f1f891ffa8684e781cbe4ff622a5d91501ea4ca0a584a2c7cf8eee18da8b` | **a different hash** |
-
-  ```bash
-  REF=$(sed -n 's|^VITE_SUPABASE_URL=https\?://\([a-z0-9]*\)\.supabase\.co.*|\1|p' .env)
-  curl -s "https://api.supabase.com/v1/projects/$REF/functions" \
-    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
-  ```
-  The count-appearance proof, read from the database (not the function's own
-  report, which could lie):
-  `select count(*) from public.notification_log where kind = 'review_due';`
-  — `0` before, `1` after, and `sent_at` stamped once the drain has run.
-  **Do not print any key or secret when running these.**
-- **THE FIXTURE FOR CRITERIA 3 AND 4 — DESIGNED, NOT YET SEEDED** (seeding is a
-  production write and belongs to the authorized go-live step). Because only
-  criterion 1 comes free, the negatives must be built. **Minimal shape:**
-  1. **One `e2e-` marked account** (the sweep's primary handle:
-     `scripts/sweep-e2e-markers.mjs` deletes `auth.users` where
-     `email like 'e2e-%'`, and rows the account owns cascade with it — with a
-     safety gate that refuses if a founder account is inside the marker set).
-  2. **For criterion 4** (null `place_id` → zero rows): the cheapest possible
-     fixture — that account adds **one `going_ping` on an existing finished,
-     place-less drop-in**. No new drop-in needed; the scan must then produce
-     **zero** rows for that profile, which is exactly the assertion.
-  3. **For criterion 3** (`cancelled` → zero rows): no finished cancelled drop-in
-     exists, so this one needs a **fixture drop-in** — marked with an `e2e `
-     title prefix, `status = 'cancelled'`, `ends_at` in the past, a real
-     `place_id` (so only the *status* rule can reject it) — plus one `going_ping`
-     from the marked account.
-  **Cleanup is provable, and here is why:** `notification_log`'s only foreign key
-  is `notification_log_profile_id_fkey` … **ON DELETE CASCADE**, verified live. So
-  deleting the marked account removes the `review_due` row with it.
-  **⚠️ There is NO foreign key on `notification_log.playdate_id`** (verified
-  live) — so deleting a drop-in does **not** remove its notification rows.
-  Cleanup must therefore go **through the profile**, which the sweep already
-  does; a fixture designed around "delete the drop-in" would leave the row
-  behind and fail criterion 7.
-  **The upsert's conflict target exists exactly as pinned:**
-  `notification_log_profile_id_kind_playdate_id_key UNIQUE (profile_id, kind,
-  playdate_id)` — confirmed live, so `onConflict` cannot silently no-op.
-  **And a fixture must never be left behind in the feed:** per
-  `docs/agents/e2e-fixture-convention.md`, the marker makes a fixture
-  *identifiable*, not *invisible* — so the seeded drop-in is visible copy in the
-  discovery feed for as long as it exists, which argues for seeding and sweeping
-  inside one short, authorized window.
-- **THE ONE REAL NOTIFICATION IS IDENTIFIED — AND IT IS THE AWKWARD CASE.**
-  Read-only probes of the live project: the single row the first run creates is
-  for drop-in `04a073f4-8db7-4adb-8310-9863e1411424` — *"Drop-in at Green Lake
-  Park (East)"*, ended `2026-09-26 14:30 UTC` — with exactly **1 pinger**, at
-  place *"Green Lake Park (East)"*. That place **already has 1 review**, and the
-  pinger is **the same profile that wrote it**
-  (`pinger_already_reviewed_this_place = true`). So the first real notification
-  this feature ever sends is a prompt to **edit an existing review**, not to
-  write a first one. Risks item 3 accepted that case in the abstract; it is no
-  longer abstract — **it is the only case that fires today.**
-  **Open human decision, bundled with the deploy authorization:** go live as-is
-  and accept one prompt-to-update, **or** add a *"skip parents who already
-  reviewed this place"* exclusion first (an anti-join against `reviews` on
-  `(place_id, author_profile_id)`) — one filter in the scan, plus a Slice 2
-  amendment and a re-review. The orchestrator recommends **adding it**, because
-  prompting someone who already reviewed a place is nagging by construction and
-  recurs for every parent who reviews a place and then attends another drop-in
-  there. Either way the deploy waits for the human's word.
-- **THE WIRING HAS NO UNIT LANE, AND THAT IS WHY THE DECISIONS ARE ELSEWHERE.**
-  Verified by reading both Deno scripts: `scripts/deno-check-functions.sh`
-  type-checks the functions but **never runs** them, and
-  `scripts/deno-test-functions.sh` is **hardcoded to stage and run exactly one
-  file** — `_shared/smtpDeno_test.ts` — so it is not a general Deno test runner.
-  Plain `npm run test` (vitest, Node) cannot load an Edge Function that touches
-  `Deno` globals. **Therefore `catchUpReviewDue` cannot be unit-tested by any
-  existing lane**, and the builder must not invent one, add a `deno.json`, or
-  claim coverage it does not have. The verification for this slice is exactly:
-  `npm run verify` (which includes the already-green `reviewScan` sibling test)
-  + `bash scripts/deno-check-functions.sh` (types) + **the live proof, which is
-  the coordinator's**. This is the whole reason the plan pushes every decision
-  into the pure `reviewScan.ts` and holds `index.ts` to wiring only: **the
-  wiring's only real test is the run against the live database.**
-- **THE EMBED STRING IS PINNED** (verified against the live schema and the
-  precedent at `send-push/index.ts:216`): the foreign key is
-  **`going_pings_playdate_id_fkey`** (`going_pings.playdate_id → playdates(id)
-  ON DELETE CASCADE`, confirmed live), so the select is
-  `'profile_id, playdate_id, playdate:playdates!going_pings_playdate_id_fkey!inner ( id, title, ends_at, status, place_id )'`
-  — the precedent's four columns plus **`ends_at`** (the window and "is it
-  over" both need it) and **`place_id`** (the mapper needs it, and the
-  `place_id is not null` filter depends on it). The `!inner` is load-bearing:
-  without it the playdate filters would blank the embed instead of restricting
-  the join.
-- **GO-LIVE MECHANICS — CORRECTED WHILE PREPARING THIS SLICE. THE DEPLOY *IS*
-  THE GO-LIVE.** Verified against the live database this slice targets:
-  `cron.job` jobid 3 is `send-push-every-5-minutes`, schedule `*/5 * * * *`,
-  **`active = true`**. So this slice does **not** end at a by-hand invocation I
-  control: the moment the new `send-push` is deployed, the cron runs
-  `catchUpReviewDue` within five minutes, inserts the rows, and drains them.
-  **The human checkpoint belongs BEFORE the deploy, not before an invocation** —
-  and the plan's criteria below were originally worded as though a manual call
-  were the go-live moment. **Measured cost, read-only, before building it:** 23
-  drop-ins · 12 place-backed · 2 finished-and-place-backed inside the 24h window
-  · **1** `going_pings` row across them — so the first automatic run notifies
-  **exactly one real family**, and a sent push cannot be recalled.
-- **What real data can prove for free, and what it cannot** — **CORRECTED: I
-  originally wrote that real data proved criterion 4 for free, and that was
-  WRONG.** The first reading counted 4 finished drop-ins with `place_id is null`
-  in the window, which looked like free coverage. Running the scan's actual
-  query against the live API settled it: with the pinned embed and the
-  `place_id` filter **removed**, the window still returns **1 row, of which 0
-  have a null `place_id`** — because the scan joins **from `going_pings`**, and
-  those place-less drop-ins have **no pingers at all**, so they never enter the
-  candidate set. The `place_id is not null` filter therefore excludes nothing in
-  the live window: correct by construction, **unexercised by production data**.
-  The correct statement is: **only criterion 1 comes free** (the one identified
-  real row); **criteria 3 AND 4 both need a seeded fixture**. And
-  `finished_cancelled_or_ended_24h = 0`, so criterion 3 was never free either.
-  **Any fixture must carry the marker convention in
-  `docs/agents/e2e-fixture-convention.md`** — account email `e2e-` prefix,
-  drop-in title `e2e ` prefix, cleanup scoped to owned ids — or it becomes
-  unsweepable content in real parents' discovery feed, which is the exact leak
-  that document's guard exists to prevent.
-- **The by-hand invocation is available** and must not be reported as blocked on
-  a credential: `GET https://api.supabase.com/v1/projects/<ref>/api-keys` with
-  the `SUPABASE_ACCESS_TOKEN` already in `.env` returns the `service_role` key
-  (HTTP 200, verified), which is what `docs/push-setup.md:220-221` invokes the
-  function with. (`.env` itself holds no service-role key — but "not in `.env`"
-  is not "not available", the false negative this repo paid ~25 rounds for
-  during V16.)
-- **SLICE 3 MUST CALL THE PREDICATE BEFORE THE MAPPER.** Slice 2's
-  `reviewPromptRow` is deliberately **total**: it does not re-run
-  `isReviewPromptCandidate`, so a blank `placeId` passed straight to it yields
-  the fallback `/playdate/<id>` url rather than an error (tested in
-  `reviewScan.test.ts`). That keeps one copy of the rule, but it means the
-  mapper is **not** a safety net — `catchUpReviewDue` must filter with the
-  predicate first, and its SQL-side `.not('place_id','is',null)` filter is the
-  second, independent wall.
-- **Two boundary choices in Slice 2 are ACCEPTED as judgement calls** (both
-  pinned by tests, both inconsequential against a 5-minute cron): exactly
-  `ends_at === now` is treated as *not yet over* (`>=` rejects), and exactly
-  24h old is treated as *inside* the window (`>` rejects only strictly older).
-- **Acceptance criteria:**
-  1. One invocation inserts exactly **one** `notification_log` row: `kind = 'review_due'`,
-     `sent_at is null`, `url = '/place/<place_id>/details'`, `profile_id` = the
-     pinging parent. **No fixture is needed for this criterion — CORRECTED, real
-     data supplies it:** the one row the first run creates is for drop-in
-     `04a073f4-8db7-4adb-8310-9863e1411424` (*"Drop-in at Green Lake Park
-     (East)"*, ended `2026-09-26 14:30 UTC`), whose `place_id` is
-     `7b6ada36-b925-4a13-8850-f29593e2dc2f`, and the scan's exact query was run
-     read-only against the live API to confirm it returns **exactly that one
-     candidate** (HTTP 200).
-  2. **A second invocation inserts zero** — `select count(*)` on that
-     `(profile_id, kind, playdate_id)` is still `1`. **Read the count from the
-     DATABASE, never from the function's own `reviewDueCreated`:** that field
-     returns rows **attempted**, not created (the reviewer proved it is
-     precedent-identical to `startingSoonCreated`), so under a concurrent
-     double-fire it can over-report. The DB is the only witness.
-  3. A seeded **cancelled** finished drop-in produces **zero** rows.
-  4. A seeded finished drop-in with `place_id is null` produces **zero** rows.
-  5. The existing `starting_soon` scan still reports its own count unchanged —
-     the new scan does not disturb it (both counts appear in the response).
-  6. The row drains: one real push (or one email, for a profile with no
-     subscription) is sent and `sent_at` is stamped — or, if no live device is
-     available, the drain's dry path is recorded and the gap named explicitly
-     rather than claimed as passing.
-  7. Every fixture is cleaned up, and the cleanup is verified by a post-run
-     `count(*) = 0` — the repo's e2e-fixture convention. **Fixtures exist only
-     for criteria 3 and 4** (criterion 1 needs none), and cleanup goes **through
-     the profile**: `notification_log` cascades on `profile_id` but has **no FK
-     on `playdate_id`**, so deleting a drop-in would leave the row behind.
-- **Verification command:**
-  ```bash
-  npm run verify
-  ```
-  plus the live by-hand invocation (`send-push` is documented as runnable by
-  hand — `:5`), with every request/response captured to
-  `.scratch/v26/live-*.json` and the seeded rows' before/after state recorded.
-- **Budget:** one local builder context.
-- **Depends on:** Slice 2.
-
-### Slice 4 (human decision, V26 amendment): skip parents who already reviewed the place
-
-> **Added 2026-09-27 by human decision** — the human chose the orchestrator's
-> recommendation ("add the skip first") over "deploy as-is". It AMENDS Slice 2
-> (one new pure rule) and Slice 3 (one new read in the wiring); it changes no
-> migration, no route, no copy, and no other kind.
-
-- **Objective:** a parent who already has a `reviews` row for the drop-in's
-  place is **not** asked to review it again. The prompt becomes
-  "rate this place" for a first rating, never "edit the rating you left".
-- **Why:** the one real candidate the first live run would have notified
-  (drop-in `04a073f4…`) is the **same profile that already wrote that place's
-  review**. Risks item 3 accepted the case in the abstract; it is the only case
-  that fires today. Prompting someone who already reviewed a place is nagging by
-  construction and recurs for every parent who reviews a place then attends a
-  second drop-in there.
-- **Files in scope:**
-  - `supabase/functions/_shared/reviewScan.ts` — the pure rule
-  - `src/lib/reviewScan.test.ts` — the sibling test (guards require it)
-  - `supabase/functions/send-push/index.ts` — the scan's new read + the fact it
-    injects + two stale header/comment corrections
-- **Approach (pinned; the builder does not re-decide it):**
-  1. `ReviewPromptFacts` gains a **required** `alreadyReviewed: boolean` —
-     required (not optional) so TypeScript, not discipline, forces every caller
-     to supply the fact. Rule **(f)**, appended after (e) so the existing a–e
-     numbering and their killing tests are untouched:
-     `if (facts.alreadyReviewed) return false`.
-  2. `catchUpReviewDue` derives the candidate **place** ids from the already-
-     fetched `pings` (trimmed, unique, non-empty), reads
-     `reviews (place_id, author_profile_id)` with `.in('place_id', placeIds)`
-     **only when that list is non-empty**, throws on `reviewError` like the two
-     existing reads, and builds a `Set` keyed `` `${author_profile_id}:${place_id}` ``.
-     The predicate call adds
-     `alreadyReviewed: reviewed.has(\`${row.profile_id}:${row.playdate?.place_id ?? ''}\`)`.
-  3. The predicate still runs **before** the mapper (Slice 3's rule), and this is
-     a **fifth rejection**, not a filter that reorders anything.
-  4. **Header honesty (the disease this batch has already paid for twice):** the
-     file header's `review_due` sentence and `catchUpReviewDue`'s doc comment
-     must state the new exclusion; a comment the diff makes false is a defect.
-- **Acceptance criteria:**
-  1. `isReviewPromptCandidate` returns **false** when `alreadyReviewed` is `true`,
-     at any `status`/`endsAt`/`placeId`, **with a positive control** at identical
-     facts and `alreadyReviewed: false` → `true` (proves the new fact, not a
-     neighbouring rule, decided it).
-  2. The module stays pure — the existing no-clock/no-client/no-I/O checks pass —
-     and rule (f) is **mutation-checked**: flipping it to a no-op kills the named
-     test; raw output saved to `.scratch/v26/`.
-  3. `catchUpReviewDue` reads `reviews` for the candidate places, keyed on the
-     `(author_profile_id, place_id)` pair, and passes `alreadyReviewed` into the
-     predicate; the predicate is still called before `reviewPromptRow`.
-  4. The new read is **bounded** (candidate place ids only, `.in()` on a
-     non-empty list) and its PostgREST error is thrown — never swallowed.
-  5. The file header and the function doc comment describe the new exclusion.
-  6. `npm run verify` **EXIT=0** and `bash scripts/deno-check-functions.sh`
-     **EXIT=0**; no test deleted or weakened.
-  7. *(coordinator, read-only, BEFORE any deploy)* the scan's exact query with the
-     new exclusion applied returns **zero** candidates for the identified real
-     drop-in `04a073f4…` — so the go-live notifies no family that has already
-     reviewed the place.
-- **Verification command:**
-  ```bash
-  npm run verify
-  bash scripts/deno-check-functions.sh
-  ```
-  Evidence in `.scratch/v26/` (gate output, Deno output, the mutation flip).
-- **Budget:** one local builder context.
-- **Depends on:** Slice 2 (the predicate) and Slice 3 (the wiring).
-
-## Risks / open questions
-
-1. **`REVIEW_PROMPT_WINDOW_HOURS = 24` is the orchestrator's choice, not the
-   human's.** Every other decision in this plan traces to a human answer; this
-   one does not. The failure it bounds: a parent who ignores the prompt for a
-   week still gets nothing new, because the row was inserted on the first tick
-   after the drop-in ended and is never withdrawn — the window governs which
-   drop-ins are *considered*, not how long a parent has to act. Flagged so the
-   human can reduce it to 6h or raise it; it blocks neither slice.
-2. **The copy wording is the orchestrator's draft** (pinned in Interfaces).
-   It is honest about attendance, which is the constraint that matters; the
-   exact phrasing is a founder read.
-3. **A parent who already reviewed that place is still prompted once.** The
-   `ReviewForm` loads their existing review and the button reads "Update
-   review" (`src/components/ReviewForm.tsx:214`), so this is coherent rather
-   than broken — but it is a prompt to edit, not to write. Accepted.
-4. **No-shows get asked.** `going_pings` records intent only. The copy says so.
-   Accepted as the cost of having no check-in.
-5. **`0055` touches a live database holding real family data.** Guarded,
-   additive, re-paste-safe, applied twice with read-back — the `0052`/`0053`
-   standard. This is the only genuinely risky step in the batch.
-6. **The push is the only surface.** No in-app fallback for a parent who has
-   muted notifications or declined the browser permission — the `starting_soon`
-   scan has the same property, so this is consistent, but it means a muted
-   parent never learns the prompt exists.
-7. **RETIRED — "the `ADD CONSTRAINT` could abort on a pre-existing row outside
-   the CHECK."** Raised by the reviewer as uncheckable without SQL; retired by a
-   coordinator read-only probe of the live table: the only kinds ever stored are
-   `cancelled` (290), `ping_received` (273), `new_comment` (16) and
-   `starting_soon` (1) — a strict subset of the five-value CHECK. Nothing
-   outside it can fail validation. (Read via `bash scripts/db-sql.sh --read`,
-   the browserless path.)
-8. **RETIRED — "dropping then re-adding the CHECK leaves a window with no
-   constraint if `db-sql.sh` autocommits per statement."** The live constraint
-   definition read during the same probe **is** `0041`'s widen —
-   `CHECK (kind = ANY (ARRAY['ping_received','starting_soon','cancelled',
-   'new_comment','ended']))` — so this exact drop-then-add pattern has already
-   been applied through this exact path and is visible in production. No
-   `004x`/`005x` migration uses an explicit `begin;`/`commit;`: `db-sql.sh` POSTs
-   the entire file as **one** query string, which the Supabase SQL API evaluates
-   as a single request.
-9. **THIS PLAN'S OWN INVENTORY WAS WRONG, AND REVIEW FOUND IT.** The Interfaces
-   section listed "six" hand-maintained kind lists while the slice's own disease
-   sat uncured in a seventh (`e2e/push-subscribe.e2e.ts`), and Slice 1's file
-   list omitted it while criterion 7 demanded it — the builder could not satisfy
-   the criterion without leaving scope. Resolved by **widening both**, not by
-   narrowing the criterion (see the Status log for the ruling and its reasoning).
-   Recorded rather than tidied away: a plan that miscounts its own inventory is
-   the failure mode this batch exists to cure.
-
-## Status log (orchestrator appends after every phase transition)
-
-- 2026-09-26 — **Plan written, batch opened as V26, no slice dispatched yet.**
-  Derived from a founder idea ("after somebody attends a drop-in they should be
-  given the opportunity to give feedback on that place… five stars one through
-  five and also write a comment"), which the orchestrator grounded in the
-  existing system before planning: the stars-and-comment half **already ships**
-  (`reviews`, migration `0052`; `ReviewForm`; the aggregate line on place
-  pages, browse cards and map pins), so the whole batch is the *prompt*.
-  Two decisions taken by the human, both recorded in the Non-goals:
-  (a) the prompt writes **the same `reviews` row** the place page writes — no
-  new table; (b) **`place_id is null` prompts nothing**. Supersedes the V22
-  plan (preserved at `plan-v22-backup.md`, `diff -q` clean). Next action:
-  dispatch Slice 1 to one local builder.
-
-- 2026-09-26 — **Slice 1 built, independently verified green, reviewed
-  NEEDS_CHANGES. Fix round 1 dispatched. `0055` NOT yet applied.** Verifier
-  reproduced the gate exactly (`npm run verify` EXIT=0 · 55 files / 1754 tests ·
-  78 warnings / 0 errors · GUARDS PASS · Deno lane EXIT=0 · no test deleted) and
-  **corrected this file's lint baseline**: the real base at `63ef790` is **78**
-  warnings, not the 68 repeated here since V21 — so this diff's lint delta is
-  **0**. Reviewer verdict NEEDS_CHANGES on one blocking finding (the e2e
-  five-kind array and its now-false docstring) plus four comment-level findings
-  and **three defects in this plan**, all accepted. Coordinator rulings:
-  **(A) widen, don't narrow** — criterion 7 is widened and
-  `e2e/push-subscribe.e2e.ts` + `src/lib/db.ts` join Slice 1's file list,
-  because narrowing would enshrine a rendered-but-unasserted sixth toggle and a
-  declared-false docstring, which is precisely the drift this batch exists to
-  cure; **(B)** the diff introduced a falsehood — `notificationUrl` has **one**
-  call site, not five ("used by five call sites") — and a false comment is a
-  defect, not a nit; **(C)** `docs/push-setup.md:212` parked to Slice 3, which
-  already owns that file; **(D)** `0055`'s read-back must **assert** `prosecdef`
-  (expected `false`), not merely print it; **(E)** `0055` moves to mode `644`,
-  matching all 50 siblings. Two reviewer risks **retired with live data**, not
-  argument: the `ADD CONSTRAINT` cannot abort (only 4 kinds ever stored, all
-  inside the CHECK) and the drop-then-add window is a non-issue (the live
-  constraint *is* `0041`'s widen, applied through this same browserless path).
-  The brief's "keep `security definer`" was **my error** and the builder was
-  right to refuse it. Next action: fix round 1 returns, then re-review, then the
-  coordinator's live apply.
-
-- 2026-09-26 — **Slice 2 COMPLETE AND ACCEPTED, then pushed (`7e53c22`).** Three
-  new files: the pure rules in `_shared/reviewScan.ts`, the `src/lib` re-export
-  seam, and the sibling test the guards require. Reviewer **PASS** with all seven
-  criteria at `file:line` and no blocking findings; the verifier's own gate green
-  (56 files / 1784 tests / guards PASS / Deno EXIT=0). Mutation-checked: **5/5
-  rule flips each killed a different named test**, raw per-flip output saved. The
-  module is provably pure — no clock read, `now` is a parameter, proven by a test
-  that ages the same facts out under a later `now`.
-  **A red gate turned out to be a genuine environmental flake**, and it was
-  disproved rather than explained away: `scripts/guards/no-bypass-guard.test.mjs`
-  failed once inside the full suite with a git-internal hardlink error, then
-  passed **5/5 in isolation and 3/3 at the base commit**, with two independent
-  full gates green on the identical tree. Causation was **impossible by
-  construction** — that guard's clone is built from `git push HEAD`, and every
-  Slice 2 file was **untracked**, so the failing process could not have contained
-  them. Deferred known issue: this flake can spuriously red the gate, and the
-  pre-push hook runs the same gate; candidate fix is `--no-hardlinks` in
-  `plainClone()`. **The coordinator's own "commit-graph rewritten at 20:24"
-  hypothesis was killed by the verifier** — that mtime is the `..` row for
-  `.git/objects`, not the directory's, and no writer is configured.
-- 2026-09-26 — **Slice 3 CODE COMPLETE AND ACCEPTED, pushed (`e64d298`). The
-  batch's only remaining item is the human-authorized go-live.** `catchUpReviewDue`
-  wired into the 5-minute scan, mirroring `catchUpStartingSoon` step for step:
-  reviewer verdict was NEEDS_CHANGES on one blocking finding (a file header this
-  slice made false), plus assertions that everything else was right — wiring-only,
-  predicate strictly before the mapper, the embed character-identical, the
-  non-empty `.in()` exclusion, the pinned upsert, both counts reported, and
-  **`catchUpStartingSoon` byte-identical** (91 lines vs 91, proven by extraction
-  in both lanes). The fix round was prose-only and the re-review returned **PASS
-  with no blocking and no non-blocking findings**, confirming all four corrected
-  sites accurate and **no new false claim introduced**.
-  **The re-review settled a dispute by enumeration, against the coordinator:**
-  every `insert into public.notification_log` is one of four statements inside
-  exactly **three** function bodies — `0041:178` *replaces* `0032:416` rather
-  than adding one — so it is **three functions, four kinds**. The builder refused
-  the coordinator's "four functions" instruction and was right.
-  **Cross-slice seams verified** (a check no lane owned): the window constant has
-  one source, the kind name agrees in all seven places, the url encodes like the
-  canonical `places.ts:327` builder, and the copy has one source pinned against
-  its SQL twin.
-  ⛔ **NOT DEPLOYED, DELIBERATELY.** `cron.job` jobid 3 is active at `*/5`, so
-  **deploying IS the go-live** — one real family, irreversibly. Everything about
-  it is rehearsed: a single browserless command, no `supabase login` needed, two
-  footguns pinned (name the function or it deploys all of them; `--project-ref` is
-  mandatory because this checkout is not `supabase link`ed), and the landing
-  proved by three live signals (`version` 5→6, `updated_at`, `ezbr_sha256`) plus a
-  database row count rather than the function's own `reviewDueCreated`, which
-  reports rows *attempted*. The fixture for criteria 3–4 is designed, and cleanup
-  must go **through the profile** — `notification_log` cascades on `profile_id`
-  but has **no FK on `playdate_id`**.
-
-- 2026-09-27 — **Slice 4 (the human-chosen amendment: skip parents who already
-  reviewed the place) is built, reviewed, fixed, and verified green. The
-  go-live is the only remaining step.** The human chose the orchestrator's
-  recommendation ("add the skip first") over "deploy as-is". Slice 2 gains a
-  **required** `alreadyReviewed` fact and rule **(f)**; Slice 3's
-  `catchUpReviewDue` gains the bounded `reviews (place_id, author_profile_id)`
-  read and injects the fact. Builder DONE (`npm run verify` EXIT=0 · 56 files /
-  **1785 tests** · 78 warnings / 0 errors · GUARDS PASS; `deno-check` EXIT=0;
-  rule (f) mutation-killed by the named test). Verifier independently reproduced
-  the full gate and the Deno lane (`.scratch/v26/s4-verify-verifier.txt`,
-  `s4-deno-verifier.txt`). Reviewer **NEEDS_CHANGES** on exactly one blocking
-  finding — a comment the diff made false, `src/lib/reviewScan.test.ts:10` still
-  said "five rejection rules" while the same file now tests six — plus one
-  stale test label ("criterion 8"); both were fixed in fix round 1 and re-gated
-  (`s4-verify-fix1.txt` EXIT=0 · 1785 tests · GUARDS PASS). The `ocr` lane
-  reviewed the code (`.scratch/v26/ocr-s4.json`) with **zero findings on the
-  product files**; its single low finding is `.scratch` JSON gitignore hygiene,
-  **parked** (untracked scratch, mechanically excluded by `check-push-range.sh`,
-  and out of this slice's scope).
-  **Live read-only blast-radius probe run BEFORE the deploy**
-  (`.scratch/v26/live-blast-radius.txt`): exactly **1** finished place-backed
-  ping inside the 24-hour window (`04a073f4…`, ended 2026-09-26 14:30 UTC) and it
-  is by **the parent who already reviewed that place** — so with rule (f) the
-  go-live notifies **zero** families. `notification_log` `review_due` rows
-  before the deploy: **0**.
-
-- 2026-09-27 — **SHIPPED, DEPLOYED, AND CLOSED. Every acceptance criterion is
-  now proven, and criterion 3 was closed without a production write.**
-  `40ffa83` pushed through the gated hook (full gate green inside the hook);
-  `send-push` deployed (v5→v6, `updated_at` moved, `ezbr_sha256
-  8d25f1f8…→2ebf8ceb…`). The first post-deploy cron tick
-  (`2026-09-27 14:20:00.109Z`, 13 s after the deploy) returned
-  `{"reviewDueCreated":0,…}` with the Green Lake candidate still in-window, and
-  the same tick exercised the `place_id is null` wall against two real
-  place-less pinged drop-ins — so **the go-live notified zero families**
-  (`.scratch/v26/live-tick.txt`). **Criterion 3 (`cancelled` → zero rows) is
-  proven against the live schema with ZERO persistence**
-  (`.scratch/v26/live-criterion3-rollback.txt`): the Management API query
-  endpoint accepts explicit transaction control, so a `cancelled` place-backed
-  finished drop-in + ping (and an identical `status='on'` control + ping) were
-  inserted inside one `begin`/`rollback`; the scan's exact predicate returned
-  `cancelled_candidates = 0`, `on_control_candidates = 1`, and a post-rollback
-  read confirmed 0 playdates / 0 pings / 0 notifications persisted. Criterion 4
-  is live-proven by the tick; criteria 1/5/6/7 are satisfied or vacuous as
-  recorded in `V26-SUMMARY.md`. Remaining items are **human-gated**: the two
-  leftover `e2e ` fixtures' sweep (drives the human's Chrome), and the
-  24h-window / copy product calls.
+The handover measured at `f80835c`. HEAD is `fac3c3d`, a docs-only commit adding the
+handover. I re-ran the gate at `fac3c3d` rather than assuming the docs commit was inert —
+**that assumption is the class of claim this batch keeps finding**. Result: identical on
+all four numbers.
 
 ---
 
-# Implementation Plan: V27 — the /new posting experience (Meisburg/post-drop-in)
+## 3. The measured facts this plan rests on
 
-> Owned by the orchestrator. This batch answers the founder's 2026-09-27 review
-> of `/new`: posting a drop-in must be quick, and the post should attract
-> friendly, like-minded families. **Time presets shipped first** (base of this
-> batch, not a slice here). The four slices below are the remaining
-> recommendations, in order.
+Every one came from a read of the tree this turn. Cited so a builder can check rather than
+trust.
+
+1. **The three fake drop-ins are sweep-scoped, and the sweeper already exists and already
+   verifies itself.** `scripts/sweep-e2e-markers.mjs` removes rows scoped to `e2e-%`
+   accounts, is FK-safe, has a **founder-overlap refusal gate**, and re-reads the database
+   after deleting, failing loudly if a marker survived or a total did not move by exactly
+   the amount claimed. Its modes: `list` (who would be deleted), `select` (counts + gate),
+   `delete` (**refuses unless the gate passes**), `verify` (**exit 1 if any marker
+   remains**). It takes its credential from `SUPABASE_ACCESS_TOKEN` in `.env` first
+   (present, measured) and only falls back to a CDP browser session.
+   Its decision logic is pure and lives in `scripts/lib/sweep-e2e.mjs` with
+   `sweep-e2e.test.mjs` beside it.
+   ⚠️ **It deliberately never widens to "looks like test data"** — it is `e2e-%` or
+   nothing. `e2e/weekly-series.e2e.ts:27` is the source of `'E2E weekly lot'` and `:32` of
+   `` `e2e weekly-absent ${epoch}` ``.
+2. **There is also a repo-side half**, `scripts/guards/fixture-marker-guard.mjs`, which
+   fails the normal gate when a spec invents a fixture outside the sweep's scope. The two
+   halves are documented together in `docs/agents/e2e-fixture-convention.md`. **So item 4
+   may need no new code at all** — that is the first thing the slice measures.
+3. **The notification defect is a claim the mechanism does not have (D-025), in two places
+   at once.** `src/sw.ts:80` reads
+   `const VAPID_PUBLIC_KEY: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? ''`, and the
+   docblock at `:73-78` asserts that with an empty key `subscribe()` is *"still attempted
+   without `applicationServerKey`, which the Web Push protocol allows, so a parent's opt-in
+   is recorded and starts working the moment a sender exists."*
+   `docs/push-setup.md:124` repeats the identical claim.
+   **The code already refuses the empty key**: `:223` builds `keyBytes` as `null` when the
+   key is empty, and `:228` spreads `applicationServerKey` **only when non-null**. So the
+   subscribe call is made **without a key**, the browser rejects it, and the opt-in is not
+   recorded. **The docblocks are the defect; the runtime branch is the honest one.**
+4. **The VAPID key is configured where it is used, and NOT where the build reads it.**
+   `docs/push-setup.md`'s checklist records steps 1–4 DONE: the keypair exists in
+   `.env.push.local` (gitignored), `VITE_VAPID_PUBLIC_KEY` is set **in Vercel's env** and
+   the live bundle is verified to contain the public key, `send-push` is ACTIVE with all
+   three secrets, and the cron fires every 5 minutes. **Measured this turn: the local
+   `.env` does NOT contain `VITE_VAPID_PUBLIC_KEY`** — its keys are
+   `VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / SUPABASE_ACCESS_TOKEN /
+   VITE_PUBLIC_BASE_URL / VITE_OAUTH_PROVIDERS`. So **a local `npm run build` or a local
+   dev server produces a bundle with an EMPTY key**, which is the only state in which the
+   browser ever reaches the unbound-subscribe branch. **This is the crux of item 6 and it
+   is why the slice must establish the failing environment before it edits anything.**
+5. **The human walks the Vercel preview, where the key IS present** — so the reported error
+   needs one more measured step before a fix is designed: whether the failing run was a
+   local/LAN build (`192.168.1.61:5173`, which the handover says may still be running) or
+   the preview. **That measurement decides whether item 6 is a code fix, an env fix, or
+   both — and it is a STOP-and-report if it turns out to be env-only.**
+6. **"I'm going" is a self-contained block.** `PlaydateDetailPage.tsx:2136-2151` renders the
+   ping button (`data-*`/testid asserted by specs), with `pingLocationNotice` / the
+   `going-count-unavailable` fallback and the count line immediately after it at `:2152+`.
+   The move must carry **the whole block, not just the button**, or the notice and the count
+   separate from the control they belong to.
+7. **Set-location has exactly two callers, and they behave differently — that IS the bug.**
+   - `FeedPage.tsx` passes `onApplyRadius={handleLocationApplyRadius}` (`:994`) — a real
+     DB write through `updateHomeZipRadius`, with an equal-value no-op guard, a `radiusBusy`
+     latch, and a **re-throw** so the modal owns the error surface.
+   - `PlaceDirectory.tsx:1352-1365` passes **`onApplyRadius={(miles) => setRadiusMiles(miles)}`**
+     — a local `setState`. It is a write in name only.
+   The modal renders **three** buttons: Cancel, `See places` (`:252`), `Apply radius`
+   (`:262`). `onRadiusChange` is the **per-tick preview** the Places caller supplies and the
+   feed deliberately omits. **So "Apply closes the menu and updates the page" is a
+   per-caller contract, not one button rename** — collapsing to two buttons must preserve
+   the live-preview behaviour Places depends on while giving the feed one action that
+   writes *and* closes.
+8. **Item 1's risk is real and specific.** The cards are chosen by `view` (a `resolveCard`
+   result), **not** by an index: `OnboardingPage.tsx:1313` renders the ending when
+   `view === 'finish'`, and the load-error branch at `:1316` sits **after** it. `saving`
+   (`:302`) gates the area card's primary (`:1497-1498`) and disables the zip field
+   (`:1656`). **The radius select at `:1683-1700` is NOT disabled while saving** — this is
+   r2's recorded 8d open, and **a back-arrow makes it strictly more reachable**, because a
+   parent can now leave a card mid-write and return. There is a comment at `:1647`
+   acknowledging an edit-during-write. **A back arrow must therefore be a decision about
+   in-flight writes, not a `<` character in the chrome.**
+9. **⚠️ Item 2 and item 3 are guard-coupled in a way the handover understates.**
+   `src/lib/firstRunTour.ts:205` is
+   `export const TOUR_TAXONOMY_CLAIMS: readonly PlaceKind[] = ['playground', 'pool', 'beach']`,
+   read by `scripts/guards/copy-taxonomy-guard.mjs:124` (`claims: 'TOUR_TAXONOMY_CLAIMS'`).
+   The guard requires the declared kinds to be **backed by the words** — so **deleting the
+   Places line, or deleting this whole card, changes or invalidates the declaration, and
+   the guard is the thing that will say so.** The guard's own `.check.mjs` uses the exact
+   declaration string as a fixture (`:94`), with four mutations. **A copy change that
+   silently empties the declaration is a finding, not a pass** — and the declaration's
+   *consumer* (`copy-taxonomy-guard.check.mjs') is a second file that may need to move with
+   it. This is why items 2 and 3 are sliced *after* the guard question is answered, not
+   inside a UI slice.
+10. **`firstRunTour.ts` and its test are large and dense**: 19 357 bytes / 21 309 bytes. The
+    header at `:1-60` is itself the honesty argument. **Item 3 does not delete this module**
+    — the tour copy is a candidate source for the tooltips' words. What changes is *when and
+    how the parent meets it*.
+11. **The ending's testid does not move with the component.** `HowItWorksCard` renders with
+    `testId = 'first-run-finish-card'` (`:37`) — asserted by `e2e/auth.setup.ts` (every
+    spec's setup), `e2e/fixtures.ts` (`finishSignup`) and
+    `e2e/signup-zip-fallback.e2e.ts`. **Its own docblock says so at `:29-33`.**
+    ⚠️ **Measured rather than counted from memory: 11 hits across 5 files** —
+    `e2e/fixtures.ts:480,605`, **seven in `e2e/signup-zip-fallback.e2e.ts`**
+    (`:223,295,380,568,578,798,868`), `src/components/HowItWorksCard.tsx:29,37`.
+    **`auth.setup.ts` carries NO hit** — it walks the ending by another means, which the
+    slice must re-measure before assuming. **The sharpest one is
+    `signup-zip-fallback.e2e.ts:568`'s `.not.toBeVisible()`**: an assertion about the
+    ending's *absence*, which a locator rename cannot satisfy. Any item 2/3 change that
+    removes the card must keep the shared setup walking.
+12. **The onboarding e2e surface is five specs**: `onboarding-resume`, `signup-zip-fallback`,
+    `name-card-photo`, `onboarding-kid-photo`, plus `auth.setup.ts` and `fixtures.ts`.
+    `npm run verify` does **not** run them — **any item 1/2/3 slice must pin the browser lane
+    explicitly**, which the r2 plan already learned the hard way.
+13. **Item 4's acceptance cannot be a page eyeball** (the handover says so, and the sweeper
+    agrees): `verify` exists precisely because *"a sweep that silently removes nothing looks
+    exactly like a sweep that worked."*
+
+---
+
+## 4. Sequencing, and why it is not the handover's order
+
+The handover says "two block publication — do those first." **Agreed, and both go first.**
+But the honest dependency graph is not item order:
+
+```
+Track A (blockers, serialized — both touch production-adjacent state)
+  r3-1  item 4: sweep the fake drop-ins        [DATA — human confirms rows]
+  r3-2  item 6: notifications                  [code and/or env — may BLOCK]
+
+Track B (independent, small, file-disjoint from Track A and from each other)
+  r3-3  item 5: "I'm going" below the event info
+  r3-4  item 7: set-location two buttons
+
+Track C (coupled — items 1, 2, 3 share the first-run flow and MUST be one sequence)
+  r3-5  item 1: navigation arrows        ← riskiest; FIRST, because it changes the model
+  r3-6  item 2: delete the ending screen  ← depends on r3-5's card model
+  r3-7  item 3: lightboxed tooltips       ← depends on r3-6 (it replaces what 6 removes)
+  r3-8  the guard/declaration reconciliation items 2+3 force
+```
+
+**Why r3-5 before r3-6/r3-7, not after.** Items 2 and 3 both *delete or replace the ending*.
+An arrow that moves **backward** through cards needs a model of "which card am I on" that
+survives a non-linear walk; if the ending is deleted first, the arrow is then built against
+a sequence that is about to change again — the exact merge-conflict-inside-one-flow the
+handover warns about. **Arrows first makes the model explicit; the deletions then remove
+cards from a model that already handles arbitrary position.**
+
+**Why r3-8 is its own slice rather than folded into r3-7.** It is the only slice whose
+failure mode is a *guard* failure rather than a product failure, its acceptance is a
+mutation test rather than a browser observation, and per the build law
+(`code-structure.md`: *"Write the rule here first, then the guard"*) a declaration change is
+a rule change. **Folding it into the tooltip slice would put a rule change and a UI change
+in one diff** — this batch has ruled against that four times.
+
+**Serialization:** Track A, then Track B, then Track C. **One builder at a time** (§2 rule
+3). Within Track B the two slices are file-disjoint, but that does **not** license
+parallel builders — rule 3 is unconditional, and the one-writer rule is what keeps a bisect
+honest.
+
+---
+
+## 5. Interfaces (pinned before dispatch)
+
+### Item 1 — the first-run position model
+
+`src/lib/firstRun.ts` gains an explicit, **pure** notion of position, because the page
+currently renders off a single `resolveCard` answer and an arrow needs the neighbours:
+
+```ts
+/** The card before `card` in FIRST_RUN_CARDS order, or null at the start. */
+export function previousCard(card: FirstRunCardId): FirstRunCardId | null
+/** The card after `card`, or null at the end (the ending is not a card). */
+export function nextCard(card: FirstRunCardId): FirstRunCardId | null
+```
+
+**The invariant to pin:** these read `FIRST_RUN_CARDS` and never a literal index, the same
+rule `progressLabel` already obeys. **They are pure and get table tests** — no component
+decision (the build law).
+
+**What the page owns, and what it must NOT do:** the page holds the *position*; whether a
+card's data is already written is **not** the page's to invent, because `nextUnfinishedCard`
+is the authority on "unanswered" (r2 slice 6a's ruling: the decision is named once). **A
+back arrow re-offers a card that already exists; it must never re-run a write.**
+
+### Item 1 — the in-flight rule (the decision this slice is really about)
+
+**Ruled, and the builder may not re-decide it silently:** navigation is **disabled while
+`saving` is true**, and **only while**. Rationale, measured:
+- the area card's `saving` already disables its own primary (`:1497-1498`) and its zip field
+  (`:1656`), so a disabled arrow is **consistent** with the surface rather than a new rule;
+- the radius select is **not** disabled while saving (fact 8), so the divergence family 8d
+  recorded stays exactly as wide as it is — **this slice does not widen it and does not fix
+  it.** Fixing it is a **recorded open**, not scope;
+- the alternative (allow the move and hope the write settles) is the **silent-orphan shape**
+  slice 2's scope ruling exists to prevent, in a different costume.
+
+**If a measurement shows the disabled arrow can strand a parent** (a hung write with no
+escape), the builder **STOPS and reports** — the pending-state rule's bounded escape is not
+optional, and r2 slice 2 already established what its absence costs.
+
+### Item 2/3 — the ending
+
+Item 2 deletes the "You're all set" screen and item 3 replaces "How Drop In works" with
+tooltips **on app load**. Both therefore change **what the parent sees after the last card**.
+The pinned contract:
+
+- **The last first-run card's primary leads INTO the app** (the feed), not into a card.
+- **The tooltips are the app's first-run surface, not the run's ending** — they render over
+  the feed on load, once, and are dismissible.
+- **`first-run-finish-card` must keep existing for any spec that still asserts it, or every
+  consumer must be updated in the same slice.** Measured consumers are listed in fact 11.
+  **This is the single highest-risk mechanical item in Track C** and the slice that removes
+  the card owns all of them.
+- **`TOUR_TAXONOMY_CLAIMS` is reconciled by r3-8, in the same batch, before Track C closes.**
+
+---
+
+## 6. Slices
+
+Each slice: objective → files → approach → acceptance → verify → depends → budget.
+**`e2e/fixtures.ts` is a per-slice obligation wherever the card sequence moves** — the
+slices below name it or explicitly declare it untouched.
+
+---
+
+### 🔴 r3-1 — remove the three fake e2e drop-ins (item 4) — **EXECUTED; INCIDENT; FIX IN FLIGHT**
+
+> **STATUS 2026-10-03: the sweep RAN and is a PUBLICATION BLOCKER.** It removed all 2445
+> marker rows as scoped, and **destroyed one real parent's `going_pings` row**. Its own
+> verification caught it (`exit 4`, "total went 5 → 4"). Full write-up:
+> **`.scratch/v28/reports/r3-1-incident.md`**; evidence preserved in
+> `r3-1-delete.txt`, `r3-1-verify.txt`, `r3-1-confirmation.md`.
 >
-> The default gate is `npm run verify`. Every slice also pins a targeted
-> Playwright run for its own surface. **Branch `Meisburg/post-drop-in`
-> (staging). DO NOT PUSH — the coordinator serializes merges to master.**
+> **ROOT CAUSE — a CASCADE, not a race.** `going_pings.playdate_id -> playdates` is
+> `ON DELETE CASCADE`. A real parent pinged a marker-hosted drop-in. Their `profile_id` is
+> not a marker, so `going_pings`' own clause never matched it and its marker count was a
+> truthful **zero** at both reads. Deleting the marker drop-in destroyed the ping anyway.
+> **Both reads were honest; the deletion model was wrong.**
+>
+> **THE FIX (built, gate-green):** `CASCADE_HAZARDS` — the 17 measured cascade edges — plus
+> a read-only **collateral probe** that runs before any delete and **refuses (exit 5)** when
+> a non-marker row sits behind a doomed marker parent. Fail-closed on empty/unreadable
+> probes. It cannot be bypassed. `verificationProblems` is **unchanged and unweakened**.
+>
+> **PROVEN END-TO-END:** the incident was reproduced in a rolled-back transaction against
+> the real production probe → **`b0 = 1`**, every other edge 0 → the gate refuses,
+> specifically. Nothing persisted (verified: 52/52/21/4 unchanged).
+>
+> **REMAINING FOR THIS SLICE:**
+> - **data recovery is a HUMAN question** — whether Supabase PITR can restore the deleted
+>   row; this repo has no backup tooling.
+> - **durability is a PRODUCT decision** — the e2e suite drives the **live production**
+>   project, so a sweep is a snapshot of a stream (~40 markers reappeared within 90 minutes).
+>   Recommendation: **a separate Supabase project/branch for e2e**, with automated
+>   pre-release cleanup as the bridge.
 
-## Goal
+- **Objective.** Production shows no `e2e`-prefixed venue, host, or drop-in, **and the
+  mechanism that removes them cannot delete real user data.**
+- **Files (as executed).** `scripts/lib/sweep-e2e.mjs`,
+  `scripts/lib/sweep-e2e.check.mjs`, `scripts/sweep-e2e-markers.mjs`,
+  `docs/agents/e2e-fixture-convention.md`.
+- **Approach.** ⚠️ **This touches PRODUCTION DATA.** The order is fixed:
+  1. **`list`** — enumerate the exact marker accounts;
+  2. **`select`** — the counts **and the founder-overlap gate**;
+  3. **`collateral`** — the read-only cascade probe (NEW);
+  4. **present those exact rows to the HUMAN and get explicit confirmation**;
+  5. **`delete`** — **refuses (exit 5) unless BOTH gates pass**;
+  6. **`verify`** — exits non-zero if any marker remains.
+  **A builder that deletes before the confirmation has broken rule 8.** The sweeper has no
+  flag that bypasses the collateral gate.
+- **Acceptance.**
+  - the collateral gate **refuses** the 2026-10-03 incident shape, proven by mutation and by
+    a rolled-back reproduction against the live probe;
+  - every marker row is removable: `verify` exits 0 with zero marker rows after a sweep;
+  - `verificationProblems` still fails on a wrong total delta — **not weakened**;
+  - **no non-marker row is ever deleted**, asserted by the gate plus the regression check.
+- **Verify.** `node scripts/lib/sweep-e2e.check.mjs` **and** `npm run verify` **and**
+  `node scripts/sweep-e2e-markers.mjs collateral` **and** `node scripts/sweep-e2e-markers.mjs verify`.
+- **Depends on.** Nothing — but its destructive step depends on a **HUMAN confirmation**,
+  and publication depends on the recovery + durability answers above.
+  **Budget.** medium.
 
-A parent posts a drop-in faster and with more confidence: they can always see
-and submit the plan (Slice 1), the optional details becomes an inviting
-one-tap sentence (Slice 2), the page says what is public and reassures them
-(Slice 3), and a posted drop-in is easy to share at the moment of intent
-(Slice 4). `/edit` renders byte-identically to today throughout.
+---
 
-## Non-goals
+### 🔴 r3-2 — notifications: the claim vs the mechanism (item 6) — **DONE 2026-10-03**
 
-- No new route, table, or migration.
-- No change to `/edit`'s rendered markup — every new form affordance is an
-  optional slot the page passes and `/edit` does not.
-- No new REQUIRED field or step; nothing added may block Post.
-- No analytics, no invented social proof (PRODUCT.md, Evidence on Hand).
+> **OUTCOME: a DOCUMENTATION defect, fixed without touching runtime behaviour.**
+> Full write-up: `.scratch/v28/reports/r3-2-notifications.md`.
+>
+> **The failing environment was identified BEFORE any edit** (the plan's own rule): no LAN
+> server running, and `VITE_VAPID_PUBLIC_KEY` **absent** from the local `.env` while Vercel
+> has it. That fully explains the human's report.
+>
+> ⚠️ **The handover was WRONG about the location.** The opt-in path is
+> **`src/lib/pushClient.ts:508`** (`enablePush`), NOT `src/sw.ts:74-80` — that is
+> `rehandshake()`, which fires on `pushsubscriptionchange`. The false claim appeared in
+> **three** places: `pushClient.ts:510-513`, `sw.ts:73-78`, `docs/push-setup.md:123-127`.
+>
+> **Runtime was already correct** (`...(key === '' ? {} : { applicationServerKey: … })`)
+> and was **not changed**. Only the claims were.
+>
+> **THE REAL FINDING — why 2067 green tests shipped a broken opt-in:**
+> `e2e/push-subscribe.e2e.ts`'s stub had `async subscribe()` with **no parameters**, so it
+> **ignored the options entirely** and returned a fake subscription. The suite asserted the
+> bug's behaviour was correct, and the e2e build had no key of its own. Fixed in two halves:
+> the **stub now refuses a keyless subscribe** with Chromium's own message, and the e2e
+> build now carries a **locally generated test-only P-256 key** (gitignored `.env`).
+>
+> **Mutation-proven:** the spec **fails when the key is absent** and passes when present.
+> Before this slice it passed in both states.
+>
+> **Verified:** `npm run verify` exit 0 (71 / 2067 / 81 / 0 / GUARDS PASS) and
+> `npx playwright test e2e/push-subscribe.e2e.ts` → **9 passed**.
+>
+> **STILL NEEDS THE HUMAN:** a walk on the **Vercel preview** (which has the production key)
+> confirming the opt-in completes there. A real push **delivery** was never in scope and is
+> not claimed.
 
-## Interfaces
+#### (original slice text, kept for the record)
 
-- `PlaydateFormFields` (`src/components/PlaydateFormFields.tsx`) gains OPTIONAL
-  props, each defaulted so `/edit` is unchanged: `formId?: string` (default
-  `'playdate-form'`), `hideSubmit?: boolean` (default false),
-  `timePresetsSlot?: ReactNode` (shipped with time presets),
-  `detailsChipsSlot?: ReactNode`, `privacySlot?: ReactNode`.
-- Pure seams live in `src/lib/` with a sibling `*.test.ts` (the build law):
-  Slice 1 `stickyPostLine` (in `src/lib/postSummary.ts`); Slice 2
-  `src/lib/vibeChips.ts`; Slice 3 `privacyPreview` (in
-  `src/lib/postSummary.ts`); Slice 4 reuses `buildShareUrl` (`src/lib/trust.ts`).
-- `src/pages/NewPlaydatePage.tsx` owns the wires; the form component owns no
-  state. `src/pages/FeedPage.tsx` is touched only by Slice 4.
+- **Objective.** On a real browser, enabling notifications completes registration and the
+  subscription is persisted — **or the slice reports BLOCKED with the exact missing
+  artifact named.**
+- **Files.** `src/sw.ts` (the docblock `:73-78` **and** the branch at `:223-228`),
+  `docs/push-setup.md` (`:124`'s identical claim, and its checklist),
+  and — **only if a measurement says the client code is at fault** —
+  `src/lib/push.ts` or whichever module surfaces the registration error.
+- **Approach.** ⚠️ **MEASURE THE FAILING ENVIRONMENT FIRST — do not open the editor.** The
+  browser's error message and fact 4 together mean there are **at least two distinct
+  failures wearing one message**, and they have different fixes:
+  1. **If the failing build had an empty key** (a local/LAN build — the handover says a LAN
+     dev server may still be running on `192.168.1.61:5173`), then **the code is behaving
+     correctly and the docblock and `docs/push-setup.md:124` are simply false.** The fix is
+     **the two documents**, plus whatever makes a local build carry the key. **Report the
+     measured state before editing anything.**
+  2. **If the failing build had the key** (the Vercel preview), the defect is in the client
+     path and the branch at `:223-228` is the place to look.
+  **Do NOT "fix" this by passing a key that does not exist, and do NOT weaken the branch to
+  make a subscribe succeed.** A subscription bound to nothing is worse than a refused one —
+  it is the same "stated capability the mechanism does not have", one level down.
+  ⚠️ **The honest outcome may be "code + a secret the human must provision."** Per the
+  handover that is a **BLOCKED to surface**, not a guess — and given fact 4 the likely
+  honest outcome is narrower than the handover feared: the secrets **already exist**; what is
+  missing is the key **in the build the human was using**.
+- **Acceptance.**
+  - **The failing environment is identified and stated with evidence** (which URL, which
+    bundle, whether the bundle contains the public key) **before** any edit;
+  - the docblock at `src/sw.ts:73-78` and `docs/push-setup.md:124` **no longer assert that
+    an unbound `subscribe()` records the opt-in** — because it demonstrably does not;
+  - the surviving comment describes **what the code does** (subscribes without a key, and the
+    browser refuses), not what the protocol would allow;
+  - **on a real browser** (preview or local with the key present), enabling notifications
+    completes registration and the subscription row is persisted — **verified in the browser,
+    not by unit test alone**;
+  - if the key cannot be made present in the environment under test, the slice **stops and
+    reports BLOCKED**, naming the exact artifact and who owns it.
+  - The false claim is written **twice in two different wordings** (measured: `docs/push-setup.md:124`
+    says *"the Web Push protocol allows it"*; `src/sw.ts:76` says *"the Web Push protocol
+    allows, so a parent's opt-in is recorded"*). **So the pre-fix state is recorded, and
+    the target is 0 on each:**
+  - **The claim is removed from both wordings** — measured pre-fix at exactly one site
+    each: `docs/push-setup.md:124` and `src/sw.ts:76`. The surviving text at each site says
+    what the code does (subscribes **without** a key, and the browser refuses), not what the
+    protocol would allow.
+- **Verify.** `npm run verify` **and** a **recorded browser check** on the environment the
+  human reported, with the bundle's key-presence measured.
+- **Depends on.** Nothing. **Budget.** small if it is the two documents; **STOP if it is
+  not.**
 
-## Slices
+---
 
-### Slice 1: the sticky Post bar with a live read-back
+### 🟡 r3-3 — "I'm going" below the event info (item 5) — **DONE 2026-10-03**
 
-- **Objective:** on `/new`, a bar pinned above the bottom nav shows a one-line
-  read-back of the current plan and a Post button that submits the same form.
-- **Files in scope:** `src/pages/NewPlaydatePage.tsx`,
-  `src/components/PlaydateFormFields.tsx`, `src/lib/postSummary.ts`,
-  `src/lib/postSummary.test.ts`, new `e2e/sticky-post.e2e.ts`.
-- **Approach:** add `formId` (becomes the `<form id>`) and `hideSubmit` to the
-  form. `/new` passes `hideSubmit` and renders a `fixed` bar at
-  `bottom-[calc(5.5rem+env(safe-area-inset-bottom))]` (the PlaceDirectory
-  offset, above the app's fixed bottom nav) containing `stickyPostLine(values)`
-  and a `type="submit" form={formId}` button. `/edit` passes neither. Add
-  bottom padding on `/new` so the bar cannot cover the submit error.
-- **Acceptance criteria:**
-  - On `/new` exactly ONE control is named "Post drop-in" (the bar's), and
-    clicking it submits and lands on `/`.
-  - The bar's read-back is `stickyPostLine(values)` (day + start + place), a
-    pure seam with unit tests for the empty/full cases.
-  - `/edit` renders no bar and keeps its in-form submit byte-identically.
-  - The bar shows no horizontal overflow at 320px and its button is ≥44px.
-- **Verification command:** `npm run verify` (exit 0), then
-  `npx playwright test e2e/sticky-post.e2e.ts e2e/post-fast.e2e.ts`.
-- **Depends on:** nothing.
+> **OUTCOME: the move is made, and it REVERSES a recorded founder decision.**
+> Decision record: `.scratch/v28/reports/r3-3-decision.md`. Commit `6ab2cc0`.
+>
+> ⚠️ **PLAN DEFECT FOUND BEFORE THE EDIT.** `src/pages/PlaydateDetailPage.tsx:1957-1965`
+> records **A14 (V15 ticket 08)**, whose founder note was *"they should be at the very top
+> of the page"* — it had deliberately moved this block FIRST, having previously rendered
+> after the title, place, date/time and host card. **This slice's original text did not
+> mention A14 at all**, so a builder would have silently reversed a named decision. The
+> conflict was surfaced to the human, who ruled: **the later phone observation supersedes
+> the V15 note.** Recorded as **r3-D1**; the A14 comment is **amended in place, not deleted**.
+>
+> **Measured order after:** title → date/time → description → host → **RSVP**. The block
+> moved as **one unit** (button, location notice, count line, count-unavailable fallback +
+> Retry, `pingError`, `KidsComingPicker`). The host's own-post panel did **not** move.
+>
+> **NEW PIN:** a DOM-order test (`compareDocumentPosition`) in `e2e/rsvp-confirmation.e2e.ts`
+> — the acceptance requires the a11y reading order to match the visual order, which no
+> screenshot can show. **Mutation-proven:** moving the block back to the top makes it FAIL.
+>
+> **Verified:** `npm run verify` exit 0 (71 / 2067 / 81 / 0 / GUARDS PASS);
+> `rsvp-confirmation` 5 passed; `feed-empty-state` + rsvp 9 passed; `inbox` 6 passed.
 
-### Slice 2: vibe chips — the optional details becomes the invitation
+#### (original slice text, kept for the record)
 
-- **Objective:** under the Details field, one row of tappable starters turns a
-  blank description into an inviting sentence with no typing.
-- **Files in scope:** new `src/lib/vibeChips.ts` + `vibeChips.test.ts`;
-  `src/components/PlaydateFormFields.tsx` (a `detailsChipsSlot`);
-  `src/pages/NewPlaydatePage.tsx`; new `e2e/vibe-chips.e2e.ts`.
-- **Approach:** `VIBE_CHIPS` (id, label, text) and a pure
-  `applyVibeChip(current, chip)`: empty field → the chip's sentence; text that
-  already contains it → unchanged; otherwise append on a new line. The page
-  renders the chip row as a slot into the Details block; `/edit` passes none.
-- **Acceptance criteria:**
-  - Tapping a chip on an empty Details writes that chip's sentence; the
-    resulting post carries it (a submit writes `values.details`).
-  - Tapping the same chip again is a no-op (no duplicated sentence); tapping a
-    second chip appends it.
-  - `/edit` shows no chips.
-  - Every chip is ≥44px and the row wraps with no overflow at 320px.
-- **Verification command:** `npm run verify` (exit 0), then
-  `npx playwright test e2e/vibe-chips.e2e.ts`.
-- **Depends on:** Slice 1 (the form slot pattern), not its commit.
+- **Objective.** The ping control sits *after* the event's information.
+- **Files.** `src/pages/PlaydateDetailPage.tsx` (**the block at `:2136-2151` and whatever
+  it must move past**) — and the specs that assert its position or testid.
+- **Approach.** **Move the whole block, not the button** (fact 6): the button, the
+  `pingLocationNotice` / `LocationRequiredNotice` conditional, and the going-count line are
+  one unit, because a count separated from its control is a new layout defect. **Preserve
+  DOM order in a way that does not re-order the a11y tree relative to reading order** — if
+  the block is moved with CSS the visual and the announced order diverge, which this repo
+  has a lane for (`a11y:focus`). **Prefer moving the JSX.** The human's reason is the
+  acceptance: a parent decides *after* reading, so the control must follow the description.
+- **Acceptance.**
+  - in the rendered page the ping control appears **after** the event title, time, place and
+    description, and **before** nothing that used to precede it is now orphaned;
+  - **no other element shifts** — the diff is a move, not a restyle;
+  - the existing detail-page specs pass **unchanged**; if one asserts the old order, that
+    spec's assertion is **updated in this slice** (the slice that moves it owns the pin);
+  - the a11y reading order matches the visual order.
+- **Verify.** `npm run verify` **and** the detail-page e2e spec(s) named by measurement —
+  `npx playwright test <the spec that covers PlaydateDetailPage>`.
+- **Depends on.** Nothing. **Budget.** small.
 
-### Slice 3: the privacy preview + trust line
+---
 
-- **Objective:** at the point of posting, show what is public and state the
-  privacy promise in one line.
-- **Files in scope:** `src/lib/postSummary.ts` + test;
-  `src/components/PlaydateFormFields.tsx` (a `privacySlot`);
-  `src/pages/NewPlaydatePage.tsx`; new `e2e/privacy-preview.e2e.ts`.
-- **Approach:** pure `privacyPreview(values, kidLabels)` returns the compact
-  preview line (kids by first name + age, place, day, start) and a fixed note
-  ("Only nearby parents can see this. Kids show as first name + age."). The
-  page passes it as the slot the form renders directly above its submit area;
-  `/edit` passes none.
-- **Acceptance criteria:**
-  - On `/new` the note is visible and the preview names the selected kids by
-    `kidLabel` (first name + age), the place, and the start.
-  - `/edit` shows neither.
-  - The block adds no horizontal overflow at 320px.
-- **Verification command:** `npm run verify` (exit 0), then
-  `npx playwright test e2e/privacy-preview.e2e.ts`.
-- **Depends on:** Slice 1.
+### 🟡 r3-4 — set-location: two buttons, both entry points (item 7) — **DONE 2026-10-03**
 
-### Slice 4: the share prompt after posting
+> **OUTCOME: three buttons → two, Apply geocodes + writes + closes, both entry points.**
+> Commit `5e987a9`.
+>
+> **⚠️ A REAL PRODUCT DEFECT FOUND BY THE BROWSER LANE, not a test-only change.**
+> `PlaceDirectory.closeLocationModal` **cleared `geocodeCenter`**. That was correct while
+> "See places" was a *preview* a parent confirmed separately — but with one Apply button,
+> clearing on close **threw away the centre Apply had just resolved**, so the circle snapped
+> back to the home pin and the parent saw it do nothing. **That is the reported symptom
+> itself**, reproduced by the change. Fixed at the source: the centre is now the committed
+> frame and survives the close.
+>
+> **Order is load-bearing:** geocode → write → close **last**, because closing first wipes
+> the centre. One handler, not two buttons calling two functions.
+> **A failed write does not close** (the feed re-throws so the modal owns the error — now
+> load-bearing, since a swallowed error would close over a write that never landed);
+> **a failed geocode does not close** either.
+> **`handleGeocode` now RETURNS** whether a centre landed: reading `geocodeError` state
+> after the `await` would read the previous render's value and close over a failed lookup.
+>
+> **Specs:** 6 replaced testid uses. Two were behaviour changes, not renames —
+> `places-map-view` asserted the dialog *stays open* after geocoding (now: Apply closes,
+> then reopen to prove the per-tick preview survives), and `feed-empty-state`'s write
+> round-trip needed a reopen between its two writes.
+>
+> **Verified:** `npm run verify` exit 0 (71 / 2067 / 81 / 0 / GUARDS PASS);
+> **`places-map-view` + `feed-empty-state` + `places.e2e.ts` → 39 passed, 1 skipped, 0 failed
+> — BOTH entry points**, the path the plan flags as the one a single-page test misses.
 
-- **Objective:** immediately after a post succeeds, the parent gets a one-tap
-  way to share it — at the moment of intent, without losing the existing
-  "Post → feed" flow.
-- **Files in scope:** `src/pages/NewPlaydatePage.tsx`,
-  `src/pages/FeedPage.tsx`, `src/lib/postSummary.ts` + test (if a pure
-  `justPostedBanner` seam is needed), new `e2e/share-after-post.e2e.ts`.
-- **Approach:** after `createPlaydate`, `navigate('/', { replace: true, state:
-  { justPosted: { id, title, place } } })` (URL stays `/`, so `waitForURL('/')`
-  in every existing spec still matches). `FeedPage` reads
-  `useLocation().state`, keeps it in local state, and renders a dismissible
-  banner naming the post with a Share button (`buildShareUrl` + Web Share,
-  clipboard fallback — the same seam the detail page uses) and a dismiss.
-- **Acceptance criteria:**
-  - Posting on `/new` lands on `/` and shows the "Posted" banner with a Share
-    control; Share copies/uses `buildShareUrl(post.id, VITE_PUBLIC_BASE_URL ||
-    origin)`.
-  - Dismissing removes the banner; a later plain load of `/` shows no banner.
-  - Every existing `/new`→`/` spec still passes unchanged (no strict-mode or
-    URL change).
-- **Verification command:** `npm run verify` (exit 0), then
-  `npx playwright test e2e/share-after-post.e2e.ts e2e/post-again.e2e.ts`.
-- **Depends on:** Slice 1.
+#### (original slice text, kept for the record)
 
-## Risks / open questions
+- **Objective.** The modal offers **Cancel** and **Apply**; Apply closes the menu **and**
+  updates the page — **from the Places entry point as well as the feed's.**
+- **Files.** `src/components/LocationModal.tsx` (the three buttons at `:246-272`),
+  `src/pages/FeedPage.tsx` (`handleLocationApplyRadius`, `:994-1030`),
+  `src/components/PlaceDirectory.tsx` (`:1352-1365`), and the specs that drive the modal.
+- **Approach.** **The measured crux (fact 7): the two callers pass different contracts, so a
+  button rename alone cannot satisfy this.** Pinned shape:
+  - `See places` is removed. `Apply` becomes **the one explicit action**: it calls
+    `onApplyRadius` **and then `onClose`**;
+  - the **per-tick preview stays** (`onRadiusChange`) for the Places caller — removing it
+    would silently regress the live map circle, which the extraction comment at
+    `PlaceDirectory.tsx:1360-1363` records as a *previous* regression fix;
+  - **Apply must be a no-op-safe close**: if the write rejects, the modal shows its existing
+    `location-radius-error` surface **and stays open** (the re-throw at `FeedPage.tsx:1029`
+    exists precisely so the modal can own that error — closing on failure would discard it);
+  - `homeZip={null}` on the Places caller is **deliberate and must survive**: the Places
+    modal has no profile zip in scope, and inventing one is new behaviour, not this item;
+  - **`onGeocode` keeps its current role** for both callers: it resolves the typed address
+    for the map/list. Removing `See places` must not remove the **geocode-on-apply** path —
+    if Apply is what triggers the geocode, that ordering must be explicit and measured, not
+    assumed from the button that disappeared.
+- **Acceptance.**
+  - **two** buttons: `Cancel` and `Apply`. `See places` and `Apply radius` are gone;
+  - from **the Places entry point**: typing an address and pressing Apply **updates the
+    page** (map/list reflect the new center and radius) **and closes the modal**;
+  - from **the feed entry point**: Apply **writes** the radius through
+    `updateHomeZipRadius`, refreshes, **and closes**; the equal-value no-op guard still
+    holds; a rejected write **keeps the modal open with its error visible**;
+  - the Places live preview (slider → map circle) still works;
+  - ⚠️ **the Places path is the one a single-page test misses** — its acceptance is
+    asserted from `/browse`, not only from the feed.
+  - **Both old testids are gone from three measured files**, and the report names each:
+    `src/components/LocationModal.tsx` (`:253`, `:264`),
+    `e2e/places-map-view.e2e.ts:1681`, and `e2e/feed-empty-state.e2e.ts`
+    (`:204,440,518,523,542,545`). ⚠️ **The specs are the real work, not the component**:
+    `e2e/feed-empty-state.e2e.ts:545` asserts the button's **TEXT**
+    (`/See places|Finding…/`), which a locator rename does not satisfy — and
+    **`npm run verify` would not catch it**, because the gate runs no browser.
+- **Verify.** `npm run verify` **and** `npx playwright test e2e/places.e2e.ts <the feed
+  location spec>` — **both entry points named explicitly.**
+- **Depends on.** Nothing. **Budget.** medium — two callers, two contracts, one modal.
 
-- The sticky bar must not double the "Post drop-in" accessible name (Slice 1
-  hides the in-form submit on `/new`) — a strict-mode violation would break
-  every existing post spec.
-- Slice 3's note says "nearby", not a specific radius: `/new` does not load
-  the profile radius, and inventing a number would be a false claim. RULING.
-- Slice 4 must keep the post URL exactly `/` (router state, not a query), or
-  the existing `waitForURL('/')` specs break.
+---
 
-## Status log (orchestrator appends after every phase transition)
+### 🟡 r3-5 — first-run navigation arrows (item 1) — **TRACK C, FIRST**
 
-- 2026-09-27 — V27 batch planned (4 slices); baseline feedback work committed;
-  Slice 1 dispatched.
-- 2026-09-27 — **V27 BATCH COMPLETE.** Baseline feedback work `63c49ae`
-  (duplicate affordance, row `shrink-0` overflow fix, time presets). Slices:
-  **1 `8e7f474`** sticky Post bar + `stickyPostLine`; **2 `76f2778`** vibe chips
-  + `lib/vibeChips`; **3 `ef9aac1`** privacy preview + trust line; **4
-  `9073c2b`** share prompt after posting. Every slice: `npm run verify` EXIT=0
-  (final tip **1806 unit tests**, GUARDS PASS) and its targeted Playwright lane
-  green. The shared `:4173` preview was held by the `places` worktree, so all
-  e2e ran on a private `:4174` with `reuseExistingServer: false` (untracked
-  `playwright.noreuse.config.ts`, deleted after the tip gate). `/edit` remains
-  byte-identical throughout. No push — branch `Meisburg/post-drop-in` only.
+- **Objective.** A parent can move backward and forward through the first-run cards and fix
+  an answer.
+- **Files.** `src/lib/firstRun.ts` + `src/lib/firstRun.test.ts` (the pure position model),
+  `src/pages/OnboardingPage.tsx`, `src/components/FirstRunCard.tsx` (the chrome),
+  and the five onboarding specs **if and only if** the browser lane proves them affected.
+- **Approach.** ⚠️ **Read this file's history first — the mid-save/freeze semantics here are
+  load-bearing and were audited at length in slices 8a and 8d.** Then:
+  1. add the pure `previousCard` / `nextCard` (§5) **with table tests**, reading
+     `FIRST_RUN_CARDS` and never a literal;
+  2. the page holds the position; **an arrow re-offers a card, it never re-runs a write**
+     — the writes stay where they are, and `nextUnfinishedCard` stays the single authority
+     on what is unanswered;
+  3. **navigation is disabled while `saving` is true, and only while** (§5's ruling). The
+     builder records the reasoning in the code, because it is a decision, not a detail;
+  4. the ending is **not** a card and has **no forward arrow** — its own primary is the
+     crossing;
+  5. **the radius select's edit-while-saving divergence is NOT this slice's to fix.**
+     Recorded open, named in the report, left exactly as wide as it is.
+- **Acceptance.**
+  - a back arrow on every card except the first, a forward arrow on every card except the
+    last, and the ending has neither surplus control;
+  - **going back and forward does not re-write anything**: with a persisted profile, walking
+    back to the name card and forward does not call `createProfile` again; walking back to
+    the area card does not re-geocode;
+  - **a typed-but-unfinished answer survives the round trip** (this is the human's stated
+    reason — "go back and fix an answer" — and a back arrow that loses the edit is the item
+    failing while looking finished);
+  - **navigation is disabled while `saving`** and re-enables after it settles — **including
+    on the failure path** (the pending-state rule: a hung or failed write must not trap the
+    parent);
+  - the position model is pure and table-tested; **the page decides nothing the lib can
+    decide** (the build law).
+- **Verify.** `npm run verify` **and** `npx playwright test e2e/onboarding-resume.e2e.ts
+  e2e/signup-zip-fallback.e2e.ts` — **the gate does not run e2e (fact 12).**
+- **Depends on.** Nothing. **Budget.** **medium-large — this is the riskiest of the seven.**
 
+---
+
+### 🟡 r3-6 — delete the "You're all set" screen (item 2)
+
+- **Objective.** The run ends **in the app**, where a parent can start by exploring other
+  people's drop-ins.
+- **Files.** `src/pages/OnboardingPage.tsx` (the `view === 'finish'` branch at `:1313`),
+  `src/components/HowItWorksCard.tsx`, `e2e/auth.setup.ts`, `e2e/fixtures.ts`,
+  `e2e/signup-zip-fallback.e2e.ts`, and **every other consumer of
+  `first-run-finish-card`** (fact 11 names them).
+- **Approach.** The last card's primary navigates into the feed. **The testid question is
+  the slice's real work**: `first-run-finish-card` is asserted by **every spec's setup**,
+  so the slice either keeps an element carrying that testid or updates all consumers **in
+  this diff**. **A half-migrated locator is a red suite, not a smaller diff.**
+  `HowItWorksCard`'s fate is decided here: if its content survives into item 3's tooltips,
+  **move it there; if not, delete it with its exports by name** (r2 slice 5's standing rule:
+  wire-or-delete, never leave a test pinning a function nobody calls).
+  ⚠️ **Do not delete `firstRunTour.ts` in this slice** — item 3 may be its consumer, and
+  deleting it here would make item 3 rebuild it.
+- **Acceptance.**
+  - finishing the last card lands the parent **in the app**, on the feed, with the nav
+    visible — no interstitial screen;
+  - **every spec that walked the old ending passes**, or is updated **in this diff**;
+  - `e2e/fixtures.ts`'s `finishSignup` and its consumers are **walked successfully**
+    (measured: the ending's testid is read in `e2e/fixtures.ts` and asserted 7 times in
+    `e2e/signup-zip-fallback.e2e.ts` — `auth.setup.ts` walks the ending *through*
+    `finishSignup` at `:95` and carries no testid of its own);
+  - any export this slice orphans is **wired or deleted by name**, with its test.
+  - The ending's testid is read in **four named files** (measured, 11 hits):
+    `e2e/fixtures.ts`, `e2e/signup-zip-fallback.e2e.ts`, `e2e/auth.setup.ts` (through
+    `finishSignup` only) and `src/components/HowItWorksCard.tsx`. **Target state, one
+    claim per path:**
+  - **The ending's testid is gone from its three measured source/spec readers** —
+    `src/components/HowItWorksCard.tsx` (`:29,37`), `e2e/fixtures.ts` (`:480,605`) and
+    `e2e/signup-zip-fallback.e2e.ts` (**7 assertions**: `:223,295,380,568,578,798,868`) —
+    **each updated in this diff**, and the report names what each now asserts.
+    ⚠️ The sharpest site is `e2e/signup-zip-fallback.e2e.ts:568` — a
+    **`.not.toBeVisible()`**, an assertion about the ending's **ABSENCE**, which a locator
+    rename **cannot** satisfy.
+- **Verify.** `npm run verify` **and** `npx playwright test e2e/auth.setup.ts
+  e2e/signup-zip-fallback.e2e.ts e2e/onboarding-resume.e2e.ts` (setup included explicitly).
+- **Depends on.** **r3-5.** **Budget.** medium.
+
+---
+
+### 🟡 r3-7 — lightboxed tooltips on app load (item 3)
+
+- **Objective.** A parent learns the app by **using** it, not by reading a card about it.
+- **Files.** a **new** tooltip component under `src/components/`, a **new** pure module
+  under `src/lib/` **with its sibling `*.test.ts`** (the build law — a `lib/` module
+  without one is an incomplete slice), the first-run trigger in `src/pages/FeedPage.tsx` or
+  `src/App.tsx`, and `src/lib/firstRunTour.ts` (+ test) **as the copy source, not as a
+  casualty**.
+- **Approach.** The human's words are the requirement: *"lightboxed tooltips on app load
+  that quickly highlight how to use it."* So:
+  - the tooltips render **over the app on load**, once, and are **dismissible**;
+  - **the words come from `firstRunTour.ts` where they are already measured and guarded**
+    (fact 9) — do not write a second copy of the four tabs' descriptions, because the
+    one-copy rule in the build law makes that a defect by construction;
+  - **the honesty rule travels with the copy**: `firstRunTour.test.ts` pins *"every line says
+    what a control DOES, never what is IN it"*, and that property must still hold for
+    anything the tooltips say;
+  - **a returning parent is not shown the tooltips again** — the "once" must be a persisted
+    fact, and **which fact** is decided in this slice and named in the report;
+  - the tooltips must not block the app: **Escape dismisses, focus is handled, and a parent
+    who ignores them can still interact.** This repo has `useFocusTrap` and
+    `MODAL_OVER_LEAFLET_Z_CLASS` for exactly this, and a tooltip that traps focus on load is
+    a wall.
+- **Acceptance.**
+  - on a first arrival at the app the tooltips appear, highlight the real controls, and can
+    be dismissed; **after dismissal the app is fully usable**;
+  - a second load does **not** re-show them;
+  - **each tooltip's words describe what its control DOES** — the same property
+    `firstRunTour.test.ts` already pins, asserted for the new surface;
+  - the new `lib/` module ships its sibling test, and the position/dismissal rules are
+    **pure and tested**, not inline in the component;
+  - no second copy of the tab descriptions exists anywhere:
+    **the tooltip module imports `TOUR_LINES` rather than restating it**, and the report
+    quotes that import line. Measured: the copy phrase
+    `browse drop-ins within your radius` exists exactly once today
+    (`src/lib/firstRunTour.ts:155`); **the one-copy rule makes a second occurrence the
+    defect**, so the check is that the new module adds none.
+- **Verify.** `npm run verify` **and** the browser lane proving the tooltips render on load,
+  dismiss, and stay gone — named explicitly, because **the gate runs no browser** (fact 12).
+- **Depends on.** **r3-6** (it replaces what r3-6 removes). **Budget.** medium.
+
+---
+
+### 🟡 r3-8 — the guard and declaration reconciliation items 2+3 force (fact 9)
+
+- **Objective.** `TOUR_TAXONOMY_CLAIMS` and `copy-taxonomy-guard` describe the copy that
+  actually ships, and the guard still has a reachable failure mode.
+- **Files.** `src/lib/firstRunTour.ts` (the declaration at `:205` and the copy it declares),
+  `scripts/guards/copy-taxonomy-guard.mjs`, `scripts/guards/copy-taxonomy-guard.check.mjs`,
+  and `docs/agents/code-structure.md` (the rule, **written first**).
+- **Approach.** ⚠️ **Run `npm run guards` EARLY AND OFTEN on items 2 and 3 — a copy change
+  that silently empties the declaration is a FINDING, not a pass.** Then:
+  - if the tooltips still name a place category, the declaration **moves with the words** to
+    wherever the words live, and `COPY_MODULES` in the guard is updated **in the same
+    change**;
+  - if they name **no** place category, the declaration is **removed from `COPY_MODULES`** —
+    and the guard must still fail on a category in the copy that nobody declared (its rule
+    4), which is what keeps the removal from being a way to switch the rule off;
+  - `copy-taxonomy-guard.check.mjs:94`'s `DECLARES` fixture string and its four mutations
+    are updated with the declaration **or** the mutations stop matching the tree — either
+    way the checker must still prove it can fire.
+- **Acceptance.**
+  - `npm run guards` passes on the shipped tree;
+  - **the guard still fires** when a withheld category word appears in the copy — proven by
+    its own `.check.mjs`, not by argument;
+  - **the guard fails on a zero-claim state** (D-030: an empty measurement must not read as
+    a clean result) — if the declaration is removed, the run says what it checked and the
+    checker proves the removal is not a bypass;
+  - `docs/agents/code-structure.md` states the rule **before** the guard enforces it;
+  - ⚠️ **`AGENTS.md` has 12 words of room** — if a steering doc is added or edited, prune
+    while you add, or `steering-lint` fails the gate.
+- **Verify.** `npm run guards` **and**
+  `node scripts/guards/copy-taxonomy-guard.check.mjs` **and** `npm run verify`.
+- **Depends on.** **r3-7.** **Budget.** medium — the acceptance is a mutation, not an
+  observation.
+
+---
+
+## 7. Non-goals
+
+- **Not fixing the radius select's edit-while-saving divergence** (r2's 8d open). r3-5
+  **must not widen it**, and does not fix it. Recorded, with its owner.
+- **Not touching r2's closed slices.** All eight (6a–6d, 8a–8d) are closed and verified;
+  this plan neither reopens nor re-litigates them.
+- **Not the merge to master.** It is blocked on 5 divergent commits on `origin/master` and
+  needs the human's decision (handover §3). **Do not attempt it.**
+- **Not reverting `ocr`'s routing waiver** (`ec47f15`) — one line, needs the human's word
+  (handover §6.2).
+- **Not `v28-r2-8e`** (the `count-provenance` `at`/`iat` guard defect) — registered,
+  unfixed, and not this batch's.
+- **Not the factory / compute change.** `strata-max` is the intended primary and `ninfer`
+  the working fallback; **the RAM is the binding constraint and this is working as
+  designed. Do not "fix" it** (handover §4).
+- **Not a second copy of anything.** The one-copy rule makes restating `TOUR_LINES` a defect
+  by construction, which is why r3-7 and r3-8 exist as separate slices.
+
+---
+
+## 7b. THE PUBLICATION GATE (updated 2026-10-03 after the r3-1 incident)
+
+**Publication is blocked until ALL of these hold. This list replaces "run the sweep
+before publishing" as the gate.**
+
+| # | Gate | State |
+|---|---|---|
+| P1 | The r3-1 collateral fix passes its regression check and mutation tests | ✅ **DONE** |
+| P2 | `npm run verify` green on the final tree, baseline **71 / 2067 / 81 / 0** | ✅ **DONE** |
+| P3 | The incident shape is **refused** by the real probe, proven non-destructively | ✅ **DONE** (rolled-back reproduction, `b0 = 1`) |
+| P4 | **Data recovery decided** — recorded **NOT RECOVERABLE FROM THE REPOSITORY**; PITR not determinable from a project-scoped token (probed once, cheaply) | ✅ **DECIDED 2026-10-03** |
+| P5 | **Durability decided** — **split the e2e environment from production** (long term); collateral gate + automated pre-release cleanup as the temporary bridge | ✅ **DECIDED 2026-10-03** |
+| P6 | `node scripts/sweep-e2e-markers.mjs collateral` exits 0 on the publication tree | ✅ **DONE** (all 17 edges 0) |
+| P7 | A fresh preview renders no `e2e`-prefixed venue or host | ⛔ **OPEN — needs a Vercel preview** |
+| P8 | r3-2…r3-8 complete, or explicitly deferred by the human | ⛔ **OPEN** |
+
+**P4 and P5 are now DECIDED** (`.scratch/v28/reports/r3-1-p4-p5-decisions.md`). P7 needs a
+preview deployment, P8 needs the rest of the batch. **Nothing destructive runs again until
+P1–P3 hold, and they do.**
+
+⚠️ **STANDING INSTRUCTION: do not run another destructive production sweep.** No `delete`
+mode runs again without a fresh explicit confirmation from the human.
+
+### `infra-e2e-env-split` — a SEPARATE infrastructure task, deliberately NOT in r3
+
+The durable fix P5 chose: **a second Supabase project (or branch) for e2e, so the live
+production database is never used by the e2e suite.** Until it lands, the collateral gate
+plus automated pre-release cleanup are the bridge — **and the gate is kept even after the
+split**, because the marker convention still governs whatever database the specs write to.
+
+Scope is named in `.scratch/v28/reports/r3-1-p4-p5-decisions.md` so it is not rediscovered.
+**It is not scheduled and it is not a feature slice — do not expand r3-2…r3-8 with it.**
+
+⚠️ **Do not re-run `delete` before publishing without re-reading P4/P5.** The gate is now
+safe to run — that is what P1–P3 establish — but the *durability* problem (markers
+reappearing between sweeps) means a single sweep at release time leaves fixtures visible in
+the feed beforehand.
+
+## 8. Risks / open questions
+
+1. **⚠️ r3-1 deletes production rows.** The sweeper's gate, its re-read verification, and
+   the human's confirmation of the **exact rows** are all mandatory. **A `delete` run before
+   the confirmation is a rule-8 violation**, and unlike a bad diff it is not revertible
+   from git.
+2. **⚠️ r3-2 may be an ENVIRONMENT defect wearing a code defect's message.** Fact 4
+   measured the local `.env` **without** `VITE_VAPID_PUBLIC_KEY` while Vercel has it. **If
+   the human was on the LAN dev server, the app behaved correctly and two documents lied.**
+   The slice must establish which before editing — and the honest outcome may be BLOCKED.
+3. **⚠️ r3-5 is the riskiest of the seven.** A back arrow interacts with `saving`, the zip
+   field, and the radius select, and those semantics were audited across two r2 slices.
+   **The ruled answer is in §5; a builder that re-decides it silently has broken the rule
+   about plan defects.**
+4. **⚠️ r3-6 deletes a testid every spec's setup walks.** `first-run-finish-card` has ~18
+   consumers. A half-migrated locator reddens the whole browser lane, and **the gate does
+   not run e2e**, so the gate would stay green while the suite was broken. **The browser
+   lane is the only thing that catches this.**
+5. **⚠️ Items 2 and 3 change guarded copy.** `TOUR_TAXONOMY_CLAIMS` is a declaration
+   `copy-taxonomy-guard` reads, and the guard is the thing that will fail. **r3-8 exists so
+   that a rule change and a UI change are not one diff.**
+6. **The three coupled items may still not fit three builder contexts.** r3-5 is medium-large
+   on its own. If r3-6 measures larger than expected, **split it and say so** — the r2
+   lesson (1a/1b) is that a token-budget split of *coupled* work is not a split.
+7. **`AGENTS.md` has 12 words of room.** Any new steering doc must come with a prune, and
+   `steering-lint` is in the gate.
+
+---
+
+## 9. Status log (orchestrator appends after every phase transition)
+
+- **r3 opened 2026-10-02** by the taking-over DSH coordinator, on the outgoing
+  coordinator's handover (`onboarding/HANDOVER-DSH.md`, section 8).
+- **Section 8 executed in order:** the four documents read (`AGENTS.md`, `plan.md`,
+  `task-state.md`, `docs/agents/code-structure.md`); **the tree and the gate re-measured
+  rather than trusted** — clean tree at `fac3c3d`, `npm run verify` **exit 0**, **71 files /
+  2067 tests / 81 warnings / 0 errors**, `AGENTS.md` **1788/1800**, **GUARDS PASS**
+  (185 checker assertions);
+- **the seven items measured against the live tree before slicing** — every file:line in
+  the handover re-resolved, four of them found drifted, and **two facts the handover did
+  not have** came out of it: the local `.env` lacks `VITE_VAPID_PUBLIC_KEY` (which reframes
+  blocker 2 entirely), and the sweep for blocker 1 **already exists, already verifies
+  itself, and already has a founder-overlap refusal gate** (which makes blocker 1 a
+  confirmation problem rather than a code problem).
+- **r2's plan preserved as `plan-v28-r2-backup.md`** — r3 supersedes it for the seven items
+  and leaves every r2 decision it does not name intact.
+- **No builder has been dispatched.**

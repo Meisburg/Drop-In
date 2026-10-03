@@ -7,7 +7,14 @@
  * (ordering, day grouping, radius filtering). This owns the place ENTITY —
  * matching, filtering, distance, and labels over a directory row. The one
  * thing they share is the distance math (feed.haversineMiles), which is
- * imported rather than reimplemented.
+ * imported rather than reimplemented. ⚠️ THAT CLAIM COVERS THE MATH, NOT EVERY
+ * PREDICATE: the radius COMPARISON is written inline here (`distance <=
+ * radiusMiles` in filterPlacesByRadius) rather than calling feed's one-line
+ * `withinRadius`, and that is deliberate — this filter's rule about places
+ * with UNKNOWN coordinates is its own, and it is documented at that function.
+ * So do not read feed.withinRadius as a dependency of this module, and do not
+ * "re-share" the comparison mid-slice without a decision recorded where it
+ * lives.
  */
 import {
   cardWhenLabel,
@@ -1598,8 +1605,11 @@ export function distanceMiles(a: { lat: number; lng: number }, b: { lat: number;
 
 /**
  * V15 ticket 02: keep only the places whose coordinates fall within
- * `radiusMiles` of `center` (boundary inclusive — the app's existing radius
- * predicate, withinRadius). A place with UNKNOWN coordinates (lat/lng null or
+ * `radiusMiles` of `center` (boundary inclusive — the comparison is written
+ * inline here as `distance <= radiusMiles`; the feed's own named predicate for
+ * the same rule is `withinRadius` in feed.ts, which this module does NOT call,
+ * so do not read that name as a dependency of this function). A place with
+ * UNKNOWN coordinates (lat/lng null or
  * unresolvable) is EXCLUDED here: this is a radius filter, not the directory's
  * "unknown never hides" rule — the caller (BrowsePage's "See places") has
  * chosen a specific center and radius, and a place we cannot measure against

@@ -116,10 +116,15 @@ async function openMapView(page: Page): Promise<void> {
  * `home_zip` does two different jobs in this app, and the dead-map branch needs
  * only the second one to be empty:
  *
- *  1. THE ONBOARDING GATE keys on it (`needsOnboarding(homeZipSet)`, `App.tsx`),
- *     so a NULL home zip bounces every protected route to `/onboarding` — a
- *     viewer who cannot reach `/browse` proves nothing about the map. The value
- *     must therefore be SET.
+ *  1. BROWSE NEEDS IT TO BE REACHABLE AT ALL: a settled NO-zip parent gets the
+ *     shared location notice in place of the directory (`RadiusEmptyState`'s
+ *     early return, V28 slice 2c — via Browse's `radiusReason`), so the search,
+ *     the map toggle and every locator this spec drives would be absent. The
+ *     value must therefore be SET. (This is a CONTENT requirement, not a gate:
+ *     the app-wide wall that used to bounce a NULL home zip was removed in
+ *     slice 2b — see docs/adr/0001-home-zip-stops-being-a-gate.md — and the
+ *     `needsOnboarding(homeZipSet)` helper this note used to cite was deleted
+ *     in V28 r2 slice 8a, measured at 8d1170d: it had zero callers.)
  *  2. THE HOME PIN resolves it through the gazetteer (`BrowsePage.tsx`, the
  *     `homePinCoords` block), and a zip ABSENT from that extract yields
  *     `homePin === null` — the branch under test.
@@ -140,7 +145,9 @@ const NO_HOME_PIN_ZIP = '00000'
  * `undefined` means THE READ FAILED (network, RLS, a rotated project) — as
  * distinct from `null`, which is a real stored value. The caller must not
  * confuse the two: treating a failed read as "the marker has no zip" would make
- * the restore write `null` and break the onboarding gate for every later spec.
+ * the restore write `null` and leave every later spec's viewer on the no-zip
+ * location notice instead of the feed it asserts (there has been no zip GATE
+ * since slice 2b — the zip is a content requirement, not a door).
  */
 async function readMarkerHomeZip(): Promise<string | null | undefined> {
   const { url, anonKey } = readSupabaseEnv()
@@ -1490,10 +1497,18 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
     spacer.style.height = '1800px'
     document.body.appendChild(spacer)
   })
-  const seeMap = page.getByTestId('places-see-map')
-  await seeMap.scrollIntoViewIfNeeded()
+  // V28 slice 7a: the control's testid is `places-view-toggle` — the old
+  // `places-see-map` died with the map-band strip. The rename defect was real
+  // but the committed stale-locator guard provably did NOT catch it; the fixed
+  // guard + its check seed 5 now anchor that shape (plan.md, 7a fix-1). In
+  // LIST view the toggle only RENDERS after the parent scrolls past the
+  // controls (`showMapToggle`), so the 250px park comes first and the
+  // scroll-into-view is the nudge that lands the button on screen before the
+  // click flips the view to the map.
   await page.evaluate(() => window.scrollBy(0, 250))
   await page.waitForTimeout(200)
+  const seeMap = page.getByTestId('places-view-toggle')
+  await seeMap.scrollIntoViewIfNeeded()
   const savedBefore = await page.evaluate(() => window.scrollY)
   expect(savedBefore, 'the list must be parked away from the top').toBeGreaterThan(0)
 
@@ -1532,7 +1547,7 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
   ).toBeGreaterThan(1000)
 
   /**
-   * NOW THE CORRUPTION PATH: with the map view up, activate "See map" AGAIN.
+   * NOW THE CORRUPTION PATH: with the map view up, activate the toggle AGAIN.
    *
    * The activation is dispatched on the DOM, not clicked, and that is MEASURED
    * rather than convenient: the button lives far above this offset, so a real
@@ -1543,12 +1558,12 @@ test('a second "See map" activation does not disturb the saved list offset (V24 
    * clicks this control normally.)
    */
   const activated = await page.evaluate(() => {
-    const button = document.querySelector('[data-testid="places-see-map"]')
+    const button = document.querySelector('[data-testid="places-view-toggle"]')
     if (button === null) return false
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     return true
   })
-  expect(activated, 'the See map control must still be mounted in the map view').toBe(true)
+  expect(activated, 'the view toggle must still be mounted in the map view').toBe(true)
   // The guard makes that a no-op, so the view is still the map view...
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   // ...and the page did not jump.
@@ -1663,11 +1678,15 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
   await page.getByTestId('set-location-btn').click()
   await expect(page.getByTestId('location-modal')).toBeVisible()
   await page.getByTestId('location-address-input').fill('Green Lake Park, Seattle')
-  await page.getByTestId('location-see-places-btn').click()
+  // V28 r3-4: the modal has TWO buttons now — Cancel and Apply. Apply geocodes,
+  // applies, and CLOSES. The per-tick radius preview (`onRadiusChange`) is NOT
+  // lost: pressing the control again reopens the dialog still holding the
+  // geocoded centre, and the drag below still redraws the circle live.
+  await page.getByTestId('location-apply-btn').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
 
-  // The geocoded centre and its radius are now the preview's frame. The dialog
-  // STAYS OPEN (`handleGeocode` only resolves the address — the radius slider
-  // below is the point of the preview), so the same dialog is dragged next.
+  // The geocoded centre reframed the drawn circle. Asserted on the MAP — the
+  // dialog has closed by design, and the map stays mounted behind it.
   await expect
     .poll(async () => circle.getAttribute('d'), {
       message: 'the geocoded centre must reframe the drawn circle',
@@ -1675,6 +1694,9 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
     .not.toBe(dCommitted)
   const dSmall = await circle.getAttribute('d')
 
+  // REOPEN: the radius slider still drives the circle in real time.
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
   const slider = page.getByTestId('location-radius-slider')
   await expect(slider).toBeVisible()
   await slider.fill('10')

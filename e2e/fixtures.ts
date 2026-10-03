@@ -14,13 +14,30 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Page, type Route } from '@playwright/test'
 // The stepper's own pure math — imported so a spec's expectation is the same
 // rule the form applies, never a copy of it (feed.ts is pure: its only
 // imports are `import type`, erased at runtime).
 import { TIME_STEP_MINUTES, formatTimeLabel, stepTimeMinutes } from '../src/lib/feed'
 
 const CWD = process.cwd()
+
+/** The card's Nominatim request (lib/geocode's searchFirst, one URL shape).
+ *
+ *  EXPORTED, and the ONE copy (V28 r2 slice 8a fix round 1, one-copy rule):
+ *  `e2e/signup-zip-fallback.e2e.ts` held a byte-identical second copy, and this
+ *  module is the channel every spec already imports from. The app's own URL
+ *  literal lives in `src/lib/geocode.ts` (`NOMINATIM_URL`, not exported) and a
+ *  divergence from it is LOUD rather than silent: `finishSignup`'s stub asserts
+ *  that it fired, so a pattern that stops matching fails the walk in ~5s. */
+export const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
+/**
+ * The address `finishSignup` types into the area card. A REAL street, because
+ * the answer the fixture returns claims it (postcode + house_number 1200, the
+ * precision rule's proof): the pair has to be consistent or the walk is
+ * asserting a resolution that does not match the text.
+ */
+const FINISH_SIGNUP_ADDRESS = '1200 1st Ave S, Seattle'
 
 /** The repo .env (gitignored; holds the Supabase project credentials). */
 export const ENV_PATH = path.join(CWD, '.env')
@@ -328,30 +345,46 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
 
 
 /**
- * V20 t06 — fill the signup form and submit it.
+ * V20 t06 → V28 slice 3b — fill the signup form, submit it, and complete the
+ * name card.
  *
- * WHY THIS IS A SHARED HELPER AND NOT 20 INLINE COPIES. The form changed shape:
- * it used to be `input[autocomplete="nickname"]` (one "Display name" box) and
- * every spec that created a throwaway viewer drove that one selector. It is now
- * FIRST NAME + LAST NAME + HOME ADDRESS, so all 20 call sites had to change at
- * once — and the next change to this form would otherwise have to touch 20
- * files again. One helper means the specs say "sign this viewer up" and the
- * form's field list lives in exactly one place.
+ * WHY THIS IS A SHARED HELPER AND NOT 20 INLINE COPIES. The form changed shape
+ * twice: it used to be `input[autocomplete="nickname"]` (one "Display name"
+ * box), then FIRST NAME + LAST NAME + HOME ADDRESS on /login, and since V28
+ * slice 3b it is EMAIL + PASSWORD ONLY (the account is card 1 of 4). One
+ * helper means the specs say "sign this viewer up" and the form's field list
+ * lives in exactly one place.
  *
- * `name` is the handle the caller expects the account to end up with — it is
- * what other assertions in those specs look for as `@name` — so the helper
- * splits it the way the form joins it (`composeDisplayName` puts a single space
- * between the halves). A single-word name goes entirely into the first field,
- * which composes back to the same string.
+ * The name moved onto the name card at /onboarding (card 2 of 4, V28 slice
+ * 3a) — the SAME `autoComplete="given-name"` / `"family-name"` selectors the
+ * old /login form carried. `name` is the handle the caller expects the
+ * account to end up with, so the helper splits it the way the card composes
+ * it (`composeDisplayName` puts a single space between the halves). A
+ * single-word name goes entirely into the first field, which composes back
+ * to the same string.
  *
- * The ADDRESS is a fixed real Seattle street address, not a per-caller value:
- * signup uses it to derive a home zip, and these specs set their own location
- * on the onboarding step immediately afterwards regardless (they all wait for
- * "Set your location" and fill the zip), so a failed geocode changes nothing
- * about what the spec goes on to assert. Making it a parameter would be a knob
- * no caller needs.
+ * THE NAME CARD'S CONTINUE IS THE FORM-ASSOCIATION PIN: the card's primary
+ * button sits OUTSIDE its `<form>` and is joined to it only by the HTML
+ * `form` attribute (FirstRunCard.tsx). If the id and the attribute drift, the
+ * click submits nothing — the profile row is never created, the area card
+ * never renders, and the caller's `finishSignup` hangs at its area-card
+ * wait. That failure is the pin for the association.
  *
- * The password is whatever the caller already generated; it is only typed here.
+ * The password is whatever the caller already generated; it is only typed
+ * here. The home location is set by the caller's `finishSignup` on the
+ * location step that follows the name card.
+ *
+ * ⚠️ THE PRE-FILL TRIPWIRE (moved here from e2e/auth.setup.ts by V28 r2 slice
+ * 8a, which made this helper the marker's walk too): when the caller's `name`
+ * EQUALS the card's pre-fill — the email's local part, `suggestedHandle`'s
+ * fallback, which is exactly what the marker's `e2e-<epoch>` name is — the
+ * given-name fill above is a no-op change and the field's VISIBLE value comes
+ * from the pre-fill, not from the line. The card keeps each pre-fill half until
+ * THAT field is edited (per-field touched flags in OnboardingPage); with the old
+ * shared flag the family-name fill wiped the first-name pre-fill and the
+ * required field silently blocked the submit. If that handling ever regresses,
+ * THESE fills are what break — and it breaks as a 120s timeout waiting for the
+ * next card, not as an assertion.
  */
 export async function signUpViewer(
   page: Page,
@@ -364,62 +397,285 @@ export async function signUpViewer(
 
   await page.goto('/login')
   await page.getByRole('button', { name: 'New here? Create an account' }).click()
-  await page.locator('input[autocomplete="given-name"]').fill(first)
-  if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
-  // The same street address every time — see the doc above.
-  await page.locator('input[autocomplete="street-address"]').fill('7349 15th Ave NW, Seattle, WA 98107')
   await page.locator('input[type="email"]').fill(email)
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()
+
+  // V28 slice 3b: signup lands on /onboarding, where the name card (card 2)
+  // creates the profile row. Its Continue is the pin described above.
+  await page.locator('input[autocomplete="given-name"]').fill(first)
+  if (last !== '') await page.locator('input[autocomplete="family-name"]').fill(last)
+  await page.getByRole('button', { name: /^Continue/ }).click()
 }
 
 /**
- * FINISH SIGNUP — however it actually ended. (First-use audit, ticket 02.)
+ * FINISH SIGNUP — walk the kids card, then complete the AREA card.
+ * (V28 slice 3b; first-use audit, ticket 02; V28 slice 4a: the kids hop;
+ * V28 slice 5: the area card; V28 r2 slice 1b deleted the photo card from
+ * the first run, so the old photo hop is gone — the photo now lives on the
+ * name card, V28 r2 slice 2, and this helper's name hop skips it: the
+ * photo is optional, so filling the two name fields and clicking Continue
+ * walks the card exactly as before.)
  *
- * `signUpViewer` types a REAL Seattle street address, and the signup form
- * derives the home ZIP from it. So there are two legitimate endings, and which
- * one you get depends on whether the geocode resolved:
+ * The signup form no longer carries an address, so `signUpViewer` lands the
+ * new parent on /onboarding ALWAYS: the name card comes next
+ * (signUpViewer completes it), then the KIDS card ("3 of 4", V28 slice 4a),
+ * and then the AREA card ("4 of 4", V28 slice 5 — address-first,
+ * decision 9).
  *
- *   - RESOLVED → `home_zip` is written at signup, the onboarding gate passes,
- *     and the new parent lands on the feed. No location step at all.
- *   - UNRESOLVED → the gate bounces to /onboarding, which asks for the ZIP.
+ * ⚠️ THE ADDRESS LOOKUP IS ANSWERED BY THIS FIXTURE, AND THE FIXTURE IS
+ * OBSERVED (V28 r2 slice 8a; the observation is round 1's fix). Until this
+ * slice the helper typed an address that could not resolve and walked the ZIP
+ * fallback — which put a REAL Nominatim request in every one of this helper's
+ * consumers (bounded at `ADDRESS_LOOKUP_TIMEOUT_MS` = 10s, ~170s of suite-wide
+ * worst case) and left a tail risk that the fake address resolved into the
+ * seeded gazetteer. Now the helper intercepts the card's request and fulfils it
+ * with the CALLER'S OWN ZIP (`postcode: options.homeZip` + a house number, the
+ * precision rule), so:
  *
- * Before ticket 02 the first branch never happened: the geocode write targeted
- * an empty uuid and 400'd, so signup ALWAYS took the second branch and ~19
- * specs could safely assume the location step came next. Fixing the write made
- * the happy path real, and every one of those specs then hung for two minutes
- * waiting for a screen the parent should never see. This helper is the fix once
- * instead of nineteen times.
+ *   - the walk types an address, picks the radius, and taps Finish ONCE — the
+ *     intercepted answer resolves to the caller's zip, `handleAreaFinish` writes
+ *     zip + radius, and the run renders its ending card. No typed ZIP, no
+ *     fallback notice.
+ *   - the radius is chosen BEFORE that tap, because on the resolved path the one
+ *     Finish is the last thing the card does.
+ *   - the caller's zip must be one the gazetteer knows (`validateHomeZip` is the
+ *     same gate the typed path used — every existing consumer already passed it).
  *
- * It NEVER forces a reload: the branch we are already on is the branch we keep,
- * so a spec that counts requests during the cold load still counts only the
- * cold load's.
+ * ⚠️ AND THE STUB IS NOT ALLOWED TO FAIL SILENTLY (D-030: an instrument that
+ * did not look must not report health). A route that matched nothing looks
+ * exactly like a healthy one, and this walk's failure mode is NOT
+ * self-refuting: the address typed is REAL, so with the stub absent the network
+ * answers — `zipFromResult` accepts that answer, the postcode Nominatim returns
+ * for THIS address is a SEEDED gazetteer zip (0012 holds 98104 and 98134), so
+ * `validateHomeZip` passes and the walk lands GREEN having written the WRONG
+ * home zip. With no network it would instead hang ~30s at the ending-card wait,
+ * which says nothing about the cause. So the helper carries TWO instruments,
+ * which all 18 consumers inherit:
+ *
+ *   1. THE STUB COUNTS ITS OWN MATCHES and the count is ASSERTED (>= 1)
+ *      immediately after the Finish tap — a zero-match run FAILS in ~5s saying
+ *      the stub never fired, rather than proceeding or timing out;
+ *   2. THE ZIP THE WALK WROTE IS ASSERTED, on the feed's own location line
+ *      (`feedLocationSummary` renders `Near <home_zip> · within <radius> miles`),
+ *      so green cannot mean "one of the seeded postcodes, whichever arrived".
+ *      No consumer pinned the written zip before round 1 — `zip-radius` asserts
+ *      only `N mi`, and `auth.setup.ts` re-PATCHes the column afterwards.
+ *
+ * The old "an address that can never resolve" guard is gone WITH the mechanism
+ * it guarded: it made a network failure loud by landing on a fallback the
+ * fixture then filled by hand. The two assertions above are strictly stronger —
+ * they fail on a WRONG ZIP, where the old guard could only fail on a hang.
+ *
+ * Both faces of the fallback remain pinned where they belong:
+ * e2e/signup-zip-fallback.e2e.ts intercepts the same request and pins the
+ * resolved leg AND the empty-answer leg (note + field + the typed zip) — the
+ * helper no longer re-walks the empty leg for the 18 specs that never asserted
+ * it.
+ *
+ * THE LANDING (V28 slice 6, plan defect #19 → V28 r2 slice 5 → **V28 r3-6**):
+ * the area card's save does not navigate; the page resolves the run as finished
+ * and **navigates straight to the feed**.
+ *
+ * ⚠️ V28 r3-6 (r3-D3) REMOVED the ending card this helper used to tap. Until
+ * r3-6 the page rendered the "How Drop In works" tour in place and this helper
+ * waited for `first-run-finish-card`, then tapped its "Go to your feed" CTA. The
+ * human's phone walk reversed that: the run now ends IN the app. So the walk's
+ * last hop is gone — **the feed itself is the assertion**, which is stricter than
+ * the old wait-then-tap because it proves the landing rather than a card's
+ * presence.
+ *
+ * (`HowItWorksCard` and `firstRunTour.ts` still exist and are deliberately NOT
+ * deleted — r3-7's tooltips are their likely consumer. No spec references their
+ * testid any more except the one that pins the OLD behaviour's absence; see
+ * `signup-zip-fallback.e2e.ts`.)
+ *
+ * THE KIDS HOP: the kids card is skippable, so this helper taps its Skip
+ * control — writing NOTHING (no kid rows) — and proceeds to the AREA card.
+ * (The photo card that used to sit between them was deleted in V28 r2
+ * slice 1b; the photo now joins the name card in slice 2.) The Skip
+ * button (FirstRunCard's chrome) is the card's only control
+ * that advances without touching the DB, which keeps the 18 specs that
+ * consume this helper on the deterministic no-kids path: their assertions
+ * about kids (kid-names-privacy and friends) create their kids through the
+ * /profile editor or REST, never through onboarding. A spec that wants the
+ * kids WRITE is one that should not be using this helper.
+ *
+ * THE COUNT, and the instrument that does not count itself (round 1: the number
+ * 17 sat in five other comments, and this slice's own 18th consumer —
+ * e2e/auth.setup.ts — made every one of them stale):
+ *
+ *     grep -rln "finishSignup(" e2e/*.ts | grep -v "/fixtures.ts" | wc -l
+ *
+ * That is files which MENTION the call, minus this module (the definer, which
+ * mentions it in this very paragraph): 17 at `8d1170d`, 18 at `ae578c2` and now.
+ * Writing the command literally here is safe precisely BECAUSE the definer is
+ * excluded — a metric written into the file it counts is otherwise the
+ * self-matching instrument this batch keeps finding.
+ *
+ * It NEVER forces a reload: a spec that counts requests during the cold load
+ * still counts only the cold load's.
  */
 export async function finishSignup(
   page: Page,
-  options: { homeZip: string; radiusMiles?: number },
+  options: { homeZip: string; radiusMiles?: number | string },
 ): Promise<void> {
   const feed = page.getByRole('heading', { name: 'Near you' })
-  const locationStep = page.getByRole('heading', { name: 'Set your location' })
 
-  // Whichever settles first wins. Awaiting them in sequence would burn a full
-  // `expect` timeout on the branch this signup did not take.
-  await expect(feed.or(locationStep)).toBeVisible({ timeout: 30_000 })
-
-  if (await locationStep.isVisible().catch(() => false)) {
-    await page.getByPlaceholder('e.g. 98107').fill(options.homeZip)
-    // The radius only matters to specs that assert on distance; anything else
-    // takes the app's own default (5 mi) rather than restating it.
-    const radius = options.radiusMiles ?? 5
-    await page
-      .locator('select')
-      .first()
-      .selectOption({ label: `${radius} miles` })
-    await page.getByRole('button', { name: /^Continue/ }).click()
+  // THE CARD'S ONE REQUEST IS ANSWERED HERE, AND COUNTED (V28 r2 slice 8a — see
+  // the docblock for why the count is asserted and not merely kept). Installed
+  // before the address is typed, so no lookup can escape it, and removed at the
+  // end of this helper so no LATER request on this page is answered by a stub
+  // built for the walk.
+  let intercepted = 0
+  const answerAddressLookup = (route: Route): Promise<void> => {
+    intercepted += 1
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          lat: '47.6205',
+          lon: '-122.3414',
+          address: { postcode: options.homeZip, house_number: '1200' },
+        },
+      ]),
+    })
   }
+  await page.route(NOMINATIM_ROUTE, answerAddressLookup)
 
-  // Either way, a signed-in, onboarded parent now stands on the feed.
+  // V28 slice 4a: the kids card (3 of 4) sits between the name card and the
+  // area card. It is the ONLY view that renders the card's Skip control
+  // (the area card has none — it is required), so waiting for it is the hop
+  // itself — and it absorbs the same profile-load settle beat the area-card
+  // wait absorbs. (V28 slice 4b's photo card used to sit between them with
+  // a second Skip; V28 r2 slice 1b deleted it, so the walk is: wait,
+  // click — one hop.)
+  const skip = page.getByRole('button', { name: 'Skip' })
+  await skip.waitFor({ timeout: 30_000 })
+  await skip.click()
+
+  // V28 slice 5: the AREA card ("4 of 4") is the last view — address-first
+  // (decision 9). The address is the entry (the card has no Skip), and the
+  // intercepted lookup above resolves it to the CALLER'S zip, so nothing is
+  // typed into a ZIP field. Waiting on the card's testid rather than the DOM
+  // keeps a cold-load beat harmless: the card renders once the profile load
+  // settles, and the wait absorbs that.
+  const areaCard = page.getByTestId('first-run-area-card')
+  await areaCard.waitFor({ timeout: 30_000 })
+  await page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle').fill(FINISH_SIGNUP_ADDRESS)
+  // The radius is chosen BEFORE the Finish tap, because on the resolved path
+  // that one tap is the last thing the card does (it writes the zip the lookup
+  // returned + this radius and renders the ending card).
+  //
+  // The radius only matters to specs that assert on distance; anything else
+  // takes the app's own default (5 mi) rather than restating it. The select's
+  // options are LABELS ("20 miles"), so the option may be given as one of
+  // those labels verbatim or as a number of miles; V28 slice 4a widens the
+  // type to `number | string` because zip-radius.e2e.ts has always passed
+  // the full label ('20 miles') and the number-form would have produced
+  // "20 miles miles" (a latent defect predating V28, surfaced when 4a ran
+  // the spec for the first time).
+  const radiusLabel =
+    options.radiusMiles === undefined
+      ? '5 miles'
+      : typeof options.radiusMiles === 'string'
+        ? options.radiusMiles
+        : `${options.radiusMiles} miles`
+  await page
+    .locator('select')
+    .first()
+    .selectOption({ label: radiusLabel })
+  // The card's primary reads "Finish" (FIRST_RUN_COPY.area); while the lookup
+  // is in flight it reads "Checking your address…" and is disabled, so the
+  // click auto-waits for the (intercepted, instant) settle and the save.
+  await page.getByRole('button', { name: 'Finish' }).click()
+  // ⚠️ THE TRIPWIRE, AND WHY IT SITS HERE RATHER THAN AFTER THE WALK. The tap
+  // above is what issues the request, so a stub that did not fire is provable
+  // NOW — and it must fail HERE, in ~5s and with this message, because the two
+  // alternatives both lie: the ending-card wait below would time out for 30s
+  // (silent about the cause), and a real answer that happens to be a seeded
+  // postcode would let the walk finish green with the wrong zip.
+  await expect
+    .poll(() => intercepted, {
+      timeout: 5_000,
+      message:
+        `finishSignup's address-lookup stub NEVER FIRED: the area card's Nominatim request did not reach ` +
+        `page.route(NOMINATIM_ROUTE). Either the route pattern no longer matches the URL the app requests, or the ` +
+        `card never asked. This is a FINDING, not a flake — without the stub the walk is answered by the REAL ` +
+        `network, whose postcode for "${FINISH_SIGNUP_ADDRESS}" is a SEEDED gazetteer zip, so validateHomeZip would ` +
+        `pass and this walk would write a DIFFERENT home zip while still going green. Fix the stub or the address.`,
+    })
+    .toBeGreaterThan(0)
+
+  // V28 r3-6 (r3-D3): the area card's save now lands the parent DIRECTLY on the
+  // feed — the run's ending screen is gone, and the page navigates itself. There
+  // is no card to wait for and no CTA to tap; the feed's arrival IS the
+  // assertion, and it is the stricter one (the old shape proved a card rendered,
+  // this proves the run actually finished and left).
   await feed.waitFor({ timeout: 30_000 })
+
+  // The stub's job is over: it answered the walk's ONE request, and leaving it
+  // installed would silently answer any LATER Nominatim request this page makes
+  // (an Apply-time geocode, the directory) with this walk's zip and pin. That
+  // is latent today — no consumer geocodes after the walk — so this is the
+  // boundary rather than a comment claiming there is one.
+  await page.unroute(NOMINATIM_ROUTE, answerAddressLookup)
+
+  // ⚠️ THE ZIP THE WALK WROTE IS PINNED HERE, and this is the assertion that
+  // makes the fixture honest: `feedLocationSummary` renders
+  // `Near <home_zip> · within <radius> miles` off the profile row the save just
+  // wrote, so a walk that wrote some OTHER seeded postcode — the shape of every
+  // silent-stub failure — cannot pass. Green now means "the zip the caller asked
+  // for reached the database", not "a walk finished". No consumer asserted this
+  // before round 1.
+  await expect(page.getByTestId('feed-location-control')).toContainText(options.homeZip)
+}
+
+/**
+ * V28 slice 4c — read the Supabase session (access token + user id) OUT of a
+ * browser page's localStorage, the in-browser twin of readMarkerSession (the
+ * setup spec's markerCreds block is the same parse, run in-page). Specs that
+ * sign a SECOND viewer up in a fresh context (the zip-radius pattern) get
+ * their OWN JWT this way — the owner-scoped policies (PATCH profiles, SELECT
+ * own kids) only accept the owner's own token. Returns null when the page
+ * holds no session blob (the caller decides: skip, or fail).
+ */
+export async function readSessionFromBrowserPage(
+  page: Page,
+): Promise<{ accessToken: string; userId: string } | null> {
+  return page.evaluate((): { accessToken: string; userId: string } | null => {
+    for (const raw of Object.values(localStorage)) {
+      let blob:
+        | {
+            access_token?: string
+            user?: { id?: string }
+            currentSession?: { access_token?: string; user?: { id?: string } }
+            allSessions?: Array<{ access_token?: string; user?: { id?: string } }>
+            sessions?: Array<{ access_token?: string; user?: { id?: string } }>
+          }
+        | null
+      try {
+        blob = JSON.parse(String(raw))
+      } catch {
+        continue
+      }
+      const session =
+        (typeof blob?.access_token === 'string' ? blob : undefined) ??
+        blob?.currentSession ??
+        blob?.allSessions?.[0] ??
+        blob?.sessions?.[0]
+      if (
+        session !== null &&
+        session !== undefined &&
+        typeof session.access_token === 'string' &&
+        typeof session.user?.id === 'string'
+      ) {
+        return { accessToken: session.access_token, userId: session.user.id }
+      }
+    }
+    return null
+  })
 }
 
 /**

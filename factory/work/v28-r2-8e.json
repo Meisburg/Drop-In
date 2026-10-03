@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "v28-r2-8e",
+  "title": "count-provenance over-trigger: a legitimate 'iat <epoch>' is read as a sha token",
+  "plan_ref": "plan.md#slice-8e",
+  "track": null,
+  "base": null,
+  "depends_on": [
+    "v28-r2-8d"
+  ],
+  "created_at": "2026-10-03T00:30:15.656Z",
+  "lanes": {
+    "implementation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "verification": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "review": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "visual_validation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "acceptance": {
+      "state": "blocked",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": [],
+      "reason": null
+    }
+  },
+  "history": []
+}

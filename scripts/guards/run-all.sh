@@ -19,6 +19,40 @@
 #   config          (build law, unwritten)                 — checks cannot be weakened
 #   no-bypass       docs/agents/auto-push.md               — git hooks cannot be skipped
 #   fixture-marker  docs/agents/e2e-fixture-convention.md  — fixtures cannot escape the sweep
+#   vacuous-absence scripts/guards/vacuous-absence-guard.mjs — toHaveCount(0) of a
+#                     route-unreachable target is structurally vacuous
+#   stale-locator   scripts/guards/stale-locator-guard.mjs — a positively-used
+#                     locator literal must still exist somewhere in src
+#   copy-field      scripts/guards/copy-field-consumption-guard.mjs — every
+#                     field of a copy module is read by the app, or allowed
+#                     with a written reason (the definition site is NOT a
+#                     consumer: not the declaration, not the module's data,
+#                     not the module's own test)
+#   copy-taxonomy   scripts/guards/copy-taxonomy-guard.mjs — a copy const this
+#                     guard is given may only name a PLACE CATEGORY the app has
+#                     and OFFERS, every category it names must be declared in
+#                     the module, and the declaration must be backed by the
+#                     words. One taxonomy, one direction of scan per rule, and
+#                     a written boundary: see WHERE IT STOPS in its header.
+#   acceptance-greps scripts/guards/check-acceptance-greps.mjs — every tagged
+#                     ACCEPTANCE-GREP claim names a PATH (not a bare directory)
+#                     and matches the tree it claims about; untagged greps are
+#                     quotations and are never judged
+#   regexp-escape   scripts/guards/regexp-escape-guard.mjs — the repo has ONE
+#                     copy of the regex-escape one-liner; a sixth copy fails
+#                     AND a zero fails (a needle that matched nothing is not
+#                     a clean repo)
+#   trailing-newline scripts/guards/trailing-newline-guard.mjs — every tracked
+#                     text file under src/ e2e/ scripts/ ends its last line
+#                     with a newline, and a scan that read no text file at all
+#                     is a finding rather than a pass (D-030)
+#   factory         docs/agents/factory.md                 — every model and every
+#                     task kind declares where its resource number came from;
+#                     every capability floor is meetable; no work item sits in an
+#                     unreachable lane state; acceptance is not `pass` while a
+#                     required lane is incomplete; and EVERY ARTIFACT A WORK ITEM
+#                     NAMES IS ON DISK. The registry is where the memory
+#                     arithmetic lives, so a silent error in it is a silent OOM.
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -54,7 +88,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard trailing-newline-guard factory-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -71,7 +105,7 @@ done
 
 # A rule whose own behavior is unchecked is a rule that can silently stop
 # holding — a checker that matches nothing looks exactly like a clean repo. So
-# the two checkers that carry real logic ship a standalone `.check.mjs` that
+# the checkers that carry real logic ship a standalone `.check.mjs` that
 # seeds each failure shape and requires a non-zero exit. They run as part of
 # this gate, because a check nobody runs is a comment.
 #
@@ -93,8 +127,18 @@ run_check() {
   fi
 }
 
+run_check "lib-sibling-guard (behavior)" scripts/guards/lib-sibling-guard.check.mjs
 run_check "fixture-marker-guard (behavior)" scripts/guards/fixture-marker-guard.check.mjs
+run_check "vacuous-absence-guard (behavior)" scripts/guards/vacuous-absence-guard.check.mjs
+run_check "stale-locator-guard (behavior)" scripts/guards/stale-locator-guard.check.mjs
 run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs
+run_check "copy-field-consumption-guard (behavior)" scripts/guards/copy-field-consumption-guard.check.mjs
+run_check "copy-taxonomy-guard (behavior)" scripts/guards/copy-taxonomy-guard.check.mjs
+run_check "check-acceptance-greps (behavior)" scripts/guards/check-acceptance-greps.check.mjs
+run_check "no-bypass-guard (stated blind spot)" scripts/guards/no-bypass-guard.check.mjs
+run_check "regexp-escape-guard (behavior)" scripts/guards/regexp-escape-guard.check.mjs
+run_check "trailing-newline-guard (behavior)" scripts/guards/trailing-newline-guard.check.mjs
+run_check "factory-guard (behavior)" scripts/guards/factory-guard.check.mjs
 
 echo
 echo "==========================================================="

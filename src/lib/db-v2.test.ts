@@ -14,8 +14,8 @@ import {
   AVATAR_MAX_BYTES,
   AVATAR_SIZE_PX,
   MAX_KIDS_PER_PROFILE,
-  missingProfileItems,
   validateAvatarFile,
+  kidAgeFromInput,
   validateKid,
 } from './db'
 
@@ -89,23 +89,39 @@ describe('validateKid (V2 ticket 02 — first name + age only, the privacy pin)'
   })
 })
 
-describe('missingProfileItems (the /settings nudge banner, V2 ticket 02)', () => {
-  it('lists everything when nothing is present', () => {
-    expect(missingProfileItems(null, 0)).toEqual(['photo', 'kids'])
+describe('kidAgeFromInput (the blank-age rule, V28 r2 fix round 2 R4)', () => {
+  it('a blank age input is NaN, never 0 (0 is a LEGAL age, so a name-only row must be refused)', () => {
+    expect(kidAgeFromInput('')).toBeNaN()
+    expect(kidAgeFromInput('   ')).toBeNaN()
+    // The trap this exists for: the bare `Number('')` the Continue write used
+    // pre-R4 is 0, and `validateKid` passes 0 — a fabricated age-0 kid.
+    expect(Number('')).toBe(0)
+    expect(kidAgeFromInput('')).not.toBe(Number(''))
   })
 
-  it('is empty when photo + kids are all present', () => {
-    expect(missingProfileItems({ avatar_url: 'https://x/a.jpg' }, 2)).toEqual([])
+  it('a filled age input is Number-parsed (whitespace-trimmed)', () => {
+    expect(kidAgeFromInput('6')).toBe(6)
+    expect(kidAgeFromInput('  12 ')).toBe(12)
   })
 
-  it('treats a missing avatar_url as missing the photo', () => {
-    expect(missingProfileItems({ avatar_url: null }, 1)).toEqual(['photo'])
+  it('a non-numeric age input is NaN (the same refusal, not a crash)', () => {
+    expect(kidAgeFromInput('abc')).toBeNaN()
   })
 
-  it('treats a null (unsettled/failed) kids load as not-present', () => {
-    expect(missingProfileItems({ avatar_url: 'u' }, null)).toEqual(['kids'])
+  it('feeds the age seam: blank is refused by validateKid, a real 0 is legal', () => {
+    expect(validateKid('Ava', kidAgeFromInput(''))).toMatch(/0 to 17/)
+    expect(validateKid('Ava', kidAgeFromInput('0'))).toBeNull()
+    expect(validateKid('Ava', kidAgeFromInput('7'))).toBeNull()
   })
 })
+
+// V28 r2 slice 8a: `missingProfileItems` + `MissingProfileItem` (the /settings
+// nudge banner's completeness seam, V2 ticket 02) were DELETED — the section
+// these tests pinned. Measured at 8d1170d: 0 production callers (the only
+// `src/` mention was a sentence in App.tsx's nudge docblock, which named it as
+// the seam the nudge does NOT use), so the tests were pinning a function
+// nobody called. The nudge's own hasKids fact is a lazy `listKids` read in
+// App.tsx, which is what the docblock now says.
 
 describe('MAX_KIDS_PER_PROFILE (plan-v2 Interfaces: app-enforced cap)', () => {
   it('is 5', () => {

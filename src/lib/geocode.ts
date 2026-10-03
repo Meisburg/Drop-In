@@ -3,25 +3,44 @@
  *
  * `geocodeAddress` turns a typed address into lat/lng via Nominatim (OpenStreetMap's
  * free geocoder — no key, no browser geolocation: the app's pinned invariant).
- * The pure decisions live here so the modal's "See places" path and the signup
- * form's ZIP derivation are testable; the fetch itself is thin and returns null
+ * The pure decisions live here so the modal's Apply path and the area
+ * card's (the first run's LAST card — 4 of 4 since V28 r2 deleted the photo card;
+ * it was 5 of 5 when this line was written) address derivation are testable; the fetch itself is thin and returns null
  * on ANY failure (network error, non-OK status, empty result) — a failed
  * geocode must never invent coordinates.
  *
- * V20 t06 adds `zipFromAddressQuery`, the signup form's use of the same
- * service: one Nominatim request that answers with a ZIP instead of a point.
- * Both functions share one request builder, so there is exactly one place the
- * User-Agent header, the URL shape and the failure contract live.
+ * TWO EXTRACTIONS, ONE REQUEST. `zipFromResult` and `coordinatesFromResult`
+ * are the pure policies over one Nominatim answer, and `locationFromResult`
+ * pairs them: the area card needs BOTH the ZIP (the value every distance in
+ * the product keys on) and the pin (its own map), and pairing them here is
+ * what makes "one request per distinct address" a property of the seam rather
+ * than a discipline the caller has to remember.
  *
- * FIRST-USE AUDIT (ticket 02) adds the TEST SEAM. `zipFromAddressQuery`'s two
- * outcomes — a resolved address and an unresolved one — are the two paths the
- * audit's finding lives on ("the address could not be matched to a ZIP"), and
- * neither was reachable without the live network: the module had no sibling
+ * V28 slice 4/5: the area card (the first run's last card, OnboardingPage)
+ * runs that lookup through `locationFromAddressQueryBounded`, which is
+ * BOUNDED — a Nominatim answer that does not settle in time settles to
+ * "absent" (`null`) instead of stalling the card (the pending-state rule's
+ * escape), which reveals the card's ZIP fallback rather than leaving the run a
+ * wall (decision 6). `geocodeAddress` (the directory's Apply path) is
+ * the same seam, unbounded. Every function shares one request builder, so
+ * there is exactly one place the User-Agent header, the URL shape and the
+ * failure contract live.
+ *
+ * V28 r2 slice 8a: the ZIP-ONLY pair (`zipFromResult`'s async wrappers
+ * `zipFromAddressQuery` and `zipFromAddressQueryBounded`) was DELETED —
+ * measured at 8d1170d they had zero production callers, because the card
+ * replaced its zip-only call with the location one in slice 4. `zipFromResult`
+ * itself stays: `locationFromResult` calls it.
+ *
+ * FIRST-USE AUDIT (ticket 02) adds the TEST SEAM. The two outcomes the area
+ * card's fallback note (V28 slice 5) hangs on — a resolved address and an
+ * unresolved one ("the address could not be matched to a ZIP") — were
+ * previously unreachable without the live network: the module had no sibling
  * test, and the only way to exercise the failure was for Nominatim to fail for
- * real. So the policy is now two pure functions over a PRE-FETCHED lookup, and
- * both async functions accept an optional `lookup` (the ONE dependency
- * injected). Production passes nothing and gets the fetch; a test passes a fake
- * and gets the same decision the app would make.
+ * real. So the policy is a pure function over a PRE-FETCHED lookup, and every
+ * async function accepts an optional `lookup` (the ONE dependency injected).
+ * Production passes nothing and gets the fetch; a test passes a fake and gets
+ * the same decision the app would make.
  */
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
@@ -89,10 +108,13 @@ export async function geocodeAddress(
 /**
  * V20 t06 — the HOME ZIP for a typed address, or null.
  *
- * This is the signup form's "your address sets your location" step: the parent
- * types their address once, and the app derives the ZIP that the rest of the
- * product keys on (the onboarding gate, `filterFeed`'s radius, every distance
- * on every card).
+ * This is the area card's (the first run's LAST card — 5 of 5 when V28 slice 5
+ * wrote this, 4 of 4 since V28 r2 deleted the photo card — and the signup form's
+ * address left /login in slice 3b) "your address sets your location" step: the
+ * parent types their address once, and the app derives the ZIP that the rest of
+ * the product keys on (`filterFeed`'s radius, every distance on every card, and
+ * the write paths' `hasHomeZip` — NOT an onboarding gate, which V28 slice 2b
+ * removed, see docs/adr/0001-home-zip-stops-being-a-gate.md).
  *
  * IT RETURNS A ZIP, NOT COORDINATES, and that is deliberate. The product's
  * location model is ZIP-based end to end — `profiles.home_zip`, the seeded
@@ -116,9 +138,9 @@ export async function geocodeAddress(
  * one already written in the address the parent typed. Anything looser trades a
  * visible "add your zip" step for an invisible wrong answer.
  *
- * `zipFromResult` is that whole policy as a pure function; the async wrapper
- * below only adds the lookup, so the two outcomes the signup fallback depends
- * on are unit-testable.
+ * `zipFromResult` is that whole policy as a pure function; the async wrappers
+ * below only add the lookup, so the two outcomes the area card's fallback note
+ * depends on are unit-testable.
  */
 export function zipFromResult(query: string, result: NominatimResult | null): string | null {
   const trimmed = query.trim()
@@ -135,11 +157,95 @@ export function zipFromResult(query: string, result: NominatimResult | null): st
   return precise ? postcode : null
 }
 
-export async function zipFromAddressQuery(
+/**
+ * V28 slice 5 — the deadline the area card's bounded address lookup races
+ * against: the pending-state rule's first form (the run is never a wall).
+ * The page passes it to `locationFromAddressQueryBounded`; the sibling tests
+ * pass a small value.
+ */
+export const ADDRESS_LOOKUP_TIMEOUT_MS = 10_000
+
+/**
+ * V28 slice 4 — ONE NOMINATIM RESULT, TWO EXTRACTIONS.
+ *
+ * The V28 area card resolves the address EARLY (on blur, debounced) so the same
+ * single request can yield BOTH the ZIP (for `saveLocation`) and the pin
+ * coordinates (for the card's own Leaflet map). `zipFromResult` and
+ * `coordinatesFromResult` are the two extractors this pairs; pairing them
+ * here — instead of letting the page fire two bounded lookups — is what keeps
+ * "one request per distinct address" a property of the seam rather than a
+ * discipline the caller has to remember.
+ */
+export interface AddressGeocodeResult {
+  /** The validated ZIP for the house number, else `null` (the ZIP fallback). */
+  zip: string | null
+  /** The geocoded position, else `null` (no map can be shown). */
+  coordinates: { lat: number; lng: number } | null
+}
+
+export function locationFromResult(
+  query: string,
+  result: NominatimResult | null,
+): AddressGeocodeResult {
+  // An empty query has no address to claim: a result handed in alongside it
+  // belongs to nothing the card showed, so BOTH fields are null (the zip
+  // extractor already agrees — coordinates must not outlive the address).
+  if (query.trim() === '') return { zip: null, coordinates: null }
+  return {
+    zip: zipFromResult(query, result),
+    coordinates: coordinatesFromResult(result),
+  }
+}
+
+export async function locationFromAddressQuery(
   query: string,
   lookup: AddressLookup = searchFirst,
-): Promise<string | null> {
+): Promise<AddressGeocodeResult> {
   const trimmed = query.trim()
-  if (trimmed === '') return null
-  return zipFromResult(trimmed, await lookup(trimmed))
+  if (trimmed === '') return { zip: null, coordinates: null }
+  return locationFromResult(trimmed, await lookup(trimmed))
+}
+
+/**
+ * V28 slice 4 — the BOUNDED address geocode the onboarding area card runs on
+ * blur: one Nominatim request (the same seam the ZIP lookup used) racing
+ * against a deadline, returning BOTH the ZIP and the pin in one result.
+ *
+ * The race discipline: a lookup that does not settle within `timeoutMs`
+ * settles to the null shape (absent is the only honest value — there is no
+ * answer to decide from), a fast lookup wins the race, and a lookup that
+ * REJECTS still rethrows: a rejection before the deadline is a real failure
+ * the caller may see (the card catches it and reveals its ZIP fallback; it
+ * never stalls). V28 r2 slice 8a deleted the ZIP-only sibling that used to
+ * carry this paragraph's cross-reference; this is now the module's only
+ * bounded lookup.
+ */
+export function locationFromAddressQueryBounded(
+  query: string,
+  timeoutMs: number,
+  lookup: AddressLookup = searchFirst,
+): Promise<AddressGeocodeResult> {
+  const trimmed = query.trim()
+  if (trimmed === '') return Promise.resolve({ zip: null, coordinates: null })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const nullResult: AddressGeocodeResult = { zip: null, coordinates: null }
+  const deadline = new Promise<AddressGeocodeResult>((resolve) => {
+    timer = setTimeout(() => resolve(nullResult), timeoutMs)
+  })
+  const resolved = locationFromAddressQuery(trimmed, lookup).then(
+    (result) => {
+      if (timer !== undefined) clearTimeout(timer)
+      return result
+    },
+    // THE REJECTION LEG CLEANS UP TOO: a lookup that rejects before the
+    // deadline still clears its deadline timer — a dangling timer is an
+    // invisible defect, so the sibling test pins `vi.getTimerCount() === 0` on
+    // this leg — and it still rethrows, because a rejection before the
+    // deadline is a real failure the caller may see.
+    (err) => {
+      if (timer !== undefined) clearTimeout(timer)
+      throw err
+    },
+  )
+  return Promise.race([resolved, deadline])
 }

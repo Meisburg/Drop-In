@@ -37,12 +37,15 @@ test("the marker's /settings edits distance but not the home ZIP (V27)", async (
 
   // V15 T07 removed the location CARD (the ZIP editor) from /settings, and that
   // half stands: no zip input renders here and the onboarding "e.g. 98107"
-  // placeholder stays off this page. V27 re-opens the OTHER half deliberately:
+  // placeholder stays off this page. (V28 slice 7a cut that placeholder's
+  // toHaveCount(0) pin: the placeholder lives only in the onboarding card,
+  // which cannot render on /settings at all — the line was structurally
+  // guaranteed true, so its intent now lives in this comment.) V27 re-opens
+  // the OTHER half deliberately:
   // the saved discovery radius is now editable in the "Near you" section,
   // writing through the same `updateHomeZipRadius` path the feed uses. This
   // assertion is the pin for that reversal — a future slice that removes the
   // radius control again must update this line, not silently pass.
-  await expect(page.getByPlaceholder('e.g. 98107')).toHaveCount(0)
   await expect(page.getByTestId('settings-radius')).toBeVisible()
 })
 

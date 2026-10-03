@@ -1,8 +1,9 @@
 /**
  * Spec (V2 ticket 02; the crop step added by photo-crop ticket 03): the avatar.
  * The marker uploads a photo via the /profile page (V13 ticket 01 moved the
- * avatar editor off /settings; the onboarding "Add a photo" step is only
- * reachable for users without a home zip, and the marker is already onboarded),
+ * avatar editor off /settings; the first run's photo now lives on the NAME
+ * card — V28 r2 slice 2 — which renders only for a parent WITHOUT a profiles
+ * row yet, and the marker already has one, so the marker drives /profile),
  * confirms the crop dialog, and the encoder produces a square JPEG stored at
  * avatars/<uid>/avatar under the owner-scoped write policy; it then posts a
  * drop-in, and the 40px round avatar renders on the feed card and on /u/<handle>.
@@ -94,8 +95,12 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   await openProfileEditor(page)
 
   // Upload (the /profile "Your photo" card — V13 ticket 01 moved the avatar
-  // editor off /settings; onboarding is only reachable for users without a
-  // home zip, so an already-onboarded parent edits it here). The ≤5MB gate and
+  // editor off /settings; the first run's picker now lives on the NAME card,
+  // which renders only for a parent with NO profiles row yet — the marker has
+  // one — so an already-onboarded parent edits it here. This paragraph used to
+  // say onboarding "is only reachable for users without a home zip", which V28
+  // slice 2b made false: no route is gated on the home zip any more, see
+  // docs/adr/0001-home-zip-stops-being-a-gate.md.) The ≤5MB gate and
   // the decode run inside the crop step (this file is far under 5 MB), then the
   // crop dialog opens on the decoded image. Accepting its default frame is one tap.
   //
@@ -162,6 +167,48 @@ test('marker uploads an avatar, sees the 40px round avatar on the feed card + /u
   // The /u/<handle> header renders it too.
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
   await expect(page.locator('img.rounded-full').first()).toBeVisible()
+})
+
+test('an EMPTY avatar_url counts as NO photo: the identity card shows "Add a photo", never an <img src=""> (V28 r2 slice 8a)', async ({
+  page,
+}) => {
+  // THE RENDER-SITE PIN for the one presence predicate (lib/avatarUrl.ts).
+  // The branch used to test `avatar_url !== null && avatar_url !== undefined`
+  // inline — the empty-string clause missing — so a row holding '' rendered an
+  // <img src=""> where the parent should see the "Add a photo" label. The
+  // column is plain text, nullable, with no CHECK, so '' is a real state.
+  //
+  // WHAT THIS PROVES, AND WHAT IT CANNOT (V28 r2 slice 8a fix round 1). It
+  // FAILS if the render site stops BEHAVING as the predicate says: restore the
+  // pre-slice inline check and the img is back on the page with the label gone.
+  // But a FAITHFUL restatement of the one-liner — same check, empty-string
+  // clause included — passes it, so this leg cannot prove the site CALLS
+  // `hasAvatarUrl`. That half is pinned in src/lib/avatarUrl.test.ts (the
+  // source-level legs), which fail on a restatement. Two instruments, two
+  // different claims; an earlier draft of this comment claimed this one proved
+  // both.
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const headers: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+  }
+  const patch = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    // `return=minimal`: a write must not be sent through RETURNING (the same
+    // rule e2e/places-map-view.e2e.ts records for its own column write). The
+    // afterEach below nulls the column again, so nothing is left behind.
+    headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ avatar_url: '' }),
+  })
+  expect(patch.ok, `the marker row accepts '' (HTTP ${patch.status})`).toBe(true)
+
+  await page.goto('/profile')
+  await openProfileEditor(page)
+
+  await expect(page.getByTestId('avatar-photo')).toHaveCount(0)
+  await expect(page.getByTestId('avatar-photo-trigger')).toHaveCount(0)
+  await expect(page.getByText('Add a photo', { exact: true })).toBeVisible()
 })
 
 test.afterEach(async () => {

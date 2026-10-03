@@ -15,10 +15,14 @@
  * suite (see the same note in the fixture-marker guard's checker).
  */
 import {
+  CASCADE_HAZARDS,
+  collateralProbeQuery,
+  collateralRefusals,
   deleteStatements,
   gateRefusal,
   markerRowsWithVictims,
   markerTotal,
+  parseCollateral,
   parseCounts,
   countsQuery,
   verificationProblems,
@@ -121,6 +125,114 @@ console.log('===========================================================')
   // A table missing from the post-read: cannot prove anything, so must not pass.
   const missing = verificationProblems(before, [{ table: 'profiles', marker: 0, total: 38 }])
   check('a table missing from the post-delete read is a problem', missing.length === 1 && missing[0].includes('missing'), missing.join(' | '))
+}
+
+// ---------------------------------------------------------------------------
+// THE COLLATERAL GATE — the 2026-10-03 incident, as regression coverage.
+//
+// THE FAILURE THIS PINS. The sweep removed 2445 marker rows exactly as scoped
+// and still destroyed a REAL parent's `going_pings` row. The ping's profile_id
+// was not a marker, so `going_pings`' own clause never matched it and its marker
+// count was a truthful zero. It died because `going_pings.playdate_id ->
+// playdates` is ON DELETE CASCADE and the sweep deleted the marker-hosted
+// drop-in it pointed at. Every marker-shaped check passed. This one must not.
+// ---------------------------------------------------------------------------
+
+{
+  // The incident itself: one real parent's ping behind a doomed marker drop-in.
+  const incident = parseCollateral({ b0: '1', b1: '0', b2: '0', b3: '0', b4: '0' })
+  const refusals = collateralRefusals(incident)
+  check('THE INCIDENT: a real parent\'s ping behind a marker drop-in REFUSES the sweep',
+    refusals.length === 1 && refusals[0].includes('going_pings'),
+    refusals.join(' | '))
+  check('the refusal names the cascade edge, not just a count',
+    refusals[0].includes('playdate_id') && refusals[0].includes('CASCADE'),
+    refusals[0])
+  check('the refusal says the rows were never named by the sweep\'s own clause',
+    refusals[0].includes('never named'), refusals[0])
+
+  // A clean probe (every edge zero) is the ONLY shape that proceeds.
+  const clean = parseCollateral(Object.fromEntries(CASCADE_HAZARDS.map((_, i) => [`b${i}`, '0'])))
+  check('a probe with every edge at zero proceeds', collateralRefusals(clean).length === 0)
+
+  // FAIL CLOSED, three ways. "The rule did not run" must never be a green light.
+  check('an EMPTY probe refuses rather than passing',
+    collateralRefusals([]).length === 1 && collateralRefusals([])[0].includes('REFUSING'))
+  check('a NON-ARRAY probe refuses rather than passing',
+    collateralRefusals(undefined).length === 1 && collateralRefusals(null).length === 1)
+  check('an UNREADABLE blocker count refuses rather than assuming zero',
+    collateralRefusals([
+      { parent: 'playdates', child: 'going_pings', column: 'playdate_id', blockers: Number.NaN },
+    ]).some((r) => r.includes('could not be read')))
+
+  // The probe must name EVERY cascade edge the sweep can walk, or an unmodelled
+  // edge is an unguarded one. Measured against the live schema on 2026-10-03:
+  // 17 CASCADE FKs reach the sweep's tables from a parent it deletes.
+  check('the probe covers every cascade edge (17 measured)',
+    CASCADE_HAZARDS.length === 17, String(CASCADE_HAZARDS.length))
+
+  // THE SHAPE THAT MAKES IT WORK, pinned because breaking it is silent: the
+  // doomed-parent subquery must select the uuid `id`, not `1`. `uuid = integer`
+  // is a Postgres 42883 ERROR, so a probe that got this wrong would crash
+  // instead of guarding — and a crash is not a guard.
+  const probe = collateralProbeQuery()
+  check('the collateral probe selects the parent uuid, never `select 1`',
+    probe.includes('select p.id from') && !probe.includes('select 1 from'),
+    probe.slice(0, 120))
+  check('the collateral probe reads a blocker count per cascade edge',
+    probe.includes('as b0') && probe.includes(`as b${CASCADE_HAZARDS.length - 1}`))
+  check('the collateral probe names the e2e- account set and no broad operator',
+    probe.includes("like 'e2e-%'") && !/\bilike\b/.test(probe))
+  // ⚠️ THE STRONGER FORM, and it is here because a mutation survived without it.
+  // `probe.includes("like 'e2e-%'")` passes even if SOME OTHER clause was widened
+  // (measured: one `like '%'` slipped through and the whole checker still exited 0).
+  // The real invariant is not a fixed number — the clauses nest, so each edge
+  // contributes a varying number of literals — it is that NO scope literal in the
+  // probe is anything OTHER than e2e-. Counted both ways:
+  const scopeLiterals = (probe.match(/like '[^']*'/g) ?? [])
+  const e2eScoped = scopeLiterals.filter((l) => l === "like 'e2e-%'").length
+  check('EVERY scope literal in the probe is e2e- (none widened)',
+    scopeLiterals.length > 0 && scopeLiterals.every((l) => l === "like 'e2e-%'"),
+    `${scopeLiterals.length} literal(s), ${e2eScoped} e2e-scoped`)
+  check('the probe carries at least one scope literal per edge',
+    scopeLiterals.length >= CASCADE_HAZARDS.length,
+    `${scopeLiterals.length} literal(s) for ${CASCADE_HAZARDS.length} edge(s)`)
+
+  // The guard must be wired to the ONE table the incident proved reachable, and
+  // it must be keyed on the child's OWN marker clause — that is what makes a
+  // non-marker row a blocker rather than a legitimate removal.
+  const goingPings = CASCADE_HAZARDS.filter(
+    (h) => h.child === 'going_pings' && h.parent === 'playdates',
+  )
+  check('the going_pings/playdates edge is guarded',
+    goingPings.length === 1 && goingPings[0].parentKey === 'playdate_id')
+  check('each hazard keys on the child\'s own marker clause',
+    CASCADE_HAZARDS.every((h) => typeof h.childClause === 'string' && h.childClause !== ''))
+
+  // ⚠️ AND THAT CLAUSE MUST ACTUALLY BE MARKER-SCOPED — measured, because a
+  // mutation that de-scoped exactly one hazard's childClause still exited 0.
+  // A hazard whose clause matches a real parent's row is worse than no hazard:
+  // it would report the sweep as SAFE while protecting the wrong set. Every
+  // clause must therefore reference VICTIMS (the e2e- account set) or be a
+  // subquery over a table that itself references VICTIMS.
+  check('every hazard PARENT clause is marker-scoped via VICTIMS',
+    CASCADE_HAZARDS.every((h) => h.parentClause.includes('VICTIMS')),
+    CASCADE_HAZARDS.filter((h) => !h.parentClause.includes('VICTIMS'))
+      .map((h) => `${h.parent}.${h.parentKey}`)
+      .join(', '))
+  check('every hazard CHILD clause is marker-scoped via VICTIMS',
+    CASCADE_HAZARDS.every((h) => h.childClause.includes('VICTIMS')),
+    CASCADE_HAZARDS.filter((h) => !h.childClause.includes('VICTIMS'))
+      .map((h) => `${h.child}.${h.parentKey}`)
+      .join(', '))
+  check('no hazard clause is broad or empty (a de-scoped hazard protects nothing)',
+    CASCADE_HAZARDS.every(
+      (h) =>
+        h.parentClause.trim() !== '' &&
+        h.childClause.trim() !== '' &&
+        !/\b(is not null|neq|gt|lt)\b/.test(h.parentClause) &&
+        !/\b(is not null|neq|gt|lt)\b/.test(h.childClause),
+    ))
 }
 
 // ---------------------------------------------------------------------------

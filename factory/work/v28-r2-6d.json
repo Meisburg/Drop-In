@@ -1,0 +1,352 @@
+{
+  "version": 1,
+  "id": "v28-r2-6d",
+  "title": "Slice 6d — the repo-wide honesty guard (and where the climb ",
+  "plan_ref": "plan.md#slice-6d",
+  "track": null,
+  "base": null,
+  "depends_on": [
+    "v28-r2-6c"
+  ],
+  "created_at": "2026-10-02T16:22:52.085Z",
+  "lanes": {
+    "implementation": {
+      "state": "complete",
+      "owner": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d.md",
+        "scripts/guards/copy-taxonomy-guard.mjs",
+        "scripts/guards/copy-taxonomy-guard.check.mjs",
+        "src/lib/firstRunTour.ts",
+        "docs/agents/code-structure.md"
+      ],
+      "evidence": [
+        "npm run verify at fa3f24b -> exit 0 / GUARDS: PASS — 71 test files / 2068 tests / 81 warnings / 0 errors / AGENTS.md 1789 of 1800 / 0 real finding lines",
+        "node scripts/guards/copy-taxonomy-guard.mjs -> exit 0 PASS 0 findings (and it prints 'declared claims CHECKED by rule 3: 3 of 3 the taxonomy accepts') while its check -> exit 0 with 29 of 29 checks across 26 invocations and 8 mutations",
+        "bash scripts/steering-lint.sh -> exit 0 and bash scripts/guards/run-all.sh -> exit 0 GUARDS PASS with the guard registered in both places",
+        "fix rounds 1-3 committed at 45cd77b / a6d72f6 / ad817cc — round 3 closed F3 (ambiguousWords deleted ; claimsChecked wired into the tripwire and printed) plus F1 F2 F4 (three stale clauses deleted) and F6 (the taxonomy-absent declared kind prints its own reason) ; the reviewer falsified 8 of the 13 sweep rows and every row behaved as claimed ; the round-3 lane reports' bare-HEAD quotations measured at four (all in slice-6d-verify-3.md) and absorbed by re-derivation (new 4 ; lost 0 ; decreased 0 ; twice byte-identical) ; no test delta — 71 files and 2068 tests at every commit"
+      ],
+      "reopened": [
+        {
+          "at": "2026-10-02T17:05:57.521Z",
+          "why": "fix round 1/5: review NEEDS_CHANGES — B1 a coverage claim naming a paragraph the guard does not have (contradicting the law 20 lines above it in the same file), B2 a claim that the check names the guard under test, B3 the MECHANISM defect: an empty scan read as health (D-030)"
+        }
+      ]
+    },
+    "verification": {
+      "state": "complete",
+      "owner": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d-verify-5.md"
+      ],
+      "evidence": []
+    },
+    "review": {
+      "state": "complete",
+      "owner": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
+      "artifacts": [
+        ".scratch/v28/reports/slice-6d-review-5.md"
+      ],
+      "evidence": []
+    },
+    "visual_validation": {
+      "state": "pending",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": []
+    },
+    "acceptance": {
+      "state": "pass",
+      "owner": null,
+      "model": null,
+      "artifacts": [],
+      "evidence": [],
+      "reason": null
+    }
+  },
+  "history": [
+    {
+      "at": "2026-10-02T16:22:52.227Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:22:52.254Z",
+      "lane": "implementation",
+      "from": "pending",
+      "to": "running",
+      "note": "dispatched to a fresh cloud builder against .scratch/v28/briefs/slice-6d.md; brief re-measure banner enforced",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:44:02.574Z",
+      "lane": "acceptance",
+      "from": "pending",
+      "to": "blocked",
+      "note": "repair: newWorkItem defaulted acceptance to pending, which its own guard rejects (lane-states-legal). Constructor fixed; this item repaired.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:49:41.353Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:49:45.345Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:49:46.739Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": "slice 6d built, proven and reported: the repo-wide copy-taxonomy guard (4 rules both directions, seed+mutation per rule, registered in run-all.sh in both places), the tour card's declaration, the rule in code-structure.md, and Tier 2 declared as an explicit ceiling rather than half-built. BLOCKED at handover was environmental and became D-029 (the registry's own constructor emitted acceptance:pending, which factory-guard rejects); the gate reads exit 0 / GUARDS: PASS at fa3f24b with all six files this slice touched blob-identical across the fix. Not pushed.",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:51:25.668Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:51:25.699Z",
+      "lane": "verification",
+      "from": "pending",
+      "to": "running",
+      "note": "fresh verifier dispatched: gate, run-all, guard + check; must re-derive 2 mutation proofs and verify the blob-id table",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:51:25.726Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "pending",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": "ollama-cloud/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "at": "2026-10-02T16:51:25.756Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "running",
+      "note": "fresh reviewer dispatched: briefed to hunt THE CLASS in the new guard (each claim vs the code below it), and to label findings WRONG NUMBER / UNDER-DECLARED BOUNDARY / FALSE CLAIM / MECHANISM",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:51:30.616Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "running",
+      "note": "artifact names withdrawn: the reports do not exist yet, and a named artifact not on disk is a claim with nothing behind it (artifacts-exist has teeth). Re-named when the lane lands.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:51:30.616Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "artifact names withdrawn: the reports do not exist yet, and a named artifact not on disk is a claim with nothing behind it (artifacts-exist has teeth). Re-named when the lane lands.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.138Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.169Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": "VERIFY: PASS — all four mutation proofs re-derived independently; blob-id table confirmed; +1 test accounted (71 files unchanged)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.198Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.228Z",
+      "lane": "review",
+      "from": "running",
+      "to": "failed",
+      "note": "NEEDS_CHANGES: B1 false claim (code-structure.md names a SCOPE paragraph the guard does not have, contradicting the law 20 lines above), B2 false claim (check claims it prints which file it used), B3 MECHANISM DEFECT (zero scanned words passes; the guard's own header names that exact failure)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T16:55:04.254Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "running",
+      "note": "fix round 1/5: resume original builder; B3 fixed as the D-030 invariant (zero is a finding), B1/B2 per D-028 (delete rather than restate)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:04:20.244Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:04:27.052Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:05:57.521Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "running",
+      "note": null,
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:05:57.549Z",
+      "lane": "implementation",
+      "from": "running",
+      "to": "complete",
+      "note": "fix round 1 done: B3 tripwire + its own check and mutation, B1 deleted per D-028, B2 made true and proven; checks 23->27, mutations 6->7; baseline re-derived 631->635 (new 4 / lost 0 / decreased 0)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:15:40.308Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:15:45.800Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:17:09.902Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:27:08.762Z",
+      "lane": "implementation",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.150Z",
+      "lane": "verification",
+      "from": "complete",
+      "to": "complete",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.177Z",
+      "lane": "review",
+      "from": "running",
+      "to": "running",
+      "note": "fields set (no state change)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.204Z",
+      "lane": "review",
+      "from": "running",
+      "to": "failed",
+      "note": "round 5 (FINAL): NEEDS_CHANGES — mechanism CLEAN in the reviewer's own words ('no defect worth a sixth round'; one over-coarsened boundary clause, two stale clauses in this report, and two in the orchestrator's own artifacts)",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.233Z",
+      "lane": "review",
+      "from": "failed",
+      "to": "running",
+      "note": "breaker adjudication executed: the three clauses DELETED (D-028) with a proof grep each, no new section, and the deletion fallout in §15 carried rather than re-scoped; orchestrator fixed its own two findings in D-030 and the ledger",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.259Z",
+      "lane": "review",
+      "from": "running",
+      "to": "complete",
+      "note": "closed on the round-5 verdict (mechanism clean) plus the breaker pass verified by the orchestrator read-only: three greps exit 1, guard PASS 0 findings, taxonomy check 29/26/8, and §14 independently measured 1615 -> 1451",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-02T17:57:36.287Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "pass",
+      "note": "6d CLOSED: the repo-wide honesty guard shipped with 4 rules, 29 checks and 8 mutations; five rounds of lanes, every round's fix MEASURED rather than asserted; D-030 named and its class closed at two granularities; §14's boundary reduced 1615 -> 1451 words by deletion. Recorded deviation: the final deletion pass was closed on the builder's fresh gate plus the orchestrator's read-only verification, not a sixth lane verdict",
+      "actor": null,
+      "model": null
+    }
+  ]
+}

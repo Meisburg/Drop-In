@@ -110,3 +110,9 @@ supabase/.temp/
 ~/
 
 .scratch/**/ocr-*.json
+
+# Factory runtime exhaust — reservations and the two logs. Not record: WORK STATE
+# (factory/work/) and DECISIONS (the batch ledger) are the record, and both are
+# tracked. See docs/agents/factory.md.
+factory/state/
+factory/logs/

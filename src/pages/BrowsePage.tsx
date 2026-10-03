@@ -14,6 +14,8 @@ import {
 import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
 import { placeFollowIdSet } from '../lib/places'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts).
+import { hasHomeZip } from '../lib/homeZip'
 import { planSaveToggle, savedPlaceIdSetAfterToggle } from '../lib/follows'
 import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 import type { ReviewSummary } from '../lib/reviews'
@@ -321,7 +323,7 @@ export function BrowsePage() {
   // same gazetteer seam the feed uses. Null when the zip is unset or missing
   // from the gazetteer (AC5: no home pin renders for a new user).
   const homePinCoords = (() => {
-    if (profile.home_zip === null || profile.home_zip === undefined) return null
+    if (!hasHomeZip(profile.home_zip)) return null
     if (zipCoords === null) return null
     const found = zipCoords.get(profile.home_zip)
     return found === undefined ? null : { lat: found.lat, lng: found.lng }

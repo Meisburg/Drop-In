@@ -5,12 +5,15 @@ import { LocationModal } from '../components/LocationModal'
 import { NAV_ICONS } from '../components/icons'
 import { PlacesMap } from '../components/PlaceMapLazy'
 import { RadiusEmptyState } from '../components/RadiusEmptyState'
+import { LocationRequiredNotice } from '../components/LocationRequiredNotice'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import { WhileAwayCard } from '../components/WhileAwayCard'
 // V8 ticket 08: recording the meaningful action (a saved ping from a card) that
 // may be followed by the notification opt-in.
 import { armPushPromptForAction } from '../lib/pushClient'
+// V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts).
+import { hasHomeZip } from '../lib/homeZip'
 import {
   countKidsGoingForPosts,
   fetchDailyForecastForZip,
@@ -252,6 +255,11 @@ export function FeedPage() {
   const [myPingPostIds, setMyPingPostIds] = useState<ReadonlySet<string> | null>(null)
   // One in-flight card toggle per feed (the write path round-trips).
   const [pingBusyPostId, setPingBusyPostId] = useState<string | null>(null)
+  // V28 slice 2a fix 1/5: the no-home-zip notice for a card ping SET that the
+  // location guard blocked (handleCardPingToggle) — the post id that raised
+  // it. Rendered ONCE near the top of the feed (the cards carry no per-card
+  // notice slot), self-clearing once a zip lands via the one predicate.
+  const [cardPingLocationNoticeId, setCardPingLocationNoticeId] = useState<string | null>(null)
   // V3 slice 4 (ticket 07): the feed posts' "going" pings (the cards'
   // going lines — up to 3 avatar circles + a "+N" chip + "N going"). The
   // rows are grouped by post id (the card renders its own group via the
@@ -396,7 +404,7 @@ export function FeedPage() {
    * home pin rather than guessing a location.
    */
   const homePinCoords = (() => {
-    if (profile?.home_zip === null || profile?.home_zip === undefined) return null
+    if (!hasHomeZip(profile?.home_zip)) return null
     if (zipCoords === null) return null
     const found = zipCoords.get(profile.home_zip)
     return found === undefined ? null : { lat: found.lat, lng: found.lng }
@@ -480,9 +488,12 @@ export function FeedPage() {
   })
 
   // The viewer side of the radius filter: the profile's home zip + radius.
-  // The shell's onboarding gate keys on home_zip, so a settled signed-in
-  // session here has a zip; a null profile is the in-flight load state
-  // (ticket 06 cold-load race — never query before the profile settles).
+  // V28 slice 2b removed the shell's onboarding gate, so a settled signed-in
+  // session may have NO zip: listRadiusFeed then returns [] and the empty
+  // state renders the location notice (RadiusEmptyState's slice-2c early
+  // return), not a wall and not a dead end. A null profile is the in-flight
+  // load state (ticket 06 cold-load race — never query before the profile
+  // settles).
   useEffect(() => {
     if (loading || session === null || profile === null) return
     let cancelled = false
@@ -779,6 +790,14 @@ export function FeedPage() {
     const base = myPingPostIds
     if (base === null || pingBusyPostId !== null) return
     const willBeActive = !base.has(postId)
+    // V28 slice 2a fix 1/5: SETTING a card ping requires a home zip at the
+    // point of action (the same one-predicate guard as the detail page and
+    // the host form). CLEARING (willBeActive false) is never blocked — a
+    // zip-less parent must always be able to withdraw a ping.
+    if (willBeActive && !hasHomeZip(profile?.home_zip)) {
+      setCardPingLocationNoticeId(postId)
+      return
+    }
     setPingBusyPostId(postId)
     setMyPingPostIds(withPingId(base, postId, willBeActive))
     let going: boolean
@@ -970,16 +989,19 @@ export function FeedPage() {
   /**
    * V23 slice 1: the feed's ONE location control writes through the SAME
    * `updateHomeZipRadius` path as the old permanent controls. The shared
-   * LocationModal calls this when the viewer taps "Apply radius" inside it.
+   * LocationModal calls this from its ONE Apply button (V28 r3-4; it used to be
+   * "Apply radius", one of three buttons a parent had to press in order).
    */
   async function handleLocationApplyRadius(miles: number) {
     if (loading || session === null || profile === null) return
-    const homeZip = profile.home_zip ?? ''
-    if (homeZip === '') return
+    const homeZip = profile.home_zip
+    // V28 slice 2a fix 1/5: the same one predicate (hasHomeZip) — this write
+    // path already refused the empty zip, now through the shared rule.
+    if (!hasHomeZip(homeZip)) return
     // The modal's per-tick path is `onRadiusChange` (preview only) — the feed
     // deliberately omits it. `onApplyRadius` is the explicit write, fired once
-    // from "Apply radius", never per tick. The equal-value guard stays so
-    // applying the saved radius is a no-op, not a redundant write.
+    // from Apply, never per tick. The equal-value guard stays so applying the
+    // saved radius is a no-op, not a redundant write.
     if (miles === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
     if (radiusBusy) return
     setRadiusBusy(true)
@@ -989,16 +1011,19 @@ export function FeedPage() {
     } catch (err) {
       /* V23 slice 1 REVIEW — THIS USED TO SWALLOW THE ERROR, and combined with
        * the modal's own swallowing it produced a silent no-op: the parent moved
-       * the slider, pressed "See places", the dialog closed, and nothing said
-       * the radius had not saved. The old permanent radius select this replaced
-       * DID show a line (`radiusControlError`, rendered from
+       * the slider, pressed the apply control, the dialog closed, and nothing
+       * said the radius had not saved. The old permanent radius select this
+       * replaced DID show a line (`radiusControlError`, rendered from
        * `radiusSaveErrorMessage`), so dropping it lost a real capability rather
        * than removing clutter.
        *
        * The fix is to RE-THROW: the LocationModal is now the surface that owns
        * this write's error (it renders `location-radius-error`), and it can only
-       * do that if the failure reaches it. Re-throwing rather than duplicating
-       * the message here keeps ONE place that says whether the save failed.
+       * do that if the failure reaches it. ⚠️ V28 r3-4 made that dependency
+       * LOAD-BEARING: the modal now closes on success, so a swallowed error
+       * would close the dialog over a write that never landed. Re-throwing is
+       * what keeps the dialog open with the reason showing — the `catch` there
+       * returns without calling `onClose`.
        *
        * `err` is deliberately not inspected: `radiusSaveErrorMessage` maps the
        * rejected zip and the range violation to their own sentences, and it
@@ -1087,8 +1112,7 @@ export function FeedPage() {
           post. Router-state-driven and one-shot — a plain load of `/` (no
           state) renders nothing, and dismissing clears the state. */}
       {showJustPosted ? (
-        <div data-testid="just-posted-banner" className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="min-w-0 text-sm text-slate-700"><span className="font-medium">Posted!</span> {justPosted.title}</p>
+        <div data-testid="just-posted-banner" className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">          <p className="min-w-0 text-sm text-slate-700"><span className="font-medium">Posted!</span> {justPosted.title}</p>
           <div className="flex shrink-0 items-center gap-2">
             <button type="button" onClick={() => void shareJustPosted()} className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
               {shareCopied ? 'Copied' : 'Share'}
@@ -1096,6 +1120,13 @@ export function FeedPage() {
             <button type="button" onClick={dismissJustPosted} aria-label="Dismiss" className="min-h-11 min-w-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">Dismiss</button>
           </div>
         </div>
+      ) : null}
+
+      {/* V28 slice 2a fix 1/5: the no-home-zip notice after a blocked CARD
+          ping SET — one instance for the whole feed (the cards carry no
+          per-card notice slot), self-clearing once a zip lands. */}
+      {cardPingLocationNoticeId !== null && !hasHomeZip(profile?.home_zip) ? (
+        <LocationRequiredNotice />
       ) : null}
 
       {/* V24 slice 05: the Post action moved OFF the feed into the nav's centre

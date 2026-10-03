@@ -234,9 +234,27 @@ commit-author fix, so "pushed" and "live" had diverged for a while.
    `SmtpDeps` seam change (connect once, send many) — deliberately NOT done now,
    because it is a behaviour change on a path that just started working.
 
-3. **The Resend path and a sending domain are NO LONGER THE BLOCKER** (founder
-   decision, 2026-09-26). `_shared/resend.ts` is retained and stays selectable
-   for a future bulk-copy path, but nothing waits on it.
+3. **The Resend path and a sending domain are NO LONGER THE BLOCKER — for the
+   messages this ruling was about** (founder decision, 2026-09-26).
+   `_shared/resend.ts` is retained and stays selectable for a future bulk-copy
+   path, but nothing waits on it.
+   **⚠️ AMENDED (2026-09-30) — the ruling covered mail to EXISTING users (auth
+   and notification email) and does not cover the case that has now arrived.** A
+   **partner invite** is the first message this product would send to someone who
+   has never heard of Drop In: cold delivery to an arbitrary typed address, which
+   is exactly where a shared Gmail sending identity is weakest — reputation,
+   per-day limits, and a recipient whose spam filter has never seen the sender.
+   **Three reviewing agents read the paragraph above as "the domain question is
+   settled, nothing waits on it" and pushed to register one immediately.** The
+   correction: **nothing in THIS path waits on it — the invite path is a
+   different case the ruling did not consider.**
+   **Practical consequence:** the invite batch can ship on Gmail SMTP at beta
+   volume, because real mail to a real inbox (not spam, under a minute) is
+   already proven — item 1. So the domain is **not** a blocker for that batch.
+   It is, though, the longest lead-time item involved (registration → DNS →
+   SPF/DKIM → warm-up), so the move is to start it **in parallel**, not to gate
+   the batch on it. **When invites begin, this item must be revisited with real
+   delivery data rather than an assumption either way.**
 4. **The SMTP retry classification is INVERTED from HTTP, deliberately:** 4xx
    (421/450/451/452) is transient → retryable; 5xx (550/551/553/554/535) is
    permanent → **terminal**, because an address rejection would be refused

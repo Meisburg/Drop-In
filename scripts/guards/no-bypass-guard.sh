@@ -30,6 +30,36 @@
 #                exactly as strong as before: an accepted copy is never a
 #                licence to skip the gate.
 #
+#                ⚠️ WHAT THIS CHECK DOES NOT COVER — stated here because a PASS
+#                from it is NOT evidence about the flag. Git's reflog records
+#                the ACTION TEXT git itself writes — `commit: <subject>` for a
+#                plain commit, `checkout: moving from …`, and so on — and NEVER
+#                the command line that was run. `git commit --no-verify`
+#                therefore leaves the commit SUBJECT in the reflog and the flag
+#                NOWHERE: the grep below reads no hit, and this guard prints
+#                PASS on a tree where a bypass happened. No filter is hiding it:
+#                the plain case writes the flag NOWHERE, so the prose filter below
+#                has nothing to skip — the common case, a bypass with no wrapper,
+#                is outside this check. What it CAN see is narrower than "a
+#                bypass a WRAPPER recorded": a NON-PROSE reflog action text on
+#                `logs/HEAD` — the one log file the grep below reads — or a line
+#                in FAST_PUSH_LOG. The reflog case is seeded by setting
+#                `GIT_REFLOG_ACTION` on a COMMIT, so what it proves is that the
+#                prose filter admits a non-prose action text on the log the guard
+#                reads; it does NOT prove a wrapper-PUSH is visible — a
+#                `GIT_REFLOG_ACTION='… git push --no-verify' git push` writes the
+#                flag to no `.git/logs` file at all, and this guard reads only
+#                `logs/HEAD`. It does not cover a bypass that leaves neither a
+#                non-prose reflog action text nor a FAST_PUSH_LOG line. The blind
+#                spot AND both visible paths are PROVEN rather than asserted by
+#                `scripts/guards/no-bypass-guard.check.mjs`, which builds real
+#                repos: one commits with `--no-verify` on the command line and
+#                requires this guard to report PASS (the blind spot), one sets a
+#                non-prose reflog action text with `GIT_REFLOG_ACTION` on a commit
+#                and one writes FAST_PUSH_LOG, and both of those require a refusal.
+#                An instrument that matches nothing looks exactly like a clean
+#                repo — the standard `run-all.sh` already sets.
+#
 # PROVENANCE: pattern borrowed from affaan-m/ECC's `block-no-verify.js`
 # PreToolUse hook. Reimplemented as a post-hoc deterministic audit, because
 # this repo's harness is OpenCode/DSH, not Claude Code, and a PreToolUse hook
@@ -210,6 +240,16 @@ if [ -n "$BYPASS_HITS" ]; then
   echo "  The gated checks must run; the tracked pre-push hook is not optional."
   FAIL=1
 fi
+
+# STATE THE COVERAGE IN THE RUN, not only in the header. A PASS here is
+# evidence that the tracked hooks are wired; it is NOT evidence that the flag
+# was never used. Git records no command line, so a plain
+# `git commit --no-verify` is invisible to the reflog grep above — the blind
+# spot is proven by no-bypass-guard.check.mjs.
+echo "  COVERAGE: HISTORY reads the reflog's action text on logs/HEAD and FAST_PUSH_LOG, never a command line."
+echo "    A plain 'git commit --no-verify' leaves no trace this check can read, so the PASS/FAIL"
+echo "    below is NOT evidence about the flag — only a non-prose reflog action text on logs/HEAD"
+echo "    or a FAST_PUSH_LOG line is visible (see scripts/guards/no-bypass-guard.check.mjs)."
 
 echo
 if [ "$FAIL" -eq 0 ]; then
