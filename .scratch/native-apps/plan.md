@@ -1,6 +1,17 @@
 # Implementation Plan: DropIn as a native app (App Store + Google Play)
 
-> **⏸️ PARKED 2026-09-30 — NOT STARTED, AND DELIBERATELY SO.** The app is not
+> **🟢 UNPARKED 2026-10-03 — SLICE 0/1 GROUNDWORK DONE, SHELL NOT YET BUILT.**
+> Re-verified against `758ec8f` per the handoff's §5 "what will have rotted" table.
+> **Results are in `.scratch/native-apps/reverify-2026-10-03.md`** — the short
+> version: Capacitor 8.5.2 and push-notifications 8.1.3 are current; `send-push`
+> is still v8/ACTIVE; there are **eight** notification kinds (the plan said eight,
+> correct); `dist` is 1.5M; the repo is still **PRIVATE**; and the next free
+> migration is **0063**, not 0061 (`0061` and `0062` have since landed).
+> **The four code hazards are REAL and still present**, but their line numbers
+> have drifted and two of them already have a seam: see the reverify file. The
+> Phase 0/1 store work is tracked in `docs/RELEASE-CHECKLIST.md`.
+>
+> **⏸️ Originally parked 2026-09-30 — NOT STARTED at that time, AND DELIBERATELY SO.** The app is not
 > feature-complete, and a native shell is one of the LAST things to add: every
 > feature built after it means re-syncing the shell and re-testing on device.
 > **Before executing anything here, read `docs/handoff-native-apps.md`** — it
