@@ -989,7 +989,8 @@ export function FeedPage() {
   /**
    * V23 slice 1: the feed's ONE location control writes through the SAME
    * `updateHomeZipRadius` path as the old permanent controls. The shared
-   * LocationModal calls this when the viewer taps "Apply radius" inside it.
+   * LocationModal calls this from its ONE Apply button (V28 r3-4; it used to be
+   * "Apply radius", one of three buttons a parent had to press in order).
    */
   async function handleLocationApplyRadius(miles: number) {
     if (loading || session === null || profile === null) return
@@ -999,8 +1000,8 @@ export function FeedPage() {
     if (!hasHomeZip(homeZip)) return
     // The modal's per-tick path is `onRadiusChange` (preview only) — the feed
     // deliberately omits it. `onApplyRadius` is the explicit write, fired once
-    // from "Apply radius", never per tick. The equal-value guard stays so
-    // applying the saved radius is a no-op, not a redundant write.
+    // from Apply, never per tick. The equal-value guard stays so applying the
+    // saved radius is a no-op, not a redundant write.
     if (miles === (profile.radius_miles ?? DEFAULT_RADIUS_MILES)) return
     if (radiusBusy) return
     setRadiusBusy(true)
@@ -1010,16 +1011,19 @@ export function FeedPage() {
     } catch (err) {
       /* V23 slice 1 REVIEW — THIS USED TO SWALLOW THE ERROR, and combined with
        * the modal's own swallowing it produced a silent no-op: the parent moved
-       * the slider, pressed "See places", the dialog closed, and nothing said
-       * the radius had not saved. The old permanent radius select this replaced
-       * DID show a line (`radiusControlError`, rendered from
+       * the slider, pressed the apply control, the dialog closed, and nothing
+       * said the radius had not saved. The old permanent radius select this
+       * replaced DID show a line (`radiusControlError`, rendered from
        * `radiusSaveErrorMessage`), so dropping it lost a real capability rather
        * than removing clutter.
        *
        * The fix is to RE-THROW: the LocationModal is now the surface that owns
        * this write's error (it renders `location-radius-error`), and it can only
-       * do that if the failure reaches it. Re-throwing rather than duplicating
-       * the message here keeps ONE place that says whether the save failed.
+       * do that if the failure reaches it. ⚠️ V28 r3-4 made that dependency
+       * LOAD-BEARING: the modal now closes on success, so a swallowed error
+       * would close the dialog over a write that never landed. Re-throwing is
+       * what keeps the dialog open with the reason showing — the `catch` there
+       * returns without calling `onClose`.
        *
        * `err` is deliberately not inspected: `radiusSaveErrorMessage` maps the
        * rejected zip and the range violation to their own sentences, and it

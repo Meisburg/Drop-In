@@ -1678,11 +1678,15 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
   await page.getByTestId('set-location-btn').click()
   await expect(page.getByTestId('location-modal')).toBeVisible()
   await page.getByTestId('location-address-input').fill('Green Lake Park, Seattle')
-  await page.getByTestId('location-see-places-btn').click()
+  // V28 r3-4: the modal has TWO buttons now — Cancel and Apply. Apply geocodes,
+  // applies, and CLOSES. The per-tick radius preview (`onRadiusChange`) is NOT
+  // lost: pressing the control again reopens the dialog still holding the
+  // geocoded centre, and the drag below still redraws the circle live.
+  await page.getByTestId('location-apply-btn').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
 
-  // The geocoded centre and its radius are now the preview's frame. The dialog
-  // STAYS OPEN (`handleGeocode` only resolves the address — the radius slider
-  // below is the point of the preview), so the same dialog is dragged next.
+  // The geocoded centre reframed the drawn circle. Asserted on the MAP — the
+  // dialog has closed by design, and the map stays mounted behind it.
   await expect
     .poll(async () => circle.getAttribute('d'), {
       message: 'the geocoded centre must reframe the drawn circle',
@@ -1690,6 +1694,9 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
     .not.toBe(dCommitted)
   const dSmall = await circle.getAttribute('d')
 
+  // REOPEN: the radius slider still drives the circle in real time.
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
   const slider = page.getByTestId('location-radius-slider')
   await expect(slider).toBeVisible()
   await slider.fill('10')

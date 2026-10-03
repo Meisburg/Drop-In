@@ -186,7 +186,7 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
 
   // V23 slice 1: the feed's ONE location control (the secondary button in the action
   // row) opens the shared LocationModal. The widen path is driven through that
-  // modal: open it, drag the slider to WIDEN_RADIUS_MILES, tap "Apply radius",
+  // modal: open it, drag the slider to WIDEN_RADIUS_MILES, tap Apply,
   // and assert the copy re-names itself with the new radius.
   const locationControl = page.getByTestId('feed-location-control')
   await expect(locationControl).toBeVisible()
@@ -200,8 +200,10 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   const slider = page.getByTestId('location-radius-slider')
   await slider.fill(String(WIDEN_RADIUS_MILES))
 
-  // Tap "Apply radius" — the write goes through updateHomeZipRadius + refresh().
-  await page.getByTestId('location-apply-radius-btn').click()
+  // Tap Apply — the write goes through updateHomeZipRadius + refresh(), and the
+  // dialog closes (V28 r3-4: one control does both).
+  await page.getByTestId('location-apply-btn').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
 
   // The empty state's copy must re-name itself with the new radius.
   await expect(empty).toContainText(emptyRadiusCopy(WIDEN_RADIUS_MILES))
@@ -418,7 +420,7 @@ test('a 1-mile radius really saves (the migration-0045 acceptance check)', async
   await settleOnRoute(page, '/')
 
   // V23 slice 1: the 1-mile write now goes through the shared LocationModal's
-  // slider (range 1–30) + "Apply radius" button, not the old permanent radius
+  // slider (range 1–30) + Apply button, not the old permanent radius
   // select. The option must be OFFERED — if this fails, the 1-mile slider
   // minimum was removed, which is a different regression (the DB being behind
   // is not a reason to hide the option; 0045 is the fix).
@@ -433,11 +435,12 @@ test('a 1-mile radius really saves (the migration-0045 acceptance check)', async
   const slider = page.getByTestId('location-radius-slider')
   await slider.fill('1')
 
-  // Tap "Apply radius" — the write must SUCCEED. While 0045 is unapplied this is
-  // where it fails: the DB rejects radius 1, and the modal's error line becomes
-  // visible. Asserting the absence of that line is what makes this a real
+  // Tap Apply — the write must SUCCEED. While 0045 is unapplied this is where it
+  // fails: the DB rejects radius 1, and the modal's error line becomes visible
+  // and the dialog STAYS OPEN (V28 r3-4: a rejected write must not close over
+  // its own error). Asserting the absence of that line is what makes this a real
   // acceptance check rather than a smoke test.
-  await page.getByTestId('location-apply-radius-btn').click()
+  await page.getByTestId('location-apply-btn').click()
   await expect(
     page.getByText(/isn't allowed yet|Could not save your location/),
     'the radius write was REJECTED — migration 0045 is probably not applied',
@@ -486,10 +489,10 @@ test('the home-ZIP control saves, keeps the radius, and never shows a false erro
   await settleOnRoute(page, '/')
 
   // V23 slice 1: the home-zip control now lives INSIDE the shared LocationModal
-  // (the address input + "See places" button), not as a permanent form on the
+  // (the address input + Apply button), not as a permanent form on the
   // feed. The modal's address input geocodes a NEW location (it does NOT write
   // the saved zip — that path is gone from the feed). The write race test is
-  // therefore driven through the modal's radius slider + "Apply radius" button,
+  // therefore driven through the modal's radius slider + Apply button,
   // which writes through the same `updateHomeZipRadius` path. A regression that
   // reintroduced the race would drop one of the two writes.
   const locationControl = page.getByTestId('feed-location-control')
@@ -513,14 +516,30 @@ test('the home-ZIP control saves, keeps the radius, and never shows a false erro
   // back to a DIFFERENT value, and assert BOTH landed. If the two writes raced,
   // one is lost here. (The zip itself cannot be changed through the modal — the
   // address input geocodes, it does not write the saved zip.)
+  //
+  // ⚠️ V28 r3-4: apply now CLOSES the dialog, so each write needs its own open.
+  // That is the point of the change — one control that commits and dismisses —
+  // and reopening is what a parent does for a second change.
+  const openLocationDialog = async () => {
+    await locationControl.click()
+    await expect(modal).toBeVisible()
+  }
+
+  // ⚠️ The dialog is ALREADY OPEN here — the test opened it above to read the
+  // supporting copy — so the first write uses it as-is. Opening again would click
+  // a control the open dialog's backdrop covers (it intercepts pointer events).
   const slider = page.getByTestId('location-radius-slider')
   await slider.fill('20')
-  await page.getByTestId('location-apply-radius-btn').click()
+  await page.getByTestId('location-apply-btn').click()
+  await expect(modal, 'Apply must close the dialog').toHaveCount(0)
   await expect.poll(async () => (await readMarkerLocation())?.radius_miles).toBe(20)
 
-  // Change the radius AGAIN (a second write) and assert it landed too.
+  // Change the radius AGAIN (a second write) and assert it landed too. This one
+  // really does need a reopen, because Apply closed the dialog above.
+  await openLocationDialog()
   await slider.fill('10')
-  await page.getByTestId('location-apply-radius-btn').click()
+  await page.getByTestId('location-apply-btn').click()
+  await expect(modal).toHaveCount(0)
   await expect.poll(async () => (await readMarkerLocation())?.radius_miles).toBe(10)
 
   // The zip must have SURVIVED both radius writes (the write race): changing the
@@ -537,12 +556,18 @@ test('the home-ZIP control saves, keeps the radius, and never shows a false erro
   // produce a geocode error (Nominatim is lenient), but it must NOT produce a
   // DB CHECK violation (the old permanent zip form did). Assert the absence of
   // the raw PostgREST text, which is what makes this a real acceptance check.
+  //
+  // V28 r3-4: the previous Apply closed the dialog, so this block opens it again.
+  await openLocationDialog()
   const addressInput = page.getByTestId('location-address-input')
   await addressInput.fill('00000')
-  await page.getByTestId('location-see-places-btn').click()
-  // Wait for the geocode to complete (or fail silently — Nominatim may return
-  // a result for "00000" even though it is not in the seeded gazetteer).
-  await expect(page.getByTestId('location-see-places-btn')).toHaveText(/See places|Finding…/)
+  // The one Apply button geocodes AND writes AND closes — but a lookup that
+  // fails keeps the dialog open so the parent can correct the address, so this
+  // click is NOT asserted to close.
+  await page.getByTestId('location-apply-btn').click()
+  // The write must not leak a raw PostgREST error, and the saved zip must be
+  // unchanged — whether or not Nominatim resolved "00000" (it is lenient, and
+  // the input is not in the seeded gazetteer).
   await expect(
     page.getByText(/violates check constraint|PGRST/i),
     'a rejected zip must not leak the raw PostgREST error',

@@ -621,9 +621,28 @@ export function PlaceDirectory({
     setLocationModalOpen(true)
   }
 
+  /**
+   * ⚠️ V28 r3-4: THIS DELIBERATELY NO LONGER CLEARS `geocodeCenter`.
+   *
+   * It used to: `setGeocodeCenter(null)`. That was correct while the dialog's
+   * only geocoding control was "See places", which a parent pressed to PREVIEW a
+   * centre and then had to confirm with a separate "Apply radius" — closing
+   * without applying meant discarding the preview.
+   *
+   * With ONE Apply button the dialog's contract changed: Apply geocodes AND
+   * commits AND closes. Clearing the centre on that close threw away the very
+   * thing Apply had just resolved, so the circle snapped back to the home pin and
+   * the parent saw "it did nothing" — the exact symptom r3-4 exists to fix, and
+   * one the browser lane caught (`places-map-view`, "the geocoded centre must
+   * reframe the drawn circle").
+   *
+   * The centre is now the committed frame and survives the close. Reopening
+   * re-geocodes if the parent types again, and Cancel closing without an address
+   * simply keeps the last committed centre — which is what the map is already
+   * drawing, so nothing moves.
+   */
   function closeLocationModal() {
     setLocationModalOpen(false)
-    setGeocodeCenter(null)
   }
 
   // --- Render ----------------------------------------------------------------
@@ -1357,9 +1376,15 @@ export function PlaceDirectory({
         addressPlaceholder="Neighborhood, city, or zip"
         onGeocode={handleGeocode}
         // V23 s1 extraction regression fix: the slider must drive the map LIVE
-        // (V20 t05), not only on the Apply button. `onApplyRadius` is this
-        // caller's write; `onRadiusChange` is the per-tick preview the old inline
-        // modal had and the extraction dropped.
+        // (V20 t05), not only on the committed value. `onRadiusChange` is the
+        // per-tick preview the old inline modal had and the extraction dropped.
+        //
+        // V28 r3-4: this caller has NO server write — /browse's centre and radius
+        // are page-local state — so `onApplyRadius` restates the same setter. It
+        // is kept (rather than omitted) because it is what the ONE Apply button
+        // commits through before the dialog closes, and it makes the modal's
+        // apply-then-close contract uniform for both callers. It cannot fail, so
+        // the modal's error surface simply never fires here.
         onRadiusChange={(miles) => setRadiusMiles(miles)}
         onApplyRadius={(miles) => setRadiusMiles(miles)}
       />

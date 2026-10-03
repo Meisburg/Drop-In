@@ -10,10 +10,18 @@ import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
  * permanent radius select + zip form.
  *
  * One implementation, two callers:
- *   - PlaceDirectory (/browse and /new's sheet): unchanged behavior — the
- *     geocoded center + radius drive the map overlay and the filtered list;
+ *   - PlaceDirectory (/browse and /new's sheet): the geocoded center + radius
+ *     drive the map overlay and the filtered list;
  *   - FeedPage: the feed's ONE location control ("Drop-ins near you") opens it,
  *     where the viewer sets their home zip (address) and radius.
+ *
+ * ⚠️ V28 r3-4 — TWO BUTTONS, AND APPLY DOES BOTH. The dialog used to offer three
+ * (Cancel / "See places" / "Apply radius"), which split one intent across two
+ * controls a parent had to press in the right order; the human's phone walk
+ * reported it as "appears to do nothing". It is now **Cancel** and **Apply**,
+ * where Apply geocodes any typed address, runs the caller's write, and closes —
+ * in that order, and it closes only when both halves succeeded. A rejected write,
+ * or a lookup that found nothing, leaves the dialog OPEN with its error showing.
  *
  * What this extraction adds over the old inline version (pinned by the brief):
  *   - focus is TRAPPED while open (`useFocusTrap`, the same seam ConfirmDialog
@@ -62,7 +70,13 @@ export function LocationModal({
   homeZip: string | null
   /** Geocode an address → coords, or null when it cannot be found. */
   onGeocode: (address: string) => Promise<{ lat: number; lng: number } | null>
-  /** Apply a new radius (the caller writes it through its own path). */
+  /**
+   * The caller's WRITE, run by the ONE Apply button (V28 r3-4) — after any
+   * typed address has been geocoded and before the dialog closes.
+   *
+   * It must RE-THROW on failure: this component owns the error surface
+   * (`location-radius-error`) and does not close over a rejected write.
+   */
   onApplyRadius: (miles: number) => Promise<void> | void
 }) {
   const [address, setAddress] = useState('')
@@ -109,8 +123,17 @@ export function LocationModal({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open, onClose, geocoding, applying])
 
-  async function handleGeocode() {
-    if (geocoding || address.trim() === '') return
+  /**
+   * Resolve the typed address. Returns whether a centre landed, so the caller
+   * can decide without reading React state that has not committed yet.
+   *
+   * ⚠️ The RETURN VALUE is what makes `handleApply` correct: `setGeocodeError`
+   * is asynchronous, so reading `geocodeError` immediately after this resolves
+   * would read the PREVIOUS render's value and could close the dialog over a
+   * failed lookup. A returned boolean cannot go stale.
+   */
+  async function handleGeocode(): Promise<boolean> {
+    if (geocoding || address.trim() === '') return false
     setGeocoding(true)
     setGeocodeError(null)
     const result = await onGeocode(address)
@@ -118,13 +141,47 @@ export function LocationModal({
       setGeocodeError('Could not find that address. Try a more specific one.')
     }
     setGeocoding(false)
+    return result !== null
   }
 
-  async function handleApplyRadius() {
+  /**
+   * V28 r3-4 — THE ONE EXPLICIT ACTION: apply, then close.
+   *
+   * The human's phone walk: set-location "appears to do nothing"; they want
+   * exactly TWO buttons, **Cancel** and **Apply**, where Apply closes the menu
+   * *and* updates the page. The old shape had THREE buttons — Cancel, "See
+   * places" (geocode only) and "Apply radius" (write only) — and a parent had to
+   * press two of them, in the right order, to get what one word promised.
+   *
+   * ⚠️ ORDER IS LOAD-BEARING, and it is why this is one function rather than two
+   * buttons calling two handlers:
+   *
+   *   1. GEOCODE the typed address (if any) — so the caller's center is set;
+   *   2. APPLY the radius through `onApplyRadius` — the caller's write;
+   *   3. CLOSE last.
+   *
+   * `onClose` is called LAST because the Places caller's `closeLocationModal`
+   * CLEARS `geocodeCenter` (`PlaceDirectory.tsx:624-627`). Closing first would
+   * wipe the center the geocode had just produced, which is exactly the
+   * "Apply does nothing" symptom being fixed.
+   *
+   * A FAILED write does NOT close: the caller re-throws so this component owns
+   * the error surface (V23 slice 1's re-throw), and closing over it would
+   * discard the message — the silent-failure class this repo keeps recording.
+   * A failed GEOCODE does not close either: the parent stays to correct the
+   * address, which is the whole point of showing them the error.
+   */
+  async function handleApply() {
     if (applying || geocoding) return
     setApplying(true)
     setRadiusError(null)
     try {
+      // 1. The address, when one was typed. A failure leaves the dialog open.
+      if (address.trim() !== '') {
+        const resolved = await handleGeocode()
+        if (!resolved) return
+      }
+      // 2. The caller's write. It re-throws on failure, caught below.
       await onApplyRadius(radius)
     } catch {
       /* V23 slice 1 REVIEW — A REJECTION WAS SILENTLY SWALLOWED HERE.
@@ -132,10 +189,10 @@ export function LocationModal({
        * The original had a bare `finally` and no `catch`: the caller's write
        * could reject and this dialog would close over it with nothing shown.
        * The feed's own `handleLocationApplyRadius` also swallows its error (it
-       * renders no line), so the two together produced a parent pressing "See
-       * places", watching the dialog vanish, and no indication the radius never
-       * saved — a failed write wearing a successful one's clothes, which is the
-       * defect class this repo keeps recording.
+       * renders no line), so the two together produced a parent pressing the
+       * apply control, watching the dialog vanish, and no indication the radius
+       * never saved — a failed write wearing a successful one's clothes, which
+       * is the defect class this repo keeps recording.
        *
        * The app's rule everywhere else is to SAY SO: `RadiusEmptyState` shows
        * `radiusSaveErrorMessage`, the feed's zip row renders its own error line,
@@ -145,9 +202,12 @@ export function LocationModal({
        * that zip yet…") belongs to the caller's validator, which this component
        * does not own. Saying something true beats inventing a diagnosis. */
       setRadiusError('That did not save. Try again.')
+      return
     } finally {
       setApplying(false)
     }
+    // 3. Only on success, and only after both halves landed.
+    onClose()
   }
 
   if (!open) return null
@@ -239,6 +299,12 @@ export function LocationModal({
           </p>
         ) : null}
 
+        {/* V28 r3-4 — TWO buttons, exactly: Cancel and Apply.
+            The human's phone walk: setting the location and pressing "See
+            places" / "Apply radius" "appears to do nothing", and they want one
+            control that closes the menu AND updates the page. The old three
+            (Cancel / See places / Apply radius) split one intent across two
+            buttons a parent had to press in the right order. */}
         <div className="flex gap-2">
           <button
             type="button"
@@ -250,25 +316,14 @@ export function LocationModal({
           </button>
           <button
             type="button"
-            data-testid="location-see-places-btn"
-            disabled={geocoding || address.trim() === ''}
-            onClick={() => {
-              void handleGeocode()
-            }}
-            className="flex-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {geocoding ? 'Finding…' : 'See places'}
-          </button>
-          <button
-            type="button"
-            data-testid="location-apply-radius-btn"
+            data-testid="location-apply-btn"
             disabled={applying || geocoding}
             onClick={() => {
-              void handleApplyRadius()
+              void handleApply()
             }}
             className="flex-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700 disabled:opacity-50"
           >
-            {applying ? 'Saving…' : 'Apply radius'}
+            {applying ? 'Saving…' : geocoding ? 'Finding…' : 'Apply'}
           </button>
         </div>
       </div>

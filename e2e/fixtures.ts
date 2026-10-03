@@ -611,7 +611,7 @@ export async function finishSignup(
 
   // The stub's job is over: it answered the walk's ONE request, and leaving it
   // installed would silently answer any LATER Nominatim request this page makes
-  // (a "See places" geocode, the directory) with this walk's zip and pin. That
+  // (an Apply-time geocode, the directory) with this walk's zip and pin. That
   // is latent today — no consumer geocodes after the walk — so this is the
   // boundary rather than a comment claiming there is one.
   await page.unroute(NOMINATIM_ROUTE, answerAddressLookup)

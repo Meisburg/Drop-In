@@ -3,7 +3,7 @@
  *
  * `geocodeAddress` turns a typed address into lat/lng via Nominatim (OpenStreetMap's
  * free geocoder — no key, no browser geolocation: the app's pinned invariant).
- * The pure decisions live here so the modal's "See places" path and the area
+ * The pure decisions live here so the modal's Apply path and the area
  * card's (the first run's LAST card — 4 of 4 since V28 r2 deleted the photo card;
  * it was 5 of 5 when this line was written) address derivation are testable; the fetch itself is thin and returns null
  * on ANY failure (network error, non-OK status, empty result) — a failed
@@ -21,7 +21,7 @@
  * BOUNDED — a Nominatim answer that does not settle in time settles to
  * "absent" (`null`) instead of stalling the card (the pending-state rule's
  * escape), which reveals the card's ZIP fallback rather than leaving the run a
- * wall (decision 6). `geocodeAddress` (the directory's "See places" path) is
+ * wall (decision 6). `geocodeAddress` (the directory's Apply path) is
  * the same seam, unbounded. Every function shares one request builder, so
  * there is exactly one place the User-Agent header, the URL shape and the
  * failure contract live.
