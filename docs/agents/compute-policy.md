@@ -268,3 +268,114 @@ The cheapest correct action available today is therefore not a config edit:
 **move the coordinator itself to a local model.** A coordinator reasons and
 routes; it does not need the frontier model, and it is the single largest
 consumer because it is always on.
+
+## The target state — IQ3_S is the primary, ninfer is the fallback
+
+**This is a deliberate change of target, decided by the human on 2026-10-02.**
+`strata-max/qwen3.8-flash-next-iq3_s` is the model this factory WANTS building and
+reasoning. `ninfer/qwen3.8-27b` is the fallback that carries the work until the
+machine can hold the primary. Cloud is an exception lane, not a replacement.
+
+### Why the primary is not running today — and it is not the model
+
+Measured 2026-10-02, four loads, all in `factory/config.json`'s `footprint_evidence`:
+
+| what | measured |
+|---|---|
+| pinned host arena | **46.84 GiB**, fixed |
+| weights and KV state | ~4.8 GB |
+| total RAM | **~52 GB** |
+| VRAM | **31.8 GB — the whole card** |
+| load | 20 s |
+| generation | **71.8 tok/s** (MTP speculation) |
+| context | **131072**, full |
+| tool use | **verified 4/4**, correct name and arguments |
+
+It works. It is fast. What it cannot do is leave headroom: admission needs
+`52 + 4 reserve + 3 task = 59 GB`, the machine reports **~2 GB available** while it
+runs. **The binding constraint is RAM headroom, not the model.**
+
+Two things were established that stop the obvious workarounds:
+
+1. **The expert cache is a COPY, not a relocation.** `--kv q4_0` plus a halved
+   context grew the resident expert cache 11330 -> 11989 slots and the arena
+   stayed **46.84 GiB, unchanged**. Freeing VRAM does not free RAM.
+2. **The reserve is not to be weakened, and no capacity number is to be adjusted
+   to force admission.** The correct fix is more RAM.
+
+### The correct fix
+
+**The machine has two EMPTY DIMM slots and a ceiling of 192 GiB** (2 x 32 GiB
+DDR5-5600 installed). Adding 2 x 32 GB takes it to 128 GB: `128 - 52 - 13 other`
+leaves roughly **35 GB of headroom**, comfortably above the 7 GB that admission
+needs. **That is the whole fix. Nothing else has to change.**
+
+### How the automatic switch works — and where it comes from
+
+**Nothing is reconfigured after the upgrade.** The router already orders the two
+correctly, and `factory/config.json` now says WHY on purpose:
+
+- Both are `cost_tier 0`, so both are local-preferred.
+- Both clear the builder floor.
+- `strata-max` carries **`preference: -1`** (lower wins; default 0), applied after
+  the cost tier and before capability headroom.
+
+That `preference` matters more than it looks. The tie-break it precedes,
+`capabilityHeadroom`, **sums raw units** — a context window counted in tokens
+beside a reasoning level out of five. `strata-max` wins that sum by 32768 points
+purely because 131072 is a bigger number than 98304. **So the factory's primary
+model was being chosen by an accidental unit scale.** The preference makes the
+order intentional, and it means normalising that sum later cannot silently flip
+which model builds the app. It is **not** a capability claim: no declared
+capability value was raised to produce it (D-034).
+
+### What the factory will route once the RAM is installed
+
+| lane | model | local? |
+|---|---|---|
+| builder | `strata-max/qwen3.8-flash-next-iq3_s` | ✅ |
+| verifier | `strata-max/...` | ✅ |
+| explorer | `strata-max/...` | ✅ |
+| ocr | `strata-max/...` | ✅ |
+| **reviewer** | **`ninfer/qwen3.8-27b`** | ✅ |
+| researcher | `ollama-cloud/deepseek-v4.1-flash:cloud` | cloud |
+
+**Cloud leaves the build loop entirely; the researcher lane is the only one left.**
+The reviewer is a different model by necessity: `strata-max` declares
+`reasoning: 2` against a reviewer floor of `3`, so the model that builds **can
+never be the model that reviews**. Independence here is enforced by capability,
+not by bookkeeping.
+
+### Verify the switch in one command
+
+    node scripts/factory/factory.mjs route builder
+
+`strata-max/qwen3.8-flash-next-iq3_s` is the primary active. `ninfer/qwen3.8-27b`
+means the RAM is not there yet — **not a fault, the fallback doing its job.**
+`node scripts/factory/factory.mjs doctor` shows the arithmetic behind it.
+
+The behaviour is pinned by `scripts/factory/scheduler.test.mjs`, including a case
+that switches the builder from `ninfer` to the primary on **admissibility alone**
+with nothing reconfigured, and two mutation-proven cases that go red if the
+preference stops being applied or starts outranking the cost tier.
+
+### Known-open, recorded rather than smoothed over
+
+- **The reviewer is the SAME FAMILY as the builder** (both Qwen). D-035 found that
+  a shared blind spot is one verdict counted twice; only a different family buys
+  independence from *prior*. `ollama-cloud/glm-5.3` (GLM) is the family-independent
+  option and remains available for a genuinely independent review. **This is a
+  deliberate, recorded trade, not an oversight.**
+- **The two models cannot be loaded at once.** Both want the whole 32 GB card, so
+  moving between the builder and its reviewer is a **model swap of roughly 20-30 s**
+  per lane. The factory serialises it correctly through `exclusive:
+  local-inference`; it is a cost, not a fault.
+- **`--expert-cache-per-layer` is UNAVAILABLE.** It fails the engine's own
+  `ExpertCache::verify_slot` and the engine exits rather than serving corrupt
+  expert data. Recorded in `factory/config.json` under `unavailable_flags`.
+- **`MAP_HUGETLB` is unavailable**, so the 46.84 GiB arena is backed by 4 KB pages.
+  Configuring a hugetlb pool is a real, small win (page tables and TLB pressure),
+  and it is a system change, not a factory change.
+- **`strata-max` still declares `residency: resident`**, which is false — it is
+  loaded on demand and cannot be resident alongside a satisfiable reserve on this
+  machine. Left as declared rather than quietly edited, and recorded here.

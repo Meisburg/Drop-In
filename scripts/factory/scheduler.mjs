@@ -290,10 +290,16 @@ export function modelFootprint(modelKey, config, probes) {
   const model = config.models[modelKey]
   if (!model) return { ok: false, why: `${modelKey} is not in the registry` }
 
-  if (model.resources.ram_gb === null) {
+  // A MISSING footprint is as inadmissible as a null one. This guard used to test
+  // `=== null` only, so a model whose `ram_gb` was simply ABSENT — a typo, a field
+  // dropped in an edit — fell through to `ok: true` and was admitted as if it cost
+  // nothing, which is how the factory over-admits and hands the machine to
+  // systemd-oomd. D-030: zero and null are FINDINGS, never passes; a missing number
+  // is neither zero nor null and must not be a pass either.
+  if (!Number.isFinite(model.resources?.ram_gb)) {
     return {
       ok: false,
-      why: `${modelKey} has no measured RAM footprint (${model.resources.footprint_source}) — the registry refuses to guess`,
+      why: `${modelKey} has no measured RAM footprint (${model.resources?.footprint_source ?? 'absent'}) — the registry refuses to guess`,
     }
   }
 
@@ -532,9 +538,22 @@ export function selectModel({ config, kind, probes = systemProbes, reservations 
 
   const policy = policyOverride ?? config.policies?.cost ?? 'local-preferred'
   const tier = (k) => config.models[k].cost_tier ?? 2
+  // The configured preference that step 5 of the decision order names. LOWER wins
+  // and the default is 0, so a model opts IN to outranking its peers. It sits
+  // AFTER the cost tier, because a preference must never promote a cloud model
+  // over a local one, and BEFORE capability headroom, because that sum adds raw
+  // units — a context window in tokens beside a reasoning level out of five — so
+  // leaving the order to it means an accidental unit scale picks the model. It
+  // orders models that are already admissible and already past the floor; it can
+  // never make an inadmissible model admissible, and it is never a capability
+  // claim (D-034: capability values are measured or left alone, never adjusted to
+  // steer routing).
+  const preference = (k) => config.models[k].preference ?? 0
   candidates.sort((a, b) => {
     const d = policy === 'local-preferred' ? tier(a) - tier(b) : 0
     if (d !== 0) return d
+    const p = preference(a) - preference(b)
+    if (p !== 0) return p
     const h = capabilityHeadroom(config.models[b], floors) - capabilityHeadroom(config.models[a], floors)
     if (h !== 0) return h
     return a.localeCompare(b)

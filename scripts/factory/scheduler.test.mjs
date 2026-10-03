@@ -156,9 +156,30 @@ describe('admission control', () => {
   })
 
   it('refuses to guess an unmeasured footprint', () => {
-    const decision = admit({ config: realConfig, kind: 'explorer', id: 'e', modelKey: 'ninfer/qwen3.8-27b', probes: machine({ availableGb: 50 }) })
-    expect(decision.state).toBe('BLOCKED_RESOURCE')
-    expect(decision.reasons[0]).toMatch(/no measured RAM footprint/)
+    // The subject is CONSTRUCTED, not borrowed from the registry. This case used to
+    // name `ninfer`, which happened to be unmeasured when it was written; when
+    // ninfer's footprint was measured (650646c) the test broke for a reason that
+    // had nothing to do with the rule it protects. A check for "an unmeasured
+    // footprint is refused" must own its unmeasured model, or it is really a check
+    // on the registry — the exact mistake this file's own header warns about.
+    const unmeasured = JSON.parse(JSON.stringify(realConfig))
+    delete unmeasured.models['ninfer/qwen3.8-27b'].resources.ram_gb
+    unmeasured.models['ninfer/qwen3.8-27b'].resources.footprint_source = 'unmeasured'
+    // The probe must be roomy in VRAM: with the default (6.5 GB free, strata-max
+    // squatting) the VRAM gate fires FIRST and this case would be asserting the
+    // wrong rule — a test that passes for a reason other than the one it names.
+    // Both shapes of "no measurement" are asserted, because they used to differ: a
+    // null was refused and an ABSENT field was admitted as free.
+    const roomy = { availableGb: 50, freeVramGb: 32, active: [], resident: {} }
+    for (const shape of ['null', 'absent']) {
+      const unmeasured = JSON.parse(JSON.stringify(realConfig))
+      if (shape === 'null') unmeasured.models['ninfer/qwen3.8-27b'].resources.ram_gb = null
+      else delete unmeasured.models['ninfer/qwen3.8-27b'].resources.ram_gb
+      unmeasured.models['ninfer/qwen3.8-27b'].resources.footprint_source = 'unmeasured'
+      const decision = admit({ config: unmeasured, kind: 'explorer', id: 'e', modelKey: 'ninfer/qwen3.8-27b', probes: machine(roomy) })
+      expect(decision.state, `ram_gb ${shape} must be refused`).toBe('BLOCKED_RESOURCE')
+      expect(decision.reasons[0]).toMatch(/no measured RAM footprint/)
+    }
   })
 
   it('charges a model that is only ACTIVATING, and blocks it on a GPU someone else holds', () => {
@@ -200,13 +221,77 @@ describe('capability routing', () => {
     expect(result.modelKey).not.toBe(LOCAL)
   })
 
+  it('breaks a tie by the CONFIGURED preference, not by capability headroom', () => {
+    // Both models are cost_tier 0 and both clear the builder floor, so the tie is
+    // real and something must break it. The shipped registry prefers strata-max
+    // (preference -1) — but capabilityHeadroom ALREADY favours it, because that sum
+    // adds raw units and its context window is 32768 larger. A case on the shipped
+    // registry therefore cannot tell the two rules apart: it would pass with the
+    // preference deleted, which makes it a claim, not a check. So the preference is
+    // INVERTED here, against the headroom, and the assertion is that it still wins.
+    const flipped = JSON.parse(JSON.stringify(realConfig))
+    flipped.models['ninfer/qwen3.8-27b'].preference = -1
+    flipped.models[LOCAL].preference = 0
+    const roomy = machine({ availableGb: 200, active: [], resident: {}, freeVramGb: 32 })
+    expect(selectModel({ config: flipped, kind: 'builder', probes: roomy }).modelKey).toBe('ninfer/qwen3.8-27b')
+    // ...and on the shipped registry the same probe picks the preferred primary.
+    expect(selectModel({ config: realConfig, kind: 'builder', probes: roomy }).modelKey).toBe(LOCAL)
+  })
+
+  it('never lets a configured preference promote cloud over local', () => {
+    // The preference orders models that are already admissible; it does not
+    // override the cost policy. A cloud model given the strongest possible
+    // preference must still lose while a local model is admissible.
+    const cheat = JSON.parse(JSON.stringify(realConfig))
+    cheat.models[CLOUD].preference = -99
+    const result = selectModel({ config: cheat, kind: 'builder', probes: machine({ availableGb: 200, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(result.modelKey).toBe(LOCAL)
+    expect(result.costTier).toBe(0)
+    expect(result.fallback).toBe(false)
+  })
+
+  it('switches the builder from the fallback to the target primary on ADMISSIBILITY alone', () => {
+    // This is the RAM upgrade expressed as a test. NOTHING in the registry is
+    // reconfigured between the two calls. Below the required headroom the local
+    // fallback carries the work; above it the preferred model takes over by
+    // itself. It is the machine check for "no manual reconfiguration after the
+    // upgrade" — if a change ever makes the switch need a hand, this goes red.
+    const notYet = selectModel({ config: realConfig, kind: 'builder', probes: machine({ availableGb: 40, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(notYet.modelKey).toBe('ninfer/qwen3.8-27b')
+    expect(notYet.fallback).toBe(false) // local is local, target or not
+
+    const enough = selectModel({ config: realConfig, kind: 'builder', probes: machine({ availableGb: 200, active: [], resident: {}, freeVramGb: 32 }) })
+    expect(enough.modelKey).toBe(LOCAL)
+    expect(enough.fallback).toBe(false)
+  })
+
+  it('keeps the reviewer independent of the builder, and local', () => {
+    // strata-max declares reasoning 2 against a reviewer floor of 3, so the target
+    // primary can NEVER review. That is independence enforced by capability rather
+    // than by bookkeeping, and it means the reviewer is always a different model.
+    // With the RAM upgrade that different model is the other LOCAL one — which is
+    // how cloud leaves the build loop without being replaced by anything.
+    const roomy = machine({ availableGb: 200, active: [], resident: {}, freeVramGb: 32 })
+    const builder = selectModel({ config: realConfig, kind: 'builder', probes: roomy })
+    expect(builder.modelKey).toBe(LOCAL)
+    const reviewer = selectModel({ config: realConfig, kind: 'reviewer', probes: roomy, avoidModels: [builder.modelKey] })
+    expect(reviewer.modelKey).toBe('ninfer/qwen3.8-27b')
+    expect(reviewer.fallback).toBe(false)
+    expect(reviewer.costTier).toBe(0)
+  })
+
   it('falls back to cloud when the local preference is resource-blocked, and calls it a fallback', () => {
     // The real 04:00 decision: the model is NOT resident, reloading it would
     // cost 55 GB of a 50 GB pool, and the gate alone fits comfortably. Local is
     // cost_tier 0 and the policy preference; it is simply not admissible, so the
     // router falls back rather than failing. A fallback is an outcome, not an
     // incident — it belongs in telemetry, not in the ledger.
-    const result = selectModel({ config: realConfig, kind: 'builder', probes: machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }) })
+    // 50 GB is no longer the right machine for this case. Since ninfer's tool_use
+    // was measured at 3 (650646c) the builder has a SECOND admissible local model,
+    // so 50 GB now admits ninfer at cost_tier 0 and never falls back at all. The
+    // case wants the local TIER blocked, both models in it, so 8 GB it is: strata
+    // needs 62, ninfer needs 10, and cloud needs exactly 8.
+    const result = selectModel({ config: realConfig, kind: 'builder', probes: machine({ availableGb: 8, active: [], resident: {}, freeVramGb: 32 }) })
     expect(result.modelKey).toBe(CLOUD)
     expect(result.fallback).toBe(true)
     expect(result.reason).toMatch(/fell back to cost_tier 2/)
@@ -276,7 +361,7 @@ describe('capability routing', () => {
     expect(roomy.modelKey).toBe(LOCAL)
     expect(roomy.rejected.find((r) => r.modelKey === CLOUD)).toBeUndefined()
 
-    const blockedLocal = selectModel({ config: realConfig, kind: 'ocr', probes: machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }) })
+    const blockedLocal = selectModel({ config: realConfig, kind: 'ocr', probes: machine({ availableGb: 8, active: [], resident: {}, freeVramGb: 32 }) })
     expect(blockedLocal.modelKey).toBe(CLOUD)
     expect(blockedLocal.fallback).toBe(true)
   })

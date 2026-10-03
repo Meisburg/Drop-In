@@ -32,7 +32,15 @@
         "context_window": 131072
       },
       "cost_tier": 0,
-      "_config_note": "BEST MEASURED CONFIG 2026-10-02: --kv q4_0 --max-context 131072 --expert-cache auto (+659 resident expert slots vs --kv int8 at the same context, full 128K retained). --expert-cache-per-layer IS BUGGY on this pack: it fails its own ExpertCache::verify_slot ('slot 0 differs from the arena at byte 0') and the engine correctly refuses to serve. MAP_HUGETLB is unavailable (no hugetlb pool) so the 46.84 GiB arena is backed by 4 KB pages. ADMISSION: needs 52 + 4 reserve + 3 task = 59 GB; the machine reports ~2 GB available while the model runs, so the router must fall back. ADDING RAM is the fix, not a weaker reserve."
+      "_config_note": "BEST MEASURED CONFIG 2026-10-02: --kv q4_0 --max-context 131072 --expert-cache auto (+659 resident expert slots vs --kv int8 at the same context, full 128K retained). --expert-cache-per-layer IS BUGGY on this pack: it fails its own ExpertCache::verify_slot ('slot 0 differs from the arena at byte 0') and the engine correctly refuses to serve. MAP_HUGETLB is unavailable (no hugetlb pool) so the 46.84 GiB arena is backed by 4 KB pages. ADMISSION: needs 52 + 4 reserve + 3 task = 59 GB; the machine reports ~2 GB available while the model runs, so the router must fall back. ADDING RAM is the fix, not a weaker reserve.",
+      "preference": -1,
+      "_preference_why": "TARGET PRIMARY builder/reasoner. This is the ONLY thing that makes it win the tie against ninfer deliberately. Both are cost_tier 0 and both clear the builder floor, and the fallback tie-break (capabilityHeadroom) sums RAW units -- ninfer's reasoning 3 against strata-max's context_window 131072 vs 98304 -- so strata-max wins today by 32768 points of accidental unit scale, not by intent. The preference makes it intentional and stops a future normalisation of that sum from silently flipping the factory's primary model. It is NOT a capability claim: no declared capability value was changed to produce this order (see the D-034 precedent).",
+      "unavailable_flags": [
+        {
+          "flag": "--expert-cache-per-layer",
+          "why": "BROKEN ON THIS PACK, measured 2026-10-02. Selects the R4.2g PER-LAYER policy ('each layer owns 250 slots (0..249)') and then fails the engine's OWN slot verification: 'ExpertCache::verify_slot: slot 0 differs from the arena at byte 0 (of 2662400)', after which the engine exits and serve/server.py raises 'the engine exited before it was ready'. The engine is right to refuse -- it will not serve corrupted expert data. DO NOT ENABLE until Strata fixes it. Note the trade it was reaching for: the default slot policy hands many slots to a few early layers, and per-layer was the fix for that, so this is a real capability currently unavailable, not a flag with no purpose."
+        }
+      ]
     },
     "ollama-cloud/deepseek-v4.1-flash:cloud": {
       "provider": "cloud",
@@ -329,7 +337,8 @@
       ]
     },
     "remote_verification": "required",
-    "_remote_verification_why": "A remote model must pass its health probe to be selected. Cloud is verified by the same mechanism as the tailnet, for the same reason: an endpoint that cannot be reached is not a fallback, it is a delayed failure that costs a whole slice."
+    "_remote_verification_why": "A remote model must pass its health probe to be selected. Cloud is verified by the same mechanism as the tailnet, for the same reason: an endpoint that cannot be reached is not a fallback, it is a delayed failure that costs a whole slice.",
+    "_preference_why": "Configured preference breaks a tie between models that are already equal on cost_tier and already past the capability floor. LOWER wins; the default is 0. It is applied AFTER cost_tier, so a preference can never promote a cloud model over a local one, and BEFORE capabilityHeadroom, whose raw-unit sum would otherwise decide the factory's primary model by accident. It changes ORDER among admissible models only -- it can never make an inadmissible model admissible, and it is never a capability claim."
   },
   "lanes": [
     "implementation",
