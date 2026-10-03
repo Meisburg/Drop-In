@@ -507,10 +507,23 @@ export async function enablePush(): Promise<PushEnableResult> {
       existing ??
       (await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        // Without a configured VAPID key we still subscribe: the protocol
-        // allows it, so the opt-in is recorded and starts working the moment
-        // the human-owned sender exists (docs/push-setup.md). With a key the
-        // subscription is bound to it — the stronger posture.
+        // ⚠️ A KEY IS REQUIRED, and this comment used to claim otherwise
+        // (fixed V28 r3-2 — the reported defect).
+        //
+        // IT USED TO READ: "Without a configured VAPID key we still subscribe:
+        // the protocol allows it, so the opt-in is recorded and starts working the
+        // moment the human-owned sender exists." THAT IS FALSE. Chrome refuses the
+        // call outright — `Registration failed - missing applicationServerKey, and
+        // gcm_sender_id not found in manifest` — so no subscription is created, no
+        // row is written, and the parent's opt-in is NEVER recorded. A capability
+        // the mechanism does not have, asserted confidently in two files, is this
+        // project's D-025 defect class. `docs/push-setup.md` carried the same claim.
+        //
+        // THE CALL IS UNCHANGED, deliberately. Passing `applicationServerKey: ''`
+        // is invalid, and inventing a key is worse — a subscription bound to
+        // nothing looks healthy in the DB and delivers nothing. Passing no key
+        // lets the browser refuse honestly, and `catch` below reports the real
+        // reason to the parent instead of a success that did not happen.
         ...(key === '' ? {} : { applicationServerKey: base64UrlToBytes(key) }),
       }))
 

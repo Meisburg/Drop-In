@@ -357,7 +357,41 @@ slices below name it or explicitly declare it untouched.
 
 ---
 
-### 🔴 r3-2 — notifications: the claim vs the mechanism (item 6)
+### 🔴 r3-2 — notifications: the claim vs the mechanism (item 6) — **DONE 2026-10-03**
+
+> **OUTCOME: a DOCUMENTATION defect, fixed without touching runtime behaviour.**
+> Full write-up: `.scratch/v28/reports/r3-2-notifications.md`.
+>
+> **The failing environment was identified BEFORE any edit** (the plan's own rule): no LAN
+> server running, and `VITE_VAPID_PUBLIC_KEY` **absent** from the local `.env` while Vercel
+> has it. That fully explains the human's report.
+>
+> ⚠️ **The handover was WRONG about the location.** The opt-in path is
+> **`src/lib/pushClient.ts:508`** (`enablePush`), NOT `src/sw.ts:74-80` — that is
+> `rehandshake()`, which fires on `pushsubscriptionchange`. The false claim appeared in
+> **three** places: `pushClient.ts:510-513`, `sw.ts:73-78`, `docs/push-setup.md:123-127`.
+>
+> **Runtime was already correct** (`...(key === '' ? {} : { applicationServerKey: … })`)
+> and was **not changed**. Only the claims were.
+>
+> **THE REAL FINDING — why 2067 green tests shipped a broken opt-in:**
+> `e2e/push-subscribe.e2e.ts`'s stub had `async subscribe()` with **no parameters**, so it
+> **ignored the options entirely** and returned a fake subscription. The suite asserted the
+> bug's behaviour was correct, and the e2e build had no key of its own. Fixed in two halves:
+> the **stub now refuses a keyless subscribe** with Chromium's own message, and the e2e
+> build now carries a **locally generated test-only P-256 key** (gitignored `.env`).
+>
+> **Mutation-proven:** the spec **fails when the key is absent** and passes when present.
+> Before this slice it passed in both states.
+>
+> **Verified:** `npm run verify` exit 0 (71 / 2067 / 81 / 0 / GUARDS PASS) and
+> `npx playwright test e2e/push-subscribe.e2e.ts` → **9 passed**.
+>
+> **STILL NEEDS THE HUMAN:** a walk on the **Vercel preview** (which has the production key)
+> confirming the opt-in completes there. A real push **delivery** was never in scope and is
+> not claimed.
+
+#### (original slice text, kept for the record)
 
 - **Objective.** On a real browser, enabling notifications completes registration and the
   subscription is persisted — **or the slice reports BLOCKED with the exact missing
@@ -672,14 +706,28 @@ before publishing" as the gate.**
 | P1 | The r3-1 collateral fix passes its regression check and mutation tests | ✅ **DONE** |
 | P2 | `npm run verify` green on the final tree, baseline **71 / 2067 / 81 / 0** | ✅ **DONE** |
 | P3 | The incident shape is **refused** by the real probe, proven non-destructively | ✅ **DONE** (rolled-back reproduction, `b0 = 1`) |
-| P4 | **A human decision on data recovery** — whether Supabase PITR can restore the deleted `going_pings` row | ⛔ **OPEN — needs the human** |
-| P5 | **A human decision on durability** — separate e2e project/branch vs automated pre-release cleanup | ⛔ **OPEN — needs the human** |
+| P4 | **Data recovery decided** — recorded **NOT RECOVERABLE FROM THE REPOSITORY**; PITR not determinable from a project-scoped token (probed once, cheaply) | ✅ **DECIDED 2026-10-03** |
+| P5 | **Durability decided** — **split the e2e environment from production** (long term); collateral gate + automated pre-release cleanup as the temporary bridge | ✅ **DECIDED 2026-10-03** |
 | P6 | `node scripts/sweep-e2e-markers.mjs collateral` exits 0 on the publication tree | ✅ **DONE** (all 17 edges 0) |
 | P7 | A fresh preview renders no `e2e`-prefixed venue or host | ⛔ **OPEN — needs a Vercel preview** |
 | P8 | r3-2…r3-8 complete, or explicitly deferred by the human | ⛔ **OPEN** |
 
-**P4 and P5 are the two that need the human and cannot be delegated.** P7 needs a
-preview deployment. **Nothing destructive runs again until P1–P3 hold, and they do.**
+**P4 and P5 are now DECIDED** (`.scratch/v28/reports/r3-1-p4-p5-decisions.md`). P7 needs a
+preview deployment, P8 needs the rest of the batch. **Nothing destructive runs again until
+P1–P3 hold, and they do.**
+
+⚠️ **STANDING INSTRUCTION: do not run another destructive production sweep.** No `delete`
+mode runs again without a fresh explicit confirmation from the human.
+
+### `infra-e2e-env-split` — a SEPARATE infrastructure task, deliberately NOT in r3
+
+The durable fix P5 chose: **a second Supabase project (or branch) for e2e, so the live
+production database is never used by the e2e suite.** Until it lands, the collateral gate
+plus automated pre-release cleanup are the bridge — **and the gate is kept even after the
+split**, because the marker convention still governs whatever database the specs write to.
+
+Scope is named in `.scratch/v28/reports/r3-1-p4-p5-decisions.md` so it is not rediscovered.
+**It is not scheduled and it is not a feature slice — do not expand r3-2…r3-8 with it.**
 
 ⚠️ **Do not re-run `delete` before publishing without re-reading P4/P5.** The gate is now
 safe to run — that is what P1–P3 establish — but the *durability* problem (markers

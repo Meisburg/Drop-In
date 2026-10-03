@@ -120,16 +120,29 @@ VITE_VAPID_PUBLIC_KEY=<the public key from step 1>
 Then `npm run build` — it is read at BUILD time (`import.meta.env`), so the
 deployed bundle has to be rebuilt and redeployed for it to take effect.
 
-**Without this key the app still works, in a weaker mode**: `pushManager.subscribe()`
-is called without `applicationServerKey` (the Web Push protocol allows it), so
-the opt-in is recorded and the sender can still deliver — but the subscription
-is not bound to our key, so anybody who obtains the endpoint could push to that
-device. With the key, only a holder of our private key can. Set it.
+**Without this key, notifications DO NOT WORK AT ALL on a Chromium browser.** This
+section used to say the app "still works, in a weaker mode" — that an unbound
+`pushManager.subscribe()` was permitted by the protocol, so the opt-in would be
+recorded and could start delivering once a sender existed. **That was false, and it
+was the r3-2 defect report.** Chrome refuses the call outright:
 
-Existing subscriptions are **not** retroactively bound: a parent who opted in
-before the key existed keeps an unbound subscription until they turn
-notifications off and on again. (Turning them off deletes the row; turning them
-back on re-subscribes with the key.)
+```
+Registration failed - missing applicationServerKey, and gcm_sender_id not found in manifest
+```
+
+No subscription is created, no `push_subscriptions` row is written, and the parent's
+opt-in is **never recorded**. Firefox's behaviour is not relied on either; treat an
+empty key as **notifications unavailable**.
+
+The consequence is that **a build without this key cannot be fixed after the fact.** An
+opt-in that was never recorded cannot start working later, so the "existing
+subscriptions are not retroactively bound" note below describes a state that cannot
+arise from a keyless build — there is no subscription to be unbound. **Set the key in
+every environment whose build a parent uses.**
+
+(V28 r3-2 corrected this and the matching comment in `src/lib/pushClient.ts` and
+`src/sw.ts`. The runtime behaviour was already correct — it passes no key rather than a
+bogus one, so the browser refuses honestly — and was NOT changed.)
 
 ## 3. Deploy the sender + its secrets (≈5 minutes)
 
