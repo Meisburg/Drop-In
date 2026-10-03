@@ -284,9 +284,15 @@ test('a kid added with a photo lands in kid-photos and Continue never double-wri
     img,
     'the persisted photo must not blank while a second row is typed (measured: pre-fix it never blanked either — the swap was the symptom)',
   ).toBeVisible()
+  // The mint count above is the evidence; this equality only AGREES with it.
+  // A Supabase signed-URL token is SECOND-GRANULAR — its payload is
+  // `{url, scope, iat, exp}` with whole-second timestamps and nothing else
+  // varying per mint (decode any token from DevTools to check the shape) —
+  // so two mints of the same path inside one second return BYTE-IDENTICAL
+  // bytes. This assertion therefore cannot see a re-mint the count catches.
   expect(
     (await img.getAttribute('src')) ?? '',
-    'the settled signed URL must stay put across keystrokes (no re-mint => no swap)',
+    'the settled signed URL stays put across keystrokes — corroboration of the mint-count assertion above, which is the evidence (the count catches a re-mint however the URL fell); this equality alone could not: a signed-URL token is second-granular, so a same-second re-mint is byte-identical',
   ).toBe(srcAfterAdd)
 
   // --- Continue: lands on the area card, writing ONLY the row that has no
@@ -649,7 +655,16 @@ test(
     // --- THE RE-PICK (photo B, different pixels) on the SAME persisted row.
     // The stored ref is deterministic, so the write lands at the SAME
     // canonical path — only the per-row generation can carry "the image
-    // changed" to the minting hook. ---
+    // changed" to the minting hook.
+    //
+    // ⚠️ CROSS THE TOKEN'S SECOND BOUNDARY FIRST (measured here: the two
+    // mints landed 1057 ms apart — 57 ms of margin — because a Supabase
+    // signed-URL token is second-granular, `src` can only be seen to swap
+    // when the two mints fall in different seconds; a faster run mints the
+    // SAME bytes and the swap assertion below false-fails. The wait makes the
+    // swap observable, so the assertion fails only for the reason it names
+    // (no fresh mint), never for a clock boundary.
+    await page.waitForTimeout(1100)
     const signRequests: string[] = []
     page.on('request', (req) => {
       if (req.url().includes('/object/sign/')) signRequests.push(req.url())
@@ -685,7 +700,7 @@ test(
       async () => {
         expect(
           (await img.getAttribute('src')) ?? '',
-          'the card must show the NEW image — the src swaps to the fresh URL',
+          'the card must show the NEW image — the src swaps to the fresh URL (corroboration of the fresh-mint count above, not its proof: a signed-URL token is second-granular, so a fresh mint inside the same second as the stale one is byte-identical and the swap is unobservable; the count is the evidence)',
         ).not.toBe(srcBefore)
       },
       'the img must re-fetch under the fresh URL',
