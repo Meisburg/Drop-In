@@ -639,6 +639,23 @@ export function PlaceDirectory({
   }
 
   /**
+   * V28 r4 — the device fix from the modal's "Use my location" tap.
+   *
+   * It lands the centre IMMEDIATELY, before the modal's reverse lookup has
+   * resolved a label, so the map moves the moment the device answers. That
+   * ordering is the point of the separate prop: the label is cosmetic and a
+   * failed reverse lookup must not cost the parent their location.
+   *
+   * The label is NOT set here — the modal writes the resolved address into its
+   * own field and the parent presses Apply, which runs `handleGeocode` and sets
+   * `locationLabelText` through the normal path. One label writer, so a
+   * device-derived location cannot name itself differently from a typed one.
+   */
+  function handleDeviceCoords(coords: { lat: number; lng: number }) {
+    setGeocodeCenter(coords)
+  }
+
+  /**
    * ⚠️ V28 r3-4: THIS DELIBERATELY NO LONGER CLEARS `geocodeCenter`.
    *
    * It used to: `setGeocodeCenter(null)`. That was correct while the dialog's
@@ -1388,6 +1405,8 @@ export function PlaceDirectory({
         // the modal's error surface simply never fires here.
         onRadiusChange={(miles) => setRadiusMiles(miles)}
         onApplyRadius={(miles) => setRadiusMiles(miles)}
+        // V28 r4: the device tap moves the map before its label resolves.
+        onDeviceCoords={handleDeviceCoords}
       />
 
       {/* V27: the three dropdown sheets. One shared component, one open at a

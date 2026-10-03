@@ -176,7 +176,9 @@ export interface PlaydateFormFieldsProps {
   onSomewhereElse?: () => void
   /**
    * V13 ticket 02: the /new-only interactive MAP picker — a Leaflet canvas of
-   * the directory's places (DB coordinates only, never browser geolocation),
+   * the directory's places (DB coordinates only; V28 r4 note: the APP now reads
+   * device location on the address steps, but this canvas still draws DB
+   * coordinates and never a device fix),
    * rendered under the place field and its suggestion list. Tapping a marker
    * pre-fills the place field through the SAME pick path as the list rows
    * (`onPickPlace`), so one seam owns what a pick writes. The page passes the

@@ -2,7 +2,17 @@
  * V15 ticket 02: the browse map rework's geocode seam.
  *
  * `geocodeAddress` turns a typed address into lat/lng via Nominatim (OpenStreetMap's
- * free geocoder — no key, no browser geolocation: the app's pinned invariant).
+ * free geocoder — no key).
+ *
+ * V28 r4 — THE "NO BROWSER GEOLOCATION" HALF OF THIS SENTENCE IS NO LONGER TRUE,
+ * and the claim is corrected rather than deleted so the reversal is visible. The
+ * founder asked for device location on the address steps; that work lives in
+ * `lib/geolocation.ts` (the browser permission API) and the reverse lookup below
+ * (coordinates → ZIP). What survives, narrowed but still binding: **location is
+ * read only after an explicit parent tap, typed address stays the default, and
+ * nothing prompts on mount.** Every distance in the product still keys on a ZIP,
+ * which is why a coordinate is never stored on its own.
+ *
  * The pure decisions live here so the modal's Apply path and the area
  * card's (the first run's LAST card — 4 of 4 since V28 r2 deleted the photo card;
  * it was 5 of 5 when this line was written) address derivation are testable; the fetch itself is thin and returns null
@@ -44,6 +54,11 @@
  */
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+/**
+ * V28 r4 — the REVERSE endpoint: coordinates in, an address out. Same
+ * provider, same keyless policy, same User-Agent requirement.
+ */
+const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 // Nominatim's usage policy requires a User-Agent that identifies the client.
 const USER_AGENT = 'playdate-app/1.0 (browse map rework; contact: local)'
 
@@ -52,10 +67,22 @@ export interface NominatimResult {
   lon?: string
   /** V20 t06: filled only when the request asks for `addressdetails=1`. */
   address?: { postcode?: string; house_number?: string }
+  /** V28 r4: the reverse endpoint's own display string, used only in reports. */
+  display_name?: string
 }
 
 /** The injected dependency: one address string in, at most one result out. */
 export type AddressLookup = (query: string) => Promise<NominatimResult | null>
+
+/**
+ * V28 r4 — the injected REVERSE dependency: coordinates in, at most one result
+ * out. Injected for the same reason `AddressLookup` is: the decision over the
+ * answer stays unit-testable with no network.
+ */
+export type ReverseLookup = (
+  lat: number,
+  lng: number,
+) => Promise<NominatimResult | null>
 
 /**
  * The one request both callers make. `addressdetails=1` is what makes the
@@ -77,6 +104,130 @@ async function searchFirst(query: string): Promise<NominatimResult | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * V28 r4 — the reverse request. Coordinates in, one address out.
+ *
+ * WHY THIS EXISTS AT ALL: the browser's geolocation API returns a LAT/LNG, but
+ * the entire product keys on a **ZIP** — `profiles.home_zip` is what every
+ * distance and the feed radius are computed from (`lib/feed.ts`), and a
+ * coordinate is not a substitute. So "use my location" needs one more hop to
+ * become the value the app actually stores.
+ *
+ * SAME FAILURE CONTRACT AS `searchFirst`: never throws, returns null on
+ * anything unexpected. A reverse lookup that fails must not invent a ZIP, and
+ * the caller's fallback (the typed-ZIP field) is the honest outcome.
+ *
+ * NO `zoom` / `addressdetails` TUNING BEYOND WHAT IS NEEDED: `addressdetails=1`
+ * is what surfaces the structured `address.postcode`; the default zoom returns
+ * the nearest addressable object, which is the right granularity for "which ZIP
+ * am I in".
+ */
+async function reverseFirst(lat: number, lng: number): Promise<NominatimResult | null> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  try {
+    const url = `${NOMINATIM_REVERSE_URL}?format=json&addressdetails=1&lat=${lat}&lon=${lng}`
+    const response = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+    })
+    if (!response.ok) return null
+    return (await response.json()) as NominatimResult
+  } catch {
+    return null
+  }
+}
+
+/**
+ * V28 r4 — THE DECISION over a reverse-geocode answer: is there a usable 5-digit
+ * ZIP here? Pure, so the guard is testable without a network or a browser.
+ *
+ * Deliberately STRICTER than `zipFromResult`. That function has to decide
+ * whether Nominatim resolved the address the parent TYPED, so it can treat a
+ * matching typed ZIP as its own proof of precision. Here there is no typed
+ * address to corroborate anything — the coordinates came from the device and
+ * the answer is taken on faith — so the only acceptable evidence is a
+ * well-formed 5-digit postcode in the structured address. A missing or
+ * partial code means we do not know the ZIP, and the caller must fall back to
+ * asking rather than guess.
+ */
+export function zipFromReverseResult(result: NominatimResult | null): string | null {
+  const postcode = (result?.address?.postcode ?? '').trim()
+  return /^\d{5}$/.test(postcode) ? postcode : null
+}
+
+/**
+ * V28 r4 — THE SEAM THE "USE MY LOCATION" BUTTON CALLS.
+ *
+ * Coordinates → a validated ZIP (or null). The device half (`getCurrentPosition`)
+ * lives in `lib/geolocation.ts`, NOT here: this module is the network seam, and
+ * keeping the browser permission API out of it is what lets both halves be
+ * tested in isolation — a jsdom test can supply coordinates without a permission
+ * prompt, and the coordinate helper can be tested without a network.
+ *
+ * THE BOUNDED RACE IS THE SAME DISCIPLINE the area card's address lookup already
+ * uses (`locationFromAddressQueryBounded`): a reverse lookup that does not settle
+ * within the deadline settles to "absent" rather than stalling a card mid-run.
+ * A rejection still rethrows, exactly like its forward sibling.
+ */
+export function zipFromCoordsBounded(
+  coords: { lat: number; lng: number },
+  timeoutMs: number,
+  lookup: ReverseLookup = reverseFirst,
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<string | null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs)
+  })
+  const resolved = lookup(coords.lat, coords.lng)
+    .then((result) => {
+      if (timer !== undefined) clearTimeout(timer)
+      return zipFromReverseResult(result)
+    })
+    .catch((err) => {
+      if (timer !== undefined) clearTimeout(timer)
+      throw err
+    })
+  return Promise.race([resolved, deadline])
+}
+
+/**
+ * V28 r4 — the HUMAN-READABLE label for a coordinate, bounded.
+ *
+ * The "Set location" modal needs a street address it can put in a text field;
+ * `zipFromCoordsBounded` answers a different question (which ZIP, for the
+ * onboarding card, where the ZIP is what gets stored). Both run the same
+ * reverse request, so this is the second pure extraction over ONE answer shape
+ * rather than a second network path.
+ *
+ * Returns null on any failure, including an empty or whitespace-only display
+ * name — the caller then keeps the coordinates and says so, because the fix is
+ * still usable even when its label is not.
+ */
+export function addressFromReverseResult(result: NominatimResult | null): string | null {
+  const name = (result?.display_name ?? '').trim()
+  return name === '' ? null : name
+}
+
+export function addressFromCoordsBounded(
+  coords: { lat: number; lng: number },
+  timeoutMs: number,
+  lookup: ReverseLookup = reverseFirst,
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<string | null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs)
+  })
+  const resolved = lookup(coords.lat, coords.lng)
+    .then((result) => {
+      if (timer !== undefined) clearTimeout(timer)
+      return addressFromReverseResult(result)
+    })
+    .catch((err) => {
+      if (timer !== undefined) clearTimeout(timer)
+      throw err
+    })
+  return Promise.race([resolved, deadline])
 }
 
 /**

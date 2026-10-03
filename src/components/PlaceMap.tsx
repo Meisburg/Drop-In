@@ -1497,10 +1497,16 @@ export function PlacesMap({
  * else the gazetteer zip via `resolveMapCoords` — the same seam as PlacesMap).
  * Tapping a marker calls `onPick(place)` with the full Place row, so the page
  * can pre-fill the place field through the SAME pick path as the suggestion
- * list (`pickPlace` → `placePickPatch`). No browser geolocation anywhere:
- * coordinates come from the database only (the V12 t05 invariant), and a
- * place whose coordinates resolve to null simply has no marker (never a fake
- * pin).
+ * list (`pickPlace` → `placePickPatch`). Coordinates on THIS canvas come from
+ * the database only (the V12 t05 invariant), and a place whose coordinates
+ * resolve to null simply has no marker (never a fake pin).
+ *
+ * V28 r4: this comment used to read "No browser geolocation anywhere". That is
+ * no longer true of the APP — the address steps gained an explicit "use my
+ * location" tap (`lib/geolocation.ts`) — but it remains true of THIS COMPONENT,
+ * which still draws DB coordinates only. Corrected rather than deleted so the
+ * reversal is visible; the invariant that mattered here (never a fake pin) is
+ * untouched.
  *
  * The canvas is interactive (scrollWheelZoom on, drag pan on) unlike the
  * read-only detail/browse surfaces — this is a picker, not a display. The

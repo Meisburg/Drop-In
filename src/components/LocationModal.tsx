@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFocusTrap } from './FocusTrap'
 import { milesWord } from '../lib/feed'
+import { ADDRESS_LOOKUP_TIMEOUT_MS, addressFromCoordsBounded } from '../lib/geocode'
+import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 
 /**
@@ -45,6 +47,7 @@ export function LocationModal({
   onRadiusChange,
   onApplyRadius,
   addressPlaceholder = 'e.g. Green Lake Park, Seattle',
+  onDeviceCoords,
 }: {
   /** Render the modal at all (the caller owns the open state). */
   open: boolean
@@ -78,6 +81,19 @@ export function LocationModal({
    * (`location-radius-error`) and does not close over a rejected write.
    */
   onApplyRadius: (miles: number) => Promise<void> | void
+  /**
+   * V28 r4 — the device fix, handed to the caller the moment it lands.
+   *
+   * It is a SEPARATE prop from `onGeocode` on purpose. `onGeocode` takes an
+   * address STRING and is what Apply runs; this takes COORDINATES the device
+   * produced, and the caller needs them immediately so its map can move while
+   * the human-readable label is still resolving. Folding them together would
+   * mean the centre only lands after the label does — and the label is
+   * cosmetic, so a reverse-lookup failure would cost the parent their location.
+   *
+   * Optional: a caller with no map to move simply omits it.
+   */
+  onDeviceCoords?: (coords: { lat: number; lng: number }) => void
 }) {
   const [address, setAddress] = useState('')
   /**
@@ -93,6 +109,14 @@ export function LocationModal({
   const [radiusError, setRadiusError] = useState<string | null>(null)
   const [geocoding, setGeocoding] = useState(false)
   const [applying, setApplying] = useState(false)
+  /**
+   * V28 r4 — the device-location tap's two states, alongside the existing
+   * geocode ones. Named separately from `geocoding` because they are different
+   * waits and the copy differs: "finding you" is the device, and the address
+   * lookup that follows it is the geocode the parent already knows about.
+   */
+  const [locatingHere, setLocatingHere] = useState(false)
+  const [deviceNote, setDeviceNote] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
 
   // The slider mirrors the caller's SAVED value on every open, and for as long
@@ -142,6 +166,61 @@ export function LocationModal({
     }
     setGeocoding(false)
     return result !== null
+  }
+
+  /**
+   * V28 r4 — "USE MY LOCATION": the device fix, turned into an address the
+   * parent can see and confirm before they Apply.
+   *
+   * WHY IT WRITES THE FIELD INSTEAD OF APPLYING. This modal's whole contract
+   * since r3-4 is that there is exactly ONE commit — the Apply button — and a
+   * tap that saved silently would break it, leave the radius uncommitted, and
+   * give the parent two different ideas of what "done" means. So the device
+   * result populates the address field and the parent still presses Apply.
+   *
+   * WHY IT REVERSE-GEOCODES AT ALL when the caller only wants a centre: a raw
+   * "47.6685, -122.386" in an Address field is not something a parent can check
+   * or correct. Showing the resolved street address lets them SEE that the
+   * device picked the right place — which matters, because a permission grant
+   * on a laptop with a VPN, or a phone reporting a stale cached fix, both
+   * produce coordinates that are wrong in a way only a human can notice.
+   *
+   * IT DOES NOT TOUCH `geocoding`: they are different waits with different
+   * copy, and the Escape guard already covers both through the disabled Apply.
+   */
+  async function handleUseMyLocation() {
+    if (locatingHere || geocoding || applying) return
+    setLocatingHere(true)
+    setDeviceNote(null)
+    setGeocodeError(null)
+    try {
+      const outcome = await readDeviceCoords()
+      if (outcome.status === 'unsupported') {
+        setDeviceNote('This browser cannot share your location. Type an address instead.')
+        return
+      }
+      if (outcome.status === 'denied') {
+        setDeviceNote('Location is off for Drop In. Turn it on in your browser settings, or type an address.')
+        return
+      }
+      if (outcome.status === 'unavailable') {
+        setDeviceNote("We couldn't get your location just now. Try again, or type an address.")
+        return
+      }
+      // The device fix itself is the centre — that is what the caller needs and
+      // it is already correct. The reverse lookup below is ONLY for the human-
+      // readable label, so its failure is cosmetic and must not lose the fix.
+      onDeviceCoords?.(outcome.coords)
+      const label = await addressFromCoordsBounded(outcome.coords, ADDRESS_LOOKUP_TIMEOUT_MS)
+      if (label === null) {
+        setDeviceNote('We found your location. Press Apply to use it.')
+        return
+      }
+      setAddress(label)
+      setDeviceNote('We found your location. Press Apply to use it.')
+    } finally {
+      setLocatingHere(false)
+    }
   }
 
   /**
@@ -253,6 +332,38 @@ export function LocationModal({
             onChange={(e) => setAddress(e.target.value)}
           />
         </label>
+
+        {/* V28 r4 — "USE MY LOCATION", the same offer the onboarding area card
+            makes. The founder asked for device location on BOTH surfaces
+            ("both"), and this is the modal half.
+
+            IT FILLS THE FIELD RATHER THAN APPLYING. The modal already owns one
+            Apply button and one error surface, and a location tap that saved
+            behind the parent's back would break the "Apply is the one commit"
+            contract r3-4 established. So this resolves coordinates and puts a
+            human-readable address in the field; the parent still presses Apply.
+
+            GATED ON AVAILABILITY, like its onboarding sibling: on a non-secure
+            origin the browser does not expose the API at all, and a button that
+            silently does nothing is worse than no button. */}
+        {isGeolocationAvailable() ? (
+          <div className="mb-3 flex flex-col gap-1">
+            <button
+              type="button"
+              data-testid="location-use-my-location-btn"
+              disabled={locatingHere}
+              onClick={() => void handleUseMyLocation()}
+              className="inline-flex min-h-11 items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+            >
+              {locatingHere ? 'Finding you…' : 'Use my location'}
+            </button>
+            {deviceNote !== null ? (
+              <p role="status" data-testid="location-device-note" className="text-xs text-slate-600">
+                {deviceNote}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <label className="mb-4 flex flex-col gap-1 text-sm">
           <span className="text-slate-700">

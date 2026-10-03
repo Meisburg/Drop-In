@@ -50,7 +50,8 @@ import {
 } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
-import { ADDRESS_LOOKUP_TIMEOUT_MS, locationFromAddressQueryBounded, type AddressGeocodeResult } from '../lib/geocode'
+import { ADDRESS_LOOKUP_TIMEOUT_MS, locationFromAddressQueryBounded, type AddressGeocodeResult, zipFromCoordsBounded } from '../lib/geocode'
+import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
 import { PlacesMap } from '../components/PlaceMapLazy'
 import { shouldRenderPlacesMap } from '../lib/mapStrip'
 import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
@@ -356,6 +357,17 @@ export function OnboardingPage() {
   // invalidates the pin (a map-shaped claim for an address that no longer
   // holds must not linger).
   const [areaCoordinates, setAreaCoordinates] = useState<{ lat: number; lng: number } | null>(null)
+  /**
+   * V28 r4 — the two states the "Use my location" tap drives.
+   *
+   * `locating` covers BOTH hops (the device fix and the reverse lookup) as one
+   * busy flag, because two buttons' worth of state for one tap reads as a
+   * flicker. `locationNote` carries the honest failure sentence for whichever
+   * stage failed — the cases are named in `lib/geolocation.ts` precisely so
+   * this can phrase them differently rather than saying "it didn't work".
+   */
+  const [locating, setLocating] = useState(false)
+  const [locationNote, setLocationNote] = useState<string | null>(null)
   // The bookkeeping that keeps "one request per distinct address" true
   // (see ensureAddressLookup): which address the in-flight or settled
   // promise belongs to, the promise itself, and the pending debounce timer.
@@ -1140,6 +1152,79 @@ export function OnboardingPage() {
     }
   }
 
+  /**
+   * V28 r4 — THE "USE MY LOCATION" TAP: device coordinates → a ZIP → the same
+   * save the typed path uses.
+   *
+   * WHY IT SAVES RATHER THAN JUST FILLING THE FIELDS. Every distance in the
+   * product keys on `profiles.home_zip`, so a coordinate that is only displayed
+   * is worth nothing. The reverse lookup turns the fix into the value the app
+   * actually stores, and then this calls the SAME `saveLocation` the typed
+   * address and the typed ZIP call — one write path, so a location-derived zip
+   * cannot diverge from a typed one.
+   *
+   * IT CANCELS THE PENDING ADDRESS LOOKUP FIRST, and that is a real defect this
+   * avoids: `scheduleAddressLookup` may have a debounced Nominatim request in
+   * flight for whatever the parent half-typed. Letting both settle would race
+   * two writers for one card, and the slower one would win. Cancelling is the
+   * same discipline `ensureAddressLookup`'s ownership ref enforces for edits.
+   *
+   * THE FAILURE COPY IS PER-CASE, deliberately. "Denied" is a choice the parent
+   * made and must not be re-asked in the same breath; "couldn't get a fix" is
+   * retryable; a reverse lookup that found no ZIP is not a permission problem at
+   * all and sends them to the typed field. One generic sentence would be a lie
+   * in at least two of the three.
+   */
+  async function handleUseMyLocation() {
+    if (session === null || locating || saving) return
+    cancelScheduledAddressLookup()
+    setLocating(true)
+    setLocationNote(null)
+    try {
+      const outcome = await readDeviceCoords()
+      if (outcome.status === 'unsupported') {
+        // Reachable only if the API vanished between render and tap (an
+        // origin downgrade, or a browser that lied about support).
+        setLocationNote('This browser cannot share your location. Type your address instead.')
+        return
+      }
+      if (outcome.status === 'denied') {
+        setLocationNote('Location is off for Drop In. Type your address instead, or turn it on in your browser settings.')
+        return
+      }
+      if (outcome.status === 'unavailable') {
+        setLocationNote("We couldn't get your location just now. Try again, or type your address.")
+        return
+      }
+
+      // The pin is shown as soon as we have it, so the map and the radius
+      // circle appear while the ZIP lookup is still running — the same
+      // early-resolution feel the typed path has.
+      setAreaCoordinates(outcome.coords)
+
+      const zip = await zipFromCoordsBounded(outcome.coords, ADDRESS_LOOKUP_TIMEOUT_MS)
+      if (zip === null) {
+        setLocationNote("We found you but couldn't work out your ZIP. Type it below and we'll take it from there.")
+        setZipFallbackShown(true)
+        return
+      }
+      // Validation against the seeded gazetteer, using the SAME `knownZips`
+      // state the typed paths use (loaded once on mount) — not a second read.
+      // A still-loading list (`null`) is not a rejection: the card's own primary
+      // is disabled in that state anyway, so falling through to save matches the
+      // typed-ZIP path's behaviour rather than inventing a new rule here.
+      if (knownZips !== null && validateHomeZip(zip, knownZips) !== null) {
+        setLocationNote("We found you, but that ZIP isn't one we know yet. Type your address instead.")
+        setZipFallbackShown(true)
+        return
+      }
+      setHomeZip(zip)
+      await saveLocation(zip)
+    } finally {
+      setLocating(false)
+    }
+  }
+
   // The location write (V2 ticket 02's radius picker, unchanged in kind):
   // the zip + the radius the card chose. V28 slice 6: no navigation here —
   // the save flips homeZipSet, the re-keyed guard renders the run's FINISH
@@ -1795,6 +1880,49 @@ export function OnboardingPage() {
         </label>
         {areaAddressError !== null ? (
           <p role="alert" id={errorId('area-address')} className="text-red-600">{areaAddressError}</p>
+        ) : null}
+
+        {/* V28 r4 — "USE MY LOCATION". The founder asked for this directly:
+            *"for the places where we ask the user for their address/zip code,
+            I'm wondering if we could pull that automatically from their phone
+            … with their permission? isn't that what most apps do?"* Yes, and
+            this is the honest version of it.
+
+            AN EXPLICIT TAP, NEVER AN AUTO-PROMPT. A permission dialog fired on
+            arrival is the pattern that trains people to hit "Block", and a
+            block cannot be re-asked — the parent would lose the capability for
+            good. So the typed address stays the DEFAULT path and this is an
+            offer beside it.
+
+            THE BUTTON ONLY RENDERS WHERE IT CAN WORK. `isGeolocationAvailable()`
+            is false on a non-secure origin (a LAN dev server at
+            `192.168.1.x:5173`), because the browser simply does not expose the
+            API there. Rendering a control that silently does nothing is worse
+            than rendering none, so the whole block is gated.
+
+            TWO HOPS, BOTH NAMED IN THE UI. The device returns coordinates; the
+            product keys on a ZIP (`profiles.home_zip` drives every distance),
+            so `zipFromCoordsBounded` reverse-geocodes them. Each stage has its
+            own busy and error copy, because "getting your location" and
+            "looking up your ZIP" are different waits and a parent staring at a
+            dead button deserves to know which one is running. */}
+        {isGeolocationAvailable() ? (
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              data-testid="use-my-location-btn"
+              disabled={locating || saving}
+              onClick={() => void handleUseMyLocation()}
+              className="inline-flex min-h-11 items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+            >
+              {locating ? 'Finding you…' : 'Use my location'}
+            </button>
+            {locationNote !== null ? (
+              <p role="status" data-testid="use-my-location-note" className="text-sm text-slate-600">
+                {locationNote}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {/* V28 slice 4 — THE CARD'S OWN MAP: the resolved pin and the radius

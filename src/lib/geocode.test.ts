@@ -18,7 +18,9 @@ import {
   locationFromAddressQuery,
   locationFromAddressQueryBounded,
   locationFromResult,
+  zipFromCoordsBounded,
   zipFromResult,
+  zipFromReverseResult,
   type NominatimResult,
 } from './geocode'
 
@@ -221,5 +223,86 @@ describe('locationFromAddressQueryBounded (V28 slice 4 — the card-gating looku
       coordinates: null,
     })
     expect(lookup).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * V28 r4 — THE REVERSE HALF, added with the "Use my location" tap.
+ *
+ * These tests exist because the reverse lookup is the ONLY place a device
+ * coordinate can become the ZIP the product stores, and its failure must be an
+ * honest null rather than a guessed postcode. The lookup is injected for the
+ * same reason the forward one is: reaching these outcomes against live Nominatim
+ * would make the suite depend on the network and on a real address.
+ */
+describe('zipFromReverseResult (the strict extraction, pure)', () => {
+  it('returns the 5-digit postcode from a resolved reverse result', () => {
+    expect(zipFromReverseResult({ address: { postcode: '98107' } })).toBe('98107')
+  })
+
+  it('trims whitespace around the postcode', () => {
+    expect(zipFromReverseResult({ address: { postcode: '  98107  ' } })).toBe('98107')
+  })
+
+  it('returns null for a null result (the lookup failed)', () => {
+    expect(zipFromReverseResult(null)).toBeNull()
+  })
+
+  it('returns null when there is no address block at all', () => {
+    expect(zipFromReverseResult({ lat: '47.6', lon: '-122.3' })).toBeNull()
+  })
+
+  it('returns null for a missing postcode', () => {
+    expect(zipFromReverseResult({ address: {} })).toBeNull()
+  })
+
+  it('refuses a non-5-digit postcode rather than passing it through', () => {
+    // Deliberately STRICTER than zipFromResult: there is no typed address here
+    // to corroborate precision, so a partial or foreign code is not acceptable
+    // evidence — the caller must ask instead of guessing.
+    expect(zipFromReverseResult({ address: { postcode: '9810' } })).toBeNull()
+    expect(zipFromReverseResult({ address: { postcode: 'SW1A 1AA' } })).toBeNull()
+    expect(zipFromReverseResult({ address: { postcode: '' } })).toBeNull()
+  })
+})
+
+describe('zipFromCoordsBounded (the race the button awaits)', () => {
+  const SEATTLE_COORDS = { lat: 47.6685, lng: -122.386 }
+
+  it('resolves the ZIP when the lookup answers in time', async () => {
+    const lookup = vi.fn().mockResolvedValue({ address: { postcode: '98107' } })
+    await expect(zipFromCoordsBounded(SEATTLE_COORDS, 5000, lookup)).resolves.toBe('98107')
+    expect(lookup).toHaveBeenCalledWith(47.6685, -122.386)
+  })
+
+  it('settles to null when the lookup outruns the deadline', async () => {
+    // The pending-state rule: a slow reverse lookup must not hold the card.
+    const lookup = vi.fn().mockReturnValue(new Promise(() => {}))
+    await expect(zipFromCoordsBounded(SEATTLE_COORDS, 10, lookup)).resolves.toBeNull()
+  })
+
+  it('settles to null when the lookup finds no usable postcode', async () => {
+    const lookup = vi.fn().mockResolvedValue({ address: {} })
+    await expect(zipFromCoordsBounded(SEATTLE_COORDS, 5000, lookup)).resolves.toBeNull()
+  })
+
+  it('rethrows a rejection that lands before the deadline', async () => {
+    // Same contract as the forward sibling: a real failure the caller may see
+    // is not silently converted into "absent".
+    const lookup = vi.fn().mockRejectedValue(new Error('boom'))
+    await expect(zipFromCoordsBounded(SEATTLE_COORDS, 5000, lookup)).rejects.toThrow('boom')
+  })
+
+  it('leaves no dangling timer after a fast success', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi.fn().mockResolvedValue({ address: { postcode: '98107' } })
+      const promise = zipFromCoordsBounded(SEATTLE_COORDS, 5000, lookup)
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(promise).resolves.toBe('98107')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
