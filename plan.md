@@ -493,7 +493,37 @@ slices below name it or explicitly declare it untouched.
 
 ---
 
-### 🟡 r3-4 — set-location: two buttons, both entry points (item 7)
+### 🟡 r3-4 — set-location: two buttons, both entry points (item 7) — **DONE 2026-10-03**
+
+> **OUTCOME: three buttons → two, Apply geocodes + writes + closes, both entry points.**
+> Commit `5e987a9`.
+>
+> **⚠️ A REAL PRODUCT DEFECT FOUND BY THE BROWSER LANE, not a test-only change.**
+> `PlaceDirectory.closeLocationModal` **cleared `geocodeCenter`**. That was correct while
+> "See places" was a *preview* a parent confirmed separately — but with one Apply button,
+> clearing on close **threw away the centre Apply had just resolved**, so the circle snapped
+> back to the home pin and the parent saw it do nothing. **That is the reported symptom
+> itself**, reproduced by the change. Fixed at the source: the centre is now the committed
+> frame and survives the close.
+>
+> **Order is load-bearing:** geocode → write → close **last**, because closing first wipes
+> the centre. One handler, not two buttons calling two functions.
+> **A failed write does not close** (the feed re-throws so the modal owns the error — now
+> load-bearing, since a swallowed error would close over a write that never landed);
+> **a failed geocode does not close** either.
+> **`handleGeocode` now RETURNS** whether a centre landed: reading `geocodeError` state
+> after the `await` would read the previous render's value and close over a failed lookup.
+>
+> **Specs:** 6 replaced testid uses. Two were behaviour changes, not renames —
+> `places-map-view` asserted the dialog *stays open* after geocoding (now: Apply closes,
+> then reopen to prove the per-tick preview survives), and `feed-empty-state`'s write
+> round-trip needed a reopen between its two writes.
+>
+> **Verified:** `npm run verify` exit 0 (71 / 2067 / 81 / 0 / GUARDS PASS);
+> **`places-map-view` + `feed-empty-state` + `places.e2e.ts` → 39 passed, 1 skipped, 0 failed
+> — BOTH entry points**, the path the plan flags as the one a single-page test misses.
+
+#### (original slice text, kept for the record)
 
 - **Objective.** The modal offers **Cancel** and **Apply**; Apply closes the menu **and**
   updates the page — **from the Places entry point as well as the feed's.**
