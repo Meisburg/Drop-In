@@ -444,7 +444,31 @@ slices below name it or explicitly declare it untouched.
 
 ---
 
-### 🟡 r3-3 — "I'm going" below the event info (item 5)
+### 🟡 r3-3 — "I'm going" below the event info (item 5) — **DONE 2026-10-03**
+
+> **OUTCOME: the move is made, and it REVERSES a recorded founder decision.**
+> Decision record: `.scratch/v28/reports/r3-3-decision.md`. Commit `6ab2cc0`.
+>
+> ⚠️ **PLAN DEFECT FOUND BEFORE THE EDIT.** `src/pages/PlaydateDetailPage.tsx:1957-1965`
+> records **A14 (V15 ticket 08)**, whose founder note was *"they should be at the very top
+> of the page"* — it had deliberately moved this block FIRST, having previously rendered
+> after the title, place, date/time and host card. **This slice's original text did not
+> mention A14 at all**, so a builder would have silently reversed a named decision. The
+> conflict was surfaced to the human, who ruled: **the later phone observation supersedes
+> the V15 note.** Recorded as **r3-D1**; the A14 comment is **amended in place, not deleted**.
+>
+> **Measured order after:** title → date/time → description → host → **RSVP**. The block
+> moved as **one unit** (button, location notice, count line, count-unavailable fallback +
+> Retry, `pingError`, `KidsComingPicker`). The host's own-post panel did **not** move.
+>
+> **NEW PIN:** a DOM-order test (`compareDocumentPosition`) in `e2e/rsvp-confirmation.e2e.ts`
+> — the acceptance requires the a11y reading order to match the visual order, which no
+> screenshot can show. **Mutation-proven:** moving the block back to the top makes it FAIL.
+>
+> **Verified:** `npm run verify` exit 0 (71 / 2067 / 81 / 0 / GUARDS PASS);
+> `rsvp-confirmation` 5 passed; `feed-empty-state` + rsvp 9 passed; `inbox` 6 passed.
+
+#### (original slice text, kept for the record)
 
 - **Objective.** The ping control sits *after* the event's information.
 - **Files.** `src/pages/PlaydateDetailPage.tsx` (**the block at `:2136-2151` and whatever
