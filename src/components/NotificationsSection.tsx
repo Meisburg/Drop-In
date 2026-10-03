@@ -590,7 +590,7 @@ export function NotificationsSection() {
           </p>
         ) : recent.value.length === 0 ? (
           <p className="mt-1 text-sm text-slate-600">
-            Nothing yet. Pings, comments, cancellations and drop-ins starting soon all show up
+            Nothing yet. Going, comments, cancellations and drop-ins starting soon all show up
             here.
           </p>
         ) : (

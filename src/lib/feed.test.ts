@@ -2813,7 +2813,7 @@ describe('buildWhileAwayItems (V8 ticket 03: the while-away inbox)', () => {
     expect(inbox.items).toHaveLength(1)
     expect(inbox.items[0].kind).toBe('cancelled')
     expect(inbox.items[0].title).toBeNull()
-    expect(inbox.items[0].label).toBe("A drop-in you pinged was cancelled — you said you'd go")
+    expect(inbox.items[0].label).toBe("A drop-in you’re going to was cancelled — you said you'd go")
     expect(inbox.items[0].playdateId).toBe('pd-gone')
   })
 

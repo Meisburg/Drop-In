@@ -2743,7 +2743,7 @@ function goingCountLine(count: number): string {
 
 /** The host's own count line (it's your post — no "come say hi"). */
 function hostGoingCountLine(count: number): string {
-  if (count === 0) return 'No one has pinged yet'
+  if (count === 0) return 'No one’s going yet'
   return `${count} ${count === 1 ? 'family' : 'families'} going`
 }
 

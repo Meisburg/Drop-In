@@ -2675,7 +2675,7 @@ function whileAwayCommentsLabel(count: number, quoted: string | null): string {
  */
 function whileAwayCancelledLabel(title: string | null): string {
   const quoted = quotedTitle(title)
-  if (quoted === null) return "A drop-in you pinged was cancelled — you said you'd go"
+  if (quoted === null) return "A drop-in you’re going to was cancelled — you said you'd go"
   return `${quoted} was cancelled — you said you'd go`
 }
 

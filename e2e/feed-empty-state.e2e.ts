@@ -344,13 +344,13 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
   // The lie it replaced — the host's zero-count copy — must NOT be on screen
   // while the count is unknown (this is the assertion that fails on the old
   // code, where a failed read rendered exactly this line).
-  await expect(page.getByText('No one has pinged yet')).toHaveCount(0)
+  await expect(page.getByText('No one’s going yet')).toHaveCount(0)
   await page.unroute(/\/rest\/v1\/going_pings/)
   await hostCountUnknown.getByRole('button', { name: 'Retry' }).click()
   await expect(hostCountUnknown).toHaveCount(0)
   // A REAL count line is back — the exact number depends on whether the
   // viewer's aborted ping landed, which is not this spec's subject.
-  await expect(page.getByText(/^(No one has pinged yet|\d+ famil(y|ies) going)$/)).toBeVisible()
+  await expect(page.getByText(/^(No one’s going yet|\d+ famil(y|ies) going)$/)).toBeVisible()
 
   await viewerContext.close()
   console.log(
