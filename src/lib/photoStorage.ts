@@ -307,18 +307,6 @@ export type ProfileBlurbBlock =
   | 'parentCards'
 
 /**
- * True when this profile carries a bio worth rendering.
- *
- * V27: the bio is no longer its own READ block — the read surface draws the
- * parent rows, and the bio reaches the screen as the account owner's ROW
- * description when their card carries none. So this test gates the editor's bio
- * card and the seam's 'edit' branch, not a read block.
- */
-export function profileHasBio(profile: { bio?: string | null } | null): boolean {
-  return (profile?.bio ?? '').trim() !== ''
-}
-
-/**
  * WHICH blocks a profile surface renders, in the order the ticket pins:
  * identity → kids list → "About the parents" → family photo.
  *
@@ -384,19 +372,17 @@ export function profileHasBio(profile: { bio?: string | null } | null): boolean 
  * interests line, the posts) is not part of this seam.
  */
 export function profileBlurbOrder(
-  profile: { family_photo_url?: string | null; bio?: string | null } | null,
+  profile: { family_photo_url?: string | null } | null,
   kidsVisible: boolean,
   surface: 'read' | 'edit' = 'read',
   parentNamesVisible = false,
 ): ProfileBlurbBlock[] {
   const blocks: ProfileBlurbBlock[] = ['user']
   if (kidsVisible) blocks.push('kids')
-  // V27: on the READ surface the "About the parents" block is the PARENT ROWS
-  // alone — the founder's /profile annotation asked for two person rows and the
-  // bio (with its duplicate account avatar) is no longer rendered there, so a
-  // bio alone must not push a block the DOM does not draw. The EDIT surface
-  // still renders its bio card, so the bio keeps its 'about' push there.
-  if (parentNamesVisible || (surface === 'edit' && profileHasBio(profile))) blocks.push('about')
+  // V28: the bio is retired — "About the parents" on both surfaces is now
+  // driven by parentNamesVisible alone. The edit surface's parent cards block
+  // carries the "About me" editor.
+  if (parentNamesVisible) blocks.push('about')
   if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
   if (surface === 'edit') {
     // The edit surface ALWAYS carries the parent cards — their empty states are

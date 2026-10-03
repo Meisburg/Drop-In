@@ -414,11 +414,6 @@ test.afterEach(async () => {
       method: 'DELETE',
       headers,
     })
-    await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ bio: null }),
-    })
     const postCheck = await fetch(postQuery, { headers })
     const kidCheck = await fetch(kidQuery, { headers })
     const posts = postCheck.ok ? ((await postCheck.json()) as unknown[]) : null

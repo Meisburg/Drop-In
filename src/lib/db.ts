@@ -2353,9 +2353,6 @@ export const AVATAR_MAX_BYTES = 5 * 1024 * 1024
  */
 export const AVATAR_SIZE_PX = 512
 
-/** Bio cap (plan-v2 Interfaces: <= 500 chars; the 0011 CHECK is the backstop). */
-export const BIO_MAX_LENGTH = 500
-
 /** The kids cap per profile (plan-v2 Interfaces: app-enforced, not DB). */
 export const MAX_KIDS_PER_PROFILE = 5
 
@@ -2430,14 +2427,6 @@ export function validateFamilyPhotoFile(file: File): string | null {
   return validateAvatarFile(file)
 }
 
-/** Pure bio validation (<= BIO_MAX_LENGTH characters after trim). */
-export function validateBio(bio: string): string | null {
-  if (bio.trim().length > BIO_MAX_LENGTH) {
-    return `Keep the bio to ${BIO_MAX_LENGTH} characters.`
-  }
-  return null
-}
-
 /**
  * Pure kid-likes validation (V3 slice 6, ticket 09, migration 0022):
  * <= LIKES_MAX_LENGTH characters after trim (the UI pin — no DB CHECK).
@@ -2500,21 +2489,19 @@ export function validateKid(firstName: string, age: number): string | null {
 
 /**
  * The profile items missing for the /settings nudge banner (V2 ticket 02):
- * photo + bio + kids all present dismisses it. `kidsCount` is null when the
+ * photo + kids all present dismisses it. `kidsCount` is null when the
  * kids load has not settled (it counts as not-present — the nudge is
  * best-effort, never hides what is there).
  */
-export type MissingProfileItem = 'photo' | 'bio' | 'kids'
+export type MissingProfileItem = 'photo' | 'kids'
 
 export function missingProfileItems(
-  profile: Pick<Profile, 'avatar_url' | 'bio'> | null,
+  profile: Pick<Profile, 'avatar_url'> | null,
   kidsCount: number | null,
 ): MissingProfileItem[] {
   const missing: MissingProfileItem[] = []
   const avatarUrl = profile?.avatar_url ?? null
-  const bio = profile?.bio ?? null
   if (avatarUrl === null || avatarUrl === '') missing.push('photo')
-  if (bio === null || bio.trim() === '') missing.push('bio')
   if (kidsCount === null || kidsCount === 0) missing.push('kids')
   return missing
 }
@@ -2863,17 +2850,6 @@ export async function signedKidPhotoUrls(
   kidIds: string[],
 ): Promise<Record<string, string>> {
   return signedKidPhotoUrlsWithClient(supabase, profileId, kidIds)
-}
-
-/** Update the caller's bio (V2 ticket 02): <= 500 chars, validated pure. */
-export async function updateBio(userId: string, bio: string): Promise<void> {
-  const bioError = validateBio(bio)
-  if (bioError !== null) throw new Error(bioError)
-  const { error } = await supabase
-    .from('profiles')
-    .update({ bio: bio.trim() })
-    .eq('id', userId)
-  if (error) throw error
 }
 
 /**

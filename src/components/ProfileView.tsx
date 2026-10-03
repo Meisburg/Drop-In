@@ -406,7 +406,6 @@ export function ProfileView({
     {
       displayName: profile.display_name,
       avatarUrl: profile.avatar_url ?? null,
-      bio: profile.bio ?? null,
     },
   )
   // The pinned block order, single-sourced in the pure `profileBlurbOrder`

@@ -239,20 +239,19 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
     expect(rows[0]).toMatchObject({ handle: 'Nicole', about: null, photo: null })
   })
 
-  it('V27: the account’s own card borrows the account bio when the card has none', () => {
-    // The founder's model: the profile text is the parent's own words ("About
-    // me"), so it fills that parent's row when their card carries no `about`.
+  it("V28: the account's own card no longer borrows an account bio (retired)", () => {
+    // The bio column is retired; the owner row only carries displayName + avatarUrl.
     const rows = parentNameRows(
       [card({ name: 'Jon Meisburg' })],
       null,
-      { displayName: 'Jon Meisburg', avatarUrl: null, bio: '  I’m the dada.  ' },
+      { displayName: 'Jon Meisburg', avatarUrl: null },
     )
-    expect(rows[0]).toMatchObject({ handle: 'Jon Meisburg', about: 'I’m the dada.' })
-    // A card's own about still wins over the account bio.
+    expect(rows[0]).toMatchObject({ handle: 'Jon Meisburg', about: null })
+    // A card's own about still wins.
     const own = parentNameRows(
       [card({ name: 'Jon Meisburg', about: 'My own line' })],
       null,
-      { displayName: 'Jon Meisburg', avatarUrl: null, bio: 'Account line' },
+      { displayName: 'Jon Meisburg', avatarUrl: null },
     )
     expect(own[0]?.about).toBe('My own line')
   })

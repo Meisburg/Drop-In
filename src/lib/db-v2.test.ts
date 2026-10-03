@@ -13,11 +13,9 @@ import { describe, expect, it } from 'vitest'
 import {
   AVATAR_MAX_BYTES,
   AVATAR_SIZE_PX,
-  BIO_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   missingProfileItems,
   validateAvatarFile,
-  validateBio,
   validateKid,
 } from './db'
 
@@ -60,20 +58,6 @@ describe('validateAvatarFile (V2 ticket 02)', () => {
   })
 })
 
-describe('validateBio (V2 ticket 02)', () => {
-  it('accepts up to 500 characters', () => {
-    expect(validateBio('a'.repeat(BIO_MAX_LENGTH))).toBeNull()
-  })
-
-  it('rejects 501+ characters', () => {
-    expect(validateBio('a'.repeat(BIO_MAX_LENGTH + 1))).toMatch(/500/)
-  })
-
-  it('trims before measuring (502 raw chars → 500 after trim → valid)', () => {
-    expect(validateBio(` ${'a'.repeat(BIO_MAX_LENGTH)} `)).toBeNull()
-  })
-})
-
 describe('validateKid (V2 ticket 02 — first name + age only, the privacy pin)', () => {
   it('accepts a first name + an in-range age', () => {
     expect(validateKid('Ava', 7)).toBeNull()
@@ -107,23 +91,19 @@ describe('validateKid (V2 ticket 02 — first name + age only, the privacy pin)'
 
 describe('missingProfileItems (the /settings nudge banner, V2 ticket 02)', () => {
   it('lists everything when nothing is present', () => {
-    expect(missingProfileItems(null, 0)).toEqual(['photo', 'bio', 'kids'])
+    expect(missingProfileItems(null, 0)).toEqual(['photo', 'kids'])
   })
 
-  it('is empty when photo + bio + kids are all present', () => {
-    expect(missingProfileItems({ avatar_url: 'https://x/a.jpg', bio: 'hi' }, 2)).toEqual([])
-  })
-
-  it('treats an empty/whitespace bio as missing', () => {
-    expect(missingProfileItems({ avatar_url: 'https://x/a.jpg', bio: '  ' }, 1)).toEqual(['bio'])
+  it('is empty when photo + kids are all present', () => {
+    expect(missingProfileItems({ avatar_url: 'https://x/a.jpg' }, 2)).toEqual([])
   })
 
   it('treats a missing avatar_url as missing the photo', () => {
-    expect(missingProfileItems({ avatar_url: null, bio: 'hi' }, 1)).toEqual(['photo'])
+    expect(missingProfileItems({ avatar_url: null }, 1)).toEqual(['photo'])
   })
 
   it('treats a null (unsettled/failed) kids load as not-present', () => {
-    expect(missingProfileItems({ avatar_url: 'u', bio: 'b' }, null)).toEqual(['kids'])
+    expect(missingProfileItems({ avatar_url: 'u' }, null)).toEqual(['kids'])
   })
 })
 

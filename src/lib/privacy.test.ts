@@ -37,7 +37,6 @@ describe('photoSummary', () => {
 describe('buildPrivacyReport', () => {
   const empty = buildPrivacyReport({
     displayName: null,
-    bio: null,
     homeZip: null,
     kids: [],
     familyPhotoCount: 0,
@@ -60,7 +59,7 @@ describe('buildPrivacyReport', () => {
 
   it('states the unset values honestly rather than leaving a blank', () => {
     expect(empty.visible[0].value).toBe('Not set yet')
-    expect(empty.visible[1].value).toBe('Nothing yet')
+    expect(empty.visible[1].value).toBe('The parent card "About me" text you write.')
     expect(empty.visible[2].value).toBe('No kids added yet')
     expect(empty.visible[3].value).toBe('No photos yet')
     expect(empty.kept[2].value).toBe('Not set yet')
@@ -69,13 +68,12 @@ describe('buildPrivacyReport', () => {
   it('fills the visible list from the profile', () => {
     const report = buildPrivacyReport({
       displayName: 'The Nguyens',
-      bio: '  Two kids, one dog.  ',
       homeZip: '98103',
       kids: [{ first_name: 'Ada', age: 5 }],
       familyPhotoCount: 2,
     })
     expect(report.visible[0].value).toBe('The Nguyens')
-    expect(report.visible[1].value).toBe('Your short bio')
+    expect(report.visible[1].value).toBe('The parent card "About me" text you write.')
     expect(report.visible[2].value).toBe('Ada (5)')
     expect(report.visible[3].value).toBe('2 family photos')
     expect(report.kept[2].value).toBe('98103 area')
@@ -84,7 +82,6 @@ describe('buildPrivacyReport', () => {
   it('never claims the street address or email are shared', () => {
     const report = buildPrivacyReport({
       displayName: 'A',
-      bio: 'B',
       homeZip: '98103',
       kids: [],
       familyPhotoCount: 1,

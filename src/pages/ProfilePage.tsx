@@ -27,14 +27,12 @@ import {
   LIKES_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   removeKid,
-  updateBio,
   updateDisplayName,
   updateKid,
   uploadAvatar,
   uploadFamilyPhoto,
   uploadKidPhoto,
   validateAvatarFile,
-  validateBio,
   validateFamilyPhotoFile,
   validateKid,
   validateKidLikes,
@@ -780,7 +778,6 @@ export function ProfilePage() {
       kidRows,
       kidDrafts,
       validators: {
-        bio: validateBio,
         kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
       },
     })
@@ -811,7 +808,6 @@ export function ProfilePage() {
       // rather than patched.
       name: () => updateDisplayName(userId, draft.name.trim()),
       location: () => Promise.resolve(),
-      bio: () => updateBio(userId, draft.bio),
       interests: () => Promise.resolve(),
     }
     const savedValues: Partial<ProfileFormValues> = {}
@@ -823,9 +819,7 @@ export function ProfilePage() {
         // The write landed: advance THIS section's baseline only. The writers
         // trim, so the baseline is the trimmed value (the draft keeps showing
         // what was typed — the comparison is trimmed, so it is not dirty).
-        if (section === 'bio') {
-          savedValues.bio = draft.bio.trim()
-        } else if (section === 'name') {
+        if (section === 'name') {
           savedValues.name = draft.name.trim()
         }
       } catch (err) {

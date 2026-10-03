@@ -138,7 +138,6 @@ export function PrivacySection({ userId }: { userId: string }) {
         <PrivacyFacts
           facts={buildPrivacyReport({
             displayName: data.value.profile.display_name,
-            bio: data.value.profile.bio,
             homeZip: data.value.profile.home_zip,
             kids: data.value.kids,
             familyPhotoCount: data.value.profile.family_photo_url ? 1 : 0,

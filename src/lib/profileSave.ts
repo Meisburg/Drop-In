@@ -36,14 +36,13 @@
  */
 
 /** The form sections one autosave pass may write. */
-export type ProfileSection = 'name' | 'location' | 'bio' | 'interests'
+export type ProfileSection = 'name' | 'location' | 'interests'
 
-/** The profile section values as EDITABLE TEXT (name/zip/bio/interests + the radius). */
+/** The profile section values as EDITABLE TEXT (name/zip/interests + the radius). */
 export interface ProfileFormValues {
   name: string
   homeZip: string
   radiusMiles: number
-  bio: string
   interests: string
 }
 
@@ -94,7 +93,6 @@ export interface ProfileSavePlan {
  */
 export interface ProfileSaveValidators {
   name?: (value: string) => string | null
-  bio?: (value: string) => string | null
   interests?: (value: string) => string | null
   kid?: (kid: KidSave) => string | null
 }
@@ -102,7 +100,6 @@ export interface ProfileSaveValidators {
 /** The profile row a fresh /settings seeds its form from (pre-0022 columns optional). */
 export interface ProfileSeedSource {
   display_name: string
-  bio?: string | null
   interests?: string | null
   home_zip?: string | null
   radius_miles?: number | null
@@ -149,7 +146,6 @@ export function changedProfileSections(
   ) {
     sections.push('location')
   }
-  if (differs(draft.bio, baseline.bio)) sections.push('bio')
   if (differs(draft.interests, baseline.interests)) sections.push('interests')
   return sections
 }
@@ -241,8 +237,6 @@ function sectionError(
   switch (section) {
     case 'name':
       return validators.name?.(draft.name.trim()) ?? null
-    case 'bio':
-      return validators.bio?.(draft.bio) ?? null
     case 'interests':
       return validators.interests?.(draft.interests) ?? null
     case 'location':
@@ -259,7 +253,6 @@ export function seedProfileFormValues(
     name: profile.display_name,
     homeZip: profile.home_zip ?? '',
     radiusMiles: profile.radius_miles ?? defaultRadiusMiles,
-    bio: profile.bio ?? '',
     interests: profile.interests ?? '',
   }
 }

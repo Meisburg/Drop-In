@@ -29,14 +29,12 @@ const BASE: ProfileFormValues = {
   name: 'Sam at Green Lake',
   homeZip: '98107',
   radiusMiles: 5,
-  bio: 'Two kids, one dog.',
   interests: 'Legos',
 }
 
 /** A stand-in for db.ts's validators (the messages are the page's, not the seam's). */
 const validators = {
   name: (value: string) => (value.trim() === '' ? 'Give your family a name.' : null),
-  bio: (value: string) => (value.length > 500 ? 'Keep the bio to 500 characters.' : null),
   interests: (value: string) =>
     value.trim().length > 120 ? 'Keep interests to 120 characters.' : null,
   kid: (kid: { firstName: string; age: number; likes: string }) => {
@@ -88,7 +86,6 @@ describe('planProfileSave — only the changed sections are written', () => {
     const result = plan({
       name: `  ${BASE.name}  `,
       homeZip: ` ${BASE.homeZip} `,
-      bio: `${BASE.bio}\n`,
       interests: ` ${BASE.interests}`,
     })
     expect(result.empty).toBe(true)
@@ -96,13 +93,13 @@ describe('planProfileSave — only the changed sections are written', () => {
   })
 
   it('writes only the section that changed, in the form’s own order', () => {
-    expect(plan({ bio: 'Three kids now.' }).sections).toEqual(['bio'])
+    expect(plan({ interests: 'Legos and trains' }).sections).toEqual(['interests'])
     expect(plan({ name: 'Sam at Ballard', interests: 'Legos and trains' }).sections).toEqual([
       'name',
       'interests',
     ])
-    expect(plan({ name: 'Sam at Ballard', bio: 'Three kids now.', radiusMiles: 20 }).sections).toEqual(
-      ['name', 'location', 'bio'],
+    expect(plan({ name: 'Sam at Ballard', radiusMiles: 20 }).sections).toEqual(
+      ['name', 'location'],
     )
   })
 
@@ -112,15 +109,15 @@ describe('planProfileSave — only the changed sections are written', () => {
   })
 
   it('clearing a field is a change (the writers clear on an empty string)', () => {
-    const result = plan({ bio: '', interests: '   ' })
-    expect(result.sections).toEqual(['bio', 'interests'])
+    const result = plan({ interests: '   ' })
+    expect(result.sections).toEqual(['interests'])
   })
 })
 
 describe('planProfileSave — an invalid section blocks only itself', () => {
   it('the blocked section carries the inline message and stays unwritten', () => {
-    const draft = { ...BASE, name: '   ', bio: 'x'.repeat(501) }
-    expect(changedProfileSections(BASE, draft)).toEqual(['name', 'bio'])
+    const draft = { ...BASE, name: '   ', interests: 'x'.repeat(121) }
+    expect(changedProfileSections(BASE, draft)).toEqual(['name', 'interests'])
     const result = planProfileSave({
       baseline: BASE,
       draft,
@@ -131,7 +128,7 @@ describe('planProfileSave — an invalid section blocks only itself', () => {
     expect(result.sections).toEqual([])
     expect(result.blockedSections).toEqual([
       { section: 'name', error: 'Give your family a name.' },
-      { section: 'bio', error: 'Keep the bio to 500 characters.' },
+      { section: 'interests', error: 'Keep interests to 120 characters.' },
     ])
     // An invalid edit is still an edit: the form stays dirty (the guard warns).
     expect(result.empty).toBe(false)
@@ -232,14 +229,14 @@ describe('seedProfileFormValues / seedKidDrafts (the seed-once discipline)', () 
   it('seeds the form from the profile row, with pre-0022 columns as empty strings', () => {
     expect(
       seedProfileFormValues({ display_name: 'Sam' }, 5),
-    ).toEqual({ name: 'Sam', homeZip: '', radiusMiles: 5, bio: '', interests: '' })
+    ).toEqual({ name: 'Sam', homeZip: '', radiusMiles: 5, interests: '' })
     expect(seedProfileFormValues({ display_name: 'Sam', radius_miles: null }, 5).radiusMiles).toBe(5)
     expect(
       seedProfileFormValues(
-        { display_name: 'Sam', home_zip: '98107', radius_miles: 20, bio: 'hi', interests: 'Legos' },
+        { display_name: 'Sam', home_zip: '98107', radius_miles: 20, interests: 'Legos' },
         5,
       ),
-    ).toEqual({ name: 'Sam', homeZip: '98107', radiusMiles: 20, bio: 'hi', interests: 'Legos' })
+    ).toEqual({ name: 'Sam', homeZip: '98107', radiusMiles: 20, interests: 'Legos' })
   })
 
   it('an in-flight kid draft wins over a re-list (typing is never dropped)', () => {

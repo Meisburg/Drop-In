@@ -30,12 +30,6 @@ export interface Profile {
    */
   avatar_url?: string | null
   /**
-   * A short family bio (V2 ticket 02, migration 0011): <= 500 characters,
-   * app-capped + the DB backstop. Optional: absent until the live project
-   * is past 0011.
-   */
-  bio?: string | null
-  /**
    * The family's home zip (V2 slice 3, migration 0012): the discovery
    * center — the feed shows drop-ins whose host sits within the viewer's
    * radius of this zip (via zip_codes). Nullable: unset until onboarding
@@ -53,7 +47,7 @@ export interface Profile {
   /**
    * The family's interests (V3 slice 6, ticket 09, migration 0022):
    * <= 200 characters, app-capped (no DB CHECK — the 0021 address
-   * lesson). Shown as an interests line under the bio on /u/:handle.
+   * lesson). Shown as an interests line on /u/:handle.
    * Optional: absent until the live project is past 0022 (undefined at
    * runtime — the render is null-safe).
    */

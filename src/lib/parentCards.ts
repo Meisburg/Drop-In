@@ -240,7 +240,7 @@ export function parentCardAboutText(stored: string | null | undefined): string |
 export function parentNameRows(
   cards: ReadonlyArray<ParentCard> | null,
   linked: { handle: string; avatarUrl?: string | null; about?: string | null } | null,
-  owner: { displayName: string; avatarUrl: string | null; bio?: string | null } | null = null,
+  owner: { displayName: string; avatarUrl: string | null } | null = null,
 ): ParentNameRow[] {
   const linkedHandle = linked === null ? '' : normalizeHandle(linked.handle)
   const linkedAvatar = linked === null ? null : parentCardPhotoSrc(linked.avatarUrl ?? null)
@@ -251,7 +251,6 @@ export function parentNameRows(
   // wear one person's face.
   const ownerName = owner === null ? '' : normalizeHandle(owner.displayName)
   const ownerAvatar = owner === null ? null : parentCardPhotoSrc(owner.avatarUrl)
-  const ownerAbout = owner === null ? null : parentCardAboutText(owner.bio ?? null)
   let claimed = false
   let ownerClaimed = false
   const rows = parentCardList(cards).map((card) => {
@@ -271,7 +270,7 @@ export function parentNameRows(
         : isOwner && owner !== null
           ? owner.displayName
           : null,
-      about: cardAbout ?? (isLinked ? linkedAbout : isOwner ? ownerAbout : null),
+      about: cardAbout ?? (isLinked ? linkedAbout : null),
       photo: ownPhoto ?? (isLinked ? linkedAvatar : isOwner ? ownerAvatar : null),
     }
   })

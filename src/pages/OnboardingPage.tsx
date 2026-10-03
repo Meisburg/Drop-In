@@ -6,12 +6,10 @@ import { useCropStep } from '../components/useCropStep'
 import { composeDisplayName, displayNameFieldError } from '../lib/account'
 import {
   addKid,
-  BIO_MAX_LENGTH,
   createProfile,
   HandleTakenError,
   loadZipCodes,
   MAX_KIDS_PER_PROFILE,
-  updateBio,
   updateHomeZipRadius,
   uploadAvatar,
   validateKid,
@@ -96,8 +94,7 @@ export function OnboardingPage() {
   const [photoAdded, setPhotoAdded] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
-  const [bio, setBio] = useState('')
-  const [bioError, setBioError] = useState<string | null>(null)
+  
   const [kidRows, setKidRows] = useState<Array<{ name: string; age: string }>>([])
   const [kidsError, setKidsError] = useState<string | null>(null)
 
@@ -220,24 +217,9 @@ export function OnboardingPage() {
     }
     setSaving(true)
     setError(null)
-    setBioError(null)
     setKidsError(null)
     try {
       await updateHomeZipRadius(session.user.id, homeZip.trim(), radiusMiles)
-      // The optional items (V2 ticket 02): only what was actually entered.
-      // A failure here never traps onboarding (the items are optional —
-      // the /settings nudge banner keeps the prompt) — but it is surfaced.
-      if (bio.trim() !== '') {
-        try {
-          await updateBio(session.user.id, bio)
-        } catch (err) {
-          setBioError(
-            err instanceof Error
-              ? `${err.message} You can add it later in your settings.`
-              : 'Could not save your bio. You can add it later in your settings.',
-          )
-        }
-      }
       const filledKidRows = kidRows.filter((row) => row.name.trim() !== '' || row.age.trim() !== '')
       for (const row of filledKidRows) {
         const age = Number(row.age)
@@ -461,9 +443,9 @@ export function OnboardingPage() {
         </div>
       )}
 
-      {/* V2 ticket 02: the optional completion step — photo + bio + kids
+      {/* V2 ticket 02: the optional completion step — photo + kids
           (first name + age only, the privacy pin). Skipping is fine: the
-          /settings nudge banner keeps prompting until all three are there.
+          /settings nudge banner keeps prompting until all are there.
           Frontend-design pass: this block loses its card chrome and reads as
           a titled section of the same notice. */}
       <div className="flex flex-col gap-3">
@@ -488,26 +470,6 @@ export function OnboardingPage() {
             {photoError !== null ? <p role="alert" id={errorId('photo')} className="text-sm text-red-600">{photoError}</p> : null}
             {photoCrop.dialog}
           </div>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Bio</span>
-            <textarea
-              className={
-                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                (bioError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={bio}
-              onChange={(e) => {
-                setBio(e.target.value)
-                setBioError(null)
-              }}
-              placeholder="A few words about your family (optional)"
-              maxLength={BIO_MAX_LENGTH}
-              rows={2}
-              {...fieldA11y('bio', bioError)}
-            />
-            {bioError !== null ? <span role="alert" id={errorId('bio')} className="text-sm text-red-600">{bioError}</span> : null}
-          </label>
 
           <div className="flex flex-col gap-2 text-sm">
             <span className="text-slate-700">Kids (first name + age only)</span>

@@ -1018,7 +1018,7 @@ test('a parent card’s “About me” saves; a profile with none of the blocks 
   // EMPTY: clear the card and the kids, then both pages must still look
   // finished — no placeholder, no empty card, no "no photo yet".
   await markerDeleteKids(e)
-  await markerPatchProfile(e, { bio: null, family_photo_url: null })
+  await markerPatchProfile(e, { family_photo_url: null })
   await fetch(`${e.url}/rest/v1/parent_cards?profile_id=eq.${e.markerUserId}`, {
     method: 'DELETE',
     headers: markerHeaders(e),
@@ -1123,7 +1123,7 @@ test.afterEach(async () => {
     }
     // The avatar object is gone, so the profile must stop pointing at it (the
     // avatar.e2e.ts discipline) — and the three fields this spec set are cleared.
-    await markerPatchProfile(e, { avatar_url: null, family_photo_url: null, bio: null })
+    await markerPatchProfile(e, { avatar_url: null, family_photo_url: null })
     console.log(`[e2e cleanup] ${notes.join('; ')}`)
   } catch (err) {
     console.log(

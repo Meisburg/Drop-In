@@ -30,7 +30,6 @@ export interface PrivacyReport {
 
 export interface PrivacyInput {
   displayName: string | null | undefined
-  bio: string | null | undefined
   homeZip: string | null | undefined
   kids: readonly Pick<Kid, 'first_name' | 'age'>[]
   familyPhotoCount: number
@@ -59,7 +58,6 @@ export function photoSummary(count: number): string {
  */
 export function buildPrivacyReport(input: PrivacyInput): PrivacyReport {
   const name = typeof input.displayName === 'string' ? input.displayName.trim() : ''
-  const bio = typeof input.bio === 'string' ? input.bio.trim() : ''
   const zip = typeof input.homeZip === 'string' ? input.homeZip.trim() : ''
 
   return {
@@ -71,7 +69,7 @@ export function buildPrivacyReport(input: PrivacyInput): PrivacyReport {
       },
       {
         label: 'About your family',
-        value: bio === '' ? 'Nothing yet' : 'Your short bio',
+        value: 'The parent card "About me" text you write.',
         detail: 'Only signed-in parents can read it.',
       },
       {
