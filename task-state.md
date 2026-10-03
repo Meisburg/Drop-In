@@ -2153,3 +2153,5 @@ without either a working cloud lane or a change to how the work is executed.
   is a new DB/privacy decision, not a UI change. **Nothing is blocked on this** — the slice is built,
   gated and under review; it is recorded here so it reaches you with the reminder rather than dying in
   a ledger.
+
+- 2026-09-29: first-open parent test — scoring kit + pre-registered pass bars + desk-research baseline at research/first-open-validation/2026-09-29-parent-test-scoring.md. Awaiting 5 parents from Jon.
