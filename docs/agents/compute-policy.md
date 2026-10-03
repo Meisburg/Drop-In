@@ -379,3 +379,36 @@ preference stops being applied or starts outranking the cost tier.
 - **`strata-max` still declares `residency: resident`**, which is false — it is
   loaded on demand and cannot be resident alongside a satisfiable reserve on this
   machine. Left as declared rather than quietly edited, and recorded here.
+
+### The ONE machine step at upgrade time — and why it is not automatic yet
+
+**Routing switches by itself. Loading the model does not, and that is deliberate:**
+
+- **D-004: the factory never starts or stops an inference server on an agent's own
+  judgement.** It chooses a model and prints the command; a human decision, or an
+  explicit authorisation, starts it. The comment in `factory.mjs` says exactly this,
+  and hardening it into an automatic start would quietly remove a safety property
+  that was chosen on purpose.
+- **All three units are `enabled`, and only `strata-max` and `strata-serve` declare
+  `Conflicts=`.** Today that is harmless: `strata-max` cannot fit, so it fails and
+  `ninfer-serve` carries every lane. **After the RAM upgrade both would try to load
+  at login — 31.8 GB plus 23.4 GB against a 32 GB card — and whichever loses is
+  decided by startup order.** That is a race, not a policy.
+
+**So do this once, when the RAM is in:**
+
+    systemctl --user disable --now ninfer-serve
+
+That is the whole machine step. Leave it disabled while the primary is viable:
+`ninfer` remains registered, still clears every floor it cleared before, and the
+router reaches for it whenever `strata-max` is not admissible. **Disabling a unit
+does not remove a model from the registry — the fallback stays a fallback.**
+
+**This is NOT to be done before the RAM arrives.** Switching the conflict today
+would leave a machine where nothing local loads and every lane falls to cloud —
+strictly worse than the current state, in which the fallback is doing exactly its
+job. The ordering matters more than the edit.
+
+**Recorded rather than built:** the factory could in principle start the routed
+model itself. It does not, and that is a decision to revisit with the human rather
+than to take by momentum.
