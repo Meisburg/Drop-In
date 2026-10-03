@@ -229,9 +229,47 @@ async function main() {
       `a name matching more than one row is one park published twice (see the notes above)`,
   )
 
+  /**
+   * EXACT EQUALITY, in both directions — but against the rows THIS RUN is
+   * responsible for, not against every row that happens to carry a site.
+   *
+   * ⚠️ V28 r4 FIX. This comparison used to be
+   *
+   *     actual = count(*) from places where website_url is not null
+   *     if (actual !== expectedRows) FATAL
+   *
+   * which IGNORES the rows that already had a website before this script ran.
+   * On 2026-10-03 that was 55 rows, so a correct, verified apply of 169 rows
+   * read back 224 and the script declared FATAL — while the database was in
+   * exactly the state it should be. **The check could not pass on any apply to a
+   * partially populated table**, which is every apply after the first —
+   * including a plain re-run of this script's own original 2026-09-26 use.
+   *
+   * A verification that fails on correct work is worse than no verification: it
+   * trains the next reader to wave the FATAL through, which is how a real
+   * failure gets missed later. (0060's standard is that a read-back must ASSERT
+   * the truth; asserting a falsehood is the same defect pointing the other way.)
+   *
+   * THE FIX compares like with like. `expectedRows` still counts the rows the
+   * source file names (asked of the database, so a duplicated name is counted
+   * correctly), and `actual` becomes "how many of THOSE named rows now carry a
+   * non-null site". Untouched rows stop polluting the comparison, and both
+   * original failure directions survive:
+   *
+   *  - FEWER than expected means a named row did not get its site — a typo, a
+   *    renamed row, or a write that did not land. The failure this exists for.
+   *  - MORE than expected means a name now matches more rows than it did when
+   *    the file was researched, so the name-matched UPDATE wrote to a row nobody
+   *    reviewed. That deserves a human look, not a shrug.
+   */
+  const namedRowsResult = await query(
+    'select count(*) filter (where website_url is not null) as with_site, ' +
+      `count(*) as named from public.places where name in (${nameList});`,
+    'named-rows',
+  )
   let actual = null
   try {
-    const parsed = JSON.parse(counts.text)
+    const parsed = JSON.parse(namedRowsResult.text)
     const first = Array.isArray(parsed) ? parsed[0] : parsed
     actual = Number(first?.with_site)
   } catch {
@@ -248,20 +286,12 @@ async function main() {
     writeFileSync(EVIDENCE, log.join('\n') + '\n')
     process.exit(1)
   }
-  /**
-   * EXACT EQUALITY, in both directions, and both failures are real:
-   *
-   *  - FEWER rows than expected means a name in the source file matches no row
-   *    in `places` (a typo, a renamed row). That is the failure this check
-   *    exists for: the site the researcher verified never reaches the place.
-   *  - MORE rows than expected means the directory gained a duplicate name
-   *    since this script's notes were written, so the name-matched UPDATE is
-   *    now writing to a row nobody reviewed. That deserves a human look, not a
-   *    shrug.
-   */
+  say(
+    `READ-BACK (named rows only): ${actual} of ${expectedRows} row(s) named by the source now carry a site.`,
+  )
   if (actual !== expectedRows) {
     say(
-      `FATAL: read-back says ${actual} row(s) carry a site, expected ${expectedRows}. ` +
+      `FATAL: read-back says ${actual} of the ${expectedRows} named row(s) carry a site. ` +
         'A name in the source file matches the wrong number of rows in `places` — inspect and re-run.',
     )
     writeFileSync(EVIDENCE, log.join('\n') + '\n')
