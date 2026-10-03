@@ -23,7 +23,7 @@
         "vram_gb": 30,
         "exclusive": "local-inference",
         "footprint_source": "measured",
-        "footprint_evidence": "The unit's own ExecStart banner: 'loading the experts into RAM (about 55 GB)'. systemd-oomd reported '53.8G memory peak' for the unit at the 2026-10-02 04:56 kill. VRAM 30 GB: nvidia-smi showed 31845 MiB used while serving, including ~1.5 GB of desktop."
+        "footprint_evidence": "MEASURED 2026-10-02 across four loads. The pinned host arena is 46.84 GiB ('loaded 46.84 GiB at 6.04 GiB/s' in the engine log), plus ~4.8 GB of weights and KV state = ~52 GB RSS, so 52 is the measured figure and the earlier 55 was the unit banner's estimate. VRAM 30-32 GB: the card is full (287 MiB free with everything loaded). The arena is FIXED and is NOT reduced by a bigger expert cache -- the cache is a GPU-resident COPY, not a relocation, proved by --kv q4_0 + a halved context growing the cache 11330->11989 slots while the arena stayed 46.84 GiB. Load 20 s. Generation 71.8 tok/s with MTP. Tool use verified 4/4 across two configurations. The binding constraint is RAM headroom, not the model."
       },
       "capabilities": {
         "reasoning": 2,
@@ -31,7 +31,8 @@
         "tool_use": 3,
         "context_window": 131072
       },
-      "cost_tier": 0
+      "cost_tier": 0,
+      "_config_note": "BEST MEASURED CONFIG 2026-10-02: --kv q4_0 --max-context 131072 --expert-cache auto (+659 resident expert slots vs --kv int8 at the same context, full 128K retained). --expert-cache-per-layer IS BUGGY on this pack: it fails its own ExpertCache::verify_slot ('slot 0 differs from the arena at byte 0') and the engine correctly refuses to serve. MAP_HUGETLB is unavailable (no hugetlb pool) so the 46.84 GiB arena is backed by 4 KB pages. ADMISSION: needs 52 + 4 reserve + 3 task = 59 GB; the machine reports ~2 GB available while the model runs, so the router must fall back. ADDING RAM is the fix, not a weaker reserve."
     },
     "ollama-cloud/deepseek-v4.1-flash:cloud": {
       "provider": "cloud",
