@@ -68,17 +68,19 @@
         "timeout_ms": 2000
       },
       "resources": {
-        "ram_gb": null,
+        "ram_gb": 3,
         "vram_gb": 24,
         "exclusive": "local-inference",
-        "footprint_source": "unmeasured",
-        "footprint_evidence": "VRAM 24 GB is measured (it held 23.4 GB of 32.6 GB when it starved strata-max into 55 crash-loops on 2026-10-02). RAM is NOT measured, and this registry refuses to guess: a null footprint is inadmissible, with that reason printed."
+        "footprint_source": "measured",
+        "footprint_evidence": "MEASURED 2026-10-02. RAM 3 GB: systemctl --user show -p MemoryPeak --value ninfer-serve = 2.3 GB after loading and answering, rounded to 3 to cover sampling. VRAM 24 GB: nvidia-smi --query-compute-apps showed the ninfer-serve process holding 23934 MiB. This model is GPU-RESIDENT: it uses the card, not the machine's RAM, which is why it coexists with everything else where strata-max (51.4 GB RSS) could not."
       },
       "capabilities": {
         "reasoning": 3,
         "coding": 3,
-        "tool_use": 2,
-        "context_window": 98304
+        "tool_use": 3,
+        "context_window": 98304,
+        "_tool_use_source": "VERIFIED EMPIRICALLY 2026-10-02, the same method D-034 used for ollama-cloud/glm-5.3. Was declared tool_use: 2, which failed the builder/reviewer/verifier floor of 3 and sent every lane to cloud. One round trip to POST /v1/chat/completions with a report_days tool schema returned finish_reason=tool_calls and arguments {\"days\":28} with the right name. A model that emits a correct tool call is not tool_use 2. One round trip is evidence of the capability, NOT a benchmark of its reliability, and the distinction is kept.",
+        "_capability_source": "REASONING and CODING are DECLARED POLICY, not benchmarked (unchanged). TOOL_USE is VERIFIED EMPIRICALLY (see _tool_use_source). CONTEXT_WINDOW is READ from the server: the unit passes --max-context 98304 and /v1/models reports n_ctx 131072 at the engine level; the floor uses 98304, the conservative of the two."
       },
       "cost_tier": 0
     },
