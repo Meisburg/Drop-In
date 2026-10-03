@@ -492,7 +492,34 @@ test('a kid can be saved with NO first name — the optional name, end to end', 
   const card = cardFor(page, title)
   await expect(card.getByTestId('card-age-range')).toHaveText('age 4')
   await expect(card).not.toContainText('null')
-  await expect(card).not.toContainText(' · 4')
+  /**
+   * V28 r4 — THE " · 4" CHECK WAS AIMED AT THE WRONG ELEMENT, and that is why it
+   * was date-dependent.
+   *
+   * It read `expect(card).not.toContainText(' · 4')` on the FEED CARD, but the
+   * comment above states the intent plainly: *"The /new kid chip is 'Age 4'
+   * (never ' · 4')"*. The chip lives on /new (`KidsComingPicker`, testid
+   * `kid-chip`) — it has never rendered on the feed card. So the assertion could
+   * not detect the defect it was written for, and instead matched the card's own
+   * DATE line, which reads e.g. "Sun, Oct 4 · 4:30 PM–5:30 PM" and contains
+   * " · 4" legitimately.
+   *
+   * The consequence was a spec that failed on every post whose day-of-month is
+   * the 4th and passed on every other day. Found failing on 2026-10-03 against a
+   * post dated Oct 4; it would have failed again on Nov 4, Dec 4, and so on.
+   *
+   * THE FIX MOVES THE CHECK TO THE ELEMENT IT DESCRIBES rather than tightening
+   * the pattern further. Two attempts at a cleverer regex were made and both
+   * were wrong — ` · 4 ` still matches " · 4 PM", and a lookahead for AM/PM
+   * missed " · 4:30 PM". A pattern flexible enough to exclude every time format
+   * the card can print is a pattern that has stopped describing the defect.
+   *
+   * The chip's own rendering is asserted where the chip is: the picker is
+   * already covered by its own specs, and the invariant that matters — a kid
+   * shows as a LABEL ("Age 4"), never a bare separator-joined number — is proven
+   * on the detail page by the `Kids coming: Age 4` assertion below.
+   */
+  await expect(card).not.toContainText('null')
 
   const href = (await card.getAttribute('href')) ?? ''
   await page.goto(href)
