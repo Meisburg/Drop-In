@@ -141,6 +141,15 @@
       "note": "accepted 2026-10-02, the batch's final slice. KNOWN-OPENS RECORDED AT THE SHAs THE REVIEW NAMES: (1) the mid-save divergence is a FAMILY, not one field -- the RADIUS SELECT (OnboardingPage.tsx:1089 + :1683-1700) is editable while saving and BOTH save paths write the tap-time radiusMiles, at least as reachable as the address case the report named; (2) the address field (:1496) likewise; (3) 'always co-render' (:1664-1669) rests on two unpinned single-site premises with no machine check; (4) 'finally re-enables on every path' (:1644-1655) is prose-only on the save-failure path (no abort/5xx leg on this card); (5) the gate watches TRIMMED text, so a whitespace-only homeZip with the note hidden hides the field -- invariant-consistent ('or to nothing'), declared not fixed.",
       "actor": null,
       "model": null
+    },
+    {
+      "at": "2026-10-03T11:57:02.202Z",
+      "lane": "acceptance",
+      "from": "pass",
+      "to": "pass",
+      "note": "r2-D1 CLOSED BY THE HUMAN 2026-10-02: on a phone, against the Vercel preview of this branch, they abandoned after the kids card and re-entered, and reported 'it resumed'. The batch's one human-only verification is now satisfied -- recorded as the human's words, not as an agent's inference. The same walk also produced SEVEN new product items, listed below and NOT started.",
+      "actor": null,
+      "model": null
     }
   ]
 }
