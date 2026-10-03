@@ -50,6 +50,223 @@ export function victimsClause() {
   return `(select id from auth.users where email like '${ACCOUNT_MARKER}%')`
 }
 
+/**
+ * THE COLLATERAL RULE — a parent's row must be reachable ONLY through its own
+ * marker clause, never through a CASCADE.
+ *
+ * THE INCIDENT THIS EXISTS FOR (2026-10-03, r3-1). The sweep deleted 2445 marker
+ * rows exactly as scoped, and the database still lost one row nobody asked for:
+ * a REAL parent had pinged an `e2e-`-hosted drop-in. That ping's `profile_id` was
+ * not a marker id, so `going_pings`' own clause never matched it and the marker
+ * count for that table was a truthful ZERO. The ping died anyway, because
+ * `going_pings.playdate_id -> playdates` is `ON DELETE CASCADE` and the sweep
+ * deleted the marker-hosted drop-in it pointed at. Both reads were honest; the
+ * row was never in the marker set. It was a DATA-MODEL defect, not a race.
+ *
+ * WHAT THIS SAYS, in one sentence: **deleting a marker parent must not be able to
+ * reach a non-marker child.** A parent whose children are all marker-owned is
+ * safe to delete; a parent that a real parent's row points at is NOT, and the
+ * sweep must refuse rather than delete it.
+ *
+ * `childClause` is the child's own marker predicate — the ONLY rows the sweep
+ * asked to remove. `parentKey` is the column in the child that points at the
+ * parent. `parentClause` identifies the marker parents about to be deleted.
+ *
+ * A blocker row is a child of a doomed parent that the child's own clause does
+ * NOT match: it will be destroyed by the cascade without ever being named.
+ */
+export const CASCADE_HAZARDS = [
+  {
+    parent: 'playdates',
+    parentClause: 'host_profile_id in VICTIMS',
+    child: 'going_pings',
+    parentKey: 'playdate_id',
+    childClause: 'profile_id in VICTIMS',
+  },
+  {
+    parent: 'playdates',
+    parentClause: 'host_profile_id in VICTIMS',
+    child: 'comments',
+    parentKey: 'playdate_id',
+    childClause: 'author_profile_id in VICTIMS',
+  },
+  {
+    parent: 'playdates',
+    parentClause: 'host_profile_id in VICTIMS',
+    child: 'playdate_kids',
+    parentKey: 'playdate_id',
+    childClause: 'kid_id in (select id from kids where profile_id in VICTIMS)',
+  },
+  {
+    parent: 'kids',
+    parentClause: 'profile_id in VICTIMS',
+    child: 'playdate_kids',
+    parentKey: 'kid_id',
+    childClause: 'kid_id in (select id from kids where profile_id in VICTIMS)',
+  },
+  {
+    parent: 'comments',
+    parentClause: 'author_profile_id in VICTIMS',
+    child: 'comments',
+    parentKey: 'parent_id',
+    childClause: 'author_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'follows',
+    parentKey: 'followee_profile_id',
+    childClause: 'follower_profile_id in VICTIMS or followee_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'follows',
+    parentKey: 'follower_profile_id',
+    childClause: 'follower_profile_id in VICTIMS or followee_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'going_pings',
+    parentKey: 'profile_id',
+    childClause: 'profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'comments',
+    parentKey: 'author_profile_id',
+    childClause: 'author_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'reports',
+    parentKey: 'reporter_profile_id',
+    childClause: 'reporter_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'memberships',
+    parentKey: 'profile_id',
+    childClause: 'profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'push_subscriptions',
+    parentKey: 'profile_id',
+    childClause: 'profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'playdates',
+    parentKey: 'host_profile_id',
+    childClause: 'host_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'playdate_series',
+    parentKey: 'host_profile_id',
+    childClause: 'host_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'kids',
+    parentKey: 'profile_id',
+    childClause: 'profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'blocks',
+    parentKey: 'blocker_profile_id',
+    childClause: 'blocker_profile_id in VICTIMS or blocked_profile_id in VICTIMS',
+  },
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'blocks',
+    parentKey: 'blocked_profile_id',
+    childClause: 'blocker_profile_id in VICTIMS or blocked_profile_id in VICTIMS',
+  },
+]
+
+/** Substitute VICTIMS into one clause. */
+export function withVictims(clause) {
+  return clause.replaceAll('VICTIMS', victimsClause())
+}
+
+/**
+ * The ONE query the sweep must run before it deletes anything: for every cascade
+ * hazard, how many rows would be destroyed WITHOUT having been named by their own
+ * marker clause.
+ *
+ * A non-zero blocker count on any row means the sweep MUST NOT delete. This is a
+ * read-only probe, so it is safe to run against production at any time.
+ */
+export function collateralProbeQuery() {
+  const selects = CASCADE_HAZARDS.map((h, i) => {
+    // ⚠️ `select p.id`, never `select 1`: the parent key is a uuid, and
+    // `uuid = integer` is a hard Postgres error (42883), not a false negative.
+    const doomedParent =
+      `select p.id from ${h.parent} p where ${withVictims(h.parentClause)}`
+    return (
+      `(select count(*) from ${h.child} c ` +
+      `where c.${h.parentKey} in (${doomedParent}) ` +
+      `and not (${withVictims(h.childClause)})) as b${i}`
+    )
+  })
+  return `select ${selects.join(', ')}`
+}
+
+/** Turn one collateral probe row into `[{ parent, child, column, blockers }]`. */
+export function parseCollateral(rawRow) {
+  return CASCADE_HAZARDS.map((h, i) => ({
+    parent: h.parent,
+    child: h.child,
+    column: h.parentKey,
+    blockers: Number(rawRow?.[`b${i}`] ?? 0),
+  }))
+}
+
+/**
+ * THE REFUSAL. Given the collateral probe, return every reason the sweep must
+ * abort, or an empty array when it is safe to proceed.
+ *
+ * Fails CLOSED: a probe row that cannot be read is a refusal, never a green
+ * light. "The rule did not run" must never resolve to "go ahead and delete" —
+ * the same principle the founder-overlap gate already follows.
+ */
+export function collateralRefusals(collateral) {
+  if (!Array.isArray(collateral) || collateral.length === 0) {
+    return ['REFUSING: the collateral probe returned nothing — nothing was deleted.']
+  }
+  const refusals = []
+  for (const row of collateral) {
+    if (Number.isNaN(row.blockers)) {
+      refusals.push(
+        `REFUSING: ${row.child}.${row.column} -> ${row.parent} could not be read — ` +
+          `nothing was deleted.`,
+      )
+      continue
+    }
+    if (row.blockers > 0) {
+      refusals.push(
+        `${row.blockers} non-marker ${row.child} row(s) point at a marker ${row.parent} ` +
+          `via ${row.child}.${row.column} -> ${row.parent}.id and would be destroyed by ` +
+          `ON DELETE CASCADE — they were never named by the sweep's own clause.`,
+      )
+    }
+  }
+  return refusals
+}
+
 /** The WHERE clauses with VICTIMS substituted — what the sweep actually sends. */
 export function markerRowsWithVictims() {
   const victims = victimsClause()
@@ -97,6 +314,13 @@ export function parseCounts(rawRow) {
  *      reads zero (a delete that hit real parent content, say).
  *
  * An empty array means verified. Anything else is release-blocking.
+ *
+ * ⚠️ CHECK 2 IS THE ONE THAT FOUND THE 2026-10-03 INCIDENT and it is NOT to be
+ * softened. The row it caught was never a marker, so check 1 went to zero
+ * exactly as intended — a cascade is invisible to every marker-shaped check.
+ * `collateralRefusals` (above) is the PREVENTIVE half added beside it; this
+ * function stays the DETECTIVE half, and a fix that made this pass by ignoring
+ * the delta would be the incident rewritten as a clean run.
  */
 export function verificationProblems(before, after) {
   const problems = []

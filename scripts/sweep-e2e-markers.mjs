@@ -14,12 +14,23 @@
  *      `bash scripts/cdp-migration-tooling.sh` first, and reading the token
  *      navigates that Chrome's window — see docs/agents/browser-lanes.md §7.
  *
- *   node scripts/sweep-e2e-markers.mjs list     # who would be deleted
- *   node scripts/sweep-e2e-markers.mjs select   # counts + the safety gate
- *   node scripts/sweep-e2e-markers.mjs delete   # REFUSES unless the gate passes
- *   node scripts/sweep-e2e-markers.mjs verify   # post-sweep state (exit 1 if any remain)
+ *   node scripts/sweep-e2e-markers.mjs list        # who would be deleted
+ *   node scripts/sweep-e2e-markers.mjs select      # counts + the safety gate
+ *   node scripts/sweep-e2e-markers.mjs collateral  # read-only cascade probe
+ *   node scripts/sweep-e2e-markers.mjs delete      # REFUSES unless BOTH gates pass
+ *   node scripts/sweep-e2e-markers.mjs verify      # post-sweep state (exit 1 if any remain)
  *
- * This deletes rows from production. Run `select` and read the gate first.
+ * This deletes rows from production. Run `select` and read the gates first.
+ *
+ * TWO GATES, and the second one exists because the first was not enough.
+ * `delete` refuses unless the founder-overlap gate passes AND the collateral
+ * probe finds no non-marker row sitting behind a cascade. On 2026-10-03 the
+ * founder gate passed, the sweep removed 2445 rows exactly as scoped, and a
+ * REAL parent still lost a `going_pings` row — because
+ * `going_pings.playdate_id -> playdates` is ON DELETE CASCADE and the sweep
+ * deleted the marker-hosted drop-in that ping pointed at. The ping was never a
+ * marker, so no marker-shaped check could see it. Scoping is not safety: see
+ * the incident note in scripts/lib/sweep-e2e.mjs.
  *
  * FIRST-USE AUDIT (ticket 05) MADE IT PROVE ITSELF. The audit found a fixture
  * drop-in sitting in the production discovery feed, which means the sweep had
@@ -51,10 +62,13 @@
 import { readFileSync } from 'node:fs'
 import { chromium } from '@playwright/test'
 import {
+  collateralProbeQuery,
+  collateralRefusals,
   countsQuery,
   deleteStatements,
   gateRefusal,
   markerTotal,
+  parseCollateral,
   parseCounts,
   verificationProblems,
 } from './lib/sweep-e2e.mjs'
@@ -183,6 +197,36 @@ if (mode === 'select') {
   }
   console.log(`Gate passed (${gate.e2e_users} accounts, 0 founder overlap).`)
 
+  // THE COLLATERAL GATE — read-only, and it runs BEFORE any delete.
+  //
+  // THE INCIDENT THIS BLOCKS (2026-10-03): scoping alone is not enough. This
+  // sweep deletes marker PARENTS, and `ON DELETE CASCADE` then destroys any
+  // child pointing at them — including rows owned by real parents, which the
+  // sweep's own WHERE clauses never named and its marker counts never saw. A
+  // real parent's `going_pings` row died exactly that way. So the sweep now
+  // ASKS FIRST: for every cascade edge, how many rows would be destroyed
+  // without having been named? A non-zero answer refuses the whole run.
+  //
+  // It fails CLOSED and it is not skippable: there is no flag that bypasses it.
+  const collateral = parseCollateral((await sql(collateralProbeQuery()))[0])
+  const collateralProblems = collateralRefusals(collateral)
+  if (collateralProblems.length > 0) {
+    console.error(
+      '\nREFUSING — this sweep would destroy rows it did not identify as e2e-owned:',
+    )
+    for (const p of collateralProblems) console.error(`  - ${p}`)
+    console.error(
+      '\nNOTHING WAS DELETED. A marker host\'s drop-in that a real parent joined cannot be ' +
+        'swept without taking that parent\'s row with it. Resolve those rows first ' +
+        '(or exclude those marker accounts), then re-run.',
+    )
+    process.exit(5)
+  }
+  console.log(
+    `Collateral gate passed — 0 non-marker rows sit behind any of the ` +
+      `${collateral.length} cascade edge(s).`,
+  )
+
   const before = await countMarkerRows()
   printCounts('\nRemoving:', before)
 
@@ -206,6 +250,24 @@ if (mode === 'select') {
   console.log(
     '\nVerified: zero marker rows remain, and every total moved by exactly the amount removed.',
   )
+} else if (mode === 'collateral') {
+  // READ-ONLY. The same probe `delete` runs before it is willing to touch
+  // anything, exposed on its own so the gate can be checked without a delete.
+  const collateral = parseCollateral((await sql(collateralProbeQuery()))[0])
+  const problems = collateralRefusals(collateral)
+  console.log('Cascade collateral probe — rows a delete would destroy WITHOUT naming them:')
+  for (const row of collateral) {
+    console.log(
+      `  ${row.child}.${row.column} -> ${row.parent}`.padEnd(46) +
+        ` ${String(row.blockers).padStart(5)}`,
+    )
+  }
+  if (problems.length > 0) {
+    console.error('\nWOULD REFUSE:')
+    for (const p of problems) console.error(`  - ${p}`)
+    process.exit(5)
+  }
+  console.log('\nSafe — delete would refuse nothing.')
 } else if (mode === 'verify') {
   const counts = await countMarkerRows()
   const remaining = markerTotal(counts)

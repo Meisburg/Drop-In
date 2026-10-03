@@ -298,47 +298,62 @@ slices below name it or explicitly declare it untouched.
 
 ---
 
-### 🔴 r3-1 — remove the three fake e2e drop-ins (item 4)
+### 🔴 r3-1 — remove the three fake e2e drop-ins (item 4) — **EXECUTED; INCIDENT; FIX IN FLIGHT**
 
-- **Objective.** Production shows no `e2e`-prefixed venue, host, or drop-in.
-- **Files.** **No source change expected.** Measure first; if the sweep is already
-  sufficient, this slice produces **evidence and a human confirmation**, not a diff. If a
-  gap is measured, the file list is `scripts/sweep-e2e-markers.mjs`,
-  `scripts/lib/sweep-e2e.mjs` (+ its test), and/or
-  `scripts/guards/fixture-marker-guard.mjs` (+ its `.check.mjs`).
-- **Approach.** ⚠️ **This touches PRODUCTION DATA and is the highest-risk item in the
-  batch.** Order is fixed and not the builder's to reorder:
+> **STATUS 2026-10-03: the sweep RAN and is a PUBLICATION BLOCKER.** It removed all 2445
+> marker rows as scoped, and **destroyed one real parent's `going_pings` row**. Its own
+> verification caught it (`exit 4`, "total went 5 → 4"). Full write-up:
+> **`.scratch/v28/reports/r3-1-incident.md`**; evidence preserved in
+> `r3-1-delete.txt`, `r3-1-verify.txt`, `r3-1-confirmation.md`.
+>
+> **ROOT CAUSE — a CASCADE, not a race.** `going_pings.playdate_id -> playdates` is
+> `ON DELETE CASCADE`. A real parent pinged a marker-hosted drop-in. Their `profile_id` is
+> not a marker, so `going_pings`' own clause never matched it and its marker count was a
+> truthful **zero** at both reads. Deleting the marker drop-in destroyed the ping anyway.
+> **Both reads were honest; the deletion model was wrong.**
+>
+> **THE FIX (built, gate-green):** `CASCADE_HAZARDS` — the 17 measured cascade edges — plus
+> a read-only **collateral probe** that runs before any delete and **refuses (exit 5)** when
+> a non-marker row sits behind a doomed marker parent. Fail-closed on empty/unreadable
+> probes. It cannot be bypassed. `verificationProblems` is **unchanged and unweakened**.
+>
+> **PROVEN END-TO-END:** the incident was reproduced in a rolled-back transaction against
+> the real production probe → **`b0 = 1`**, every other edge 0 → the gate refuses,
+> specifically. Nothing persisted (verified: 52/52/21/4 unchanged).
+>
+> **REMAINING FOR THIS SLICE:**
+> - **data recovery is a HUMAN question** — whether Supabase PITR can restore the deleted
+>   row; this repo has no backup tooling.
+> - **durability is a PRODUCT decision** — the e2e suite drives the **live production**
+>   project, so a sweep is a snapshot of a stream (~40 markers reappeared within 90 minutes).
+>   Recommendation: **a separate Supabase project/branch for e2e**, with automated
+>   pre-release cleanup as the bridge.
+
+- **Objective.** Production shows no `e2e`-prefixed venue, host, or drop-in, **and the
+  mechanism that removes them cannot delete real user data.**
+- **Files (as executed).** `scripts/lib/sweep-e2e.mjs`,
+  `scripts/lib/sweep-e2e.check.mjs`, `scripts/sweep-e2e-markers.mjs`,
+  `docs/agents/e2e-fixture-convention.md`.
+- **Approach.** ⚠️ **This touches PRODUCTION DATA.** The order is fixed:
   1. **`list`** — enumerate the exact marker accounts;
-  2. **`select`** — the counts **and the founder-overlap gate**, printed;
-  3. **present those exact rows to the HUMAN and get explicit confirmation of those rows**
-     — per the handover, this is required and is not a builder decision;
-  4. **`delete`** (which refuses unless the gate passes);
-  5. **`verify`** — which exits non-zero if any marker remains.
-  **The builder runs steps 1–2 and 5; step 4 runs only after the human's confirmation is
-  recorded in the brief's report.** A builder that deletes before the confirmation has
-  broken rule 8 (BLOCKED means stop and surface) and the deletion is unrecoverable.
-  ⚠️ **`delete` prints nothing about rows it cannot see** — `e2e-weekly-series.e2e.ts` also
-  creates a `playdates` row whose host is a marker account, so confirm the drop-in rows move
-  too, not only the auth users.
+  2. **`select`** — the counts **and the founder-overlap gate**;
+  3. **`collateral`** — the read-only cascade probe (NEW);
+  4. **present those exact rows to the HUMAN and get explicit confirmation**;
+  5. **`delete`** — **refuses (exit 5) unless BOTH gates pass**;
+  6. **`verify`** — exits non-zero if any marker remains.
+  **A builder that deletes before the confirmation has broken rule 8.** The sweeper has no
+  flag that bypasses the collateral gate.
 - **Acceptance.**
-  - `list` output and `select` counts are **recorded verbatim** in the report, with the
-    founder-overlap figure;
-  - the three named rows — `e2e weekly-absent 1790896154`, venue `E2E weekly lot`, host
-    `@e2e-1790896143` — appear in that output **before** any deletion;
-  - after the confirmed `delete`, **`verify` exits 0** and prints zero marker rows, with
-    every total moved by exactly the amount removed;
-  - a fresh preview renders **no `e2e`-prefixed venue or host** — but **the query is the
-    evidence and the page is only corroboration** (fact 13).
-  - **The check, stated as a target rather than a grep** (the script is not a grep, and a
-    claim that cannot be read is not a claim that holds): the captured output of
-    `node scripts/sweep-e2e-markers.mjs verify` contains **no** `VERIFY FAILED` line
-    (`scripts/sweep-e2e-markers.mjs:220-224`) and does contain
-    `Verified: no marker rows remain.` — **the exit code alone is not the check**, because
-    a sweep that finds nothing to remove also exits 0.
-- **Verify.** `node scripts/sweep-e2e-markers.mjs verify` (exit 0 is the check) **and**
-  `npm run verify` if any file changed.
-- **Depends on.** **Nothing — but its destructive step depends on a HUMAN confirmation.**
-  **Budget.** small (evidence) / medium (if a gap is found).
+  - the collateral gate **refuses** the 2026-10-03 incident shape, proven by mutation and by
+    a rolled-back reproduction against the live probe;
+  - every marker row is removable: `verify` exits 0 with zero marker rows after a sweep;
+  - `verificationProblems` still fails on a wrong total delta — **not weakened**;
+  - **no non-marker row is ever deleted**, asserted by the gate plus the regression check.
+- **Verify.** `node scripts/lib/sweep-e2e.check.mjs` **and** `npm run verify` **and**
+  `node scripts/sweep-e2e-markers.mjs collateral` **and** `node scripts/sweep-e2e-markers.mjs verify`.
+- **Depends on.** Nothing — but its destructive step depends on a **HUMAN confirmation**,
+  and publication depends on the recovery + durability answers above.
+  **Budget.** medium.
 
 ---
 
@@ -646,6 +661,30 @@ slices below name it or explicitly declare it untouched.
   by construction, which is why r3-7 and r3-8 exist as separate slices.
 
 ---
+
+## 7b. THE PUBLICATION GATE (updated 2026-10-03 after the r3-1 incident)
+
+**Publication is blocked until ALL of these hold. This list replaces "run the sweep
+before publishing" as the gate.**
+
+| # | Gate | State |
+|---|---|---|
+| P1 | The r3-1 collateral fix passes its regression check and mutation tests | ✅ **DONE** |
+| P2 | `npm run verify` green on the final tree, baseline **71 / 2067 / 81 / 0** | ✅ **DONE** |
+| P3 | The incident shape is **refused** by the real probe, proven non-destructively | ✅ **DONE** (rolled-back reproduction, `b0 = 1`) |
+| P4 | **A human decision on data recovery** — whether Supabase PITR can restore the deleted `going_pings` row | ⛔ **OPEN — needs the human** |
+| P5 | **A human decision on durability** — separate e2e project/branch vs automated pre-release cleanup | ⛔ **OPEN — needs the human** |
+| P6 | `node scripts/sweep-e2e-markers.mjs collateral` exits 0 on the publication tree | ✅ **DONE** (all 17 edges 0) |
+| P7 | A fresh preview renders no `e2e`-prefixed venue or host | ⛔ **OPEN — needs a Vercel preview** |
+| P8 | r3-2…r3-8 complete, or explicitly deferred by the human | ⛔ **OPEN** |
+
+**P4 and P5 are the two that need the human and cannot be delegated.** P7 needs a
+preview deployment. **Nothing destructive runs again until P1–P3 hold, and they do.**
+
+⚠️ **Do not re-run `delete` before publishing without re-reading P4/P5.** The gate is now
+safe to run — that is what P1–P3 establish — but the *durability* problem (markers
+reappearing between sweeps) means a single sweep at release time leaves fixtures visible in
+the feed beforehand.
 
 ## 8. Risks / open questions
 
