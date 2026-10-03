@@ -287,8 +287,25 @@ export function PlaceDirectory({
    * decision itself lives in the pure `planDirectoryList` seam.
    */
   const [openNowOnly, setOpenNowOnly] = useState(false)
-  // Miles from the home pin; null = no radius constraint from the modal.
-  const [radiusFilter, setRadiusFilter] = useState<number | null>(null)
+  /**
+   * Miles from the home pin; null = no radius constraint.
+   *
+   * V28 r4: this is ALWAYS null now. The filter modal's own "Within (miles of
+   * home pin, optional)" input was its only writer, and that input was deleted
+   * — it duplicated the distance dropdown below it while persisting nothing,
+   * because it was never a saved preference (`/settings` owns that, via
+   * `updateHomeZipRadius`). Two radius controls that could disagree, one of
+   * which silently evaporated on navigation, was the confusion the founder
+   * reported.
+   *
+   * The state and the `planDirectoryList` parameter are KEPT, not removed: the
+   * seam's radius branch (`places.ts` `filterPlacesByRadius`) is the tested
+   * mechanism, and `radiusMiles` — the SEPARATE, saved-and-overridable value
+   * the dropdown drives — is the live path. Deleting the seam would remove
+   * tested behaviour for no user-visible gain, so the parameter stays as the
+   * explicit "no modal radius constraint" default.
+   */
+  const [radiusFilter] = useState<number | null>(null)
 
   // The date chips (annotation 15): a single-choice window filter. 'upcoming'
   // is the unfiltered default — selecting it clears the date narrowing.
@@ -1334,22 +1351,6 @@ export function PlaceDirectory({
                 <option value="newest">Newest</option>
                 <option value="top-rated">Top rated</option>
               </select>
-            </label>
-
-            <label className="mb-4 flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">Within (miles of home pin, optional)</span>
-              <input
-                type="number"
-                min={1}
-                data-testid="filter-radius-input"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                placeholder="e.g. 5"
-                value={radiusFilter ?? ''}
-                onChange={(e) => {
-                  const raw = e.target.value
-                  setRadiusFilter(raw === '' ? null : Math.max(1, Number(raw)))
-                }}
-              />
             </label>
 
             <button

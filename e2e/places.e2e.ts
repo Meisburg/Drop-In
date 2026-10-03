@@ -1113,20 +1113,25 @@ test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t0
     // (2) The LABEL matches the DESTINATION. This is the V20 t01 contract on the
     //     rendered card: a place with a verified operator site says "Visit
     //     website" and points at it; a place without one says "Find it on the
-    //     map" and points at the OSM search. Dressing a map search up as the
+    //     map" and points at a map search. Dressing a map search up as the
     //     operator's site is a small lie the parent only discovers after the
     //     click, so the two are asserted to AGREE rather than assumed to.
+    //
+    //     V28 r4: the map search is GOOGLE MAPS now, not OpenStreetMap — the
+    //     founder asked for Google, and "Get directions" already used it. The
+    //     assertion follows the provider so this stays a real agreement check
+    //     rather than passing on a stale host name.
     const kind = await link.getAttribute('data-link-kind')
     expect(kind, 'a learn-more link declares where it goes').toMatch(/^(website|map-search)$/)
     const text = (await link.innerText()).trim()
     if (kind === 'website') {
       expect(text, 'a stored site is labelled as the website').toMatch(/visit website/i)
       expect(href, 'a website link must not be the map-search fallback').not.toContain(
-        'openstreetmap.org/search',
+        'google.com/maps',
       )
     } else {
       expect(text, 'a fallback link says it is a map search').toMatch(/map/i)
-      expect(href).toContain('openstreetmap.org/search')
+      expect(href).toContain('google.com/maps')
     }
   }
 
@@ -1773,15 +1778,15 @@ test('a place page renders the seeded data with the existing Maps link', async (
   expect(linkKind).toMatch(/^(website|map-search)$/)
   if (linkKind === 'website') {
     expect(learnMoreHref, 'a verified site must not point at the map search').not.toContain(
-      'openstreetmap.org/search',
+      'google.com/maps',
     )
   } else {
     // The V20 t01 lie this guards against: "Visit website" over a search URL.
     await expect(learnMore).not.toContainText(/website/i)
     expect(
       learnMoreHref,
-      'the map-search kind points at the derived OSM search',
-    ).toContain('openstreetmap.org/search')
+      'the map-search kind points at the derived Google Maps search (V28 r4)',
+    ).toContain('google.com/maps')
   }
 })
 
@@ -2104,15 +2109,27 @@ test('the browse list defaults to alphabetical and the Filter & sort modal filte
     ).toBeGreaterThanOrEqual(0)
   }
 
-  // AC2: the "Filter & sort" button opens the modal with kind chips, a sort
-  // dropdown, and a radius input.
+  // AC2: the "Filter & sort" button opens the modal with kind chips and a sort
+  // dropdown.
+  //
+  // V28 r4: the modal's "Within (miles of home pin, optional)" input is GONE,
+  // and this assertion is updated rather than deleted — the same shape the
+  // V27 radius-control slice used. The input duplicated the distance dropdown
+  // above it while persisting NOTHING (its state was page-local and died on
+  // navigation), so two radius controls could disagree and one of them was
+  // silently forgetful. The list-narrowing behavior it claimed is still covered
+  // by the distance-dropdown specs, which drive the SAVED radius and its
+  // per-search override.
+  //
+  // The replacement assertion pins the ABSENCE at this exact spot, so a future
+  // slice cannot quietly reintroduce a second radius input here.
   await page.getByTestId('filter-sort-btn').click()
   const modal = page.getByTestId('filter-sort-modal')
   await expect(modal).toBeVisible()
   await expect(page.getByTestId('filter-kind-chip-park')).toBeVisible()
   await expect(page.getByTestId('filter-kind-chip-playground')).toBeVisible()
   await expect(page.getByTestId('filter-sort-select')).toBeVisible()
-  await expect(page.getByTestId('filter-radius-input')).toBeVisible()
+  await expect(modal.getByTestId('filter-radius-input')).toHaveCount(0)
 
   // Selecting a kind chip narrows the list to that kind (AC2): pick Park,
   // Apply, and every visible row must carry the "Park" kind label.
@@ -2372,12 +2389,14 @@ test('every card offers an honest learn-more link, and no card shows a photo (V2
       website += 1
       expect(text, 'a stored site is labelled as the website').toMatch(/visit website/i)
       expect(href, 'a "Visit website" link must not point at the map search').not.toContain(
-        'openstreetmap.org/search',
+        'google.com/maps',
       )
     } else {
       mapSearch += 1
       expect(text, 'the fallback says it is a map search').toMatch(/map/i)
-      expect(href, 'the fallback points at the OSM search').toContain('openstreetmap.org/search')
+      expect(href, 'the fallback points at the Google Maps search (V28 r4)').toContain(
+        'google.com/maps',
+      )
     }
   }
 

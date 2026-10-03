@@ -861,10 +861,27 @@ export function placePickPatch(place: Place): {
 /**
  * V15 ticket 04: the external URL for a place (the "Learn more" link in the
  * marker panel and the browse list rows). Places have no canonical URL column,
- * so one is derived: an OpenStreetMap search URL for the place's name + city
- * (Seattle — the city the app serves). The caller renders it as a new-tab link
+ * so one is derived: a map search for the place's name + city (Seattle — the
+ * city the app serves). The caller renders it as a new-tab link
  * (`target="_blank" rel="noopener"`); when this returns null the caller shows
  * the place's details inline instead of a broken link.
+ *
+ * V28 r4 — GOOGLE MAPS, NOT OPENSTREETMAP. The founder asked for this directly:
+ * *"when a user clicks 'find it on a map', could it link to the google map
+ * instead of openstreets or whatever."* The app was already inconsistent about
+ * it — `mapsHref` (`lib/feed.ts`), which drives "Get directions", has used
+ * Google Maps since it was written, so the directory row was the odd one out.
+ * Two surfaces offering the same affordance with different providers is the
+ * inconsistency this removes.
+ *
+ * WHY THIS IS A LINK AND NOT AN EMBED. The app renders Leaflet + OpenStreetMap
+ * tiles in-app (`components/PlaceMap.tsx`) and that does not change. Embedded
+ * Google Maps would need the Maps Embed API — a key, a per-load bill, and
+ * Google's terms on mixing their content with a non-Google map on one page.
+ * A plain `google.com/maps?q=` SEARCH link needs no key, costs nothing, and
+ * does not carry the Maps Content caching restrictions, because no Maps API
+ * content is fetched at all. See `research/place-photos/2026-10-03-strategies.md`
+ * for the terms analysis that ruled out the API paths.
  *
  * Returns null only when the name is empty or whitespace-only (defensive — a
  * place without a name cannot be searched anywhere).
@@ -872,7 +889,7 @@ export function placePickPatch(place: Place): {
 export function placeExternalUrl(place: Pick<Place, 'name'>): string | null {
   const name = place.name.trim()
   if (name === '') return null
-  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(name)},+Seattle`
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name}, Seattle`)}`
 }
 
 /**

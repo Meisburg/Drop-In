@@ -42,7 +42,7 @@ import {
 } from '../lib/feed'
 import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, TimePreset, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
-import { addressAfterPlaceTextEdit, generatedTitle, privacyPreview, stickyPostLine } from '../lib/postSummary'
+import { addressAfterPlaceTextEdit, generatedTitle, privacyPreview } from '../lib/postSummary'
 // V27 slice 2: the pure seam behind the Details chips — the page renders the
 // list and the tap goes through `applyVibeChip`, never an inline rule here.
 import { VIBE_CHIPS, applyVibeChip } from '../lib/vibeChips'
@@ -1422,12 +1422,18 @@ export function NewPlaydatePage({
            by construction. With no kids selected, nothing is written at all
            (db.createPlaydate's ageRangeFields — the keys are absent, not null,
            so a kidless post is byte-identical to a pre-0037 post). */
-        /* V27 slice 1: /new's form carries a stable id and NO in-form submit —
-           the sticky bar below owns the ONE "Post drop-in" control, submitting
-           this form through the HTML `form` attribute. The submit error line is
-           still rendered inside the form either way. */
+        /* V28 r4: /new renders its submit INSIDE the form again. V27 slice 1
+           had moved it into a sticky bar pinned above the bottom nav, with the
+           in-form button suppressed via `hideSubmit` so only one control owned
+           the accessible name "Post drop-in". The founder asked for the bar
+           gone (*"not sure what this is or why it pops up when i scroll down…
+           we should probably remove it?"*), and the bar cannot be deleted
+           without restoring the in-form submit — `hideSubmit` would otherwise
+           leave the page with no way to post at all.
+
+           The form id is kept: it is a stable handle the specs and the submit
+           path already use, and the error line still renders inside the form. */
         formId="new-playdate-form"
-        hideSubmit
         submitLabel="Post drop-in"
         submittingLabel="Posting…"
         submitBusy={submitting}
@@ -1444,43 +1450,26 @@ export function NewPlaydatePage({
           while the zip is still unset (a zip landing via refresh clears it). */}
       {locationNotice && !hasHomeZip(profile?.home_zip) ? <LocationRequiredNotice /> : null}
 
-      {/* V27 slice 1: THE STICKY POST BAR — the plan read back and a Post
-          button, pinned above the app's fixed bottom nav while the parent
-          scrolls the form. It renders ONLY on /new (this page): /edit keeps its
-          own in-form submit and renders no bar.
+      {/* V28 r4: THE STICKY POST BAR IS GONE. V27 slice 1 added it — a fixed
+          strip reading back `day · time · place` beside a "Post drop-in"
+          button, pinned above the bottom nav. The founder's report: *"not sure
+          what this is or why it pops up when i scroll down … we should
+          probably remove it? i also think this text that populates as you
+          select info on the bottom is unnecessary and should be removed."*
 
-          It sits OUTSIDE the form, so its button submits through the HTML
-          `form` attribute (the form's `formId`). That is what keeps the page's
-          ONE accessible name "Post drop-in" on this control — many existing
-          specs click `getByRole('button', { name: 'Post drop-in' })`, which
-          strict mode fails on a second match, so the in-form button is hidden
-          by `hideSubmit`.
+          It was never scroll-triggered (it is plain `position: fixed` and
+          always rendered) — the "pops up when I scroll" impression came from
+          it sitting above the fold on a short viewport and then staying put.
 
-          The read-back is the PURE seam `stickyPostLine(values)` (lib, with unit
-          tests) — never an inline rule here. The bar is only reachable once the
-          page is past its `loading` early return, so it is visible on the real
-          form and never on the loading shell. */}
-      <div
-        data-testid="sticky-post-bar"
-        className="fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 px-4 md:bottom-[calc(2rem+env(safe-area-inset-bottom))]"
-      >
-        <div className="mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg md:max-w-3xl">
-          <p
-            data-testid="sticky-post-line"
-            className="min-w-0 truncate text-sm text-slate-700"
-          >
-            {stickyPostLine(values)}
-          </p>
-          <button
-            type="submit"
-            form="new-playdate-form"
-            disabled={submitting}
-            className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? 'Posting…' : 'Post drop-in'}
-          </button>
-        </div>
-      </div>
+          Both halves of the report are honoured by deleting the whole strip:
+          the read-back line AND the duplicated submit. The form now owns its
+          own submit again (`hideSubmit` removed above), so the page still has
+          exactly ONE "Post drop-in" control — which is what the bar existed to
+          guarantee, and what the specs' strict-mode role query requires.
+
+          `stickyPostLine` (lib/postSummary.ts) keeps its unit tests: it is a
+          pure seam, and deleting tested behaviour to remove a rendered element
+          is not the same change. It simply has no caller on this page now. */}
 
       {/* V23 slice 3: the bottom "Browse all N places" door is GONE. The field's own
           "Browse places" button (above) opens this same sheet — a door at the

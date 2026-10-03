@@ -823,17 +823,28 @@ describe('placePickPatch (V9 ticket 01: what one tap on a suggestion writes into
   })
 })
 
-describe('placeExternalUrl (V15 ticket 04: the "Learn more" link\'s derived OSM URL)', () => {
-  it('returns an OSM search URL containing the encoded name for a valid name', () => {
+describe('placeExternalUrl (V15 ticket 04: the "Learn more" link\'s derived map URL)', () => {
+  it('returns a Google Maps search URL containing the encoded name for a valid name', () => {
+    // V28 r4: OSM → Google Maps. The founder asked for Google directly, and
+    // `mapsHref` (the "Get directions" link, lib/feed.ts) already used it, so
+    // this makes the two surfaces agree instead of offering the same
+    // affordance with different providers.
     expect(placeExternalUrl({ name: 'Green Lake Park' })).toBe(
-      'https://www.openstreetmap.org/search?query=Green%20Lake%20Park,+Seattle',
+      'https://www.google.com/maps/search/?api=1&query=Green%20Lake%20Park%2C%20Seattle',
     )
   })
 
   it('encodes special characters in the name', () => {
     const url = placeExternalUrl({ name: 'Ballard Branch, Seattle Public Library' })
     expect(url).toContain(encodeURIComponent('Ballard Branch, Seattle Public Library'))
-    expect(url).toContain(',+Seattle')
+    expect(url).toContain('google.com/maps')
+  })
+
+  it('does NOT fall back to OpenStreetMap any more (the r4 change, pinned)', () => {
+    // The negative half matters: a future slice that reverted the provider
+    // would otherwise pass every positive assertion above while silently
+    // switching the link back.
+    expect(placeExternalUrl({ name: 'Green Lake Park' })).not.toContain('openstreetmap.org')
   })
 
   it('returns null for an empty name', () => {
