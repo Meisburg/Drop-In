@@ -1596,46 +1596,80 @@ export function OnboardingPage() {
         ) : null}
 
         {zipFallbackShown ? (
-          <>
-            {/* FIRST-USE AUDIT (ticket 02), now in-card (V28 slice 5): the
-                parent's address did not match a ZIP, so the card asks for the
-                ZIP by hand instead of reading as "enter your location again"
-                for no stated reason. The copy keeps the existing privacy
-                promise and uses no implementation words. */}
-            <div
-              className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800"
-              data-testid="area-zip-fallback-note"
-              role="status"
-            >
-              <p className="font-medium">Your account is ready — one thing left.</p>
-              <p className="mt-1">
-                We couldn’t match the address you entered to a ZIP code, so we need your ZIP to
-                show drop-ins near you. Your address is still private and never shown to other
-                parents.
-              </p>
-            </div>
-            <label className="flex flex-col gap-1">
-              <span className="text-slate-700">Home zip</span>
-              <input
-                className={
-                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                  (zipError !== null ? 'border-red-400' : 'border-slate-300')
-                }
-                value={homeZip}
-                onChange={(e) => {
-                  setHomeZip(e.target.value)
-                  setZipError(null)
-                }}
-                placeholder="e.g. 98107"
-                inputMode="numeric"
-                maxLength={5}
-                {...fieldA11y('zip', zipError)}
-              />
-            </label>
-            {zipError !== null ? (
-              <p role="alert" id={errorId('zip')} className="text-red-600">{zipError}</p>
-            ) : null}
-          </>
+          /* FIRST-USE AUDIT (ticket 02), now in-card (V28 slice 5): the
+             parent's address did not match a ZIP, so the card asks for the
+             ZIP by hand instead of reading as "enter your location again"
+             for no stated reason. The copy keeps the existing privacy
+             promise and uses no implementation words. */
+          <div
+            className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800"
+            data-testid="area-zip-fallback-note"
+            role="status"
+          >
+            <p className="font-medium">Your account is ready — one thing left.</p>
+            <p className="mt-1">
+              We couldn’t match the address you entered to a ZIP code, so we need your ZIP to
+              show drop-ins near you. Your address is still private and never shown to other
+              parents.
+            </p>
+          </div>
+        ) : null}
+
+        {/* V28 slice 8d — THE ZIP FIELD IS NOT PART OF THE NOTE'S BLOCK. The
+            NOTE is a claim about the ADDRESS, so an address edit invalidates
+            it (slice 4 fix 3). The FIELD is not a claim about the address:
+            `homeZip` is what `handleAreaFinish` WRITES, and it is
+            authoritative REGARDLESS of note visibility (slice 4's deliberate
+            decision on the save path). So the field must be on screen
+            whenever Finish could write it — the fallback is asking for it
+            (`zipFallbackShown`), OR the parent has already typed one
+            (`homeZip !== ''`). Pre-fix the field lived and died with the
+            note, so: reveal the note, type an invalid zip, edit the address,
+            tap Finish -> `setZipError` into a block that is off screen, and
+            the parent gets NO feedback (Finish silently no-ops). */}
+        {zipFallbackShown || homeZip.trim() !== '' ? (
+          <label className="flex flex-col gap-1">
+            <span className="text-slate-700">Home zip</span>
+            <input
+              className={
+                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                (zipError !== null ? 'border-red-400' : 'border-slate-300')
+              }
+              value={homeZip}
+              onChange={(e) => {
+                setHomeZip(e.target.value)
+                setZipError(null)
+              }}
+              // V28 slice 8d — THE FIELD IS FROZEN FOR THE WRITE IT STARTED.
+              // `typedZip` is read and `saveLocation(typedZip)` is awaited in
+              // the SAME synchronous turn (this path has no lookup await), so
+              // the one way the save can write a value the field does not show
+              // is an edit DURING the write. `saving` is already true for that
+              // whole window — it disables the primary and renders "Saving…" —
+              // so extending it here adds no new state and no new escape: the
+              // existing `finally` re-enables it on every path. (Slice 4
+              // refused to lock the ADDRESS field during a Finish-initiated
+              // LOOKUP — a long, bounded network call on the very field the
+              // parent may need to correct. This is a one-round-trip write of
+              // the value just submitted, the address + radius stay editable,
+              // and the field cannot diverge from what was written.)
+              disabled={saving}
+              placeholder="e.g. 98107"
+              inputMode="numeric"
+              maxLength={5}
+              {...fieldA11y('zip', zipError)}
+            />
+          </label>
+        ) : null}
+        {/* The error is rendered OUTSIDE every hiding block on purpose: its
+            ONE gate is `zipError !== null`. That flag can only be set while
+            `homeZip.trim() !== ''` (its only setter is the typed-zip branch
+            of handleAreaFinish, behind exactly that test) and the onChange
+            above clears it in the same update that would empty the field — so
+            the alert and its field always co-render, and the message can
+            never be hidden behind a condition that later goes false. */}
+        {zipError !== null ? (
+          <p role="alert" id={errorId('zip')} className="text-red-600">{zipError}</p>
         ) : null}
 
         {knownZips === null ? (

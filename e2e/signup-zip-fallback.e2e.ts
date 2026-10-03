@@ -57,6 +57,19 @@
  *    re-blurs B and asserts the note returns RE-DERIVED for B's own text
  *    (clearing it on edit cost nothing: the edited address's own settle
  *    owns the flag again).
+ * 7. V28 slice 8d — THE TYPED-ZIP FAMILY, the field's own two claims. (a)
+ *    The zip ERROR used to render only inside the note's block, so an
+ *    invalid typed zip became INVISIBLE once an address edit hid the note:
+ *    Finish silently no-opped. The error now renders outside every hiding
+ *    block, and the field stays on screen whenever Finish could write it
+ *    (`zipFallbackShown` OR a non-empty `homeZip`). The leg reveals the note,
+ *    types an invalid zip, edits to a RESOLVABLE B (so the note cannot
+ *    come back), taps Finish, and asserts the alert is VISIBLE with the note
+ *    hidden. (b) The zip FIELD is frozen (`disabled` while `saving`) for the
+ *    write it started: `typedZip` is captured and saved in the same
+ *    synchronous turn, so the only way the write could diverge from the text
+ *    was an edit DURING the write. The leg holds the home-zip PATCH, taps
+ *    Finish, and asserts the field is disabled until the write lands.
  * V28 slice 6 (plan defect #19): BOTH legs' area-card save now lands on the
  * run's OWN finish card on /onboarding (the re-keyed guard removed the feed
  * bounce) — each leg taps its "Go to your feed" CTA before asserting the
@@ -705,6 +718,156 @@ test(
       await address.blur()
       await expect(note).toBeVisible({ timeout: 30_000 })
       expect(nominatimCalls).toBe(2)
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  'an invalid typed zip is VISIBLE once the note is gone: editing the address cannot hide the error Finish raises (V28 slice 8d, defect 1)',
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    const A = '1200 1st Ave S, Seattle'
+    const B = '4139 1st Ave NE, Seattle'
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) => {
+        const q = new URL(route.request().url()).searchParams.get('q')
+        // A is UNRESOLVABLE (empty answer) -> its settle reveals the note.
+        // B RESOLVES -> the note stays hidden for B, so the zip error can be
+        // seen ONLY from outside the note's block.
+        const body =
+          q === B
+            ? JSON.stringify([
+                {
+                  lat: '47.6205',
+                  lon: '-122.3200',
+                  address: { postcode: marker.homeZip, house_number: '4139' },
+                },
+              ])
+            : '[]'
+        return route.fulfill({ status: 200, contentType: 'application/json', body })
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-az-${epoch} Marker`,
+        email: `e2e-az-${epoch}@gmail.com`,
+        password: `e2e-az-${epoch}`,
+      })
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      const note = page.getByTestId('area-zip-fallback-note')
+      const zip = page.getByPlaceholder('e.g. 98107')
+      // errorId('zip') is 'err-zip' (src/lib/a11y.ts) — the alert the card
+      // raises for the typed zip.
+      const zipAlert = page.locator('#err-zip')
+
+      // Reveal the note for the unresolvable A, then type an INVALID zip (4
+      // digits -> "Use a 5-digit zip code."). No error yet: Finish raises it.
+      await address.fill(A)
+      await address.blur()
+      await expect(note).toBeVisible({ timeout: 30_000 })
+      await zip.fill('1234')
+
+      // EDIT to a RESOLVABLE B: the note is a claim about the address and is
+      // invalidated (fix 3). `homeZip` is NOT invalidated — Finish prefers it
+      // over the address's resolution REGARDLESS of note visibility — so the
+      // field must stay on screen for the error to land where the parent is
+      // looking. Blur B, so its own settle has run before the tap.
+      await address.fill(B)
+      await expect(note).not.toBeVisible()
+      await address.blur()
+      await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled({ timeout: 30_000 })
+
+      // TAP: `handleAreaFinish` validates the typed zip, fails, and sets the
+      // error. Pre-fix the alert renders INSIDE the note's block (off screen)
+      // and the parent gets no feedback at all.
+      await page.getByRole('button', { name: 'Finish' }).click()
+      await expect(zipAlert).toBeVisible()
+      await expect(zipAlert).toHaveText('Use a 5-digit zip code.')
+      await expect(note).not.toBeVisible()
+      await expect(zip).toBeVisible()
+
+      // NO WALL: the field is still there to fix, and a valid zip finishes the
+      // card (B resolves, so the note never comes back).
+      await zip.fill(marker.homeZip)
+      await expect(zipAlert).not.toBeVisible()
+      await page.getByRole('button', { name: 'Finish' }).click()
+      await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
+      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+      await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
+    } finally {
+      await close()
+    }
+  },
+)
+
+/** The home-zip + radius write (`updateHomeZipRadius`) — the card's save PATCH. */
+const PROFILES_ROUTE = /\/rest\/v1\/profiles(\?|$)/
+
+test(
+  'the typed zip cannot move while its own save is in flight: the field is frozen for the write it started (V28 slice 8d, defect 2)',
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    // The window the fix closes IS the write, so the write must be HELD for
+    // the leg to observe it: the PATCH is paused (and `saving` stays true)
+    // until this leg releases it. Two promises make the hold deterministic —
+    // one fires when the PATCH arrives, one releases it.
+    let markPatchArrived: () => void = () => {}
+    let releasePatch: () => void = () => {}
+    const patchArrived = new Promise<void>((resolve) => {
+      markPatchArrived = resolve
+    })
+    const patchGate = new Promise<void>((resolve) => {
+      releasePatch = resolve
+    })
+    try {
+      await page.route(NOMINATIM_ROUTE, (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+      )
+      await page.route(PROFILES_ROUTE, async (route) => {
+        if (route.request().method() !== 'PATCH') return route.continue()
+        markPatchArrived()
+        await patchGate
+        return route.continue()
+      })
+
+      await signUpToAreaCard(page, {
+        name: `e2e-aw-${epoch} Marker`,
+        email: `e2e-aw-${epoch}@gmail.com`,
+        password: `e2e-aw-${epoch}`,
+      })
+
+      const address = page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')
+      const note = page.getByTestId('area-zip-fallback-note')
+      const zip = page.getByPlaceholder('e.g. 98107')
+
+      // The note is what reveals the ZIP field; the address never resolves.
+      await address.fill('1200 1st Ave S, Seattle')
+      await address.blur()
+      await expect(note).toBeVisible({ timeout: 30_000 })
+
+      await zip.fill(marker.homeZip)
+      // TAP: `handleAreaFinish` reads `homeZip` and, in the SAME turn, starts
+      // `saveLocation` -> this PATCH, now HELD. `saving` is true for the whole
+      // window, so the field the parent just submitted is FROZEN: it cannot
+      // show a value other than the one being written.
+      await page.getByRole('button', { name: 'Finish' }).click()
+      await patchArrived
+      await expect(zip).toBeDisabled()
+      await expect(zip).toHaveValue(marker.homeZip)
+
+      // Release: the write lands with the value the field shows, and the card
+      // proceeds — the freeze is bounded by the write and re-enabled by the
+      // handler's own `finally`, so it is not a wall.
+      releasePatch()
+      await page.getByTestId('first-run-finish-card').waitFor({ timeout: 30_000 })
+      await page.getByRole('button', { name: TOUR_PRIMARY_LABEL }).click()
+      await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
     } finally {
       await close()
     }
