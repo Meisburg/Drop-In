@@ -22,14 +22,14 @@
       "evidence": []
     },
     "verification": {
-      "state": "running",
+      "state": "complete",
       "owner": null,
       "model": "ollama-cloud/deepseek-v4.1-flash:cloud",
       "artifacts": [],
       "evidence": []
     },
     "review": {
-      "state": "pending",
+      "state": "complete",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -43,7 +43,7 @@
       "evidence": []
     },
     "acceptance": {
-      "state": "blocked",
+      "state": "pass",
       "owner": null,
       "model": null,
       "artifacts": [],
@@ -103,6 +103,42 @@
       "from": "pending",
       "to": "running",
       "note": "round-1 lanes dispatched; the reviewer is asked the decisive question -- is the freeze argument correct or a rationalisation for a shape slice 4 ruled out, and can the input get stuck disabled",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T01:02:06.738Z",
+      "lane": "verification",
+      "from": "running",
+      "to": "complete",
+      "note": "VERIFY PASS at 5f575e0: gate exit 0 (71/2063/81/0/AGENTS.md 1789-1800/GUARDS PASS), checkers 185 + 17, Defect 1 reachability reproduced BOTH halves (pre-fix leg 7 red with no note, no zip field, no alert), Defect 2's freeze genuinely bounded by saveLocation's finally (the reject path probed with a held PATCH then 500: the field re-enables, #err-submit shows, a retry finishes), the forbidden fourth wall NOT constructible, spec diff purely additive so no prior pin loosened, all four mutation halves reproduced.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T01:02:06.767Z",
+      "lane": "review",
+      "from": "pending",
+      "to": "running",
+      "note": "the decisive question answered: the builder's rejection of slice 4's re-check is CORRECT, not a rationalisation -- capture and use are in one synchronous turn, so a point-of-use re-check would be A===A; slice 4's refusal was a lock around a LOOKUP whose live input the parent meaningfully corrects mid-flight, whereas here a mid-write edit cannot be re-submitted, so the freeze removes no recovery action and adds no state.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T01:02:06.798Z",
+      "lane": "review",
+      "from": "running",
+      "to": "complete",
+      "note": "PASS, zero blocking findings.",
+      "actor": null,
+      "model": null
+    },
+    {
+      "at": "2026-10-03T01:02:38.871Z",
+      "lane": "acceptance",
+      "from": "blocked",
+      "to": "pass",
+      "note": "accepted 2026-10-02, the batch's final slice. KNOWN-OPENS RECORDED AT THE SHAs THE REVIEW NAMES: (1) the mid-save divergence is a FAMILY, not one field -- the RADIUS SELECT (OnboardingPage.tsx:1089 + :1683-1700) is editable while saving and BOTH save paths write the tap-time radiusMiles, at least as reachable as the address case the report named; (2) the address field (:1496) likewise; (3) 'always co-render' (:1664-1669) rests on two unpinned single-site premises with no machine check; (4) 'finally re-enables on every path' (:1644-1655) is prose-only on the save-failure path (no abort/5xx leg on this card); (5) the gate watches TRIMMED text, so a whitespace-only homeZip with the note hidden hides the field -- invariant-consistent ('or to nothing'), declared not fixed.",
       "actor": null,
       "model": null
     }

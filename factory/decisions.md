@@ -1143,3 +1143,36 @@ instrument that judges the swap is already built and already trusted.**
 rung, it is not patched — the rule is deleted and the defect recorded known-open.* Deletion is not free (it stops
 watching fenced fabricated-count arithmetic, a class that paid off once for real), which is why the rung is tried
 first and the delete comes second — **never the reverse, and never silently.**
+
+## D-040 — the batch closes: eight slices, and the tail of 8b is the lesson
+
+**Eight of eight closed 2026-10-02** (6a, 6b, 6c, 6d, 8a, 8b, 8c, 8d), with `8e` registered rather than absorbed.
+
+**The single most useful thing this batch produced was not a fix; it was D-034.** The reviewer floor
+(`reasoning 3` + `tool_use 3`) was cleared by exactly one model, which was also the implementer, so every review
+was a **sibling** — and siblings converge. Four independent sibling reviews called the `transcript-summary-agrees`
+rule **sound**. A **different family**, running its first review of this repository, **falsified it**: the fence
+parser closed a block on any same-kind marker line, where CommonMark requires a run ≥ the opener's length followed
+by whitespace only — so the standard markdown idiom for **quoting** a fenced block put a fabricated transcript in
+**no parsed block at all**, reaching `NOTHING was compared` and **exit 0**.
+
+**A shared blind spot is not a shared verdict; it is one verdict counted four times.** Fresh context buys
+independence from *context*. It does not buy independence from *prior*, and only a different family does.
+**And it was worth doing for the reason the rule was written for, not for the reason it was convenient:** the
+second model paid for itself inside the hour.
+
+**The second lesson is D-037/D-038/D-039 as a sequence, and it is the batch's most transferable mechanism.** 8b
+spent **six rounds** on one guard rule, and rounds 1–6 were the price of discovering that **hand-writing a markdown
+parser was the defect** — not any clause of it. Each clause-patch moved the divergence (closer → opener) and
+produced a new one. The ruling that ended it was not another clause and not the delete: **D-038 placed a rung BELOW
+D-032's stop — take the reference's own fence recognition — three rounds before it was needed**, and the thing that
+made that rung *safe* was the **reference-derived fixture built one round earlier**, which proved the swap changed
+nothing. Measured result: **10 359 divergences → 0 across 160 000 inputs**, reproduced independently in both
+directions. **Build the instrument before you need it, and put the rung below the stop.**
+
+**And D-040's own caution, which the batch earned the hard way:** three times a lane report **reddened the guard
+with a true sentence written in an unreproducible form** ("at HEAD" while HEAD moved under the lane), and the guard
+was **right** every time — the text was wrong. The reporting form is part of the artifact. So is the guard's own
+reach: `lib-sibling-guard`'s name said "every `lib/` module" while its reach was one directory, and
+`count-provenance` reads the `at` inside `iat` as a sha token, which **pressured a lane to obfuscate readable
+evidence to silence a spurious finding** — worse than merely misfiring. Both are now items, not anecdotes.
