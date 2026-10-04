@@ -592,7 +592,36 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       the founder's 2026-10-04 decision; the geocode path, the address default and
       ZIP-sufficiency are NOT. Gate EXIT=0 (73 / 2139 / 81 / 0); e2e
       signup-zip-fallback + onboarding-resume 14 passed
-    V29 v29-11: IN PROGRESS — all ten implementation slices are DONE. Full suite
-      running. ⚠️ `ocr` is NOT INSTALLED on this box (not on PATH, not in
-      node_modules/.bin), so the third review lane CANNOT run — recorded as a
-      deviation of the same class as the missing orchestrator lane, never as a pass
+    V29 v29-11: DONE (commit 241c5c3) — BATCH CLOSED. All ten implementation
+      slices landed. Full suite round 1: 167 passed / 17 FAILED; round 2 (after
+      the two fixes below): **181 passed / 3 failed / 2 skipped**, 20.1m. The
+      three: `places.e2e.ts:917` (the KNOWN marker-bubble flake) and
+      `places.e2e.ts:1674` BOTH FAIL AT THE BASE COMMIT 580eb82 (proven in a
+      throwaway worktree, now removed), and `places.e2e.ts:2792` passes in
+      isolation at HEAD and at base — an intermittent Leaflet flake. NOTHING in
+      the three is this batch's.
+    V29 v29-11: ROUND 1'S 17 FAILURES WERE MINE, and finding that out was the
+      point of the lane. (a) v29-3 linked the "Posted!" banner's TITLE, so the
+      suite's `a:has-text(title)` idiom matched the banner instead of the card in
+      ~11 specs; fixed by a distinct "View" link. (b) the sign-out spec signed the
+      MARKER out, and `supabase.auth.signOut()` revokes the refresh token
+      GLOBALLY, so ~15 later specs met a /login screen; fixed with a throwaway
+      account in its own context. The previously failing specs re-run: 28 passed.
+      A base-commit worktree was the instrument that separated "my regression"
+      from "inherited flake" — both verdicts are recorded with their evidence.
+    V29 v29-11: ⚠️ `ocr` LANE UNAVAILABLE — not installed on this box (not on
+      PATH, not in node_modules/.bin). Recorded as a deviation, never as a pass.
+      The lanes that DID run: `npm run verify` (EXIT=0), the full e2e suite, and
+      the adjudication above. `node scripts/mobile-audit.mjs` → EXIT=0.
+    V29 v29-11: MARKER RESIDUE, RECORDED NOT DELETED — `sweep-e2e-markers.mjs
+      select` reports 264 marker profiles / auth.users and 5 kids (533 rows), with
+      EVERY content table at ZERO (playdates, going_pings, comments, memberships,
+      follows, push_subscriptions). The accounts accumulate by design (each run
+      creates a marker; each signup spec creates viewers); deletion is the sweep's
+      job and needs fresh human confirmation (plan.md:769-771)
+    V29: BATCH COMPLETE — 10/10 tickets, every slice with a gate + a browser check
+      behind it. NOT DONE, and deliberately not mine to do: v29-0's second half
+      (committing the pre-batch WIP), the destructive marker sweep, deleting
+      `.vercel-env-tmp.json` and rotating its OIDC token, the form-draft design
+      decision (`.scratch/new-form-draft-2026-10/spec.md`), and the 5-parent
+      first-open test that v29-1 unblocked
