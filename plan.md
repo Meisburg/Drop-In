@@ -553,18 +553,28 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       81 / 0 / GUARDS PASS); e2e zip-radius 4 passed: post at the furthest
       seeded place (~12.5 mi), narrow the radius to 1 mile, card still there and
       the empty state not — and feed-empty-state 7 passed on the same code
-    V29 v29-4: not started — NOTE for the slice: LoginPage's create-account
-      control sits 28px below the fold at 390x664, and scripts/mobile-audit.mjs
-      is NOT in npm run verify, so its new vertical-containment assertion is the
-      only durable pin
+    V29 v29-4: DONE (commit 9a2c3c4) — the create-account control fits 390x664.
+      mobile-audit gains the viewport, a PORTRAIT "fits one screen" claim for
+      /login, and an ALL-viewport "reachable by scrolling" claim; it was proven
+      able to fire BEFORE the fix (640-692 vs 664, and nothing else). Fix:
+      container gap-6 -> gap-4, the "or" divider my-5 -> my-3, every tap target
+      still 44px. Audit EXIT=0; gate EXIT=0 (73 / 2135 / 81 / 0 / GUARDS PASS);
+      e2e privacy-preview + signup-zip-fallback 12 passed
+    V29 v29-8: DONE (commit eb3840b) — the first screen says what Drop In is.
+      "Casual drop-ins near you — no RSVP, no planning." replaces the vague
+      activity claim, and "Welcome back." leaves the sign-in subhead. Both lines
+      held to ONE line at 390px, and the audit re-ran to prove the copy did not
+      spend the v29-4 height budget. New spec e2e/login-first-screen.e2e.ts pins
+      the copy AND the fold (the fold also lives in a lane that runs). Gate
+      EXIT=0 (73 / 2135 / 81 / 0); e2e login-first-screen + signup-zip-fallback
+      12 passed
+    V29 v29-0: HALF DONE (commit c6935a3) — the impeccable-live injector is GONE
+      from index.html and from dist. The removal was FORCED, not cosmetic: with
+      the impeccable server up, its toolbar rendered on every audited page
+      (26px buttons, 11.5px inputs, sub-14px labels), so mobile-audit's results
+      were unreadable and the new v29-4 guard could not be trusted. The other
+      half — committing the pre-batch WIP — is still the human's call
     V29 v29-5: not started
-
-      already fetches every upcoming post (queryUpcomingPlaydates) and filterFeed
-      discards the ones outside the radius, so the count lives in the same fetch;
-      the change is that listRadiusFeed's RETURN SHAPE must carry it (one caller,
-      FeedPage:549, and no test mocks it)
-
-    V29 v29-8: not started
     V29 v29-9: not started
     V29 v29-10: not started
     V29 v29-11: not started
