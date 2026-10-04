@@ -58,6 +58,12 @@ import {
   stripPlaceAlias,
   usesPlaceAlias,
 } from '../lib/places'
+import {
+  clearDraft,
+  decideDraftRestore,
+  readDraft,
+  writeDraft,
+} from '../lib/newPlaydateDraft'
 // V8 ticket 08: recording the meaningful action that may precede the
 // notification opt-in (this page arms it; the shell's PushOptInPrompt decides).
 import { armPushPromptForAction } from '../lib/pushClient'
@@ -406,6 +412,11 @@ export function NewPlaydatePage({
   const [errors, setErrors] = useState<PlaydateFormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // r3-9: the /new form's draft — the disclosure line (shown only when a draft
+  // was restored; a silent restore is its own confusion) and the discard flag
+  // (its Discard stops this visit writing a draft too).
+  const [draftRestored, setDraftRestored] = useState(false)
+  const [draftDiscarded, setDraftDiscarded] = useState(false)
   // V28 slice 2a: the no-home-zip notice — raised when the submit's location
   // guard blocks the post. The render site re-checks through hasHomeZip,
   // so the notice clears itself the moment a zip lands (a refresh) —
@@ -498,6 +509,97 @@ export function NewPlaydatePage({
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).
   const userId = session?.user?.id ?? null
+
+  // r3-9: THE DRAFT (option B — the founder's 2026-10-04 decision). What a
+  // parent typed is kept in sessionStorage, keyed to THIS user (never
+  // localStorage — a shared device must not keep a half-written post),
+  // restored + disclosed when they return to /new, and cleared the moment a
+  // post is created. The storage seam is pure (lib/newPlaydateDraft, injected
+  // storage, unit-tested); the page decides WHEN, through three effects and
+  // one handler.
+  //
+  // THE PRECEDENCE RULE (decided, pinned in the lib's tests): a fresh prefill
+  // (place OR duplicate) WINS and the stored draft is LEFT UNTOUCHED — a
+  // prefilled visit neither restores nor clears (and never writes, below), so
+  // the older intent survives the fresher one. Only a prefill-less visit
+  // restores.
+  const draftWriteEligible = duplicate === null && placePrefill === null
+  // The write path's dirty flag: a form the parent never touched is not a
+  // draft (a "kept what you typed" line for an untouched form would be the
+  // confusion the no-draft path exists to prevent), so the flag is set only
+  // at the user-change sites (update / changeAddress / pickPlace / toggleKid /
+  // applyLastPost) and the write effect never fires before it.
+  const draftDirty = useRef(false)
+  const draftRestoreArmed = useRef(false)
+  useEffect(() => {
+    if (userId === null) return
+    if (draftRestoreArmed.current) return
+    draftRestoreArmed.current = true
+    const decision = decideDraftRestore({
+      draft: readDraft(window.sessionStorage, userId),
+      hasPlacePrefill: placePrefill !== null,
+      hasDuplicatePrefill: duplicate !== null,
+    })
+    if (decision.kind !== 'restore') return
+    const draft = decision.draft
+    setValues(draft.values)
+    setPlaceId(draft.placeId)
+    setAddress(draft.address)
+    // The kids load may have settled BEFORE this restore (the two settle in an
+    // indeterminate order), so the ghost-chip intersection is applied HERE
+    // when the list is already in hand — and by the [kids] effect below when
+    // it settles later. Either order, no ghost chip.
+    setSelectedKidIds(
+      kids === null
+        ? draft.kidIds
+        : draft.kidIds.filter((kidId) => kids.some((kid) => kid.id === kidId)),
+    )
+    // The title follows the place only while it is still the GENERATED one
+    // (`update`'s titleTouched rule, applied to what the draft carried): an
+    // empty or generated title keeps following; the parent's own words stop.
+    const restoredTitle = draft.values.title
+    setTitleTouched(
+      restoredTitle.trim() !== '' &&
+        restoredTitle !== generatedTitle(stripPlaceAlias(draft.values.place)),
+    )
+    setDraftRestored(true)
+  }, [userId, placePrefill, duplicate, kids])
+  // r3-9: the draft's WRITE — after every state change, but only once the
+  // parent has actually touched the form (draftDirty), on a prefill-less visit
+  // (draftWriteEligible — a prefilled visit leaves the stored draft untouched,
+  // the precedence rule), not discarded, and signed in (the key is the user).
+  useEffect(() => {
+    if (!draftDirty.current) return
+    if (userId === null || !draftWriteEligible || draftDiscarded) return
+    writeDraft(window.sessionStorage, userId, {
+      values,
+      placeId,
+      address,
+      kidIds: selectedKidIds,
+    })
+  }, [userId, values, placeId, address, selectedKidIds, draftWriteEligible, draftDiscarded])
+  // r3-9: a restored kid id the parent deleted in the meantime must not
+  // resurrect as a ghost chip (the duplicate-seeding discipline, the same
+  // intersection): once the kids load settles, the selection is intersected
+  // with it. Not one-shot on purpose — the restore and the kids load settle
+  // in an indeterminate order, so the intersection must hold whenever the
+  // list arrives, whichever comes first.
+  useEffect(() => {
+    if (kids === null) return
+    setSelectedKidIds((prev) => prev.filter((kidId) => kids.some((kid) => kid.id === kidId)))
+  }, [kids])
+
+  /**
+   * r3-9: the disclosure's Discard — the parent's explicit "throw the draft
+   * away" (the spec's discard path): clears the stored draft AND stops this
+   * visit writing one, so re-editing after a discard does not resurrect it on
+   * the next visit.
+   */
+  function discardDraft() {
+    if (userId !== null) clearDraft(window.sessionStorage, userId)
+    setDraftDiscarded(true)
+    setDraftRestored(false)
+  }
 
   // V3 slice 6 (ticket 09): the host's own kids for the picker (fetched on
   // mount, keyed on the session's user id — the ProfilePage kids-load
@@ -657,12 +759,17 @@ export function NewPlaydatePage({
   // V3 slice 6 (ticket 09): toggle a kid chip (multi-select, no cap — the
   // host picks whichever of their own kids are coming).
   function toggleKid(kidId: string) {
+    draftDirty.current = true
     setSelectedKidIds((prev) =>
       prev.includes(kidId) ? prev.filter((id) => id !== kidId) : [...prev, kidId],
     )
   }
 
   function update<K extends keyof PlaydateFormValues>(field: K, value: PlaydateFormValues[K]) {
+    // r3-9: a user-initiated field change is what makes the form a draft (the
+    // write effect below keys off this flag — a mount with no edits writes
+    // nothing, so the ordinary first visit stays byte-for-byte today's).
+    draftDirty.current = true
     // V9 ticket 03: typing in the title line — ON the summary — is what makes
     // the title the parent's own. From here the generated title stops following
     // the place (and nothing else ever rewrites their words).
@@ -754,6 +861,7 @@ export function NewPlaydatePage({
    * place-text edit never clears it.
    */
   function changeAddress(value: string) {
+    draftDirty.current = true
     setAddressTouched(true)
     setAddress(value)
   }
@@ -781,6 +889,9 @@ export function NewPlaydatePage({
    */
   function applyLastPost(post: LastOwnPlaydate) {
     const clone = cloneLastPost(post, mountedNowIso)
+    // r3-9: the clone is the parent's plan for THIS post — if they leave now
+    // (and the visit is a prefill-less one), the draft keeps it.
+    draftDirty.current = true
     setValues((prev) => ({ ...prev, ...clone.values }))
     setAddress(clone.address)
     setAddressTouched(false)
@@ -826,6 +937,8 @@ export function NewPlaydatePage({
    * expressible here.
    */
   function pickPlace(place: Place) {
+    // r3-9: a pick is a user change to the plan (the draft keeps it).
+    draftDirty.current = true
     // The one-tap fill is the pure seam (places.placePickPatch — "what a pick
     // writes into the form", unit-tested), so this page decides only the STATE
     // changes around it: link the place id, close the list, clear the errors.
@@ -1197,6 +1310,12 @@ export function NewPlaydatePage({
         ageMin: statedAgeRange?.min,
         ageMax: statedAgeRange?.max,
       })
+      // r3-9: the post is created — the draft has served its purpose (the
+      // spec's rule 4, at the point of creation): clear it BEFORE the navigate
+      // so the next /new opens empty ("a completed submission clears the
+      // draft"). A retry after a kid-link failure re-posts off the form state
+      // still on screen, not off the draft.
+      if (userId !== null) clearDraft(window.sessionStorage, userId)
       // V3 slice 6 (ticket 09): land the picker's selection in playdate_kids
       // right after the create succeeds (replace-on-duplicate — the post is
       // fresh, so this is effectively the insert). An empty selection
@@ -1245,6 +1364,29 @@ export function NewPlaydatePage({
           3–5, come by if you like." + "Open invitation, zero pressure."
           helper line is out (the ticket's quick-feedback batch). */}
       <SectionHeader icon={NAV_ICONS.post} title="Post a drop-in" tagline="Where, when, and who’s coming" />
+
+      {/* r3-9: THE DISCLOSURE — ONE dismissible line, shown only when a draft
+          was restored on this visit (a silent restore is its own confusion,
+          the spec's rule). Discard is the explicit throw-away (rule 4): it
+          clears the stored draft and stops this visit writing one. */}
+      {draftRestored ? (
+        <div
+          className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3"
+          data-testid="draft-restore-notice"
+        >
+          <p className="text-sm font-medium text-indigo-900">
+            We kept what you were working on — your draft is back where you left it.
+          </p>
+          <button
+            type="button"
+            onClick={discardDraft}
+            data-testid="draft-discard"
+            className="min-h-11 shrink-0 rounded-lg border border-indigo-200 bg-white px-3 text-sm font-medium text-indigo-700 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
+          >
+            Discard
+          </button>
+        </div>
+      ) : null}
 
       {duplicate !== null ? (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
