@@ -406,24 +406,21 @@ test('a cold load never asks for permission', async ({ page }) => {
 })
 
 /**
- * V25 ticket 15, TRIGGER POINT 1 — the Create-account tap.
+ * V29 (2026-10-04) — SIGNUP IS NOT A TRIGGER POINT.
  *
- * The founder: "notifications should just automatically be on no matter what
- * when you create an account. If somebody wants to turn them off they can go
- * into the settings and turn them off themselves." A browser grants push only
- * on a user gesture, so "automatically on" is delivered as a PROMPT at the
- * moment the account exists — and the permission request itself belongs to the
- * CARD's own button (`enablePush`), never to the signup handler. That is why
- * `requests` is asserted to be 0 with the card on screen: the tap that grants is
- * a real gesture of its own, and nothing depends on the transient activation of
- * the Create-account tap surviving the signup awaits.
+ * This test used to assert the opposite: that the first surface after Create
+ * account drew the opt-in card (V25 ticket 15's trigger point 1). The founder
+ * removed that point, because a completed signup has produced nothing to be
+ * notified ABOUT and the card landed on the first feed paint of an app the
+ * parent had never seen work — over an empty feed. The two remaining points are
+ * a created post and a saved "I'm going".
  *
- * WHAT "ONCE" MEANS HERE: the point is recorded as OFFERED the moment the card
- * is drawn (localStorage, so it outlives the document). A reload — the state a
- * parent actually returns in — is silent, and /settings → Notifications is the
- * only door back.
+ * WHAT THIS PINS: the first surface behind setup is CLEAR — no card, no note, no
+ * permission request — and nothing was recorded as offered, so no point was
+ * spent on the parent's behalf. A reload is silent for the same reason, and the
+ * global decision is untouched, so the post ask is still legal afterwards.
  */
-test('the signup prompt is offered once, on the first surface after Create account, and never on a reload', async ({
+test('finishing signup earns no notification ask — the first surface behind setup stays clear', async ({
   browser,
 }) => {
   const marker = readMarkerMeta()
@@ -446,35 +443,22 @@ test('the signup prompt is offered once, on the first surface after Create accou
   })
 
   await signUpViewer(viewer, { name: viewerName, email: viewerEmail, password: viewerPassword })
-  // The card is suppressed on /onboarding (see isPromptSuppressedPath), so the
-  // app's own "Continue" cannot spend the point before the parent can answer it:
-  // it is drawn on the first surface behind the setup step.
   await finishSignup(viewer, { homeZip: marker.homeZip, radiusMiles: marker.radiusMiles })
 
-  const prompt = viewer.getByTestId('push-optin-prompt')
-  await expect(prompt).toBeVisible()
-  await expect(prompt).toContainText('heads-up')
-  // Nothing has asked the browser yet.
+  // The whole claim: the first surface behind setup is clear. No card, no note,
+  // and the browser was never asked anything.
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toHaveCount(0)
   expect((await stubState(viewer)).requests).toBe(0)
-  // The point is on the record as offered.
-  expect(await viewer.evaluate(() => window.localStorage.getItem('dropin.push.offered'))).toBe(
-    'signup',
+  // NOTHING WAS SPENT. A point is recorded as offered the moment its card is
+  // drawn; no card here means the record stays empty, so the post ask below is
+  // untouched by having signed up.
+  expect(await viewer.evaluate(() => window.localStorage.getItem('dropin.push.offered'))).toBe(null)
+  // And the global decision is not written either — that is the /settings
+  // off-switch's job alone.
+  expect(await viewer.evaluate(() => window.localStorage.getItem('dropin.push.decision'))).toBe(
+    null,
   )
-
-  // "Not now" spends THIS point — and it is NOT the global 'dismissed' decision
-  // ("Turn off notifications" in /settings), which is what leaves the after-post
-  // and going-to-an-event asks still legal.
-  await viewer.getByTestId('push-optin-not-now').click()
-  await expect(prompt).toHaveCount(0)
-  const note = viewer.getByTestId('push-optin-note')
-  await expect(note).toBeVisible()
-  await expect(note).toContainText('While you were away')
-  await expect(note).toContainText('settings')
-  await viewer.getByTestId('push-optin-note-dismiss').click()
-  await expect(note).toHaveCount(0)
-  expect(
-    await viewer.evaluate(() => window.localStorage.getItem('dropin.push.decision')),
-  ).toBe(null)
 
   // THE RELOAD: no card, no note, and still no permission request.
   await viewer.reload()
@@ -687,19 +671,11 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   })
   await expectPushSupported(viewer)
 
-  // V25 ticket 15, TRIGGER POINT 1: this account was created a moment ago, so
-  // the signup point is the card that is up. Answering it "Not now" spends that
-  // point only — which is exactly what makes the going ask below legal.
-  const signupPrompt = viewer.getByTestId('push-optin-prompt')
-  await expect(signupPrompt).toBeVisible()
-  await expect(signupPrompt).toContainText('heads-up')
-  await viewer.getByTestId('push-optin-not-now').click()
-  await expect(signupPrompt).toHaveCount(0)
-  await expect(viewer.getByTestId('push-optin-note')).toContainText('While you were away')
-  await viewer.getByTestId('push-optin-note-dismiss').click()
-  // With the one point answered the feed is silent again: the cold-load pin is
-  // about having no armed action, and there is none.
+  // V29: signup no longer draws a card, so the feed is already silent WITHOUT
+  // the test answering anything first — a stronger baseline than the old "spend
+  // the signup point": anything that appears below came from the ping itself.
   await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toHaveCount(0)
 
   const card = viewer.locator('a').filter({ hasText: title }).first()
   await expect(card).toBeVisible()
@@ -800,16 +776,11 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
   })
   await expectPushSupported(viewer)
 
-  // V25 ticket 15, TRIGGER POINT 1: the signup card is up (this account was
-  // created in this tab a moment ago), and answering it is what makes the
-  // baseline below mean what it says — with the signup point spent, anything
-  // that appears later in this tab came from the RSVP.
-  const signupPrompt = viewer.getByTestId('push-optin-prompt')
-  await expect(signupPrompt).toBeVisible()
-  await viewer.getByTestId('push-optin-not-now').click()
-  await expect(signupPrompt).toHaveCount(0)
-  await expect(viewer.getByTestId('push-optin-note')).toBeVisible()
-  await viewer.getByTestId('push-optin-note-dismiss').click()
+  // V29: signup no longer draws a card, so this baseline needs no setup — the
+  // tab is already silent when the RSVP below happens, which is exactly what
+  // makes any prompt seen later attributable to the RSVP.
+  await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
+  await expect(viewer.getByTestId('push-optin-note')).toHaveCount(0)
 
   const href = await viewer
     .locator('a')

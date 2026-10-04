@@ -6,7 +6,6 @@ import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import { ONBOARDING_PATH } from '../lib/onboarding'
 import { progressLabel } from '../lib/firstRun'
-import { armPushPromptForAction } from '../lib/pushClient'
 import {
   sendPasswordReset,
   signInWithOAuthProvider,
@@ -139,14 +138,12 @@ export function LoginPage() {
       // The shared session state still holds the pre-signup read (no
       // profile); /onboarding's first card loads the profile itself, so
       // this page needs no refresh of its own.
-      // V25 ticket 15, trigger point 1: the account exists, so the FIRST of the
-      // three natural moments has arrived — the founder's "probably at signup".
-      // This records the moment only; the shell's `PushOptInPrompt` owns every
-      // decision (pure `decidePermissionPrompt`), and the permission request
-      // itself is made from that card's own button click, never from this
-      // handler — so no permission call ever depends on the transient
-      // activation of the Create-account tap surviving the awaits above.
-      armPushPromptForAction('signup')
+      // V29 (2026-10-04): signup is NOT a notification trigger point. The ask
+      // used to be armed here and spent on the first feed paint — an app the
+      // parent had never seen work, on top of an empty feed. The two remaining
+      // points are a created post and a saved "I'm going"; see
+      // `PushPromptTrigger`. Nothing about the browser permission request
+      // changes: it has always belonged to the card's own button click.
       // Card 1 of 4 is done: the first run continues at /onboarding (card 2,
       // the name card, creates the profiles row this account is missing).
       navigate(ONBOARDING_PATH, { replace: true })

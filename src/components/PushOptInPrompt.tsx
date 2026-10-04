@@ -31,8 +31,9 @@ import {
  *
  * THE PIN THIS COMPONENT EXISTS TO HOLD: never on a cold load. It renders
  * nothing until a MEANINGFUL ACTION has been recorded in this tab
- * (sessionStorage — `armPushPromptForAction`, called when an account is created,
- * after a post is created, and after a ping is saved), and it renders nothing at
+ * (sessionStorage — `armPushPromptForAction`, called after a post is created and
+ * after a ping is saved; V29 removed the signup point, so a parent who has only
+ * created an account is never asked at all), and it renders nothing at
  * all on /settings (where the real control lives), /onboarding and /new (surfaces
  * the app navigates out of by itself — see `isPromptSuppressedPath`). The whole
  * decision is the pure `decidePermissionPrompt` seam; this file only reads the
@@ -57,8 +58,8 @@ import {
  * (`markPushPointOffered` — localStorage, so it survives a reload), and the pure
  * seam then refuses to ask for it again. "Not now" records the same point and
  * says the pinned fallback sentence on this render (see the button below); a
- * parent who says not-now at signup is still asked after their first post and
- * again when they say they are going.
+ * parent who says not-now after their first post is still asked when they say
+ * they are going.
  *
  * AND WHEN IT MAY NOT ASK (fix-round finding F): a denial or a "Not now" after
  * a real action used to render NOTHING — the fallback sentence the ticket pins

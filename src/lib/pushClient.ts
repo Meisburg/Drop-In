@@ -383,8 +383,9 @@ export function armedPushOrigin(): string | null {
 
 /**
  * "Not now": remember that THIS point has been offered — for this point only
- * (V25 ticket 15's re-ask rule). A parent who says not-now at signup is still
- * asked after their first post and again when they say they are going.
+ * (V25 ticket 15's re-ask rule). V29 removed the signup point, so the two
+ * remaining moments are independent: a not-now after the first post still leaves
+ * the going-to-an-event ask legal.
  *
  * TWO THINGS IT DELIBERATELY DOES NOT DO:
  *

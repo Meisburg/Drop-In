@@ -940,9 +940,9 @@ describe('the armed trigger origin', () => {
 // ---------------------------------------------------------------------------
 
 describe('the offered points', () => {
-  it('names exactly the three moments, and reads only those', () => {
-    expect(PUSH_PROMPT_TRIGGERS).toEqual(['signup', 'post_created', 'ping_saved'])
-    expect(isPushPromptTrigger('signup')).toBe(true)
+  it('names exactly the two remaining moments, and reads only those', () => {
+    expect(PUSH_PROMPT_TRIGGERS).toEqual(['post_created', 'ping_saved'])
+    expect(isPushPromptTrigger('signup')).toBe(false)
     expect(isPushPromptTrigger('post_created')).toBe(true)
     expect(isPushPromptTrigger('ping_saved')).toBe(true)
     expect(isPushPromptTrigger('cold_load')).toBe(false)
@@ -950,42 +950,53 @@ describe('the offered points', () => {
     expect(isPushPromptTrigger(3)).toBe(false)
   })
 
-  it('arms and reads back the signup moment (it is a trigger like the other two)', () => {
+  it('arms and reads back a moment (it is a trigger like the other one)', () => {
     const storage = fakeStorage()
-    armPushPrompt(storage, 'signup')
-    expect(readArmedTrigger(storage)).toBe('signup')
+    armPushPrompt(storage, 'post_created')
+    expect(readArmedTrigger(storage)).toBe('post_created')
+  })
+
+  it('V29: a stored legacy signup point reads as nothing, so it cannot resurrect a point the app no longer has', () => {
+    const storage = fakeStorage()
+    storage.setItem(PUSH_OFFERED_KEY, 'signup,ping_saved')
+    expect(readOfferedTriggers(storage)).toEqual(['ping_saved'])
   })
 
   it('parses a stored list, drops anything that is not a point, and reads garbage as empty', () => {
-    expect(parseOfferedTriggers('signup,post_created')).toEqual(['signup', 'post_created'])
-    expect(parseOfferedTriggers('signup, nonsense ,ping_saved')).toEqual(['signup', 'ping_saved'])
+    expect(parseOfferedTriggers('post_created,ping_saved')).toEqual(['post_created', 'ping_saved'])
+    expect(parseOfferedTriggers('post_created, nonsense ,ping_saved')).toEqual([
+      'post_created',
+      'ping_saved',
+    ])
     expect(parseOfferedTriggers('')).toEqual([])
     expect(parseOfferedTriggers(null)).toEqual([])
     expect(parseOfferedTriggers(undefined)).toEqual([])
     expect(parseOfferedTriggers('yes')).toEqual([])
   })
 
-  it('serializes in the founder’s order, deduplicated — one canonical form', () => {
-    expect(serializeOfferedTriggers(['ping_saved', 'signup', 'signup'])).toBe('signup,ping_saved')
+  it('serializes in the canonical order, deduplicated — one canonical form', () => {
+    expect(serializeOfferedTriggers(['ping_saved', 'post_created', 'post_created'])).toBe(
+      'post_created,ping_saved',
+    )
     expect(serializeOfferedTriggers([])).toBe('')
   })
 
   it('adds a point without disturbing the ones already there', () => {
-    expect(addOfferedTrigger(['signup'], 'ping_saved')).toEqual(['signup', 'ping_saved'])
+    expect(addOfferedTrigger(['post_created'], 'ping_saved')).toEqual(['post_created', 'ping_saved'])
     expect(addOfferedTrigger([], 'post_created')).toEqual(['post_created'])
-    expect(addOfferedTrigger(['signup'], 'signup')).toEqual(['signup'])
+    expect(addOfferedTrigger(['post_created'], 'post_created')).toEqual(['post_created'])
     // Never mutates the list it is handed.
-    const offered: Array<'signup' | 'post_created' | 'ping_saved'> = ['signup']
-    addOfferedTrigger(offered, 'post_created')
-    expect(offered).toEqual(['signup'])
+    const offered: Array<'post_created' | 'ping_saved'> = ['post_created']
+    addOfferedTrigger(offered, 'ping_saved')
+    expect(offered).toEqual(['post_created'])
   })
 
   it('round-trips through storage, merging rather than replacing', () => {
     const storage = fakeStorage()
-    rememberTriggerOffered(storage, 'signup')
+    rememberTriggerOffered(storage, 'post_created')
     rememberTriggerOffered(storage, 'ping_saved')
-    expect(storage.dump()[PUSH_OFFERED_KEY]).toBe('signup,ping_saved')
-    expect(readOfferedTriggers(storage)).toEqual(['signup', 'ping_saved'])
+    expect(storage.dump()[PUSH_OFFERED_KEY]).toBe('post_created,ping_saved')
+    expect(readOfferedTriggers(storage)).toEqual(['post_created', 'ping_saved'])
   })
 
   it('reads an absent key as "no point offered yet"', () => {
@@ -994,16 +1005,16 @@ describe('the offered points', () => {
 
   it('survives a storage that refuses everything', () => {
     expect(readOfferedTriggers(throwingStorage)).toEqual([])
-    expect(() => rememberTriggerOffered(throwingStorage, 'signup')).not.toThrow()
+    expect(() => rememberTriggerOffered(throwingStorage, 'post_created')).not.toThrow()
     expect(readOfferedTriggers(null)).toEqual([])
-    expect(() => rememberTriggerOffered(null, 'signup')).not.toThrow()
+    expect(() => rememberTriggerOffered(null, 'post_created')).not.toThrow()
   })
 
   it('answers "is this point spent?" — and a cold load (null) is never spent', () => {
-    expect(hasOfferedTrigger(['signup'], 'signup')).toBe(true)
-    expect(hasOfferedTrigger(['signup'], 'ping_saved')).toBe(false)
+    expect(hasOfferedTrigger(['post_created'], 'post_created')).toBe(true)
+    expect(hasOfferedTrigger(['post_created'], 'ping_saved')).toBe(false)
     expect(hasOfferedTrigger([], 'ping_saved')).toBe(false)
-    expect(hasOfferedTrigger(['signup'], null)).toBe(false)
+    expect(hasOfferedTrigger(['post_created'], null)).toBe(false)
   })
 })
 
@@ -1014,8 +1025,7 @@ describe('promptReasonFor', () => {
     expect(PING_PROMPT_REASON).toContain('cancelled')
   })
 
-  it('keeps the drop-in reason for the other two points', () => {
-    expect(promptReasonFor('signup')).toBe(PUSH_PROMPT_REASON)
+  it('keeps the drop-in reason for the post point', () => {
     expect(promptReasonFor('post_created')).toBe(PUSH_PROMPT_REASON)
   })
 })
@@ -1203,14 +1213,14 @@ describe('decidePermissionPrompt', () => {
 })
 
 // ---------------------------------------------------------------------------
-// The per-point re-ask rule (V25 ticket 15). THE RULE, in the founder's terms:
-// each of the three points is offered at most once, a "Not now" at one point
-// does not cancel the others, and after all three the app is silent.
+// The per-point re-ask rule (V25 ticket 15 · V29). THE RULE: each point is
+// offered at most once, a "Not now" at one point does not cancel the other, and
+// after both the app is silent. V29 removed signup as a point entirely.
 // ---------------------------------------------------------------------------
 
 describe('decidePermissionPrompt — one offer per point', () => {
-  it('asks each point when it has not been offered yet — signup, post, going', () => {
-    for (const trigger of ['signup', 'post_created', 'ping_saved'] as const) {
+  it('asks each point when it has not been offered yet — post, then going', () => {
+    for (const trigger of ['post_created', 'ping_saved'] as const) {
       const decision = decidePermissionPrompt({
         decision: 'unknown',
         permission: 'default',
@@ -1225,18 +1235,18 @@ describe('decidePermissionPrompt — one offer per point', () => {
     }
   })
 
-  it('a "Not now" at SIGNUP does not cancel the after-post ask — the ticket’s rule', () => {
+  it('V29: a parent who has only created an account is never asked — signup arms no point', () => {
     expect(
       decidePermissionPrompt({
         decision: 'unknown',
         permission: 'default',
-        trigger: 'post_created',
-        origin: '/new',
+        trigger: null, // the LoginPage no longer arms anything at signup
+        origin: '/login',
         currentPath: '/',
-        offered: ['signup'],
+        offered: [],
         gate: OPEN_GATE,
-      }).ask,
-    ).toBe(true)
+      }),
+    ).toEqual({ ask: false, reason: null, note: null })
   })
 
   it('a "Not now" at the post does not cancel the going ask either', () => {
@@ -1247,7 +1257,7 @@ describe('decidePermissionPrompt — one offer per point', () => {
         trigger: 'ping_saved',
         origin: '/',
         currentPath: '/',
-        offered: ['signup', 'post_created'],
+        offered: ['post_created'],
         gate: OPEN_GATE,
       }).ask,
     ).toBe(true)
@@ -1266,8 +1276,8 @@ describe('decidePermissionPrompt — one offer per point', () => {
     expect(decision).toEqual({ ask: false, reason: null, note: null })
   })
 
-  it('after all three points, the app is silent and /settings is the only door back', () => {
-    for (const trigger of ['signup', 'post_created', 'ping_saved'] as const) {
+  it('after both points, the app is silent and /settings is the only door back', () => {
+    for (const trigger of ['post_created', 'ping_saved'] as const) {
       expect(
         decidePermissionPrompt({
           decision: 'unknown',
@@ -1275,7 +1285,7 @@ describe('decidePermissionPrompt — one offer per point', () => {
           trigger,
           origin: '/',
           currentPath: '/',
-          offered: ['signup', 'post_created', 'ping_saved'],
+          offered: ['post_created', 'ping_saved'],
           gate: OPEN_GATE,
         }),
         `${trigger} must be silent once spent`,
@@ -1343,7 +1353,7 @@ describe('decidePermissionPrompt — one offer per point', () => {
   })
 
   it('a denial still stops every point, offered or not', () => {
-    for (const offered of [[], ['signup']] as const) {
+    for (const offered of [[], ['post_created']] as const) {
       const decision = decidePermissionPrompt({
         decision: 'unknown',
         permission: 'denied',
@@ -1363,8 +1373,8 @@ describe('decidePermissionPrompt — one offer per point', () => {
       decidePermissionPrompt({
         decision: 'unknown',
         permission: 'default',
-        trigger: 'signup',
-        origin: '/login',
+        trigger: 'post_created',
+        origin: '/new',
         currentPath: '/',
         gate: OPEN_GATE,
       }).ask,
@@ -1377,8 +1387,8 @@ describe('decidePermissionPrompt — one offer per point', () => {
         decidePermissionPrompt({
           decision: 'unknown',
           permission: 'default',
-          trigger: 'signup',
-          origin: '/login',
+          trigger: 'post_created',
+          origin: '/new',
           currentPath,
           offered: [],
           gate: OPEN_GATE,
@@ -1410,7 +1420,7 @@ describe('shouldSpendPushPoint — when is a point spent', () => {
   it('never spends on a suppressed surface — the app navigates out of it by itself', () => {
     for (const currentPath of ['/settings', '/onboarding', '/new']) {
       expect(
-        shouldSpendPushPoint({ ask: true, trigger: 'signup', currentPath }),
+        shouldSpendPushPoint({ ask: true, trigger: 'post_created', currentPath }),
         currentPath,
       ).toBe(false)
     }
@@ -1440,16 +1450,18 @@ describe('shouldSpendPushPoint — when is a point spent', () => {
   })
 
   it('never spends when there is no card to draw — no ask, or no trigger', () => {
-    expect(shouldSpendPushPoint({ ask: false, trigger: 'signup', currentPath: '/' })).toBe(false)
+    expect(shouldSpendPushPoint({ ask: false, trigger: 'post_created', currentPath: '/' })).toBe(
+      false,
+    )
     expect(shouldSpendPushPoint({ ask: false, trigger: null, currentPath: '/' })).toBe(false)
     expect(shouldSpendPushPoint({ ask: true, trigger: null, currentPath: '/' })).toBe(false)
   })
 
   it('is total — an unknown route reads as "not suppressed" and never throws', () => {
-    expect(shouldSpendPushPoint({ ask: true, trigger: 'signup', currentPath: undefined })).toBe(
-      true,
-    )
-    expect(shouldSpendPushPoint({ ask: true, trigger: 'signup', currentPath: null })).toBe(true)
+    expect(
+      shouldSpendPushPoint({ ask: true, trigger: 'post_created', currentPath: undefined }),
+    ).toBe(true)
+    expect(shouldSpendPushPoint({ ask: true, trigger: 'post_created', currentPath: null })).toBe(true)
   })
 
   it('agrees with the ask seam on every suppressed surface — the predicates cannot drift', () => {
@@ -1457,7 +1469,7 @@ describe('shouldSpendPushPoint — when is a point spent', () => {
       const ask = decidePermissionPrompt({
         decision: 'unknown',
         permission: 'default',
-        trigger: 'signup',
+        trigger: 'post_created',
         origin: '/',
         currentPath,
         offered: [],
@@ -1465,7 +1477,7 @@ describe('shouldSpendPushPoint — when is a point spent', () => {
       }).ask
       expect(ask, `${currentPath} must not ask`).toBe(false)
       expect(
-        shouldSpendPushPoint({ ask, trigger: 'signup', currentPath }),
+        shouldSpendPushPoint({ ask, trigger: 'post_created', currentPath }),
         `${currentPath} must not spend`,
       ).toBe(false)
     }

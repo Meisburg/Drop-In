@@ -259,20 +259,26 @@ export type PermissionDecision = 'unknown' | 'granted' | 'denied' | 'dismissed'
 export type BrowserPermission = 'default' | 'granted' | 'denied' | 'unsupported'
 
 /**
- * The three meaningful moments a prompt may follow (V25 ticket 15 — the
- * founder's three trigger points, in his order): the account they just
- * created, the drop-in they just posted, and the RSVP they just gave.
+ * The two meaningful moments a prompt may follow — the founder's original three
+ * points, minus signup (V29, 2026-10-04): the drop-in they just posted, and the
+ * RSVP they just gave.
+ *
+ * WHY SIGNUP IS GONE. A completed signup is not yet a value moment: it produced
+ * nothing to be notified ABOUT, and the ask landed on the first feed paint of an
+ * app the parent had never seen work — on top of an empty feed. The type no
+ * longer names it, so no caller can re-arm it by accident; a stored legacy
+ * 'signup' in the offered list parses away to nothing
+ * (`PUSH_PROMPT_TRIGGERS` is the filter `parseOfferedTriggers` uses).
  */
-export type PushPromptTrigger = 'signup' | 'post_created' | 'ping_saved'
+export type PushPromptTrigger = 'post_created' | 'ping_saved'
 
 export const PUSH_PROMPT_TRIGGERS: readonly PushPromptTrigger[] = [
-  'signup',
   'post_created',
   'ping_saved',
 ]
 
 export function isPushPromptTrigger(value: unknown): value is PushPromptTrigger {
-  return value === 'signup' || value === 'post_created' || value === 'ping_saved'
+  return value === 'post_created' || value === 'ping_saved'
 }
 
 export const PUSH_DECISION_KEY = 'dropin.push.decision'
@@ -438,8 +444,8 @@ export function clearArmedTrigger(storage: StorageLike | null): void {
 // WHICH POINTS HAVE ALREADY BEEN OFFERED (localStorage, permanent).
 //
 // The ticket's re-ask rule, stored as one fact per trigger point: "A decline at
-// a trigger point is remembered for THAT trigger point only — 'Not now' at
-// signup does not cancel the after-first-post ask or the going-to-an-event ask.
+// a trigger point is remembered for THAT trigger point only — 'Not now' at the
+// first post does not cancel the going-to-an-event ask.
 // Each point is offered at most once."
 //
 // It is a SEPARATE key from the decision on purpose, and conflating the two is
@@ -604,9 +610,8 @@ export function isPlaydateDetailPath(pathname: string | null | undefined): boole
  *  * `/onboarding` — a setup flow the app itself navigates out of. A point is
  *    SPENT the moment it is offered (see the offered set below), so a card drawn
  *    on the location step would be spent by the app's own "Continue" tap before
- *    the parent could answer it. The ticket's own fallback for trigger point 1
- *    is "the first signed-in surface": onboarding is a step, not that surface,
- *    and the feed immediately behind it is.
+ *    the parent could answer it. V29 removed the signup point entirely; the two
+ *    remaining moments live on the feed and on a drop-in's page, never here.
  *  * `/new` — the composer, for the same reason. The post point is ARMED while
  *    the form is submitting and the app then navigates to the feed by itself, so
  *    a card drawn over the composer would be spent before the parent ever read
