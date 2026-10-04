@@ -35,3 +35,64 @@ The batch is generally safe to ship, but it contains a violation of the core bui
 - I could not verify the exact behavior of the `supabase.auth.signOut()` side effects as they occur in the production environment.
 - I could not verify the `beyondRadiusCount` arithmetic perfectly without a live DB, but the code shows it uses `filterFeed` which is the correct logic source.
 - I could not verify the "portrait phone" viewport budget without running the E2E suite (which was intentionally skipped).
+
+---
+
+## Orchestrator adjudication (2026-10-04)
+
+Adjudicated by the orchestrator against the tree at `de77404`, after the
+worker's commit `9b03f22`. The findings above are left exactly as written.
+Both were checked and **both are refuted**. The "Checked, no defect found"
+section is the part of this report that stands as evidence.
+
+### CRITICAL: Missing Sibling Test — REFUTED
+
+`src/lib/db.ts` is on the sibling-test guard's own **declared exemption list**:
+
+```
+scripts/guards/lib-sibling-guard.sh:89
+EXEMPT="src/lib/types.ts src/lib/db.ts src/lib/pushClient.ts scripts/lib/fence-scanner.mjs"
+```
+
+That guard is what enforces the build law's sibling requirement, and it passes
+on this tree — `npm run guards` reports "ok — all 59 non-exempt module(s) have
+a sibling test". An exempt module is *skipped, not failed*, and the guard ships
+a behaviour check for exactly that case (check 3: "a module on the EXEMPT list
+is skipped, not failed").
+
+So this finding reports a documented exemption as a critical violation: the
+absence of `db.test.ts` was read without reading the guard that decides whether
+that absence is allowed.
+
+### MEDIUM: Inaccurate Implementation Detail — REFUTED
+
+The quoted code does not exist in the file the finding cites.
+
+- `src/lib/db.ts` contains exactly **one** `filterFeed(` call — line 646, which
+  passes `profileId`:
+  `const filtered = filterFeed(posts, viewer, zipCoords, blocked, nowIso, profileId)`
+- `listRadiusFeed` performs exactly **one** fetch — line 638:
+  `const rows = await queryUpcomingPlaydates(nowIso, blockedIds)`
+
+  Both the in-radius result and `beyondRadiusCount` are derived from those
+  `rows`.
+- The comment being paraphrased lives at `src/lib/feed.ts:2457`, not
+  `feed.ts:1403`, and it says the second line "renders only when the same fetch
+  counted something" — a claim about the *fetch*, which is singular.
+
+Two in-memory filters over one already-fetched array are not a second fetch, so
+the documentation is accurate as written. The finding also misstates its own
+citation.
+
+### Note on the process, for the next dispatch
+
+Both findings were stamped `CONFIRMED`; both were wrong in the same way — a
+plausible, specific, fabricated detail (a missing file, a duplicated call, a
+line number). On a review lane that is the expensive failure, and it is the
+argument for the fleet's own first rule: a worker's claim is a belief, and only
+`fleet verify` plus an independent adjudication make it evidence.
+
+The next review-class brief should therefore require the worker to quote the
+current lines *and* open the authority (the guard, the test) before asserting a
+rule violation — the CRITICAL above would have evaporated on contact with
+`lib-sibling-guard.sh:89`.
