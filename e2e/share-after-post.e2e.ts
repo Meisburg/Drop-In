@@ -67,6 +67,40 @@ test('posting shows a dismissible share banner that is not persisted', async ({ 
   await expect(page.getByTestId('just-posted-banner')).toHaveCount(0)
 })
 
+/**
+ * V29 v29-3 — THE RELOAD, WITHOUT DISMISSING FIRST.
+ *
+ * The test above reloads only AFTER dismissing, so it could not see the defect:
+ * the banner reads router state, router state IS `history.state`, and
+ * `history.state` survives a reload. A parent who refreshed the feed was told
+ * again that they had just posted — a stale notice that reads as a second event.
+ *
+ * One banner per post is the rule, so this is its pin, and the banner's link to
+ * the post it announces is pinned in the same breath.
+ */
+test('the banner does not survive a reload when it was never dismissed', async ({ page }) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} banner reload`
+
+  await page.goto('/new')
+  await settleOnRoute(page, '/new')
+  await editTitle(page)
+  await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+  await page.getByPlaceholder(PLACE_PLACEHOLDER).fill('E2E Share park')
+  await page.getByRole('button', { name: 'Post drop-in' }).click()
+  await page.waitForURL('/')
+
+  const banner = page.getByTestId('just-posted-banner')
+  await expect(banner).toBeVisible()
+  // The door to what was just posted: the title links to the drop-in, so the
+  // banner is an announcement AND a way to look at the thing.
+  await expect(banner.getByRole('link', { name: title })).toHaveAttribute('href', /^\/playdate\//)
+
+  // THE FACT: never dismissed, and the reload is still silent.
+  await page.reload()
+  await expect(page.getByTestId('just-posted-banner')).toHaveCount(0)
+})
+
 test.afterEach(async () => {
   // Best-effort cleanup (the house pattern): the marker's playdate rows are
   // deleted via REST with the marker's own JWT (host-only DELETE policy). A

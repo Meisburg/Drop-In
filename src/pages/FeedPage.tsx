@@ -216,18 +216,36 @@ export function FeedPage() {
   const navigate = useNavigate()
   const location = useLocation()
   /**
-   * V27 slice 4: the just-posted share prompt. `/new` navigates here with
-   * router state (`{ justPosted: { id, title } }`) and the URL stays exactly
-   * `/`; this reads that one-shot state and offers a one-tap Share. It is
-   * NEVER persisted: a plain load of `/` carries no state and shows nothing,
-   * and dismissing clears the state (a replace) so back/forward cannot
-   * resurrect it.
+   * V27 slice 4 (corrected by V29 v29-3): the just-posted share prompt. `/new`
+   * navigates here with router state (`{ justPosted: { id, title } }`) and the
+   * URL stays exactly `/`; this reads that one-shot state and offers a one-tap
+   * Share.
+   *
+   * ⚠️ THE OLD COMMENT HERE WAS WRONG, AND THE WRONGNESS WAS THE BUG. It said
+   * "it is NEVER persisted: a plain load of `/` carries no state and shows
+   * nothing". Router state IS `history.state`, which SURVIVES a reload — so a
+   * parent who refreshed the feed was told again that they had just posted, and
+   * a stale notice that reads as a second event is a trust bug.
+   *
+   * The state is now CONSUMED on mount (the effect below): the banner renders
+   * from component state, the history entry is replaced with the same URL and
+   * no state, and reload / back / forward cannot resurrect it.
    */
-  const justPosted =
+  const justPostedFromState =
     (location.state as { justPosted?: { id: string; title: string } } | null)?.justPosted ?? null
+  // A mount-time SNAPSHOT, deliberately without a setter: the effect below
+  // strips the router state on the same tick, so a live read of
+  // `location.state` would go null and hide the banner the parent just earned.
+  const [justPosted] = useState<{ id: string; title: string } | null>(justPostedFromState)
   const [shareDismissed, setShareDismissed] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
   const showJustPosted = justPosted !== null && !shareDismissed
+  useEffect(() => {
+    if (justPostedFromState === null) return
+    // Replace the entry with an identical URL and NO state. The banner keeps
+    // rendering (it lives in component state now) and the reload is silent.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+  }, [justPostedFromState, location.pathname, location.search, navigate])
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   /**
@@ -1067,13 +1085,14 @@ export function FeedPage() {
   }
 
   /**
-   * V27 slice 4: Dismiss the just-posted banner. Clearing the router state
-   * with a replace means the prompt cannot come back via history — the banner
-   * is one-shot, never a persisted notice.
+   * V29 v29-3: dismiss the just-posted banner. The router state was consumed on
+   * mount, so this only flips the component's own flag — there is nothing left
+   * in history for a dismissal to clean up, which is what the old
+   * `navigate('/', { replace: true, state: null })` was standing in for (and
+   * only on an explicit dismiss, which is why a reload kept the banner).
    */
   function dismissJustPosted() {
     setShareDismissed(true)
-    navigate('/', { replace: true, state: null })
   }
 
   /**
@@ -1111,7 +1130,22 @@ export function FeedPage() {
           post. Router-state-driven and one-shot — a plain load of `/` (no
           state) renders nothing, and dismissing clears the state. */}
       {showJustPosted ? (
-        <div data-testid="just-posted-banner" className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">          <p className="min-w-0 text-sm text-slate-700"><span className="font-medium">Posted!</span> {justPosted.title}</p>
+        <div
+          data-testid="just-posted-banner"
+          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+        >
+          <p className="min-w-0 text-sm text-slate-700">
+            <span className="font-medium">Posted!</span>{' '}
+            {/* V29 v29-3: the banner announced the post and offered only Share
+                and Dismiss, so a parent who wanted to LOOK at what they had just
+                made had to go find it. The title is the door. */}
+            <Link
+              to={`/playdate/${justPosted.id}`}
+              className="font-medium text-indigo-700 underline"
+            >
+              {justPosted.title}
+            </Link>
+          </p>
           <div className="flex shrink-0 items-center gap-2">
             <button type="button" onClick={() => void shareJustPosted()} className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
               {shareCopied ? 'Copied' : 'Share'}
