@@ -399,6 +399,28 @@ try {
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 
+  // D-030 (zero-claim): the seed above proves the guard FAILS on a zero-claim
+  // state; this mutation proves the finding is the claimsRead tripwire and not a
+  // neighboring rule. Drop the tripwire and its line must stop — the per-module
+  // "claims const is unreadable" finding may still fire (it is a different rule),
+  // but the tripwire's own line is what this seed asserts, so it must be gone.
+  // An empty measurement that reads as clean is the defect this pair locks out.
+  let zeroClaim = null
+  try {
+    zeroClaim = mutate([['if (claimsRead === 0) {', 'if (false) {']])
+  } catch (e) {
+    check('zero-claim — MUTATION: the claimsRead tripwire can be removed (so the seed proves it)', false, e instanceof Error ? e.message : String(e))
+  }
+  if (zeroClaim !== null) {
+    mutationRuns += 1
+    const after = run(zeroClaim)
+    check(
+      'zero-claim — MUTATION: dropping the claimsRead tripwire stops the tripwire finding (an empty measurement would otherwise read as clean)',
+      !after.out.includes('no declaration was read from any registered module'),
+      `exit ${after.exit}: ${findingLines(after.out)}`,
+    )
+  }
+
   // --- B2b (D-030 instance 4): the DECLARED claims rule 3 actually CHECKED are a
   //     set too, and the round-1 repair left it unwatched — with the declared
   //     kinds unscannable the run printed `scanned words: 6`, printed why on a
