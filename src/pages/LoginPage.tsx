@@ -197,8 +197,18 @@ export function LoginPage() {
           <DropInMark className="h-8 w-8" />
           <span className="font-display text-2xl font-bold">Drop In</span>
         </div>
+        {/* V29 v29-8: this line has ONE job and the old one did not do it. "See
+            what families are up to in your area!" promised something vague and
+            implied knowledge of local activity the signed-out app cannot have.
+            Five independent reviewers, reading this exact screen, could not say
+            what a "drop-in" was or what they would do with the app. The line now
+            names the noun, the payoff and the low commitment in a parent's
+            words — and says nothing about activity it cannot see.
+
+            It must stay ONE line at 390px: the page is a portrait-phone layout
+            with a measured height budget (scripts/mobile-audit.mjs, v29-4). */}
         <p className="text-sm text-slate-600">
-          See what families are up to in your area!
+          Casual drop-ins near you — no RSVP, no planning.
         </p>
       </header>
       {/* De-carded: the form stands on the page like every other masthead in
@@ -214,7 +224,12 @@ export function LoginPage() {
         </h1>
         <p className="text-sm text-slate-600">
           {mode === 'login'
-            ? 'Welcome back. Sign in to see drop-ins near you.'
+            ? /* V29 v29-8: "Welcome back." presumed the visitor had been here
+                 before — the exact "treated like a returning user before I knew
+                 what this was" friction the reviews reported. The returning
+                 parent loses nothing: the h1 is still "Sign in", and the form is
+                 unchanged. */
+              'Sign in to see drop-ins near you.'
             : mode === 'signup'
               ? 'Just your email and password — your name and location come right after.'
               : 'Enter your email and we’ll send a link to set a new password.'}
