@@ -49,10 +49,11 @@ test('leaving /new mid-form keeps a draft; returning restores it (disclosure); p
     await page.getByPlaceholder('e.g. Green Lake playground, near the boathouse').fill(DRAFT_PLACE)
     await page.getByPlaceholder('e.g. 7200 4th Ave NE, near the boathouse').fill(DRAFT_ADDRESS)
 
-    // 2 — LEAVE MID-FORM. The "Add kids" link (the founder's exit) takes the
-    //    parent to /settings; the draft persists on the way out.
+    // 2 — LEAVE MID-FORM. The "Add kids" link (the founder's exit — the
+    //    no-kids empty state's link to /settings) takes the parent there;
+    //    the draft persists on the way out.
     await step('leave-to-settings')
-    await page.getByTestId('add-kids-link').click()
+    await page.getByRole('link', { name: 'Add kids' }).click()
     await settleOnRoute(page, '/settings')
 
     // 3 — RETURN TO /new. The draft comes back with a disclosure.
