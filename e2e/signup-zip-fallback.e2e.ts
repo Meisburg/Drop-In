@@ -292,6 +292,45 @@ test('an unresolvable address reveals the ZIP fallback (the note + the field, ad
 })
 
 test(
+  'the ZIP is a peer, not a fallback: it is offered before anything fails, and saves on its own (V29 v29-9)',
+  async ({ browser }) => {
+    const marker = readMarkerMeta()
+    const epoch = Math.floor(Date.now() / 1000)
+    const { page, close } = await signedOutPage(browser)
+    try {
+      await signUpToAreaCard(page, {
+        name: `e2e-peer-${epoch} Marker`,
+        email: `e2e-peer-${epoch}@gmail.com`,
+        password: `e2e-peer-pw-${epoch}`,
+      })
+
+      // THE OFFER, BEFORE ANY FAILURE: the ZIP field is on screen with the card
+      // fresh — no address submitted, nothing failed, no fallback note. Pre-fix
+      // the field existed only after an address FAILED to resolve, so choosing
+      // ZIP meant submitting a street address and having it fail first.
+      const zip = page.getByTestId('area-zip-field')
+      await expect(zip).toBeVisible()
+      await expect(page.getByTestId('area-zip-fallback-note')).toHaveCount(0)
+      // …and the promise is at the field, on the ordinary path, not only inside
+      // the failure note (which is off screen here by construction).
+      await expect(page.getByText(/Never shown to other parents/)).toBeVisible()
+
+      // THE PEER PATH: a ZIP alone, no address, no geocoder — it saves.
+      await zip.fill(marker.homeZip)
+      await expect(page.getByPlaceholder('e.g. 1200 1st Ave S, Seattle')).toHaveValue('')
+      await page.getByRole('button', { name: 'Finish' }).click()
+      await expect(page.getByRole('heading', { name: 'Near you' })).toBeVisible({
+        timeout: 30_000,
+      })
+      expect(new URL(page.url()).pathname).toBe('/')
+      await expect(page.getByTestId('feed-location-control')).toContainText(marker.homeZip)
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
   'blur + Finish on the same address issues exactly ONE request, and the card shows its pin + radius circle (V28 slice 4)',
   async ({ browser }) => {
     const marker = readMarkerMeta()

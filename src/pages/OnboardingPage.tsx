@@ -1882,6 +1882,63 @@ export function OnboardingPage() {
           <p role="alert" id={errorId('area-address')} className="text-red-600">{areaAddressError}</p>
         ) : null}
 
+        {/* V29 v29-9: THE PROMISE, AT THE FIELD. The only privacy sentence on
+            this card used to live inside the failure-only fallback note, so a
+            parent who typed a resolvable address — the ordinary path — never saw
+            it, and the required street-address field never said who could see it.
+            This is the same promise the rest of the product makes, in the place
+            the parent is deciding. */}
+        <p className="text-xs text-slate-500">
+          Never shown to other parents — it only sets your neighborhood.
+        </p>
+
+        {/* V29 v29-9: THE ZIP IS A PEER, NOT A FALLBACK. It used to appear only
+            after an address FAILED to resolve (`zipFallbackShown`) or after a
+            parent had already typed one, so choosing ZIP meant first submitting
+            a street address and having it fail. `handleAreaFinish` has always
+            preferred a typed ZIP (that branch is FIRST in the handler); the field
+            simply was not offered.
+
+            It sits here — directly under the address, above the map and the
+            fallback note — so the choice is visible without scrolling past the
+            field it is an alternative to.
+
+            The V28 slice 8d rule is unchanged and now trivially true: the field
+            must be on screen whenever Finish could write it, and it always is.
+            The error stays OUTSIDE the label, gated only on `zipError !== null`,
+            so the alert and its field always co-render. */}
+        <label className="flex flex-col gap-1">
+          <span className="text-slate-700">Or your ZIP code</span>
+          <input
+            data-testid="area-zip-field"
+            className={
+              'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+              (zipError !== null ? 'border-red-400' : 'border-slate-300')
+            }
+            value={homeZip}
+            onChange={(e) => {
+              setHomeZip(e.target.value)
+              setZipError(null)
+            }}
+            // V28 slice 8d — THE FIELD IS FROZEN FOR THE WRITE IT STARTED.
+            // `typedZip` is read and `saveLocation(typedZip)` is awaited in
+            // the SAME synchronous turn (this path has no lookup await), so
+            // the one way the save can write a value the field does not show
+            // is an edit DURING the write. `saving` is already true for that
+            // whole window — it disables the primary and renders "Saving…" —
+            // so extending it here adds no new state and no new escape: the
+            // existing `finally` re-enables it on every path.
+            disabled={saving}
+            placeholder="e.g. 98107"
+            inputMode="numeric"
+            maxLength={5}
+            {...fieldA11y('zip', zipError)}
+          />
+        </label>
+        {zipError !== null ? (
+          <p role="alert" id={errorId('zip')} className="text-red-600">{zipError}</p>
+        ) : null}
+
         {/* V28 r4 — "USE MY LOCATION". The founder asked for this directly:
             *"for the places where we ask the user for their address/zip code,
             I'm wondering if we could pull that automatically from their phone
@@ -1961,63 +2018,6 @@ export function OnboardingPage() {
               parents.
             </p>
           </div>
-        ) : null}
-
-        {/* V28 slice 8d — THE ZIP FIELD IS NOT PART OF THE NOTE'S BLOCK. The
-            NOTE is a claim about the ADDRESS, so an address edit invalidates
-            it (slice 4 fix 3). The FIELD is not a claim about the address:
-            `homeZip` is what `handleAreaFinish` WRITES, and it is
-            authoritative REGARDLESS of note visibility (slice 4's deliberate
-            decision on the save path). So the field must be on screen
-            whenever Finish could write it — the fallback is asking for it
-            (`zipFallbackShown`), OR the parent has already typed one
-            (`homeZip !== ''`). Pre-fix the field lived and died with the
-            note, so: reveal the note, type an invalid zip, edit the address,
-            tap Finish -> `setZipError` into a block that is off screen, and
-            the parent gets NO feedback (Finish silently no-ops). */}
-        {zipFallbackShown || homeZip.trim() !== '' ? (
-          <label className="flex flex-col gap-1">
-            <span className="text-slate-700">Home zip</span>
-            <input
-              className={
-                'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                (zipError !== null ? 'border-red-400' : 'border-slate-300')
-              }
-              value={homeZip}
-              onChange={(e) => {
-                setHomeZip(e.target.value)
-                setZipError(null)
-              }}
-              // V28 slice 8d — THE FIELD IS FROZEN FOR THE WRITE IT STARTED.
-              // `typedZip` is read and `saveLocation(typedZip)` is awaited in
-              // the SAME synchronous turn (this path has no lookup await), so
-              // the one way the save can write a value the field does not show
-              // is an edit DURING the write. `saving` is already true for that
-              // whole window — it disables the primary and renders "Saving…" —
-              // so extending it here adds no new state and no new escape: the
-              // existing `finally` re-enables it on every path. (Slice 4
-              // refused to lock the ADDRESS field during a Finish-initiated
-              // LOOKUP — a long, bounded network call on the very field the
-              // parent may need to correct. This is a one-round-trip write of
-              // the value just submitted, the address + radius stay editable,
-              // and the field cannot diverge from what was written.)
-              disabled={saving}
-              placeholder="e.g. 98107"
-              inputMode="numeric"
-              maxLength={5}
-              {...fieldA11y('zip', zipError)}
-            />
-          </label>
-        ) : null}
-        {/* The error is rendered OUTSIDE every hiding block on purpose: its
-            ONE gate is `zipError !== null`. That flag can only be set while
-            `homeZip.trim() !== ''` (its only setter is the typed-zip branch
-            of handleAreaFinish, behind exactly that test) and the onChange
-            above clears it in the same update that would empty the field — so
-            the alert and its field always co-render, and the message can
-            never be hidden behind a condition that later goes false. */}
-        {zipError !== null ? (
-          <p role="alert" id={errorId('zip')} className="text-red-600">{zipError}</p>
         ) : null}
 
         {knownZips === null ? (
