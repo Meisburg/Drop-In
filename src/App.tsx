@@ -10,7 +10,7 @@ import { PostActionButton } from './components/PostActionButton'
 import { PushOptInPrompt } from './components/PushOptInPrompt'
 import { SessionProvider, useSessionContext } from './components/SessionProvider'
 import { SplashScreen } from './components/SplashScreen'
-import { listKids, signOutUser } from './lib/db'
+import { listKids } from './lib/db'
 import { nextUnfinishedCard } from './lib/firstRun'
 import type { FirstRunCardId } from './lib/firstRun'
 import { FIRST_RUN_NUDGE_COPY } from './lib/firstRunCopy'
@@ -443,7 +443,11 @@ function ProtectedShell() {
               <div className="flex min-w-0 items-center gap-3">
                 {/* V11 ticket 06: the settings entry point — a gear to the
                     family's editor. Signed-in only (the route is auth-gated by
-                    the shell), next to the sign-out control. */}
+                    the shell). V29 v29-10: the sign-out button that sat beside
+                    it is GONE — a permanent one-tap control in the header of
+                    every screen, no confirmation, with a password reset as the
+                    cost of a mis-tap. Sign out lives in Settings → Account now
+                    (components/AccountSection.tsx). */}
                 {session !== null ? (
                   <Link
                     to="/settings"
@@ -453,15 +457,7 @@ function ProtectedShell() {
                     <NavIcon path={NAV_ICONS.gear} />
                   </Link>
                 ) : null}
-                {session !== null ? (
-                  <button
-                    type="button"
-                    className="flex min-h-11 items-center text-sm text-slate-600"
-                    onClick={() => void signOutUser()}
-                  >
-                    Sign out
-                  </button>
-                ) : (
+                {session !== null ? null : (
                   // V2 slice 5: the only route a signed-out visitor renders is
                   // the public detail page — a "Sign in" entry point instead of
                   // a sign-out control.

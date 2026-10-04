@@ -92,6 +92,29 @@ export function AccountSection() {
         )}
       </div>
 
+      {/* V29 v29-10: SIGN OUT LIVES HERE NOW, not in the app header. In the
+          header it was a permanent one-tap control sitting beside the settings
+          gear on every signed-in screen, with no confirmation — a mis-tap cost a
+          password reset. Settings is where a parent goes to manage the account,
+          and this sits with the other account-level actions rather than
+          competing with navigation. No confirm dialog: the risk being removed
+          was the HEADER mis-tap, and a second tap on a deliberate Settings
+          control is friction, not safety. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <p className="text-sm font-medium text-slate-800">Sign out</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Your family&apos;s drop-ins stay on Drop In — sign back in any time.
+        </p>
+        <button
+          type="button"
+          data-testid="account-sign-out"
+          onClick={() => void signOutUser()}
+          className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700"
+        >
+          Sign out
+        </button>
+      </div>
+
       <div className="rounded-xl border border-red-200 bg-red-50/50 p-3">
         <p className="text-sm font-medium text-slate-800">Delete my account</p>
         <p className="mt-1 text-xs text-slate-500">
