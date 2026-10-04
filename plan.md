@@ -625,3 +625,12 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       `.vercel-env-tmp.json` and rotating its OIDC token, the form-draft design
       decision (`.scratch/new-form-draft-2026-10/spec.md`), and the 5-parent
       first-open test that v29-1 unblocked
+    V29 + FLEET FOLLOW-ON (2026-10-04): **r3-7, r3-8 and r3-9 are SHIPPED and
+      pushed** (3291529, af11256, c7d7039) — the two r3 items carried forward in
+      §6 are no longer outstanding, and the form-draft decision was made (option
+      B, round-trip `sessionStorage` draft). Both read-only audits were merged
+      with an orchestrator adjudication appended: fr-1's two findings REFUTED,
+      fr-3's verdicts 4 upheld / 1 on corrected grounds / 1 upheld more strongly
+      (PCR 008 reopened). Remaining, human-owned: the destructive marker sweep,
+      deleting `.vercel-env-tmp.json` + rotating its OIDC token, and the 5-parent
+      first-open test.
