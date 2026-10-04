@@ -657,6 +657,42 @@ describe('filterFeed (the radius-feed invariants, V2 slice 3)', () => {
     expect(narrow.map((p) => p.host_profile_id)).toEqual(['h-near'])
   })
 
+  it('V29 v29-7: the viewer\'s OWN post is exempt from the radius — and nobody else\'s is', () => {
+    // 98007 is ~11.5 mi from 98107: outside 5, inside 35.
+    const posts: FeedPost[] = [postAt('98007', 'me', 900), postAt('98007', 'someone-else', 900)]
+    // The default (no viewer id) is exactly today's rule: everything beyond the
+    // radius is out, including one's own post.
+    expect(filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO)).toEqual([])
+    expect(filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO, null)).toEqual([])
+    expect(
+      filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO, 'me').map(
+        (p) => p.host_profile_id,
+      ),
+    ).toEqual(['me'])
+  })
+
+  it('V29 v29-7: the exemption is DISTANCE ONLY — ended, blocked and unplaceable own posts stay out', () => {
+    const ended: FeedPost[] = [postAt('98007', 'me', 600)] // 10:00–11:00, now is 12:00
+    expect(filterFeed(ended, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO, 'me')).toEqual([])
+    const blocked: FeedPost[] = [postAt('98007', 'me', 900)]
+    expect(filterFeed(blocked, NARROW_VIEWER, ZIP_COORDS, new Set(['me']), NOW_ISO, 'me')).toEqual(
+      [],
+    )
+    // "coordinates are never invented": an own post with no resolvable location
+    // has no distance and no place on the map, so it stays out of the feed.
+    const unplaceable: FeedPost[] = [postAt(null, 'me', 900)]
+    expect(filterFeed(unplaceable, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO, 'me')).toEqual([])
+  })
+
+  it('V29 v29-7: an own post INSIDE the radius is unchanged — once, in starts_at order', () => {
+    const posts: FeedPost[] = [postAt('98107', 'me', 900), postAt('98107', 'other', 780)]
+    expect(
+      filterFeed(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO, 'me').map(
+        (p) => p.host_profile_id,
+      ),
+    ).toEqual(['other', 'me'])
+  })
+
   it('excludes a host that has no home zip (coordinates are never invented)', () => {
     const posts: FeedPost[] = [
       postAt(null, 'h-nozip', 780),

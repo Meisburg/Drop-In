@@ -718,6 +718,14 @@ export function isHiddenPost(post: { hidden_at?: string | null }): boolean {
  * `nowIso` is the single time input (it is also what drives the "happening
  * now" / "starts soon" badges in the UI), so the badge a card shows and the
  * decision to include it come from one instant.
+ *
+ * V29 v29-7: `ownProfileId` exempts the viewer's OWN posts from the radius —
+ * everything else still applies. A parent who posts at a park eight miles from
+ * home could not see their own drop-in in their own feed, and the "Posted!"
+ * banner did not even link to it; the radius is a discovery rule, not a rule
+ * about your own content. Blocked / hidden / ended and the "coordinates are
+ * never invented" exclusion all still apply to an own post: the exemption is
+ * about DISTANCE only, and a post with no resolvable location stays out.
  */
 export function filterFeed<T extends FeedPost>(
   posts: T[],
@@ -725,13 +733,15 @@ export function filterFeed<T extends FeedPost>(
   zipCoords: ReadonlyMap<string, ZipCoords>,
   blockedHostIds: ReadonlySet<string>,
   nowIso: string,
+  ownProfileId: string | null = null,
 ): T[] {
   return posts
     .filter((post) => {
       const distance = postDistanceMiles(post, viewer, zipCoords)
+      const isOwn = ownProfileId !== null && post.host_profile_id === ownProfileId
       return (
         distance !== null &&
-        withinRadius(distance, viewer.radiusMiles) &&
+        (isOwn || withinRadius(distance, viewer.radiusMiles)) &&
         !blockedHostIds.has(post.host_profile_id) &&
         !isHiddenPost(post) &&
         isStillAhead(post, nowIso)

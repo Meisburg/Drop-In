@@ -27,9 +27,33 @@ import {
   signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
-/** The viewer's location: a known WA zip ~11.5 mi from 98107 + a generous radius. */
+/**
+ * The viewer's location: a known WA zip ~11.5 mi from 98107 + a generous radius. */
 const VIEWER_ZIP = '98007'
 const VIEWER_RADIUS_LABEL = '20 miles'
+
+/**
+ * V29 v29-7: write the MARKER's own radius over PostgREST with its own JWT (the
+ * app's own write path + owner policy), asking for no row back — a write whose
+ * SELECT policy excludes the actor must never go through RETURNING (the 42501
+ * lesson). The same helper `feed-empty-state.e2e.ts` defines; if a THIRD spec
+ * needs it, promote it to fixtures.ts rather than copying it again.
+ */
+async function patchMarkerRadius(radiusMiles: number): Promise<boolean> {
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const res = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ radius_miles: radiusMiles }),
+  })
+  return res.ok
+}
 
 test("the marker's /settings edits distance but not the home ZIP (V27)", async ({ page }) => {
   await page.goto('/settings')
@@ -115,6 +139,70 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
   await expect(card.locator('p').filter({ hasText: /\d+ mi\b/ })).toBeVisible()
 
   await viewerContext.close()
+})
+
+/**
+ * V29 v29-7 — THE HOST SEES THEIR OWN DROP-IN, WHATEVER THE RADIUS.
+ *
+ * The radius is a DISCOVERY rule, and it was being applied to the host's own
+ * post: a parent who posted at a park across town could not see their own
+ * drop-in in their own feed, and the "Posted!" banner did not link to it either.
+ * Two independent external reviews hit it (a post 7 miles out vanished from a
+ * 5-mile feed).
+ *
+ * DISCOVERY vs HOSTING, pinned: the chosen place is "Lakeridge Park and
+ * Playground", ~12.5 mi from 98107 and the furthest seeded place — "the nearest
+ * real place" would have made the 1-mile radius assertion depend on which place
+ * sorts first. The post's distance comes from the PLACE's coordinates, not the
+ * host's home zip (feed.postDistanceMiles' precedence), which is what makes an
+ * own post outside the radius reachable at all.
+ *
+ * Non-vacuous: at a 1-mile radius the radius filter drops this post, so without
+ * the exemption the feed renders the empty state and the card assertion fails.
+ */
+test('V29 v29-7: the host sees their own drop-in even when it is outside their radius', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} own far post`
+
+  // WIDE FIRST: the place directory is radius-filtered from the viewer's own
+  // profile, so at 1 mile it would list nothing and there would be no far place
+  // to pick. Patch wide, post, then NARROW and reload — which is also the real
+  // story (post from wherever you are, then tighten the radius later).
+  expect(await patchMarkerRadius(35)).toBe(true)
+  try {
+    await page.goto('/new')
+    await settleOnRoute(page, '/new')
+    await editTitle(page)
+    await page.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
+    await page.getByTestId('browse-places').click()
+    const sheet = page.getByTestId('place-directory-sheet')
+    await expect(sheet).toBeVisible()
+    await sheet.getByPlaceholder(/^Places · /).fill('Lakeridge')
+    const rows = sheet.getByTestId('place-row')
+    await expect(rows.first()).toBeVisible()
+    await rows.first().click()
+    await expect(sheet).toHaveCount(0)
+    await page.getByRole('button', { name: 'Post drop-in' }).click()
+    await page.waitForURL('/')
+
+    // Now the radius is narrower than the post's own distance from home.
+    expect(await patchMarkerRadius(1)).toBe(true)
+    await page.reload()
+    await settleOnRoute(page, '/')
+
+    // THE CLAIM: the feed is not empty for its own host.
+    const card = page.locator('a').filter({ hasText: title }).first()
+    await expect(card).toBeVisible()
+    await expect(page.getByTestId('empty-radius-state')).toHaveCount(0)
+    // …and the distance label proves it really is the far post, not a
+    // same-radius neighbour.
+    await expect(card.locator('p').filter({ hasText: /\d+ mi\b/ })).toBeVisible()
+  } finally {
+    // Restore the marker's radius: every other spec reads this row.
+    expect(await patchMarkerRadius(marker.radiusMiles)).toBe(true)
+  }
 })
 
 test.afterEach(async () => {

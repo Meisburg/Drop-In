@@ -606,6 +606,11 @@ export interface RadiusFeedResult {
    * there is nothing further out, and 0 at the widest radius itself. It rides
    * THIS read because the radius filter is what discards those rows; asking for
    * them separately would be a second query for data already in hand.
+   *
+   * V29 v29-7 note: the viewer's OWN posts are deliberately NOT excluded from
+   * this count. They are exempt from the radius in `posts` above, so a viewer
+   * with an own post further out never sees an empty state at all — which makes
+   * the overlap unreachable rather than a wrong number on screen.
    */
   beyondRadiusCount: number
 }
@@ -636,7 +641,9 @@ export async function listRadiusFeed(
   // is missing from the map, gets null and falls back to the host's home zip.
   const posts = rows.map((post) => ({ ...post, place_coords: placeCoordsFor(post.place_id, places) }))
   const blocked = new Set(blockedIds)
-  const filtered = filterFeed(posts, viewer, zipCoords, blocked, nowIso)
+  // V29 v29-7: `profileId` is the VIEWER's own profile id — their own active
+  // drop-ins are exempt from the radius (see feed.filterFeed's ownProfileId).
+  const filtered = filterFeed(posts, viewer, zipCoords, blocked, nowIso, profileId)
   return {
     posts: filtered.map((post) => ({
       ...post,
