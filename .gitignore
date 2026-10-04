@@ -16,6 +16,10 @@ dist-ssr
 .env
 .env.*
 !.env.example
+# V29: the Vercel CLI's temp env dump lands in the repo root on `vercel env
+# pull` and contains a live OIDC token. It was untracked-but-not-ignored, so any
+# `git add -A` would have committed a credential.
+.vercel-env-tmp.json
 
 # Playwright e2e (V2 ticket 00) — marker storageState (session tokens)
 # and test artifacts, never commit
