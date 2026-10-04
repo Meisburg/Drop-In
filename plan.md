@@ -531,11 +531,23 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       gate EXIT=0 (73 files / 2122 tests / 81 warnings / 0 errors / GUARDS PASS);
       e2e push-subscribe 9 passed. Dispatched inline (DSH session; the opencode
       orchestrator-* lane is unavailable — the deviation V27/V28 recorded)
-    V29 v29-2: not started
-    V29 v29-3: not started
+    V29 v29-2: DONE (commit 21fb9c4) — a card may only claim what it read;
+      goingPingsLoaded defaults false, all four call sites pass it, the failure
+      paths keep null instead of {}; goingPingsByPost is the one grouping rule.
+      Gate EXIT=0 (73 files / 2125 tests / 81 warnings / 0 errors / GUARDS PASS);
+      e2e card-circles + profile-posts 3 passed (new host-PROFILE assertion)
+    V29 v29-3: DONE (commit 85a9e59) — the "Posted!" banner is consumed on mount,
+      so a reload cannot re-announce the post; its title now links to the drop-in.
+      Gate EXIT=0 (73 / 2125 / 81 / 0 / GUARDS PASS); e2e share-after-post 3 passed,
+      including a NEW test for reload-without-dismissing (the case the old spec
+      could not see)
     V29 v29-4: not started
     V29 v29-5: not started
-    V29 v29-6: not started
+    V29 v29-6: not started — MEASURED: no new query is needed. listRadiusFeed
+      already fetches every upcoming post (queryUpcomingPlaydates) and filterFeed
+      discards the ones outside the radius, so the count lives in the same fetch;
+      the change is that listRadiusFeed's RETURN SHAPE must carry it (one caller,
+      FeedPage:549, and no test mocks it)
     V29 v29-7: not started
     V29 v29-8: not started
     V29 v29-9: not started
