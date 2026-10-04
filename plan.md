@@ -541,14 +541,29 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       Gate EXIT=0 (73 / 2125 / 81 / 0 / GUARDS PASS); e2e share-after-post 3 passed,
       including a NEW test for reload-without-dismissing (the case the old spec
       could not see)
-    V29 v29-4: not started
+    V29 v29-6: DONE (commit 5b74862) — the empty state says what is further out.
+      listRadiusFeed returns { posts, beyondRadiusCount } (no new query — the
+      widest-radius filter over the same rows); the copy quotes the escape's own
+      35-mile ceiling and renders nothing at 0. Gate EXIT=0 (73 / 2132 / 81 / 0 /
+      GUARDS PASS); e2e feed-empty-state 7 passed, the new test posting from a
+      SECOND account so v29-7 could not break it
+    V29 v29-7: DONE (commit 19ac6e4) — the viewer's own drop-in is exempt from
+      their own radius (filterFeed gains ownProfileId; distance only — blocked,
+      hidden, ended and unplaceable still excluded). Gate EXIT=0 (73 / 2135 /
+      81 / 0 / GUARDS PASS); e2e zip-radius 4 passed: post at the furthest
+      seeded place (~12.5 mi), narrow the radius to 1 mile, card still there and
+      the empty state not — and feed-empty-state 7 passed on the same code
+    V29 v29-4: not started — NOTE for the slice: LoginPage's create-account
+      control sits 28px below the fold at 390x664, and scripts/mobile-audit.mjs
+      is NOT in npm run verify, so its new vertical-containment assertion is the
+      only durable pin
     V29 v29-5: not started
-    V29 v29-6: not started — MEASURED: no new query is needed. listRadiusFeed
+
       already fetches every upcoming post (queryUpcomingPlaydates) and filterFeed
       discards the ones outside the radius, so the count lives in the same fetch;
       the change is that listRadiusFeed's RETURN SHAPE must carry it (one caller,
       FeedPage:549, and no test mocks it)
-    V29 v29-7: not started
+
     V29 v29-8: not started
     V29 v29-9: not started
     V29 v29-10: not started
