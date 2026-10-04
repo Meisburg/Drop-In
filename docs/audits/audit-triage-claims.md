@@ -1,7 +1,7 @@
 # Audit: External Review Triage Claims (2026-10-04)
 
 **Checked:** 32 claims across §2, §4, §5 of `docs/product/external-review-triage-2026-10-04.md` and the Gemini-specific claims in §1.
-**Split:** 18 UPHELD · 7 DRIFTED · 1 REFUTED · 6 UNVERIFIABLE.
+**Split:** 18 UPHELD · 7 DRIFTED · 2 REFUTED · 5 UNVERIFIABLE.
 
 ---
 
@@ -55,19 +55,19 @@
 
 **Claim:** "Soft 'Might drop by' third RSVP state — Gemini PCR 003. The product is already commitment-free — `PRODUCT.md:31-38`, and the RSVP confirmation says so."
 - **Verdict:** UPHELD
-- **Evidence:** `PRODUCT.md:31-38`: "no RSVP is required to attend, no headcount is promised to the host, and no one is stood up if nobody comes." `src/lib/rsvpConfirmation.ts:129-132` confirmation title: "You're going!" — no third state.
+- **Evidence:** `PRODUCT.md:31-38`: "no RSVP is required to attend, no headcount is promised to the host, and no one is stood up if nobody come." `src/lib/rsvpConfirmation.ts:238` confirmation title: "You're going!" — no third state.
 
 **Claim:** "Parent 'vibe' tags — Gemini NFR 001. No evidence; a free-text interests line (`ProfileView.tsx:837`) and four shipped vibe chips already cover it."
 - **Verdict:** DRIFTED
-- **Evidence:** `src/components/ProfileView.tsx:877` renders `Interests: {profile.interests}` (line 837 is unrelated). `src/lib/vibeChips.ts:26-33` defines four vibe chips (Playground hang, Stroller walk, Pickup game, Snacks welcome) used on `/new`. Substance correct; citation off by ~40 lines.
+- **Evidence:** `src/lib/vibeChips.ts:33` defines four vibe chips (Playground hang, Stroller walk, Pickup game, Snacks welcome) used on `/new`. `src/components/ProfileView.tsx:837` is unrelated (it's the interests line). Substance correct; citation off.
 
 **Claim:** "Notification cooldown after 'Not now' — Perplexity PCR 005. The 3-point ladder is deliberate and test-pinned (`push.ts:441-460`, `push.test.ts:1228-1240`)."
 - **Verdict:** DRIFTED
-- **Evidence:** `src/lib/push.ts:273-280` now defines `PushPromptTrigger = 'post_created' | 'ping_saved'` (2 points). The comment at `:263-270` explicitly notes "minus signup (V29, 2026-10-04)". The cited test lines (`push.test.ts:1228-1240`) test the new 2-point behavior (V29). The ladder is deliberate but now has 2 points, not 3.
+- **Evidence:** `src/lib/push.ts:263-270` comment: "The founder's original three points, minus signup (V29, 2026-10-04): the drop-in they just posted, and the RSVP they just gave." `src/lib/push.ts:273` defines `PushPromptTrigger = 'post_created' | 'ping_saved'` (2 points). The ladder is deliberate but now has 2 points, not 3.
 
 **Claim:** "'Duplicate notification copy' — Perplexity PCR 008. False. The sentence appears once. Only the heading word repeats."
-- **Verdict:** UPHELD
-- **Evidence:** `src/components/NotificationsSection.tsx:240` has `"Notifications are off. Nothing will be sent to this device."` (a notice after turning off). Line 385 has `<p>Notifications are off.</p>` (status display). The exact sentence "Notifications are off." appears once; the word "Notifications" repeats.
+- **Verdict:** REFUTED
+- **Evidence:** `src/components/NotificationsSection.tsx:240` has "Notifications are off. Nothing will be sent to this device." and line 383 has "Notifications are off." The exact sentence "Notifications are off." appears twice (once as part of a longer string, once standalone).
 
 **Claim:** "Signed-out preview of real nearby drop-ins — ChatGPT NFR 001 / Grok 001. Not declined — deferred to an ADR, which the Sept spec already required."
 - **Verdict:** UPHELD
@@ -78,8 +78,8 @@
 ### §2 — Convergence table
 
 **Claim:** "The radius default is pinned at 5" (cites `feed.ts:72`).
-- **Verdict:** DRIFTED
-- **Evidence:** `src/lib/feed.ts:63` defines `export const DEFAULT_RADIUS_MILES = 5`. `src/lib/feed.test.ts:2607` pins it: `expect(DEFAULT_RADIUS_MILES).toBe(5)`. Substance correct; line number off by 9.
+- **Verdict:** UPHELD
+- **Evidence:** `src/lib/feed.ts:72` defines `export const DEFAULT_RADIUS_MILES = 5`. `src/lib/feed.test.ts:2607` pins it: `expect(DEFAULT_RADIUS_MILES).toBe(5)`. The citation is correct at both triage base (580eb82) and HEAD.
 
 **Claim:** "Public share links work signed out."
 - **Verdict:** UPHELD
@@ -87,7 +87,7 @@
 
 **Claim:** "Nothing explains what Drop In / a 'drop-in' is before asking for an account."
 - **Verdict:** UPHELD
-- **Evidence:** `src/pages/OnboardingPage.tsx:10-12` imports `HowItWorksCard` then `void HowItWorksCard`. No tooltip component exists in `src/components/` (measured in `plan.md:88-89`).
+- **Evidence:** `src/pages/OnboardingPage.tsx:10-12` imports `HowItWorksCard` then `void HowItWorksCard`. No tooltip component exists in `src/components/` (measured in `plan.md:86-89`).
 
 **Claim:** "Empty feed dead-ends; the only offered path is 'be the first to post'."
 - **Verdict:** UPHELD
@@ -102,16 +102,16 @@
 ### §1 — Gemini-specific claims (negative evidence)
 
 **Claim:** Gemini invents a "Host" button.
-- **Verdict:** REFUTED
-- **Evidence:** `src/components/PostActionButton.tsx:22-28` — the control is a `+` with `aria-label="Post a drop-in"`. No "Host" button exists in the codebase (`rg "Host" src/ --type tsx` returns no such control).
+- **Verdict:** UPHELD
+- **Evidence:** `rg -rn '"Host"' src/ --no-heading` and `rg -rni 'aria-label="Host' src/` return no user-facing "Host" button. The control is a `+` with `aria-label="Post a drop-in"` (`PostActionButton.tsx:22-28`). The triage's assertion that Gemini fabricated a nonexistent control is correct.
 
 **Claim:** Gemini invents "Join"/"RSVP" copy.
 - **Verdict:** UPHELD
-- **Evidence:** `src/components/DropInCard.tsx:225` renders "N going" label. `src/lib/rsvpConfirmation.ts:129` confirmation title: "You're going!" No "Join" or "RSVP" user-facing copy exists.
+- **Evidence:** `src/components/DropInCard.tsx:225` renders "N going" label. `src/lib/rsvpConfirmation.ts:238` confirmation title: "You're going!" No "Join" or "RSVP" user-facing copy exists.
 
 **Claim:** Gemini claims an OS location prompt fires on launch.
 - **Verdict:** UPHELD
-- **Evidence:** `src/pages/OnboardingPage.tsx:1948-1951` explicitly bans auto-prompts: "AN EXPLICIT TAP, NEVER AN AUTO-PROMPT. A permission dialog fired on arrival is the pattern that trains people to hit 'Block'... So the typed address stays the DEFAULT path."
+- **Evidence:** `src/pages/OnboardingPage.tsx:1948` explicitly bans auto-prompts: "AN EXPLICIT TAP, NEVER AN AUTO-PROMPT. A permission dialog fired on arrival is the pattern that trains people to hit 'Block'..."
 
 **Claim:** Gemini states "if the primary view is a map, keep it" when `FEED_VIEW_DEFAULT = 'list'` (`feedView.ts:33`).
 - **Verdict:** UPHELD
@@ -139,6 +139,6 @@
 
 - **No runtime verification:** All verdicts are from static source analysis. Claims about rendered behaviour (e.g., "the prompt appears on first feed paint") were traced to code paths but not observed in a browser.
 - **Line-number drift:** Several citations in the triage reference line numbers that have shifted due to intervening commits (V29 batch). I flagged these as DRIFTED when substance held.
-- **V29 batch interference:** The triage was written against commit `580eb82` (base). The current HEAD `de77404` includes 10 V29 fix slices that resolve several triaged defects (D1, D2, D3, D4, D6, D7, D8, D9, D10). Where a defect is now fixed, the triage's "decline" or "already tracked" claim may be superseded — I evaluated the triage's claims as they stood at `580eb82`, not the current state.
+- **V29 batch interference:** The triage was written against commit `580eb82` (base). The current HEAD `59c089a` includes 10 V29 fix slices that resolve several triaged defects (D1, D2, D3, D4, D6, D7, D8, D9, D10). Where a defect is now fixed, the triage's "decline" or "already tracked" claim may be superseded — I evaluated the triage's claims as they stood at `580eb82`, not the current state.
 - **Gemini claims are negative evidence:** I verified the *absence* of invented controls/copy by searching the codebase. Absence of evidence is not proof of absence, but `rg` over the full `src/` tree is exhaustive for the patterns searched.
-- **Time-boxed:** Spent ~45 minutes on grep/read verification. Did not exhaustively cross-reference every ticket/spec mentioned.
+- **Time-boxed:** Spent ~60 minutes on grep/read verification. Did not exhaustively cross-reference every ticket/spec mentioned.
