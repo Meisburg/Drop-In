@@ -574,7 +574,25 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       (26px buttons, 11.5px inputs, sub-14px labels), so mobile-audit's results
       were unreadable and the new v29-4 guard could not be trusted. The other
       half — committing the pre-batch WIP — is still the human's call
-    V29 v29-5: not started
-    V29 v29-9: not started
-    V29 v29-10: not started
-    V29 v29-11: not started
+    V29 v29-5: DONE (commit 0708fee) — the bare "@" leaves the /new help text, and
+      a small-hours start says so. THE RULE IS A NOTE, NOT A REFUSAL (a validator
+      that refuses a legal post is a dead end, and the note keeps the rule
+      wall-clock-safe for every existing spec). Gate EXIT=0 (73 / 2139 / 81 / 0);
+      e2e time-presets + place-directory-in-new 7 passed, including a NEW test on a
+      faked 02:00 clock pinning both halves (note appears, post still enabled)
+    V29 v29-10: DONE (commit 9ca30d0) — sign out moves from the header into
+      Settings → Account; the header keeps the gear, /login keeps its own escape.
+      New spec e2e/sign-out.e2e.ts. Gate EXIT=0 (73 / 2139 / 81 / 0); e2e sign-out
+      + loop-closing 3 passed. The trailing-newline guard caught the new spec
+      before it landed; the FILE was fixed, not the guard
+    V29 v29-9: DONE (commit 8877ffb) — the area card's privacy promise moves to the
+      field, and ZIP becomes a PEER (always rendered, under the address) instead of
+      a fallback unlocked by an address failing. SUPERSESSION RECORDED in the
+      commit: task-state.md:56 and the 2026-09-25 spec's scope are superseded by
+      the founder's 2026-10-04 decision; the geocode path, the address default and
+      ZIP-sufficiency are NOT. Gate EXIT=0 (73 / 2139 / 81 / 0); e2e
+      signup-zip-fallback + onboarding-resume 14 passed
+    V29 v29-11: IN PROGRESS — all ten implementation slices are DONE. Full suite
+      running. ⚠️ `ocr` is NOT INSTALLED on this box (not on PATH, not in
+      node_modules/.bin), so the third review lane CANNOT run — recorded as a
+      deviation of the same class as the missing orchestrator lane, never as a pass
