@@ -141,10 +141,24 @@ withholds and promised an attribute rows do not reliably carry. A card that
 names a category is making a claim about content, and a claim about content can
 be checked, so it is.
 
-The rule, the declaration it reads and the boundary of the scan are stated in
-`scripts/guards/copy-taxonomy-guard.mjs`, whose header — not this section — is the
-authoritative statement of what it covers: the copy consts the guard is
-given, one taxonomy, one lexical phrasing per category word. It is a detector,
+The rule, stated here before the guard enforces it — a reader who never opens
+the guard still needs the rule:
+
+- **Copy that names a place category must declare that claim.** A category word
+  in copy is a claim about content, and the claim is written down where the words
+  live.
+- **The declaration lives with the words.** It is an exported const of taxonomy
+  kinds in the module that carries the copy (today `TOUR_TAXONOMY_CLAIMS` in
+  `src/lib/firstRunTour.ts`), beside the words it is about — not a registry entry
+  in another file.
+- **One taxonomy, one lexical phrasing per category word.** The guard judges
+  against the single place-kind taxonomy in `src/lib/places.ts`; a match is a
+  whole word, optionally plural, case insensitive, and that is the whole of the
+  match and what the declaration keys on.
+
+The enforcement — the copy consts the guard is given, the rules it checks, and the
+boundary of the scan — is stated in `scripts/guards/copy-taxonomy-guard.mjs`, whose
+header is the authoritative statement of what the guard covers. It is a detector,
 not a proof that the copy is true; a restatement in other words escapes it, which
 is why the reviewer still reads the copy against the app.
 

@@ -122,6 +122,14 @@ const COPY_MODULES = [
     module: 'src/lib/firstRunTour.ts',
     consts: ['TOUR_TITLE', 'TOUR_BODY', 'TOUR_PROGRESS_LABEL', 'TOUR_LINES'],
     claims: 'TOUR_TAXONOMY_CLAIMS',
+    // r3-8: `src/lib/firstRunTooltips.ts` (r3-7's tour tooltips) is NOT a copy
+    // module and stays out of this registry. It imports `TOUR_LINES` from this
+    // module and never restates the copy (its header and `firstRunTooltips.test.ts`
+    // pin the identity), and its own consts name no place category (no
+    // `playground|pool|beach` in it, measured). Every category word it shows comes
+    // from a const this entry already judges, so adding the tooltip module would
+    // only add a module whose words are already covered — not a new claim to
+    // declare.
   },
   {
     module: 'src/lib/push.ts',
