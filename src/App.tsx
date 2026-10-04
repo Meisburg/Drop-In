@@ -15,6 +15,7 @@ import { nextUnfinishedCard } from './lib/firstRun'
 import type { FirstRunCardId } from './lib/firstRun'
 import { FIRST_RUN_NUDGE_COPY } from './lib/firstRunCopy'
 import { canModerate } from './lib/moderation'
+import { markFirstRunDismissed, readFirstRunDismissed } from './lib/firstRunTooltips'
 import { armedPushTrigger, setInstallCaptureEnabled, startPushSubscriptionRepair, subscribePushArmed } from './lib/pushClient'
 import type { Profile } from './lib/types'
 import {
@@ -58,20 +59,16 @@ const MOD_PATH = '/mod'
  * "Stays dismissed for the session" (plan, slice 3c): a tab-lifetime
  * dismissal survives the parent bouncing back onto /onboarding and leaving
  * again, but a fresh tab (3a's reset semantics — session storage, not local
- * storage) shows the nudge again. Read defensively like every other
- * storage read in the shell: a locked-down browser degrades to "nudge
- * shows", never a crash.
+ * storage) shows the nudge again.
+ *
+ * r3-7: the dismissal is now the SHARED first-run dismissal fact. The key
+ * and its read/write helpers live in `lib/firstRunTooltips.ts` (the name
+ * in exactly one place), and the feed's first-run tooltips read and write
+ * the same fact: the nudge owns unfinished runs, the tooltips own finished
+ * ones, the two are mutually exclusive, and one stored fact covers both.
+ * A locked-down browser degrades to "the surface shows", never a crash —
+ * the helpers' own docblocks carry the defensive rule.
  */
-const FIRST_RUN_NUDGE_DISMISSED_KEY = 'dropin.first-run.nudge-dismissed'
-
-function readNudgeDismissed(): boolean {
-  if (typeof window === 'undefined') return false
-  try {
-    return window.sessionStorage.getItem(FIRST_RUN_NUDGE_DISMISSED_KEY) !== null
-  } catch {
-    return false
-  }
-}
 
 /**
  * V28 slice 3c — the resume nudge: one dismissible line for a signed-in
@@ -130,7 +127,9 @@ function FirstRunNudge({
   profile: Profile | null
   homeZipSet: boolean
 }) {
-  const [dismissed, setDismissed] = useState(readNudgeDismissed)
+  const [dismissed, setDismissed] = useState(() =>
+    typeof window === 'undefined' ? false : readFirstRunDismissed(window.sessionStorage),
+  )
   const [pushArmed, setPushArmed] = useState(() => armedPushTrigger() !== null)
   useEffect(() => subscribePushArmed(() => setPushArmed(armedPushTrigger() !== null)), [])
   // The card nextUnfinishedCard will target — undefined means the lazy kids
@@ -212,12 +211,10 @@ function FirstRunNudge({
               className="flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-slate-600 outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               onClick={() => {
                 setDismissed(true)
-                try {
-                  window.sessionStorage.setItem(FIRST_RUN_NUDGE_DISMISSED_KEY, '1')
-                } catch {
-                  // The dismissal still applies to THIS mount — a locked-down
-                  // browser just does not carry it to the next one.
-                }
+                // The shared first-run dismissal fact (r3-7): the same key the
+                // feed's tooltips write — one fact, one name (the module's
+                // docblock there), both surfaces stood down for the tab.
+                markFirstRunDismissed(window.sessionStorage)
               }}
             >
               Dismiss
@@ -483,10 +480,10 @@ function ProtectedShell() {
             className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white md:sticky md:top-16 md:z-0 md:h-[calc(100dvh-4rem)] md:border-r md:border-slate-200 md:border-t-0"
           >
             <div className="mx-auto flex max-w-md flex-row md:flex-col">
-              <NavTab to="/" label="Drop Ins" icon={<NavIcon path={NAV_ICONS.nearby} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.nearby} filled />} />
+              <NavTab to="/" label="Drop Ins" testId="nav-tab-drop-ins" icon={<NavIcon path={NAV_ICONS.nearby} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.nearby} filled />} />
               {/* V14 ticket 01: the inbox — parent↔parent messaging, scoped to
                   the drop-ins both parties are going to (host ↔ pinger). */}
-              <NavTab to="/inbox" label="Inbox" badge={unreadCount} icon={<NavIcon path={NAV_ICONS.inbox} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.inbox} filled />} />
+              <NavTab to="/inbox" label="Inbox" testId="nav-tab-inbox" badge={unreadCount} icon={<NavIcon path={NAV_ICONS.inbox} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.inbox} filled />} />
               {/* V24 slice 05: the Post action returns to the nav's CENTRE as a
                   raised circular "+" (PostActionButton) — an ACTION, not a fifth
                   NavTab destination. This is a DELIBERATE REVERSAL of V22 slice
@@ -499,8 +496,8 @@ function ProtectedShell() {
                   "fix" the nav back to the V22 shape from the old rationale —
                   the override stands. */}
               <PostActionButton />
-              <NavTab to="/browse" label="Places" icon={<NavIcon path={NAV_ICONS.browse} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.browse} filled />} />
-              <NavTab to="/profile" label="Profile" icon={<NavIcon path={NAV_ICONS.profile} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.profile} filled />} />
+              <NavTab to="/browse" label="Places" testId="nav-tab-places" icon={<NavIcon path={NAV_ICONS.browse} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.browse} filled />} />
+              <NavTab to="/profile" label="Profile" testId="nav-tab-profile" icon={<NavIcon path={NAV_ICONS.profile} />} filledIcon={<NavIcon path={NAV_ICONS_FILLED.profile} filled />} />
             </div>
           </nav>
         ) : null}
@@ -620,6 +617,7 @@ function NavTab({
   icon,
   filledIcon,
   badge,
+  testId,
 }: {
   to: string
   label: string
@@ -635,6 +633,13 @@ function NavTab({
    * leaves the tab exactly as it was.
    */
   badge?: number
+  /**
+   * r3-7: an optional testid on the tab itself — the first-run tooltips point
+   * their steps at the real nav controls (`nav-tab-inbox` et al.). Omitted
+   * means no attribute, so the tab is exactly as it was for every other
+   * consumer.
+   */
+  testId?: string
 }) {
   let badgeText: string | null = null
   let badgeLabel: string | undefined
@@ -647,6 +652,7 @@ function NavTab({
       to={to}
       end={to === '/'}
       aria-label={badgeLabel}
+      data-testid={testId}
       className={({ isActive }) =>
         `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap px-1 py-1.5 text-xs transition-colors motion-reduce:transition-none ${
           isActive ? 'font-semibold text-indigo-600' : 'font-medium text-slate-600'

@@ -24,15 +24,22 @@
 export function SectionHeader({
   title,
   tagline,
+  testId,
 }: {
   /** Kept for call-site compatibility; deliberately not rendered. */
   icon?: string
   title: string
   /** Omit when the title alone says what the screen is for. */
   tagline?: string
+  /**
+   * r3-7: an optional testid on the masthead itself — the first-run tooltips
+   * point the feed's "Drop Ins" step at it (`feed-section-header`). Omitted
+   * everywhere else, so it never leaks a locator onto another screen.
+   */
+  testId?: string
 }) {
   return (
-    <header className="flex flex-col gap-0.5 pt-0.5">
+    <header data-testid={testId} className="flex flex-col gap-0.5 pt-0.5">
       <h1 className="font-display text-xl font-semibold text-slate-900">{title}</h1>
       {tagline === undefined || tagline === '' ? null : (
         <p className="text-sm text-slate-600">{tagline}</p>

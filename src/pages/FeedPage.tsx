@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { DropInCard } from '../components/DropInCard'
+import { FirstRunTooltips } from '../components/FirstRunTooltips'
 import { LocationModal } from '../components/LocationModal'
 import { NAV_ICONS } from '../components/icons'
 import { PlacesMap } from '../components/PlaceMapLazy'
@@ -14,6 +15,14 @@ import { WhileAwayCard } from '../components/WhileAwayCard'
 import { armPushPromptForAction } from '../lib/pushClient'
 // V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts).
 import { hasHomeZip } from '../lib/homeZip'
+// r3-7: the first-run tooltips' pure decisions (lib/firstRunTooltips.ts) and
+// the shared first-run dismissal fact they extend.
+import {
+  isFirstRunTooltipsArmed,
+  markFirstRunDismissed,
+  readFirstRunDismissed,
+  shouldShowTooltips,
+} from '../lib/firstRunTooltips'
 import {
   countKidsGoingForPosts,
   fetchDailyForecastForZip,
@@ -212,7 +221,7 @@ const FEED_REFRESH_WINDOW_MS = 60_000
  * until the next full load (the parked ticket-07 observation).
  */
 export function FeedPage() {
-  const { session, loading, profile, refresh } = useSessionContext()
+  const { session, loading, profile, refresh, homeZipSet } = useSessionContext()
   const navigate = useNavigate()
   const location = useLocation()
   /**
@@ -246,6 +255,33 @@ export function FeedPage() {
     // rendering (it lives in component state now) and the reload is silent.
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
   }, [justPostedFromState, location.pathname, location.search, navigate])
+  /**
+   * r3-7: the first-run tooltips. The run ends by navigating to THIS page
+   * (`OnboardingPage`'s finish redirect carries `FIRST_RUN_TOOLTIPS_ARMED_STATE`),
+   * and the tour shows for the parent whose run JUST ENDED in this tab — the
+   * gate (shouldShowTooltips) needs the armed router state, the run's
+   * completion clause (homeZipSet), and the absence of the SHARED dismissal
+   * fact: the nudge's key, extended (lib/firstRunTooltips), so a parent who
+   * stood down the tour — or the nudge — never sees either again this tab.
+   *
+   * Deliberately NOT consumed like `justPosted`: the armed state survives a
+   * reload of the same entry, and the persisted dismissal fact is what keeps
+   * the second load quiet. A dismiss here writes that fact AND stands the
+   * tour down for this mount.
+   */
+  const [tooltipsDismissed, setTooltipsDismissed] = useState(() =>
+    readFirstRunDismissed(window.sessionStorage),
+  )
+  const showTooltips = shouldShowTooltips({
+    signedIn: session !== null,
+    homeZipSet,
+    armed: isFirstRunTooltipsArmed(location.state),
+    dismissed: tooltipsDismissed,
+  })
+  const dismissTooltips = useCallback(() => {
+    setTooltipsDismissed(true)
+    markFirstRunDismissed(window.sessionStorage)
+  }, [])
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   /**
    * V29 v29-6: how many drop-ins are further out than the current radius (within
@@ -1134,7 +1170,12 @@ export function FeedPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
+      <SectionHeader
+        icon={NAV_ICONS.nearby}
+        title="Near you"
+        tagline="Drop-ins around your area"
+        testId="feed-section-header"
+      />
 
       {/* V27 slice 4: the one-tap share prompt, immediately after a successful
           post. Router-state-driven and one-shot — a plain load of `/` (no
@@ -1472,6 +1513,10 @@ export function FeedPage() {
           </p>
         </div>
       )}
+
+      {/* r3-7: the first-run tooltips — mounted only while the gate says show
+          (the page owns the decision; the component is the tour itself). */}
+      {showTooltips ? <FirstRunTooltips onDismiss={dismissTooltips} /> : null}
     </div>
   )
 }

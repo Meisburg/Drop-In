@@ -25,6 +25,7 @@ import {
   type FirstRunView,
 } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
+import { FIRST_RUN_TOOLTIPS_ARMED_STATE } from '../lib/firstRunTooltips'
 import {
   addKid,
   createProfile,
@@ -1596,7 +1597,12 @@ export function OnboardingPage() {
   // `loadError` — and they are finished, so they leave for the feed rather than
   // being shown the area card's error for a card they are no longer on.
   if (paintedView === 'finish') {
-    return <Navigate to="/" replace />
+    // r3-7: arm the feed's first-run tooltips for this entry. The armed state
+    // is TRANSIENT (router navigation state, not a stored key) — it is the
+    // "the run just ended in this tab" trigger the feed's gate reads; the
+    // shared dismissal fact (lib/firstRunTooltips) is what keeps a second
+    // load quiet.
+    return <Navigate to="/" replace state={FIRST_RUN_TOOLTIPS_ARMED_STATE} />
   }
 
   if (loadError !== null) {
