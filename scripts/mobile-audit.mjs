@@ -1,10 +1,15 @@
 /**
  * Mobile audit (V4 slice 1) — a throwaway-but-repeatable check, not part of
  * the e2e gate. Loads the signed-out surfaces at real phone widths and
- * reports the three things a phone actually punishes:
+ * reports the things a phone actually punishes:
  *   1. horizontal overflow,
  *   2. text controls below 16px (iOS zooms the viewport on focus),
- *   3. tap targets below 44px.
+ *   3. tap targets below 44px,
+ *   4. V29 v29-4: a control BELOW THE FOLD on a page whose layout claims to fit
+ *      one screen (see FITS_ONE_SCREEN). The original audit asserted horizontal
+ *      containment only, so the login page's create-account control could sit
+ *      28px past the bottom edge at 390×664 — the real "phone with browser
+ *      chrome" viewport — and every other check still passed.
  *
  * Usage: node scripts/mobile-audit.mjs [baseURL] [playdateId]
  *   (default :4173 preview; the deployed site works too —
@@ -14,15 +19,26 @@ import { chromium } from '@playwright/test'
 
 const BASE = process.argv[2] ?? 'http://localhost:4173'
 // Portrait phones plus landscape (V4 slice 1 AC5: dvh + rotation must not
-// clip the layout or hide a control).
+// clip the layout or hide a control). V29 v29-4 adds 390×664: the same width as
+// 390×844 with the ~180px of browser chrome a real phone shows, which is the
+// viewport the founder's phone actually gives the app.
 const VIEWPORTS = [
   [320, 812],
   [375, 812],
+  [390, 664],
   [390, 844],
   [430, 932],
   [844, 390],
   [667, 375],
 ]
+
+/**
+ * V29 v29-4: routes whose layout CLAIMS to fit one screen without scrolling —
+ * a centered auth page, not a list. Only on these does "below the fold" mean a
+ * hidden control rather than "scroll down". The detail page is deliberately
+ * absent: it is meant to scroll.
+ */
+const FITS_ONE_SCREEN = new Set(['/login'])
 // Pass a real drop-in id as the second argument to audit a content-bearing
 // detail page; the default exercises the not-found state (also a real screen).
 const DETAIL_ID = process.argv[3] ?? '00000000-0000-0000-0000-000000000000'
@@ -60,7 +76,7 @@ for (const pass of PASSES) {
 
     for (const route of ROUTES) {
       await page.goto(BASE + route, { waitUntil: 'networkidle' })
-      const report = await page.evaluate(() => {
+      const report = await page.evaluate((MUST_FIT) => {
         const doc = document.documentElement
         // V6: WCAG AA contrast, measured on the rendered pixels rather than read
         // off the class names. The design jury found a real failure my audit had
@@ -156,15 +172,61 @@ for (const pass of PASSES) {
             smallTargets.push(`${el.tagName.toLowerCase()} "${label}" ${Math.round(rect.height)}px`)
           }
         }
+
+        // V29 v29-4: two containment claims, and they are different questions.
+        //
+        // (a) PORTRAIT, on a page that claims to fit one screen: a control that
+        //     starts or ends outside the initial viewport is a HIDDEN control —
+        //     a centered auth page gives no hint that scrolling would reveal
+        //     more. Portrait one-handed is the product's stated context
+        //     (PRODUCT.md), which is why this is the viewport class the claim is
+        //     made for.
+        // (b) ANY viewport: every control must be REACHABLE by scrolling, i.e.
+        //     inside the document's own scroll height. A control past that is
+        //     genuinely clipped, not merely below. Landscape phones legitimately
+        //     scroll — asking a 390px-tall viewport to fit a full sign-in form
+        //     would be asking for a worse design, not a better one — but a
+        //     control that cannot be scrolled to is broken everywhere.
+        //
+        // Measured on the rendered rect, with 1px of tolerance for sub-pixel
+        // layout.
+        const offScreenControls = []
+        const unreachableControls = []
+        const portrait = window.innerHeight >= window.innerWidth
+        for (const el of document.querySelectorAll('button, a[href], input, select, textarea')) {
+          const rect = el.getBoundingClientRect()
+          if (rect.width === 0 || rect.height === 0) continue
+          const label = (
+            el.getAttribute('aria-label') ||
+            el.textContent ||
+            el.getAttribute('placeholder') ||
+            el.tagName
+          )
+            .trim()
+            .replace(/\s+/g, ' ')
+            .slice(0, 32)
+          if (rect.bottom > doc.scrollHeight + 1) {
+            unreachableControls.push(
+              `${el.tagName.toLowerCase()} "${label}" bottom ${Math.round(rect.bottom)} vs scrollable ${doc.scrollHeight}`,
+            )
+          }
+          if (MUST_FIT && portrait && (rect.bottom > window.innerHeight + 1 || rect.top < -1)) {
+            offScreenControls.push(
+              `${el.tagName.toLowerCase()} "${label}" ${Math.round(rect.top)}–${Math.round(rect.bottom)} vs viewport ${window.innerHeight}`,
+            )
+          }
+        }
         return {
           overflow: doc.scrollWidth - doc.clientWidth,
           small,
           smallTargets,
           tinyText,
           lowContrast,
+          offScreenControls,
+          unreachableControls,
           sizeHistogram,
         }
-      })
+      }, FITS_ONE_SCREEN.has(route))
 
       const problems = []
       if (report.overflow > 1) problems.push(`overflow +${report.overflow}px`)
@@ -172,6 +234,10 @@ for (const pass of PASSES) {
       if (report.smallTargets.length) problems.push(`<44px targets: ${report.smallTargets.join(', ')}`)
       if (report.tinyText.length) problems.push(`text below 14px: ${report.tinyText.join(', ')}`)
       if (report.lowContrast.length) problems.push(`contrast: ${report.lowContrast.join(', ')}`)
+      if (report.offScreenControls.length)
+        problems.push(`below the fold: ${report.offScreenControls.join(', ')}`)
+      if (report.unreachableControls.length)
+        problems.push(`unreachable by scrolling: ${report.unreachableControls.join(', ')}`)
 
       if (problems.length) failures++
       console.log(

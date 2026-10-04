@@ -184,7 +184,7 @@ export function LoginPage() {
     'w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200'
 
   return (
-    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 bg-page px-4">
+    <div className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 bg-page px-4">
       {/* Brand moment: /login sits outside the app shell (no header), so the
           mark lives here — and it is the first thing a new parent sees.
           Frontend-design pass: the centered logo card was the same template
@@ -248,7 +248,13 @@ export function LoginPage() {
               ))}
             </div>
 
-            <div className="my-5 flex items-center gap-3 text-xs text-slate-500">
+            {/* V29 v29-4: the vertical budget of a portrait phone is real — at
+                390×664 (a 390-wide phone WITH browser chrome) the original
+                my-5 + gap-6 pushed the create-account control 28px below the
+                fold, and a centered auth page gives no hint that scrolling
+                would reveal it. Trimmed here, measured by
+                scripts/mobile-audit.mjs, and every tap target keeps its 44px. */}
+            <div className="my-3 flex items-center gap-3 text-xs text-slate-500">
               <span className="h-px flex-1 bg-slate-200" />
               or
               <span className="h-px flex-1 bg-slate-200" />
