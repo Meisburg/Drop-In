@@ -27,7 +27,6 @@ test('leaving /new mid-form keeps a draft; returning restores it (disclosure); p
     started.set(name, stepStartTimeOnce(started, name))
     return name
   }
-  const steps = ['read-marker-session', 'fill-new-form', 'leave-to-settings', 'return-to-new', 'post-playdate']
 
   test.info().annotations.push({
     type: 'e2e-marker',
