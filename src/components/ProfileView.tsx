@@ -14,11 +14,13 @@ import {
   getLinkedPartnerForProfile,
   kidAgesByPostForPosts,
   listParentCards,
+  listPingsForPosts,
   listPostsByHost,
   toggleBlock,
   toggleFollowProfile,
+  type PingForPost,
 } from '../lib/db'
-import { cardAgeRangeLabel, kidHeading, partitionPostsByTime } from '../lib/feed'
+import { cardAgeRangeLabel, goingPingsByPost, kidHeading, partitionPostsByTime } from '../lib/feed'
 import { linkedNameTargetForViewer } from '../lib/links'
 import { parentNameRows } from '../lib/parentCards'
 import { profileBlurbOrder } from '../lib/photoStorage'
@@ -123,6 +125,17 @@ export function ProfileView({
    * is never worth an error state (the zero-pressure soul).
    */
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
+  /**
+   * V29 v29-2: the going pings for this host's posts — ONE batched read for both
+   * lists, never one per card. **null = NOT READ** and that distinction is the
+   * whole point: the card may only say "No one's going yet" when this read
+   * settled. A failed read stays null (silence) rather than collapsing to {},
+   * because {} would be read as "loaded, nobody going" — a claim about a query
+   * that never answered.
+   */
+  const [goingPingsByPostId, setGoingPingsByPostId] = useState<Record<string, PingForPost[]> | null>(
+    null,
+  )
   const [olderCount, setOlderCount] = useState(0)
   const [postsError, setPostsError] = useState<string | null>(null)
   /**
@@ -286,6 +299,31 @@ export function ProfileView({
       })
       .catch(() => {
         if (!cancelled) setKidAgesByPostId({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
+
+  /**
+   * V29 v29-2: the going line's input for this host's posts — one batched read,
+   * the same listPingsForPosts the feed card uses, grouped by the pure
+   * goingPingsByPost.
+   *
+   * THE FAILURE PATH IS DELIBERATELY DIFFERENT from the ages read above. An
+   * empty map there just hides a decoration; here it would be read by the card as
+   * "nobody is going" — an assertion about a query that never answered. So a
+   * failed read leaves the state NULL and the card says nothing.
+   */
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    listPingsForPosts(posts.map((post) => post.id))
+      .then((rows) => {
+        if (!cancelled) setGoingPingsByPostId(goingPingsByPost(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setGoingPingsByPostId(null)
       })
     return () => {
       cancelled = true
@@ -999,6 +1037,8 @@ export function ProfileView({
                       playdate={post}
                       nowIso={nowIso}
                       ageRangeLabel={buildCardAgeRangeLabel(post)}
+                      goingPings={goingPingsByPostId?.[post.id] ?? []}
+                      goingPingsLoaded={goingPingsByPostId !== null}
                     />
                   ))}
                 </div>
@@ -1015,6 +1055,8 @@ export function ProfileView({
                         playdate={post}
                         nowIso={nowIso}
                         ageRangeLabel={buildCardAgeRangeLabel(post)}
+                        goingPings={goingPingsByPostId?.[post.id] ?? []}
+                        goingPingsLoaded={goingPingsByPostId !== null}
                       />
                     ))}
                   </div>

@@ -48,6 +48,7 @@ import {
   feedCardCountdown,
   feedLocationSummary,
   feedNowSummary,
+  goingPingsByPost,
   groupByDay,
   hostCommonGroundLine,
   isStartingSoon,
@@ -648,16 +649,14 @@ export function FeedPage() {
     listPingsForPosts(postIds)
       .then((rows) => {
         if (cancelled) return
-        const grouped: Record<string, PingForPost[]> = {}
-        for (const row of rows) {
-          const group = grouped[row.playdateId]
-          if (group === undefined) grouped[row.playdateId] = [row]
-          else group.push(row)
-        }
-        setPingsByPostId(grouped)
+        setPingsByPostId(goingPingsByPost(rows))
       })
       .catch(() => {
-        if (!cancelled) setPingsByPostId({})
+        // V29 v29-2: a FAILED read must not become {} — the card reads {} as
+        // "loaded, and nobody is going", which is a claim about a query that
+        // never answered. Leaving the state null renders no going line at all,
+        // and the card's `goingPingsLoaded` gate keeps the absence sentence off
+        // the screen. (The decoration still costs the feed no error state.)
       })
     // V8 ticket 09: the met-before line's input — the (post, family) pairs of
     // the same posts, in ONE more query. Pre-0033-apply this read is on the
@@ -1393,6 +1392,7 @@ export function FeedPage() {
                       rainForecast={isToday ? (rainForecasts[post.id] ?? null) : undefined}
                       pingToggle={buildCardPingToggle(post)}
                       goingPings={buildCardGoingPings(post)}
+                      goingPingsLoaded={pingsByPostId !== null}
                       kidsGoingCount={buildCardKidsCount(post)}
                       kidsGoingAgeBand={kidAgeBandsByPostId?.[post.id] ?? null}
                       metBeforeLabel={buildCardMetBeforeLabel(post)}

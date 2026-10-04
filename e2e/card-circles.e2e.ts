@@ -213,6 +213,19 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   const labelMidY = goingLabelBox.y + goingLabelBox.height / 2
   expect(Math.abs(circleMidY - labelMidY)).toBeLessThan(4)
 
+  // --- V29 v29-2: the SAME going line must render on the host's own PROFILE
+  // card. That surface used to assert "No one's going yet" about a post it had
+  // never queried — the defect two independent external reviewers hit, and the
+  // one this slice fixes. Both directions are pinned, and both are scoped to the
+  // card: the count must be there AND the absence sentence must not (a page-wide
+  // absence check would be vacuous the moment another post legitimately has no
+  // pings). ---
+  await page.goto('/profile')
+  const profileCard = page.locator('a').filter({ hasText: title }).first()
+  await expect(profileCard).toBeVisible()
+  await expect(profileCard.getByText('1 going', { exact: true })).toBeVisible()
+  await expect(profileCard.getByText('No one’s going yet')).toHaveCount(0)
+
   await viewerContext.close()
 })
 

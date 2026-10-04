@@ -35,6 +35,7 @@ import {
   groupByDay,
   GOING_CIRCLE_LIMIT,
   goingCountsLabel,
+  goingPingsByPost,
   haversineMiles,
   hostCommonGroundLine,
   hostDistanceMiles,
@@ -1373,6 +1374,36 @@ describe('rainBadgeLabel (the "Rain likely" threshold, V3 ticket 02)', () => {
 
   it('is null for a missing probability (a failed / out-of-range fetch — silently absent)', () => {
     expect(rainBadgeLabel(null)).toBeNull()
+  })
+})
+
+describe('goingPingsByPost (V29 v29-2 — the card may only claim what was read)', () => {
+  const rows = [
+    { playdateId: 'a', displayName: 'first' },
+    { playdateId: 'b', displayName: 'only-b' },
+    { playdateId: 'a', displayName: 'second' },
+  ]
+
+  it('groups by post and preserves the read order inside each group', () => {
+    const grouped = goingPingsByPost(rows)
+    expect(Object.keys(grouped).sort()).toEqual(['a', 'b'])
+    // The query orders by created_at ascending; regrouping must not reshuffle,
+    // because that order IS the order the card's circles render in.
+    expect(grouped.a.map((r) => r.displayName)).toEqual(['first', 'second'])
+    expect(grouped.b.map((r) => r.displayName)).toEqual(['only-b'])
+  })
+
+  it('gives a post nobody pinged NO key at all — the caller supplies the empty group', () => {
+    const grouped = goingPingsByPost(rows)
+    expect(grouped.c).toBeUndefined()
+  })
+
+  it('reads an empty read as an empty record — what that MEANS is the caller\'s decision, not this function\'s', () => {
+    // The card's rule lives in its `goingPingsLoaded` prop: {} from a settled
+    // read means "nobody is going", while a caller that failed must keep null
+    // and get silence. This function cannot tell the two apart, and does not
+    // pretend to.
+    expect(goingPingsByPost([])).toEqual({})
   })
 })
 

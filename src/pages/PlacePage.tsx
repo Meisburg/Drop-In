@@ -10,11 +10,13 @@ import {
   getPlaceById,
   getPlaceFollowState,
   kidAgesByPostForPosts,
+  listPingsForPosts,
   listPlaceFeed,
   loadZipCodes,
   toggleFollowPlace,
+  type PingForPost,
 } from '../lib/db'
-import { cardAgeRangeLabel, formatDistanceLabel } from '../lib/feed'
+import { cardAgeRangeLabel, formatDistanceLabel, goingPingsByPost } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import {
@@ -117,6 +119,14 @@ export function PlacePage() {
    * (silently — a card decoration is never worth an error state).
    */
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
+  /**
+   * V29 v29-2: this place's posts' going pings, in ONE batched read (never one
+   * per card). null = NOT READ — and that is the distinction the card needs:
+   * only a settled read may say "No one's going yet". A failed read stays null.
+   */
+  const [goingPingsByPostId, setGoingPingsByPostId] = useState<Record<string, PingForPost[]> | null>(
+    null,
+  )
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
   /**
    * V8 ticket 09 (migration 0033): the place-follow state + the follower
@@ -213,6 +223,31 @@ export function PlacePage() {
       })
       .catch(() => {
         if (!cancelled) setKidAgesByPostId({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
+
+  /**
+   * V29 v29-2: the going line's input for this place's posts — one batched read
+   * (the same listPingsForPosts the feed uses), grouped by the pure
+   * goingPingsByPost.
+   *
+   * The failure path is deliberately NOT the ages read's: an empty map there
+   * only hides a decoration, while here it would be read by the card as "nobody
+   * is going" — a claim about a query that never answered. A failed read leaves
+   * this null, and the card says nothing.
+   */
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    listPingsForPosts(posts.map((post) => post.id))
+      .then((rows) => {
+        if (!cancelled) setGoingPingsByPostId(goingPingsByPost(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setGoingPingsByPostId(null)
       })
     return () => {
       cancelled = true
@@ -684,6 +719,8 @@ export function PlacePage() {
                 playdate={post}
                 nowIso={new Date().toISOString()}
                 ageRangeLabel={cardAgeRangeLabel(post, kidAgesByPostId[post.id] ?? [])}
+                goingPings={goingPingsByPostId?.[post.id] ?? []}
+                goingPingsLoaded={goingPingsByPostId !== null}
               />
             ))}
           </div>

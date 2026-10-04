@@ -1392,6 +1392,32 @@ export interface KidsAgeBand {
 export const GOING_CIRCLE_LIMIT = 3
 
 /**
+ * V29 v29-2: group ONE batched ping read into per-post buckets, preserving the
+ * read's own order.
+ *
+ * WHY IT EXISTS. `listPingsForPosts` answers a whole screen's worth of posts in
+ * one query (the feed, a profile, a place); each card needs its own group. The
+ * order is the query's (`created_at` ascending, migration 0020), because that is
+ * the order the card's circles render in — regrouping must never reshuffle.
+ *
+ * THE RULE THIS PAIRS WITH lives in the card: an EMPTY group may only be read as
+ * "nobody is going" when the read actually HAPPENED. That is why callers keep
+ * `Record | null` state and must leave it null (not {}) when the read failed —
+ * the card then says nothing rather than asserting an absence it never read.
+ */
+export function goingPingsByPost<T extends { playdateId: string }>(
+  rows: readonly T[],
+): Record<string, T[]> {
+  const grouped: Record<string, T[]> = {}
+  for (const row of rows) {
+    const group = grouped[row.playdateId]
+    if (group === undefined) grouped[row.playdateId] = [row]
+    else group.push(row)
+  }
+  return grouped
+}
+
+/**
  * The card's going line (V3 slice 4, ticket 07; V6 adds the kids count):
  * the "N going · M kids" label, up to `limit` pinger circles (avatar, or the
  * display-name initial on a slate-200 circle when there is no avatar), and a

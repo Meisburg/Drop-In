@@ -12,15 +12,17 @@ import {
   getPlaceFollowState,
   getReviewSummary,
   kidAgesByPostForPosts,
+  listPingsForPosts,
   listPlaceComments,
   listPlaceDropInProofs,
   listPlaceFeed,
   loadZipCodes,
   toggleFollowPlace,
+  type PingForPost,
   type PlaceCommentRow,
   type ReviewSummaryRow,
 } from '../lib/db'
-import { cardAgeRangeLabel, formatDistanceLabel, mapsHref } from '../lib/feed'
+import { cardAgeRangeLabel, formatDistanceLabel, goingPingsByPost, mapsHref } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import { hoursSourceNote, hoursStatus } from '../lib/placeHours'
@@ -131,6 +133,14 @@ export function PlaceDetailsPage() {
   const [followError, setFollowError] = useState<string | null>(null)
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
+  /**
+   * V29 v29-2: the going pings for this place's posts. null = NOT READ, which is
+   * the fact the card needs — only a settled read may say "No one's going yet".
+   * A failed read leaves this null (the loader's catch does not write {}).
+   */
+  const [goingPingsByPostId, setGoingPingsByPostId] = useState<Record<string, PingForPost[]> | null>(
+    null,
+  )
 
   useEffect(() => {
     if (id === undefined) return
@@ -257,6 +267,12 @@ export function PlaceDetailsPage() {
         setPosts(sortPlaceUpcoming(rows))
         const ages = await kidAgesByPostForPosts(rows.map((r) => r.id))
         if (!cancelled) setKidAgesByPostId(ages)
+        // V29 v29-2: the going line's input, one more batched read next to the
+        // ages one. Same rule as the place page: only a SETTLED read may let a
+        // card say "No one's going yet", so a failure leaves it null (the catch
+        // below never writes a {} that would read as "loaded, nobody going").
+        const pings = await listPingsForPosts(rows.map((r) => r.id))
+        if (!cancelled) setGoingPingsByPostId(goingPingsByPost(pings))
       } catch {
         if (!cancelled) setPosts([])
       }
@@ -697,6 +713,8 @@ export function PlaceDetailsPage() {
                 playdate={post}
                 nowIso={nowIso}
                 ageRangeLabel={cardAgeRangeLabel(post, kidAgesByPostId[post.id] ?? [])}
+                goingPings={goingPingsByPostId?.[post.id] ?? []}
+                goingPingsLoaded={goingPingsByPostId !== null}
               />
             ))}
           </div>

@@ -185,6 +185,7 @@ export function DropInCard({
   rainForecast = null,
   pingToggle,
   goingPings = [],
+  goingPingsLoaded = false,
   kidsGoingCount = 0,
   kidsGoingAgeBand = null,
   metBeforeLabel = null,
@@ -225,6 +226,20 @@ export function DropInCard({
    * pings) = no line.
    */
   goingPings?: ReadonlyArray<GoingPinger>
+  /**
+   * V29 v29-2: whether the caller actually READ this post's going pings.
+   *
+   * The card may only say "No one's going yet" about a read that happened. It
+   * used to say it whenever `goingPings` was empty — which on the profile, the
+   * place page and the place-detail page meant asserting an absence those
+   * screens had never queried, so a drop-in with families going was labelled
+   * empty on the surface a parent uses to decide whether to drive out.
+   *
+   * Defaults to FALSE on purpose: a caller that has not said "I read it" gets
+   * silence, not a claim. Pass true only when the read settled — and leave the
+   * caller's state null on a FAILED read rather than collapsing it to {}.
+   */
+  goingPingsLoaded?: boolean
   /**
    * V6 (migration 0027): how many kids are coming, for the card's line. A bare
    * COUNT — decision #2 keeps names and ages off the card entirely (they reach
@@ -553,11 +568,15 @@ export function DropInCard({
                   ) : null}
                   <span className="text-xs text-slate-600">{goingLine.label}</span>
                 </>
-              ) : (
+              ) : goingPingsLoaded ? (
+                // V29 v29-2: the absence sentence is a CLAIM, so it renders only
+                // when the caller read the pings (see the prop's docblock). An
+                // unread or failed read draws nothing at all — silence is the
+                // honest state, and the count is what the parent decides on.
                 <span className="text-xs text-slate-600">
                   {pingToggle?.enabled ? 'No one’s said they’re going yet' : 'No one’s going yet'}
                 </span>
-              )}
+              ) : null}
             </div>
             {/* V8 ticket 09: the met-before line — one more TEXT line in this
                 same going-line area (no new badge). Hidden at 0, and hidden
