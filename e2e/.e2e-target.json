@@ -1,0 +1,11 @@
+{
+  "testRefs": [],
+  "productionRef": {
+    "ref": "ayzvjwxbxyrcgyoeaxuk",
+    "environment": "production",
+    "reason": "No separate Supabase test project exists yet. e2e drives the live project because that is the only database the app is wired to. The marker convention (docs/agents/e2e-fixture-convention.md) plus the collateral gate on scripts/sweep-e2e-markers.mjs are what make this currently survivable: every fixture is identifiable and removable, and a marker parent whose deletion would cascade into a real parent's row stops the sweep. The 2026-10-03 incident is what that gate cost, and this waiver is the admission that it is mitigation and not a fix.",
+    "expires": "2026-11-15",
+    "extensionsUsed": 0,
+    "extensions": []
+  }
+}

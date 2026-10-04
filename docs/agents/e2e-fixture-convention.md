@@ -66,6 +66,15 @@ set and real parents are never in the same database. Until that exists, the
 collateral gate is what makes the sweep safe to run; it does not make it
 unnecessary.
 
+**That durable fix is now guarded, not merely recommended.** Until the separate
+project exists, the suite's target must be declared in `e2e/.e2e-target.json`
+with a written reason, an explicit `environment`, and an expiry date that may be
+extended **once**. The e2e-target guard refuses a run it cannot vouch for, and
+runs in the same `npm run guards` / `npm run verify` gate this document's own
+guard does. See `docs/agents/e2e-target-guard.md`. The marker convention below
+remains mandatory and unchanged — the guard makes a production run *declared*,
+never *safe*.
+
 ## Rules a spec must satisfy
 
 1. **Every account it creates carries the account marker.** An account outside
@@ -169,3 +178,7 @@ Changing it is a deliberate act and needs both halves in one commit:
 
 The guard fails if the sweep and this document disagree, so a one-sided change
 cannot land quietly.
+
+A change to the **target** policy is a separate act with its own halves:
+`e2e/.e2e-target.json`, `scripts/guards/e2e-target-guard.mjs` (and its
+`.check.mjs`), and `docs/agents/e2e-target-guard.md`.

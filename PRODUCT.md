@@ -79,9 +79,30 @@ Technical constraints:
 - Privacy is structural, not a setting: kids appear as first name + age, and RLS
   backs the app-layer rules.
 
-Explicitly undecided: nothing about the visual world is settled here. Dark mode,
-wide-screen layout, and any visual rework are open (see `DESIGN.md` when it
-exists).
+**Surface direction (human decision, 2026-09-30):** DropIn is intended to ship as
+an installed app on the App Store and Google Play, and to become the primary way
+parents use it. The reason is an adoption cliff, not polish: iOS Web Push only
+works once a parent adds the web app to their Home Screen, and most will not,
+whereas an installed shell gets APNs/FCM with no install ritual. **This is parked
+and nothing has been started** — every feature built before the shell means
+re-syncing and re-testing the shell, so the paid and irreversible steps (a Mac,
+Apple Developer, Google Play, both push credentials) are deferred deliberately.
+The web app stays and is not a stepping stone to be discarded: password-reset and
+confirmation links, shared drop-in links, and Google's OAuth consent screen all
+assume a browser, so the web surface remains the link landing pad and install
+funnel. `## Platform` stays `web` — a native shell would not make the design
+language in use today native. Execution detail lives in
+`docs/handoff-native-apps.md`.
+
+**Decided:** the visual world in force is the shipped code — the committed
+palette and type pairing (see Brand Commitments) and appearance as a parent's
+choice on `/settings` (see Accessibility & Inclusion). A redesign starts a new
+visual world; it does not inherit this one by default.
+
+**Explicitly undecided:** wide-screen layout — the app is a single phone-width
+column with no `lg:`/`xl:` breakpoints — and any visual rework beyond the
+committed palette and type. No `DESIGN.md` exists, so the incumbent world is
+defined by the implementation rather than by a document.
 
 ## Brand Commitments
 

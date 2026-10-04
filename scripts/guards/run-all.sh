@@ -19,6 +19,11 @@
 #   config          (build law, unwritten)                 — checks cannot be weakened
 #   no-bypass       docs/agents/auto-push.md               — git hooks cannot be skipped
 #   fixture-marker  docs/agents/e2e-fixture-convention.md  — fixtures cannot escape the sweep
+#   e2e-target      docs/agents/e2e-fixture-convention.md  — the suite cannot silently
+#                     write to the LIVE project. The target half of the same
+#                     problem: markers make the damage RECOVERABLE, aiming makes
+#                     it not happen. A production target needs a written reason
+#                     and an expiry date, so the waiver cannot outlive the excuse.
 #   vacuous-absence scripts/guards/vacuous-absence-guard.mjs — toHaveCount(0) of a
 #                     route-unreachable target is structurally vacuous
 #   stale-locator   scripts/guards/stale-locator-guard.mjs — a positively-used
@@ -88,7 +93,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard trailing-newline-guard factory-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard e2e-target-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard trailing-newline-guard factory-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -129,6 +134,7 @@ run_check() {
 
 run_check "lib-sibling-guard (behavior)" scripts/guards/lib-sibling-guard.check.mjs
 run_check "fixture-marker-guard (behavior)" scripts/guards/fixture-marker-guard.check.mjs
+run_check "e2e-target-guard (behavior)" scripts/guards/e2e-target-guard.check.mjs
 run_check "vacuous-absence-guard (behavior)" scripts/guards/vacuous-absence-guard.check.mjs
 run_check "stale-locator-guard (behavior)" scripts/guards/stale-locator-guard.check.mjs
 run_check "sweep-e2e (decision logic)" scripts/lib/sweep-e2e.check.mjs

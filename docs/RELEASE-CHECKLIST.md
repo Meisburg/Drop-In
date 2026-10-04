@@ -89,6 +89,18 @@ you do them.
   invite anyone you do not personally know.** *Time: ~2 hours. Done when:
   a full e2e run leaves `sweep-e2e-markers.mjs select` totals unchanged.*
 
+  > **Partly shipped 2026-10-03.** The target is now *declared and expiring*
+  > rather than silent: `scripts/guards/e2e-target-guard.mjs` (in
+  > `npm run guards` / `npm run verify`) refuses any run whose target is not
+  > vouched for by `e2e/.e2e-target.json`, and that policy carries a written
+  > reason, an explicit `environment`, and an expiry that may be extended
+  > **once**. See [e2e-target-guard.md](agents/e2e-target-guard.md).
+  > **This makes a production run declared, not safe.** The scratch project
+  > above is still the durable fix and is still the recommendation; the guard
+  > is what stops the decision being forgotten while it is outstanding.
+  > *Done when: `e2e-target-guard.mjs` reports a `testRefs` target and no
+  > `productionRef` waiver is in force.*
+
 - [ ] **1.3 — Seed 10–15 real drop-ins in Seattle, by hand, in the app.**
   Production has **22 drop-ins, all in the past, 18 of them yours.** A parent who
   opens an empty feed leaves. V28's own recorded decision was that seeding is done

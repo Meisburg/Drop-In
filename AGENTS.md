@@ -108,8 +108,6 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
   domain rules in pages, `lib/` modules inject their client and ship a sibling
   test, idempotent migrations, tap targets ≥44px, inputs ≥16px, new routes join
   the playtest `routes.json`. **It found a real defect on its first run.**
-- Config is a custom provider on local NInfer (`ocr config set provider
-  ninfer`) — this lane runs on the 5090, not cloud.
 - `ocr delegate rule <files>` prints the resolved rules WITHOUT an LLM — use it
   to confirm a rule file matches before trusting it.
 - **Known limitations:** `ocr` reviews CODE only — `.md`, agent definitions and
@@ -122,11 +120,9 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
 The three lanes above **judge**; none can *guarantee*. A reviewer misses files,
 `ocr` skips config and prose, the verifier runs only what it was handed. So
 `npm run guards` (inside `verify`) runs scripts that either find a violation or
-do not — no model, no tokens. The rules and why each exists:
-`docs/agents/factory.md` (the factory's), `docs/agents/borrowed-guards.md`
-(provenance, and the four tests a new one passes), and
-`docs/agents/e2e-fixture-convention.md` (fixture markers). A rule that parses
-source ships a `.check.mjs` proving it can fire.
+do not — no model, no tokens. A rule that parses source ships a `.check.mjs`
+proving it can fire. See `docs/agents/borrowed-guards.md` for provenance and the
+four tests a new guard must pass.
 
 ## The escalating fix loop (why it escalates by capability)
 
@@ -188,6 +184,7 @@ Read it when its situation arrives — the pointer says when.
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
+| Running e2e, or changing `e2e/.e2e-target.json` | `docs/agents/e2e-target-guard.md` — the target policy and its expiring waiver; then `e2e-fixture-convention.md` — fixture markers and the sweep |
 | Filing or triaging a ticket | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` |
 | Naming a domain concept | `docs/agents/domain.md` — `CONTEXT.md` + `docs/adr/`, created lazily |
 | CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what CI runs, the two repo variables, what it skips |
