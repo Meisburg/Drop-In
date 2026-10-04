@@ -34,6 +34,8 @@ import {
   formatTimeWindow,
   groupByDay,
   GOING_CIRCLE_LIMIT,
+  beyondRadiusCount,
+  emptyRadiusBeyondCopy,
   goingCountsLabel,
   goingPingsByPost,
   haversineMiles,
@@ -596,6 +598,52 @@ describe('groupByDay (the promoted day-section grouping, nowIso seam)', () => {
 
   it('returns [] for an empty feed', () => {
     expect(groupByDay([], NOW_ISO)).toEqual([])
+  })
+})
+
+describe('beyondRadiusCount (V29 v29-6 — the empty state\'s honest "is it worth widening?")', () => {
+  it('counts what the WIDEST radius would reveal and the current one hides', () => {
+    // 98007 is ~11.5 mi from 98107: outside 5, inside 20 and 35.
+    const posts: FeedPost[] = [postAt('98007', 'h-far', 900), postAt('98107', 'h-near', 780)]
+    expect(beyondRadiusCount(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO)).toBe(1)
+    // At 20 miles it is already on screen, so nothing is "further out".
+    expect(beyondRadiusCount(posts, VIEWER, ZIP_COORDS, new Set(), NOW_ISO)).toBe(0)
+  })
+
+  it('is 0 at the widest radius — there is nothing further to widen TO', () => {
+    const posts: FeedPost[] = [postAt('98007', 'h-far', 900)]
+    const widest: RadiusViewer = { homeZip: '98107', radiusMiles: SEE_ALL_RADIUS_MILES }
+    expect(beyondRadiusCount(posts, widest, ZIP_COORDS, new Set(), NOW_ISO)).toBe(0)
+  })
+
+  it('counts only what an escape would ACTUALLY reveal — a blocked host is not counted', () => {
+    const posts: FeedPost[] = [
+      postAt('98007', 'host-blocked', 900),
+      postAt('98007', 'h-far', 900),
+    ]
+    expect(beyondRadiusCount(posts, NARROW_VIEWER, ZIP_COORDS, BLOCKED_HOSTS, NOW_ISO)).toBe(1)
+  })
+
+  it('does not count an ENDED post — the number can never promise what the feed would hide', () => {
+    const posts: FeedPost[] = [postAt('98007', 'h-ended', 600)] // 10:00–11:00, now is 12:00
+    expect(beyondRadiusCount(posts, NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO)).toBe(0)
+  })
+
+  it('is 0 for an empty city — never negative, never invented', () => {
+    expect(beyondRadiusCount([], NARROW_VIEWER, ZIP_COORDS, new Set(), NOW_ISO)).toBe(0)
+  })
+})
+
+describe('emptyRadiusBeyondCopy (V29 v29-6)', () => {
+  it('renders nothing for 0 or a negative count — an empty city is not sold a number', () => {
+    expect(emptyRadiusBeyondCopy(0)).toBeNull()
+    expect(emptyRadiusBeyondCopy(-1)).toBeNull()
+  })
+
+  it('is singular for one, plural for more, and names the SAME ceiling the escape writes', () => {
+    expect(emptyRadiusBeyondCopy(1)).toBe('1 drop-in is further out, within 35 miles.')
+    expect(emptyRadiusBeyondCopy(3)).toBe('3 drop-ins are further out, within 35 miles.')
+    expect(emptyRadiusBeyondCopy(3)).toContain(String(SEE_ALL_RADIUS_MILES))
   })
 })
 

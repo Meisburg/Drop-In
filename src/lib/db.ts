@@ -48,6 +48,7 @@ import {
 } from './placeSocial'
 import {
   ageRangeFields,
+  beyondRadiusCount,
   filterFeed,
   lastOwnPlaydateFrom,
   localDayKey,
@@ -596,11 +597,24 @@ async function queryUpcomingPlaydates(
  * never invented. A viewer with no home zip gets an empty feed (the onboarding
  * gate keeps that state out of the routes; this is the defensive fallback).
  */
+export interface RadiusFeedResult {
+  /** The posts inside the viewer's radius, in starts_at order. */
+  posts: PlaydateWithNeighborhood[]
+  /**
+   * V29 v29-6: how many upcoming, unblocked, not-hidden drop-ins sit OUTSIDE the
+   * viewer's radius but inside the widest one (feed.RADIUS_MAX_MILES) — 0 when
+   * there is nothing further out, and 0 at the widest radius itself. It rides
+   * THIS read because the radius filter is what discards those rows; asking for
+   * them separately would be a second query for data already in hand.
+   */
+  beyondRadiusCount: number
+}
+
 export async function listRadiusFeed(
   viewer: RadiusViewer,
   profileId: string,
-): Promise<PlaydateWithNeighborhood[]> {
-  if (viewer.homeZip === null) return []
+): Promise<RadiusFeedResult> {
+  if (viewer.homeZip === null) return { posts: [], beyondRadiusCount: 0 }
   const [zipCoords, blockedIds, places] = await Promise.all([
     loadZipCodes(),
     listBlockedHostIds(profileId),
@@ -621,13 +635,21 @@ export async function listRadiusFeed(
   // pure distance model sees them. A post with no place_id, or one whose place
   // is missing from the map, gets null and falls back to the host's home zip.
   const posts = rows.map((post) => ({ ...post, place_coords: placeCoordsFor(post.place_id, places) }))
-  const filtered = filterFeed(posts, viewer, zipCoords, new Set(blockedIds), nowIso)
-  return filtered.map((post) => ({
-    ...post,
-    // Survivors always have a distance (filterFeed excludes nulls); the
-    // fallback only covers a place/host embed missing its coordinates.
-    distanceMiles: postDistanceMiles(post, viewer, zipCoords) ?? undefined,
-  }))
+  const blocked = new Set(blockedIds)
+  const filtered = filterFeed(posts, viewer, zipCoords, blocked, nowIso)
+  return {
+    posts: filtered.map((post) => ({
+      ...post,
+      // Survivors always have a distance (filterFeed excludes nulls); the
+      // fallback only covers a place/host embed missing its coordinates.
+      distanceMiles: postDistanceMiles(post, viewer, zipCoords) ?? undefined,
+    })),
+    // V29 v29-6: the SAME fetched rows, filtered by the same rule at the widest
+    // radius — the empty state's honest answer to "is it worth widening?". No
+    // extra query: `queryUpcomingPlaydates` already returned every upcoming
+    // post, and the radius is what discards them.
+    beyondRadiusCount: beyondRadiusCount(posts, viewer, zipCoords, blocked, nowIso),
+  }
 }
 
 /**

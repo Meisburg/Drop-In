@@ -2328,6 +2328,42 @@ export function emptyRadiusCopy(radiusMiles: number): string {
 }
 
 /**
+ * V29 v29-6: how many drop-ins exist OUTSIDE the viewer's radius but inside the
+ * widest one — the honest answer to the question the empty state raises and does
+ * not answer ("is it worth widening?").
+ *
+ * ONE RULE, TWO RADII. The same posts go through the same `filterFeed` — the
+ * same block / hidden / not-yet-ended / coordinates rules — and only the radius
+ * differs. Counting the difference rather than re-deriving "distance > radius"
+ * means the number can never disagree with what the escapes actually reveal: if
+ * the feed would show it at 35 miles it is counted, and if the feed would hide
+ * it (a blocked host, an ended post, a post whose place has no coordinates) it
+ * is not. That is the whole reason this is a call to `filterFeed` and not a
+ * second predicate.
+ *
+ * Returns 0 at the widest radius: there is nothing further to widen TO, and the
+ * sentence built from it (`emptyRadiusBeyondCopy`) renders nothing.
+ */
+export function beyondRadiusCount<T extends FeedPost>(
+  posts: T[],
+  viewer: RadiusViewer,
+  zipCoords: ReadonlyMap<string, ZipCoords>,
+  blockedHostIds: ReadonlySet<string>,
+  nowIso: string,
+): number {
+  if (viewer.radiusMiles >= RADIUS_MAX_MILES) return 0
+  const wide = filterFeed(
+    posts,
+    { ...viewer, radiusMiles: RADIUS_MAX_MILES },
+    zipCoords,
+    blockedHostIds,
+    nowIso,
+  )
+  const near = filterFeed(posts, viewer, zipCoords, blockedHostIds, nowIso)
+  return Math.max(0, wide.length - near.length)
+}
+
+/**
  * The archive link's one label (V9 ticket 04): "See past drop-ins".
  *
  * ONE constant behind the feed's day-sections archive line in FeedPage, so the
@@ -2376,6 +2412,26 @@ export const SEE_ALL_RADIUS_MILES = RADIUS_MAX_MILES
 export interface RadiusEscape {
   radiusMiles: number
   label: string
+}
+
+/**
+ * V29 v29-6: the empty-radius state's SECOND line — what is further out.
+ *
+ * It renders only when the same fetch counted something (`beyondRadiusCount`),
+ * and it quotes the SAME ceiling the "See everything" escape writes
+ * (SEE_ALL_RADIUS_MILES), so the sentence and the button beside it cannot
+ * disagree about where those drop-ins are. null = no line at all: an empty city
+ * must not be sold a number, and "0" is not a fact worth printing.
+ *
+ * Deliberately "further out", not "nearby": the count includes everything up to
+ * the widest radius, and calling a 30-mile drop-in nearby is the kind of small
+ * lie this whole batch exists to remove.
+ */
+export function emptyRadiusBeyondCopy(count: number): string | null {
+  if (count <= 0) return null
+  return count === 1
+    ? `1 drop-in is further out, within ${SEE_ALL_RADIUS_MILES} miles.`
+    : `${count} drop-ins are further out, within ${SEE_ALL_RADIUS_MILES} miles.`
 }
 
 /**

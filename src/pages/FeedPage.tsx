@@ -247,6 +247,12 @@ export function FeedPage() {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
   }, [justPostedFromState, location.pathname, location.search, navigate])
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
+  /**
+   * V29 v29-6: how many drop-ins are further out than the current radius (within
+   * the widest one). It comes back from the SAME feed read — the radius filter is
+   * what discards those rows — and it is only ever read by the empty state.
+   */
+  const [beyondRadiusCount, setBeyondRadiusCount] = useState(0)
   const [loadError, setLoadError] = useState<string | null>(null)
   /**
    * V19 t02 — the feed map's gazetteer, for resolving the HOME PIN.
@@ -547,11 +553,15 @@ export function FeedPage() {
       radiusMiles: profile.radius_miles ?? DEFAULT_RADIUS_MILES,
     }
     listRadiusFeed(viewer, session.user.id)
-      .then((rows) => {
+      .then((result) => {
         loadedContextRef.current = contextKey
         if (!cancelled) {
           setLoadError(null)
-          setPosts(rows)
+          setPosts(result.posts)
+          // V29 v29-6: the empty state's second line — what is further out.
+          // It rides this same read (the radius filter is what discards those
+          // rows), so no extra query exists to go stale.
+          setBeyondRadiusCount(result.beyondRadiusCount)
         }
       })
       .catch((err: unknown) => {
@@ -1309,6 +1319,7 @@ export function FeedPage() {
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
           showPostCta={false}
+          beyondRadiusCount={beyondRadiusCount}
         />
       ) : feedViewShowsMap(feedView) ? (
         /* V21 t09 (A9): MAP VIEW — the map band is the primary content, given

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
 import { hasHomeZip } from '../lib/homeZip'
-import { emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage } from '../lib/feed'
+import { emptyRadiusBeyondCopy, emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 import { LocationRequiredNotice } from './LocationRequiredNotice'
 
@@ -73,11 +73,18 @@ export function RadiusEmptyState({
   radiusMiles,
   showEscapes = true,
   showPostCta = true,
+  beyondRadiusCount = 0,
 }: {
   radiusMiles: number
   showEscapes?: boolean
   /** Render the "Post a drop-in" link (default true; the feed opts out). */
   showPostCta?: boolean
+  /**
+   * V29 v29-6: how many drop-ins the SAME fetch found outside this radius but
+   * inside the widest one. 0 (the default, and Browse's value today) renders no
+   * second line at all — an empty city is not sold a number.
+   */
+  beyondRadiusCount?: number
 }) {
   const { session, profile, refresh } = useSessionContext()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
@@ -158,6 +165,16 @@ export function RadiusEmptyState({
       className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm"
     >
       <p className="text-sm text-slate-600">{emptyRadiusCopy(radiusMiles)}</p>
+      {/* V29 v29-6: the answer to "is it worth widening?" — only when the same
+          read counted something further out, and quoting the same ceiling the
+          "See everything" escape writes. No count → no line, so an empty city
+          stays an honest dead end with live escapes rather than a number that
+          means nothing. */}
+      {emptyRadiusBeyondCopy(beyondRadiusCount) !== null ? (
+        <p data-testid="empty-radius-beyond" className="text-sm text-slate-600">
+          {emptyRadiusBeyondCopy(beyondRadiusCount)}
+        </p>
+      ) : null}
       {escapes.length > 0 ? (
         <div className="flex flex-wrap justify-center gap-2">
           {escapes.map((escape) => (

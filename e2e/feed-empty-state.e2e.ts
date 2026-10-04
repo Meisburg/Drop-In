@@ -30,7 +30,7 @@ import { expect, test } from '@playwright/test'
 import { WIDEN_RADIUS_MILES, emptyRadiusCopy } from '../src/lib/feed'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
-  readSupabaseEnv, settleOnRoute, finishSignup,
+  readSessionFromBrowserPage, readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer,
 } from './fixtures'
 
@@ -217,6 +217,91 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   const stored = await readMarkerLocation()
   expect(stored?.radius_miles).toBe(WIDEN_RADIUS_MILES)
   expect(stored?.home_zip).toBe(FAR_ZIP)
+})
+
+/**
+ * V29 v29-6 — THE EMPTY STATE ANSWERS "IS IT WORTH WIDENING?".
+ *
+ * It used to render an honest line and stop: "Nothing within 5 miles yet." with
+ * two escapes and no indication that widening would reveal anything at all. This
+ * pins the second line against REAL data on the other side of the radius: a
+ * second parent posts from 98007 (Bellevue, ~11.5 mi from the marker's 98107),
+ * which is outside 5 miles and inside the 35-mile ceiling the "See everything"
+ * escape writes.
+ *
+ * ⚠️ IT MUST BE A SECOND ACCOUNT, not the marker's own post: V29 v29-7 makes a
+ * viewer's OWN active drop-in visible regardless of distance, so a marker-hosted
+ * far post would stop producing an empty state the moment that slice lands. This
+ * test is deliberately built to survive the next slice.
+ *
+ * The COUNT is asserted loosely (the line renders, and it names the widest
+ * radius) because other specs' posts may legitimately sit inside 35 miles of the
+ * marker; the exact arithmetic — blocked hosts excluded, ended posts excluded, 0
+ * at the widest radius — is unit-tested in feed.test.ts, where the fixtures are
+ * deterministic.
+ */
+test('the empty state says what is further out, from the same read', async ({ browser, page }) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const viewerPassword = `e2e-be-pw-${epoch}` // in-memory only — never committed
+
+  // The marker views from its own home, at the default 5-mile radius.
+  expect(await patchMarkerLocation(marker.homeZip, 5)).toBe(true)
+  const landed = await readMarkerLocation()
+  expect(landed?.home_zip, 'the 5-mile setup write must land before the page loads').toBe(
+    marker.homeZip,
+  )
+
+  // A SECOND parent, far enough away to be outside that radius.
+  const viewerContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
+  const viewer = await viewerContext.newPage()
+  const title = `e2e ${marker.displayName} beyond radius`
+  await signUpViewer(viewer, {
+    name: `e2e-be-${epoch}`,
+    email: `e2e-be-${epoch}@gmail.com`, // gmail.com: the project rejects example.com
+    password: viewerPassword,
+  })
+  await finishSignup(viewer, { homeZip: '98007', radiusMiles: 5 })
+
+  await viewer.goto('/new')
+  await settleOnRoute(viewer, '/new')
+  await editTitle(viewer)
+  await viewer.getByPlaceholder('e.g. Playground time at Green Lake').fill(title)
+  await viewer
+    .getByPlaceholder('e.g. Green Lake playground, near the boathouse')
+    .fill('E2E Beyond park')
+  await viewer.getByRole('button', { name: 'Post drop-in' }).click()
+  await viewer.waitForURL('/')
+
+  // The marker's feed: still empty inside 5 miles — and now it says what is out
+  // there, quoting the same ceiling the escape beside it writes.
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+  const empty = page.getByTestId('empty-radius-state')
+  await expect(empty).toBeVisible()
+  await expect(empty).toContainText(emptyRadiusCopy(5))
+  const beyond = page.getByTestId('empty-radius-beyond')
+  await expect(beyond).toBeVisible()
+  await expect(beyond).toContainText('further out, within 35 miles')
+
+  // Best-effort cleanup with the VIEWER's own token: the host-only DELETE policy
+  // means the marker-scoped afterEach cannot reach this row. Read the session
+  // BEFORE closing the context.
+  const session = await readSessionFromBrowserPage(viewer)
+  if (session !== null) {
+    const { url, anonKey } = readSupabaseEnv()
+    const del = await fetch(`${url}/rest/v1/playdates?host_profile_id=eq.${session.userId}`, {
+      method: 'DELETE',
+      headers: { apikey: anonKey, Authorization: `Bearer ${session.accessToken}` },
+    })
+    console.log(`[e2e cleanup] viewer's own playdates: delete HTTP ${del.status}`)
+  } else {
+    console.log('[e2e cleanup] viewer session unreadable — the marker sweep will pick the row up')
+  }
+  await viewerContext.close()
 })
 
 test('browse shows the same honest empty state (one component, both screens)', async ({ page }) => {
