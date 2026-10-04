@@ -1145,18 +1145,24 @@ export function FeedPage() {
           className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
         >
           <p className="min-w-0 text-sm text-slate-700">
-            <span className="font-medium">Posted!</span>{' '}
-            {/* V29 v29-3: the banner announced the post and offered only Share
-                and Dismiss, so a parent who wanted to LOOK at what they had just
-                made had to go find it. The title is the door. */}
-            <Link
-              to={`/playdate/${justPosted.id}`}
-              className="font-medium text-indigo-700 underline"
-            >
-              {justPosted.title}
-            </Link>
+            <span className="font-medium">Posted!</span> {justPosted.title}
           </p>
           <div className="flex shrink-0 items-center gap-2">
+            {/* V29 v29-3: the banner announced the post and offered only Share
+                and Dismiss, so a parent who wanted to LOOK at what they had just
+                made had to go find it. The door is this link, NOT the title:
+                making the TITLE a link put the post's exact words in an <a> on
+                the same screen as the card's own link, and `a:has-text(title)`
+                then matched the banner instead of the card — which is how a
+                locator idiom used across the e2e suite (and how a screen reader,
+                hearing the same link twice) found the wrong thing. Distinct
+                label, one target. */}
+            <Link
+              to={`/playdate/${justPosted.id}`}
+              className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+            >
+              View
+            </Link>
             <button type="button" onClick={() => void shareJustPosted()} className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50">
               {shareCopied ? 'Copied' : 'Share'}
             </button>

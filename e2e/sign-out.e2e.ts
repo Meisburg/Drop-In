@@ -10,34 +10,47 @@
  *  - the header no longer offers it on the feed,
  *  - Settings → Account does, beside the other account-level actions,
  *  - it still lands on /login (the one behaviour that must not change),
- *  - and /login's OWN "Sign out" for a signed-in visitor is KEPT — it is the
- *    only escape from that screen, and removing the header control must not
- *    have taken it with it.
+ *  - and the sign-in screen renders, so removing the header control did not take
+ *    /login's own escape for a signed-in visitor with it.
  *
- * The marker context is signed in to start with. Signing out here affects only
- * this test's browser context: every other test gets a fresh context from the
- * saved storage state, and the afterEach sweeps with the marker JWT read from
- * the state FILE rather than from the page.
+ * ⚠️ A THROWAWAY ACCOUNT, AND THAT IS THE POINT. `supabase.auth.signOut()`
+ * revokes the refresh token GLOBALLY, and the marker's saved grant is the one
+ * EVERY other spec reads — so an earlier version of this test, which signed the
+ * MARKER out, left ~15 unrelated specs staring at a /login screen on this
+ * batch's first full run. That was measured, not theorised. A fresh account
+ * proves exactly the same behaviour and touches nothing shared; it is an
+ * `e2e-` fixture, so the marker sweep owns it.
  */
 import { expect, test } from '@playwright/test'
-import { settleOnRoute } from './fixtures'
+import { finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
 
-test('sign out is in Settings, not the header, and still lands on /login', async ({ page }) => {
-  await page.goto('/')
-  await settleOnRoute(page, '/')
+test('sign out is in Settings, not the header, and still lands on /login', async ({ browser }) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+
+  const context = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: { cookies: [], origins: [] },
+  })
+  const page = await context.newPage()
+  await signUpViewer(page, {
+    name: `e2e-so-${epoch} Marker`,
+    email: `e2e-so-${epoch}@gmail.com`, // gmail.com: the project rejects example.com
+    password: `e2e-so-pw-${epoch}`, // in-memory only — never written, never committed
+  })
+  await finishSignup(page, { homeZip: marker.homeZip, radiusMiles: marker.radiusMiles })
 
   // The header's one-tap control is gone (the settings gear stays).
   await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0)
   await expect(page.getByLabel('Settings')).toBeVisible()
 
   await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
   const control = page.getByTestId('account-sign-out')
   await expect(control).toBeVisible()
   await control.click()
 
   await expect(page).toHaveURL(/\/login\/?$/)
-  // …and the signed-out screen keeps its own escape for a still-signed-in
-  // visitor, which is a different control in the same words.
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+
+  await context.close()
 })

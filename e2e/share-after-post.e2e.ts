@@ -92,9 +92,14 @@ test('the banner does not survive a reload when it was never dismissed', async (
 
   const banner = page.getByTestId('just-posted-banner')
   await expect(banner).toBeVisible()
-  // The door to what was just posted: the title links to the drop-in, so the
-  // banner is an announcement AND a way to look at the thing.
-  await expect(banner.getByRole('link', { name: title })).toHaveAttribute('href', /^\/playdate\//)
+  // The door to what was just posted: a "View" link, NOT the title. The title
+  // is deliberately plain text — a linked title put the post's exact words in an
+  // <a> on the same screen as the card's own link, so `a:has-text(title)`
+  // matched the banner instead of the card across several specs.
+  await expect(banner.getByRole('link', { name: 'View' })).toHaveAttribute(
+    'href',
+    /^\/playdate\//,
+  )
 
   // THE FACT: never dismissed, and the reload is still silent.
   await page.reload()
