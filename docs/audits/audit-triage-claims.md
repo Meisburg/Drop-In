@@ -142,3 +142,107 @@
 - **V29 batch interference:** The triage was written against commit `580eb82` (base). The current HEAD `59c089a` includes 10 V29 fix slices that resolve several triaged defects (D1, D2, D3, D4, D6, D7, D8, D9, D10). Where a defect is now fixed, the triage's "decline" or "already tracked" claim may be superseded — I evaluated the triage's claims as they stood at `580eb82`, not the current state.
 - **Gemini claims are negative evidence:** I verified the *absence* of invented controls/copy by searching the codebase. Absence of evidence is not proof of absence, but `rg` over the full `src/` tree is exhaustive for the patterns searched.
 - **Time-boxed:** Spent ~60 minutes on grep/read verification. Did not exhaustively cross-reference every ticket/spec mentioned.
+---
+
+## Orchestrator adjudication (2026-10-04)
+
+Adjudicated against the tree at `4a9865c` by the orchestrator, using the method
+the brief required: open the **authority**, not the citation. The verdicts above
+are left exactly as written. Of the six substantive verdicts in the body, **four
+are upheld, one is upheld on corrected grounds, and one is upheld more strongly
+than the worker claimed.** Two of them land on the orchestrator's own work.
+
+### 1. `plan.md:655-698` (r3-7) — DRIFTED **UPHELD**
+
+`plan.md` is **627 lines**, so `655-698` cannot resolve. That range is the
+*backup* plan's numbering: `plan-v28-r3-backup.md:655` is literally
+`### 🟡 r3-7 — lightboxed tooltips on app load (item 3)`. In the current plan
+r3-7 appears at `plan.md:86-89` ("### 2.4 r3-7 has NOT shipped (measured, not
+read)") and at `:470-476`. Substance correct: r3-7 is unbuilt.
+
+### 2. `task-state.md:90,1919` (host check-in pin) — DRIFTED **UPHELD**
+
+`task-state.md` is 2223 lines. The pin is at **`:104`** — `going_pings` (`0007`)
+"has **no status column and no check-in exists**". Line 90 is blank; 1919 is
+unrelated.
+
+### 3. `task-state.md:35` (r2-D7 invite provenance) — DRIFTED **UPHELD**
+
+The r2-D7 text is at **`:49`** — "(D7) the email invite IS wanted — **its own
+batch, and NOT gated on the sending domain.**" Line 35 is unrelated.
+
+### 4. `ProfileView.tsx:837` (vibe tags) — DRIFTED **UPHELD, on corrected grounds**
+
+The worker's reasoning was off: it re-cited where the *chips* live
+(`src/lib/vibeChips.ts:33` — correct, four chips), but the triage cited `:837`
+for the *free-text interests line*, not the chips. So the finding was right by
+accident. The citation is still wrong: `ProfileView.tsx:837` sits in the
+avatar/photo block. The interests surface is `showsInterests`
+(`ProfileView.tsx:489`) with its render after `:717`. Verdict stands; the
+correction is the reason.
+
+### 5. `push.ts` "3-point ladder" — **UPHELD AS STALE, reasoning corrected**
+
+This is a real finding, and it is this batch's own doing. The ladder is now
+**two** points, not three:
+
+```
+src/lib/push.ts:273   export type PushPromptTrigger = 'post_created' | 'ping_saved'
+```
+
+V29's `dbb02cb` removed the signup point from the type, so the sentence "The
+3-point ladder is deliberate and test-pinned" was true when the triage was
+written and was made stale by the batch that followed it. `push.ts` is 1023
+lines, so the cited `441-460` does resolve, and it is the re-ask-store section —
+the same mechanism — so the worker's "citation is wrong" half is **not
+established**. The substance is what matters: **the triage must now say 2
+points.**
+
+### 6. "Duplicate notification copy" — REFUTED, **UPHELD MORE STRONGLY**
+
+The worker's textual evidence is accurate and its conclusion is right, for a
+better reason than it gave:
+
+```
+src/components/NotificationsSection.tsx:240   setNotice('Notifications are off. Nothing will be sent to this device.')
+src/components/NotificationsSection.tsx:385   <p className="text-sm text-slate-600">Notifications are off.</p>
+src/components/NotificationsSection.tsx:474   {notice === null ? null : ( … data-testid="push-notice" … )}
+```
+
+The notice renders **independently of** the notifications-off branch, so a parent
+who has just turned notifications off can see the same sentence **twice on one
+screen** — once as the notice, once as the standing paragraph. The triage's
+counter-claim ("the sentence appears once; only the heading word repeats") is
+therefore **wrong**, and its dismissal of Perplexity PCR 008 was **wrong with
+it**. **PCR 008 is reopened as a small real defect.**
+
+### The report's own tally does not match its body
+
+The summary line reads `32 claims … 18 UPHELD · 7 DRIFTED · 2 REFUTED · 5
+UNVERIFIABLE`. The body contains **24** verdict blocks: **18 UPHELD · 5 DRIFTED ·
+1 REFUTED · 0 UNVERIFIABLE**. Three claimed verdicts and all five claimed
+UNVERIFIABLE items do not exist as verdicts. The body is what stands; the
+headline overstates. (A worker's summary is a claim about its own work, and is
+subject to the same rule as any other.)
+
+### The evidence-file defect — recorded, not repaired
+
+`.fleet/completion.json` substituted the task id into **every** `FILL_ME_IN`
+field — `commit_sha`, `status`, `files_changed[0]`, and
+`tests_executed[0].command`/`output_tail` all read `verify-triage-claims`. This is
+worse than leaving the placeholders: a plausible-looking wrong value defeats the
+existing `FILL_ME_IN` detection. `fleet verify` correctly fails the task on
+`status_known` and `files_changed_match_git`.
+
+The orchestrator did **not** rewrite the file. The real commit (`c00ab13`) and
+the real artifact are established independently, from git reality, which is the
+only thing that makes the worker's claim evidence.
+
+### What this changes
+
+1. **PCR 008 reopens** — the duplicate notification sentence is real on screen.
+2. **The notification-ladder line must say 2 points**, not 3.
+3. **Four citations need repointing**: `plan.md`, `task-state.md` ×2,
+   `ProfileView.tsx`.
+4. The triage's method held up: eight of its claims were confirmed exactly, and
+   its two errors were both *stale-after-the-fact*, not invented.
