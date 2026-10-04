@@ -58,3 +58,38 @@ test('the /new quick-start presets write the day and slot in one tap', async ({ 
   const slot = parseTimeLabel(await page.getByTestId('start-time-label').innerText())
   expect([nextSlotMinutes(before), nextSlotMinutes(after)]).toContain(slot)
 })
+
+/**
+ * V29 v29-5 — A START IN THE SMALL HOURS SAYS SO, AND IS STILL POSTABLE.
+ *
+ * The review that found this saw the form open at 05:30 (its own run clock) and
+ * read an unguarded 05:30 start as a defect. The default is the parent's actual
+ * clock, which is right; what was missing is that NOTHING objected when a
+ * drop-in was set for the middle of the night.
+ *
+ * A FIXED 02:00 CLOCK is how this is testable at all: the form's own default is
+ * then a small-hours start, which is exactly the state the note exists for.
+ * `setFixedTime` fakes Date only — timers and network stay real — so the rest of
+ * the page behaves normally.
+ *
+ * It is a NOTE and not a refusal, and this test pins BOTH halves of that
+ * decision: the sentence appears, and the post button stays enabled. A validator
+ * that refuses a legal post is a dead end, and a night-shift parent is
+ * indistinguishable from a mistaken tap.
+ */
+test('a small-hours start is flagged, and is still postable', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-05T02:00:00-07:00'))
+  await page.goto('/new')
+  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+
+  const note = page.getByTestId('small-hours-note')
+  await expect(note).toBeVisible()
+  await expect(note).toContainText('middle of the night')
+
+  // A note, NOT a block.
+  await expect(page.getByRole('button', { name: 'Post drop-in' })).toBeEnabled()
+
+  // A daytime preset clears it, because the time it describes changed.
+  await page.getByTestId('time-preset').filter({ hasText: 'Tomorrow 10am' }).click()
+  await expect(note).toHaveCount(0)
+})

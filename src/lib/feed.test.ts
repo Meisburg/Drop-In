@@ -36,6 +36,8 @@ import {
   GOING_CIRCLE_LIMIT,
   beyondRadiusCount,
   emptyRadiusBeyondCopy,
+  smallHoursStartNote,
+  SMALL_HOURS_END_MINUTES,
   goingCountsLabel,
   goingPingsByPost,
   haversineMiles,
@@ -1458,6 +1460,32 @@ describe('rainBadgeLabel (the "Rain likely" threshold, V3 ticket 02)', () => {
 
   it('is null for a missing probability (a failed / out-of-range fetch — silently absent)', () => {
     expect(rainBadgeLabel(null)).toBeNull()
+  })
+})
+
+describe('smallHoursStartNote (V29 v29-5 — the note, never a refusal)', () => {
+  it('says so throughout the small hours, on both sides of the boundary', () => {
+    expect(smallHoursStartNote(0)).toContain('middle of the night')
+    expect(smallHoursStartNote(2 * 60)).toContain('middle of the night')
+    expect(smallHoursStartNote(5 * 60 + 30)).toContain('middle of the night')
+    expect(smallHoursStartNote(SMALL_HOURS_END_MINUTES - 1)).toContain('middle of the night')
+  })
+
+  it('says nothing from 06:00 on — the ordinary playground morning is never lectured', () => {
+    expect(smallHoursStartNote(SMALL_HOURS_END_MINUTES)).toBeNull()
+    expect(smallHoursStartNote(7 * 60)).toBeNull()
+    expect(smallHoursStartNote(15 * 60)).toBeNull()
+    expect(smallHoursStartNote(23 * 60 + 30)).toBeNull()
+  })
+
+  it('is total — a value the stepper cannot produce gets no note at all', () => {
+    expect(smallHoursStartNote(Number.NaN)).toBeNull()
+    expect(smallHoursStartNote(-30)).toBeNull()
+    expect(smallHoursStartNote(24 * 60)).toBeNull()
+  })
+
+  it('never claims the post is blocked — the sentence says the opposite', () => {
+    expect(smallHoursStartNote(3 * 60)).toContain('still post it')
   })
 })
 

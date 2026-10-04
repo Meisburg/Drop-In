@@ -1989,6 +1989,33 @@ export function nextSlotMinutes(nowIso: string): number {
 }
 
 /**
+ * V29 v29-5: where the small hours end — 06:00 local. The earliest hour at which
+ * a drop-in is plausibly a playdate rather than a mistake.
+ */
+export const SMALL_HOURS_END_MINUTES = 6 * 60
+
+/**
+ * V29 v29-5: the one-line note for a drop-in that would START in the small
+ * hours (before 06:00 local), or null when the time is fine. null for a
+ * non-finite/out-of-day input too: a value the stepper cannot produce is not
+ * something to lecture a parent about.
+ *
+ * A NOTE, NOT A REFUSAL — and the choice is deliberate. The review that found
+ * this saw the form open at 05:30 (its own run clock) and read an unguarded
+ * 05:30 start as a defect; the honest correction is that the default is the
+ * parent's actual clock, which is right, while NOTHING anywhere objected to a
+ * 3am playdate. Blocking it would be worse than the gap it fixes: a night-shift
+ * parent, a stargazing meetup and a mistaken tap are indistinguishable to the
+ * validator, and a validator that refuses a legal post is a dead end. The
+ * sentence informs and gets out of the way — the post still submits.
+ */
+export function smallHoursStartNote(startMinutes: number): string | null {
+  if (!Number.isFinite(startMinutes)) return null
+  if (startMinutes < 0 || startMinutes >= SMALL_HOURS_END_MINUTES) return null
+  return 'That is the middle of the night — most families will be asleep. You can still post it.'
+}
+
+/**
  * The /new start date the form opens with: today, local — tomorrow when the
  * next slot has wrapped past midnight (23:45 → the 00:00 slot belongs to
  * tomorrow; defaulting to today would open the form on a start time that

@@ -5,6 +5,7 @@ import {
   formatTimeLabel,
   kidLabel,
   PLAYDATE_DURATIONS_MINUTES,
+  smallHoursStartNote,
   stepTimeMinutes,
   TIME_STEP_MINUTES,
   TITLE_MAX_LENGTH,
@@ -369,11 +370,18 @@ export function PlaydateFormFields({
       )}
       {errors.place ? <p role="alert" id={errorId('place')} className="text-sm text-red-600">{errors.place}</p> : null}
       {/* V9 ticket 01: the one-line instruction the old field never gave —
-          only on /new (the picker's page). */}
+          only on /new (the picker's page).
+
+          V29 v29-5: the `@` is GONE from this sentence. It was the one
+          unexplained token in the app's primary help text ("type @ — picking one
+          fills the address for you"), and it explained nothing: picking from the
+          list fills the address whether or not the field starts with `@`, so the
+          sentence taught a syntax and hid the gesture. The alias still WORKS
+          (places.stripPlaceAlias), it is simply not advertised as required. */}
       {locationFirst && onPickPlace !== undefined ? (
         <p className="text-xs text-slate-500">
-          Start typing to find one, tap {BROWSE_PLACES_LABEL} to see them all, or type @ — picking
-          one fills the address for you.
+          Start typing to find one, or tap {BROWSE_PLACES_LABEL} to see them all —
+          picking one fills the address for you.
         </p>
       ) : null}
 
@@ -530,6 +538,13 @@ export function PlaydateFormFields({
       />
       {errors.startMinutes ? (
         <p role="alert" id={errorId('start-time')} className="text-sm text-red-600">{errors.startMinutes}</p>
+      ) : smallHoursStartNote(values.startMinutes) !== null ? (
+        /* V29 v29-5: a NOTE, never a block (see feed.smallHoursStartNote). It
+           renders only when the time is VALID — an error is the louder fact, and
+           two lines about the same field would read as a pile-on. */
+        <p data-testid="small-hours-note" className="text-sm text-slate-600">
+          {smallHoursStartNote(values.startMinutes)}
+        </p>
       ) : null}
     </div>
   )

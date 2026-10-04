@@ -67,6 +67,15 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
 
   const door = page.getByTestId('browse-places')
   await expect(door).toBeVisible({ timeout: 15_000 })
+
+  // V29 v29-5: the field's help text no longer teaches the `@` alias. It was the
+  // one unexplained token in the app's primary help text — and it explained
+  // nothing, because picking from the list fills the address either way; the
+  // alias still WORKS (places.stripPlaceAlias), it is simply not advertised as
+  // required syntax. The gesture the sentence teaches is the picker itself.
+  await expect(page.getByText(/Start typing to find one/)).toBeVisible()
+  await expect(page.getByText(/type @/)).toHaveCount(0)
+
   await door.click()
 
   // --- 3. THE SHEET IS THE DIRECTORY: search + filters + list + map. ---
