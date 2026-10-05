@@ -72,3 +72,40 @@ test.describe('places directory — the open-now and top-rated gates (V27)', () 
     await expect(rows).toHaveCount(before)
   })
 })
+
+/**
+ * v30-3 (founder annotation 4): at 390px the three pills read "Any SETT…" and
+ * "within three…", so a parent could not tell what they filtered. Each trigger
+ * now carries its own caption, and its value is short enough not to ellipsize.
+ *
+ * A PHONE viewport is the whole point — at the suite's default 1280px the old
+ * pills never truncated, which is why this defect survived every existing spec.
+ */
+test.describe('places directory — the filter pills say what they filter (v30-3)', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test('every trigger names its purpose and clips neither line', async ({ page }) => {
+    await page.goto('/browse')
+    await settleOnRoute(page, '/browse')
+
+    const triggers = [
+      { testId: 'places-type-filter', caption: 'Setting' },
+      { testId: 'places-distance-filter-btn', caption: 'Distance' },
+      { testId: 'places-when-filter', caption: 'When' },
+    ]
+
+    for (const { testId, caption } of triggers) {
+      const trigger = page.getByTestId(testId)
+      await expect(trigger).toBeVisible()
+      // The caption is real text inside the control, so the accessible name
+      // carries the purpose and not just the value.
+      await expect(trigger).toHaveAccessibleName(new RegExp(caption))
+
+      const clipped = await trigger.evaluate((node) => {
+        const spans = Array.from(node.querySelectorAll('span'))
+        return spans.some((span) => span.scrollWidth > span.clientWidth + 1)
+      })
+      expect(clipped, `${testId} must not ellipsize at 390px`).toBe(false)
+    }
+  })
+})

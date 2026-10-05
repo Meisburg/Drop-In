@@ -1239,6 +1239,71 @@ export const DATE_WINDOW_LABELS: Record<DateWindow, string> = {
 export const DATE_WINDOWS: readonly DateWindow[] = ['upcoming', 'today', 'tomorrow', 'weekend']
 
 /**
+ * The /browse dropdown triggers' own date wording.
+ *
+ * Deliberately NOT `DATE_WINDOW_LABELS`: the chip and the sheet say "Upcoming"
+ * for the unfiltered window, while the TRIGGER must read as a control that is
+ * OFF rather than one that has chosen a window. Two vocabularies, one per
+ * surface, and each now lives in exactly one place.
+ */
+export const DATE_DROPDOWN_LABELS: Record<DateWindow, string> = {
+  upcoming: 'Any day',
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  weekend: 'Weekend',
+}
+
+/** One /browse filter trigger: WHAT it filters, and its short current value. */
+export interface FilterTriggerLabel {
+  /** Names the control's purpose, so the value is never a word on its own. */
+  caption: string
+  /** Short enough to survive a phone-width pill without an ellipsis. */
+  value: string
+}
+
+/**
+ * The three filter triggers' visible labels (founder annotation 4, 2026-10-05).
+ *
+ * The problem this exists for: at 390px the pills could only show "Any SETT…"
+ * and "within three…", so a parent could not tell what they filtered. The
+ * caption names the purpose; the value shortens to fit.
+ *
+ * The SHEETS keep their long option labels (`Any setting`, `Within your radius
+ * (5 mi)`, `Any day`) — only the trigger shortens, and the option lists are
+ * built from the same constants, so a trigger and its sheet cannot disagree
+ * about what is selectable.
+ *
+ * Pure, and deliberately statement-shaped rather than a chain of nested
+ * ternaries (the review rules ban those).
+ */
+export function filterTriggerLabels(input: {
+  /** null = both kinds; true = indoor only; false = outdoor only. */
+  indoorFilter: boolean | null
+  /** 'profile' = the viewer's stored radius; 'any' = no ceiling; a number = picked. */
+  distanceChoice: DistanceChoice
+  /** The viewer's stored radius in miles (what 'profile' resolves to). */
+  viewerRadius: number
+  dateWindow: DateWindow
+}): { setting: FilterTriggerLabel; distance: FilterTriggerLabel; when: FilterTriggerLabel } {
+  let settingValue = 'Any'
+  if (input.indoorFilter === true) settingValue = 'Indoor'
+  else if (input.indoorFilter === false) settingValue = 'Outdoor'
+
+  let distanceValue = 'Any'
+  if (input.distanceChoice === 'profile') distanceValue = `${input.viewerRadius} mi`
+  else if (typeof input.distanceChoice === 'number') distanceValue = `${input.distanceChoice} mi`
+
+  let whenValue = 'Any'
+  if (input.dateWindow !== 'upcoming') whenValue = DATE_DROPDOWN_LABELS[input.dateWindow]
+
+  return {
+    setting: { caption: 'Setting', value: settingValue },
+    distance: { caption: 'Distance', value: distanceValue },
+    when: { caption: 'When', value: whenValue },
+  }
+}
+
+/**
  * Does a place with the given upcoming drop-in START TIMES fall inside the date
  * window?
  *

@@ -10,6 +10,7 @@ import {
   distanceMiles,
   feedMapPinEvent,
   filterPlacesByRadius,
+  filterTriggerLabels,
   feedMapPins,
   pinMoreDropInsLabel,
   soonestFeedPinEvent,
@@ -2789,5 +2790,54 @@ describe('savedPlacesEmptyCopy (V25 t08, the two honest empty messages)', () => 
 
   it('is two DIFFERENT sentences (the branches cannot collapse to one)', () => {
     expect(savedPlacesEmptyCopy(true)).not.toBe(savedPlacesEmptyCopy(false))
+  })
+})
+
+describe('filterTriggerLabels (v30-3, the three /browse filter pills)', () => {
+  const base = { indoorFilter: null, distanceChoice: 'profile' as const, viewerRadius: 5, dateWindow: 'upcoming' as const }
+
+  it('captions every trigger, so no pill is a bare value', () => {
+    const t = filterTriggerLabels(base)
+    expect(t.setting.caption).toBe('Setting')
+    expect(t.distance.caption).toBe('Distance')
+    expect(t.when.caption).toBe('When')
+  })
+
+  it('shortens the unset state to "Any" on all three', () => {
+    const t = filterTriggerLabels(base)
+    expect(t.setting.value).toBe('Any')
+    expect(t.distance.value).toBe('5 mi')
+    expect(t.when.value).toBe('Any')
+  })
+
+  it('names the picked setting in one word', () => {
+    expect(filterTriggerLabels({ ...base, indoorFilter: true }).setting.value).toBe('Indoor')
+    expect(filterTriggerLabels({ ...base, indoorFilter: false }).setting.value).toBe('Outdoor')
+  })
+
+  it('reads every distance choice as a bare mileage, including "any"', () => {
+    expect(filterTriggerLabels({ ...base, distanceChoice: 'profile', viewerRadius: 10 }).distance.value).toBe('10 mi')
+    expect(filterTriggerLabels({ ...base, distanceChoice: 1 }).distance.value).toBe('1 mi')
+    expect(filterTriggerLabels({ ...base, distanceChoice: 35 }).distance.value).toBe('35 mi')
+    expect(filterTriggerLabels({ ...base, distanceChoice: 'any' }).distance.value).toBe('Any')
+  })
+
+  it('keeps the window words the dropdown already used, and shortens only the unset one', () => {
+    expect(filterTriggerLabels({ ...base, dateWindow: 'today' }).when.value).toBe('Today')
+    expect(filterTriggerLabels({ ...base, dateWindow: 'tomorrow' }).when.value).toBe('Tomorrow')
+    expect(filterTriggerLabels({ ...base, dateWindow: 'weekend' }).when.value).toBe('Weekend')
+    expect(filterTriggerLabels({ ...base, dateWindow: 'upcoming' }).when.value).toBe('Any')
+  })
+
+  it('never emits a value long enough to need the pill to ellipsize', () => {
+    const windows = ['upcoming', 'today', 'tomorrow', 'weekend'] as const
+    for (const dateWindow of windows) {
+      for (const distanceChoice of ['profile', 'any', 1, 2, 5, 10, 20, 35] as const) {
+        const t = filterTriggerLabels({ ...base, distanceChoice, dateWindow })
+        for (const label of [t.setting, t.distance, t.when]) {
+          expect(label.value.length).toBeLessThanOrEqual(9)
+        }
+      }
+    }
   })
 })

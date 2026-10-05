@@ -18,8 +18,10 @@ import {
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
+  DATE_DROPDOWN_LABELS,
   DATE_WINDOWS,
   dateWindowEmptyCopy,
+  filterTriggerLabels,
   kindEmptyCopy,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
@@ -64,19 +66,6 @@ const KIND_ACCENTS: Record<string, string> = {
 }
 
 /**
- * V27 — the "When" dropdown trigger's words. The reference screenshot's default
- * is "Any day" (not the filter sheet's "Upcoming"), so the trigger reads as a
- * control that is off rather than one that has chosen a window. The window
- * VALUES are untouched — this is only the button's own label.
- */
-const DATE_DROPDOWN_LABELS: Record<DateWindow, string> = {
-  upcoming: 'Any day',
-  today: 'Today',
-  tomorrow: 'Tomorrow',
-  weekend: 'Weekend',
-}
-
-/**
  * V27 — one of the three prominent dropdown triggers. A shared presentational
  * control so the type, distance and when buttons cannot drift apart: same
  * height, same chevron, same focus ring. Pure presentation; the caller owns the
@@ -84,11 +73,13 @@ const DATE_DROPDOWN_LABELS: Record<DateWindow, string> = {
  */
 function DropdownTrigger({
   testId,
+  caption,
   label,
   iconPath,
   onClick,
 }: {
   testId: string
+  caption: string
   label: string
   iconPath: string
   onClick: () => void
@@ -112,7 +103,14 @@ function DropdownTrigger({
       >
         <path d={iconPath} />
       </svg>
-      <span className="truncate">{label}</span>
+      <span className="flex min-w-0 flex-col items-start leading-tight">
+        {/* The caption names WHAT this control filters; the value is short
+            enough to survive the pill (founder annotation 4). Both are 14px —
+            the mobile audit's floor — and both are real text, so the button's
+            accessible name carries the purpose and not just the value. */}
+        <span className="text-sm text-slate-500">{caption}</span>
+        <span className="w-full truncate text-sm font-medium text-slate-700">{label}</span>
+      </span>
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
@@ -682,20 +680,14 @@ export function PlaceDirectory({
   // --- Render ----------------------------------------------------------------
 
   /**
-   * V27 — the three dropdown triggers' own labels. Each names the CURRENT choice
-   * (or the "any" word), so the row is a state readout and not just a set of
-   * doors. The option lists live beside them so a trigger and its sheet can
-   * never disagree about what is selectable.
+   * V27 / v30-3 — the three dropdown triggers' own labels. Each names the
+   * CONTROL and its CURRENT choice, so the row reads as three named state
+   * readouts rather than three unlabelled values. The derivation is the pure
+   * `filterTriggerLabels` seam (lib/places, unit-tested); the option lists live
+   * beside it so a trigger and its sheet can never disagree about what is
+   * selectable.
    */
-  const typeLabel =
-    indoorFilter === true ? 'Indoor' : indoorFilter === false ? 'Outdoor' : 'Any setting'
-  const distanceLabel =
-    distanceChoice === 'any'
-      ? 'Any distance'
-      : distanceChoice === 'profile'
-        ? `Within ${viewerRadius} mi`
-        : `Within ${distanceChoice} mi`
-  const whenLabel = DATE_DROPDOWN_LABELS[dateWindow]
+  const triggers = filterTriggerLabels({ indoorFilter, distanceChoice, viewerRadius, dateWindow })
   const typeOptions = [
     { value: 'any', label: 'Any setting' },
     { value: 'indoor', label: 'Indoor' },
@@ -866,19 +858,22 @@ export function PlaceDirectory({
         <div className="flex items-center gap-2">
           <DropdownTrigger
             testId="places-type-filter"
-            label={typeLabel}
+            caption={triggers.setting.caption}
+            label={triggers.setting.value}
             iconPath={NAV_ICONS.tag}
             onClick={() => setOpenDropdown('type')}
           />
           <DropdownTrigger
             testId="places-distance-filter-btn"
-            label={distanceLabel}
+            caption={triggers.distance.caption}
+            label={triggers.distance.value}
             iconPath={NAV_ICONS.nearby}
             onClick={() => setOpenDropdown('distance')}
           />
           <DropdownTrigger
             testId="places-when-filter"
-            label={whenLabel}
+            caption={triggers.when.caption}
+            label={triggers.when.value}
             iconPath={NAV_ICONS.clock}
             onClick={() => setOpenDropdown('when')}
           />
