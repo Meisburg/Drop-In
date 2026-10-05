@@ -634,3 +634,23 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       (PCR 008 reopened). Remaining, human-owned: the destructive marker sweep,
       deleting `.vercel-env-tmp.json` + rotating its OIDC token, and the 5-parent
       first-open test.
+    WRAP-UP + DEPLOY (2026-10-04, evening): **the live site is current, the third
+      audit is adjudicated, and the human reminder is clean.** fr-2's
+      doc-staleness audit was the last unadjudicated report — **10/10 STALE
+      UPHELD, 9 of its 10 UNVERIFIABLE items decided from omarchy**, the box it
+      could not ssh into. Its fixes are applied (`bdb4ff5`): routing table, both
+      causes, the **ROTATED unit-state column**, the hostname, the offline list,
+      change 7's status, the checklist's broken link, and both rotten test counts
+      (now **2,191 unit tests in 75 files**). Its source-side twin is recorded
+      **open**: config `ram_gb` 55 vs the measured 52 fails 4 assertions in
+      `scripts/factory/scheduler.test.mjs:299`, so it needs its own slice.
+      **Deployed to Vercel — and found the deploy trap:** `drop-in-mu.vercel.app`
+      is the **`drop-in`** project, while the repo's `.vercel` link pointed at a
+      **duplicate `playdate-app`** project, so a bare `vercel --prod` here did not
+      touch the founder's URL; the link is now `drop-in`. `.vercel-env-tmp.json`
+      no longer exists and was never tracked, and `.env`/`.env.local` are
+      gitignored — that item is **closed, with no rotation needed**. The `ocr`
+      lane was re-run over `580eb82..241c5c3` after v29-11 skipped it on a false
+      "not installed" premise (it is `v1.12.11`). **Remaining, human-owned:** the
+      destructive marker sweep (**279 accounts / 563 rows**), the V24 read-surface
+      privacy decision, and the 5-parent first-open test.
