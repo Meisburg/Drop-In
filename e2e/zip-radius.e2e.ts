@@ -179,7 +179,10 @@ test('V29 v29-7: the host sees their own drop-in even when it is outside their r
     await page.getByTestId('browse-places').click()
     const sheet = page.getByTestId('place-directory-sheet')
     await expect(sheet).toBeVisible()
-    await sheet.getByPlaceholder(/^Places · /).fill('Lakeridge')
+    // The sheet's own search field, selected by testid rather than by its
+    // placeholder: V30 moved the place-name out of the placeholder and onto the
+    // location button, and this spec is about distance, not about that copy.
+    await sheet.getByTestId('places-search').fill('Lakeridge')
     const rows = sheet.getByTestId('place-row')
     await expect(rows.first()).toBeVisible()
     await rows.first().click()

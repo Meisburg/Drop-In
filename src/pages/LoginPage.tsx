@@ -206,9 +206,20 @@ export function LoginPage() {
             words — and says nothing about activity it cannot see.
 
             It must stay ONE line at 390px: the page is a portrait-phone layout
-            with a measured height budget (scripts/mobile-audit.mjs, v29-4). */}
+            with a measured height budget (scripts/mobile-audit.mjs, v29-4).
+
+            V30 (2026-10-05, founder decision, accepted over impeccable live on
+            /login): the line named the noun, the payoff and the cost, but it
+            sold the MECHANISM ("no RSVP, no planning") to a parent who has not
+            yet been told there is anyone to do it with. It now leads with the
+            people and the thing ("Playdates with other families") and lets the
+            low commitment trail lighter ("just show up"). Shorter than the line
+            it replaces (45 vs 49 characters), so the one-line budget is
+            untouched; same 17px body slot, no new colour. */}
         <p className="text-sm text-slate-600">
-          Casual drop-ins near you — no RSVP, no planning.
+          <span className="font-medium text-slate-800">Playdates with other families</span>
+          {' — '}
+          <span className="text-slate-500">just show up.</span>
         </p>
       </header>
       {/* De-carded: the form stands on the page like every other masthead in
@@ -222,14 +233,18 @@ export function LoginPage() {
               ? 'Create your account'
               : 'Reset your password'}
         </h1>
+        {/* V29 v29-8 gave the login branch "Sign in to see drop-ins near you."
+            (before that: "Welcome back.", which presumed a returning visitor).
+            V31 (2026-10-05, founder decision, accepted over impeccable live on
+            /login): the v29 line was read as telling a parent WHY to sign in,
+            when the h1 above it already says "Sign in" and the masthead tagline
+            over it already says what the app is — the sentence restated both.
+            The login branch now renders nothing and the heading hands straight
+            to the sign-in control; the sign-up and reset branches keep their
+            own lines, which do work the other two do not. */}
         <p className="text-sm text-slate-600">
           {mode === 'login'
-            ? /* V29 v29-8: "Welcome back." presumed the visitor had been here
-                 before — the exact "treated like a returning user before I knew
-                 what this was" friction the reviews reported. The returning
-                 parent loses nothing: the h1 is still "Sign in", and the form is
-                 unchanged. */
-              'Sign in to see drop-ins near you.'
+            ? null
             : mode === 'signup'
               ? 'Just your email and password — your name and location come right after.'
               : 'Enter your email and we’ll send a link to set a new password.'}

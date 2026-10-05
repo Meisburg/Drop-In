@@ -70,9 +70,10 @@ interface DirectoryProps {
   /** The viewer's stored home zip (the distance seam measures from it; null = none). */
   homeZip: string | null
   /**
-   * V27: the place-name shown on the search pill / location row. Defaults to the
-   * app's city, so /new's picker sheet keeps the reference's "Places · Seattle,
-   * WA" shape without passing one.
+   * V27: the place-name on the location row. Defaults to the app's city, so
+   * /new's picker sheet names where it searches without passing one. (V30: it is
+   * the pin button's visible label, not the search placeholder — this wrapper
+   * mirrors PlaceDirectory's own prop doc.)
    */
   locationLabel?: string
   /** When true, taps select into the host instead of navigating away. */

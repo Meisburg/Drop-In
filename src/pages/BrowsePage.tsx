@@ -386,10 +386,11 @@ export function BrowsePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* V27: the page's title is now the search pill's own text (the reference's
-          "Places · Seattle, WA"), so the visible SectionHeader is gone. The page
-          still owns exactly one h1 — screen-reader only — so the document
-          outline is unchanged. */}
+      {/* V27: the visible SectionHeader is gone — the search card carries the
+          place-naming instead — and the page still owns exactly one h1,
+          screen-reader only, so the document outline is unchanged.
+          V30 (2026-10-05): that name now sits on the pin button ("Seattle, WA")
+          rather than inside the search placeholder, which reads as a hint. */}
       <h1 className="sr-only">Places</h1>
 
       {placesFailed ? (

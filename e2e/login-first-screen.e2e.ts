@@ -14,6 +14,15 @@
  *    390-wide phone with the browser chrome a real phone shows. The control sat
  *    28px below the fold.
  *
+ * V30 (2026-10-05): the tagline itself was replaced, by a founder decision taken
+ * over impeccable live on this screen. "Casual drop-ins near you — no RSVP, no
+ * planning." sold the mechanism to a parent who had not yet been told there was
+ * anyone to do it with; the promise now leads and the low commitment trails
+ * ("Playdates with other families — just show up."). The replacement is SHORTER
+ * (49 → 45 characters), so this spec's job did not change: it is the fold claim
+ * below that guards the real risk, because a wrap spends 26px of a height budget
+ * with roughly 24px of slack.
+ *
  * WHY THE FOLD CLAIM IS ALSO PINNED HERE: `scripts/mobile-audit.mjs` proves it
  * across seven viewports and both appearances, but that script is deliberately
  * NOT in `npm run verify` — so without this assertion a layout regression would
@@ -24,7 +33,7 @@
  */
 import { expect, test } from '@playwright/test'
 
-const TAGLINE = 'Casual drop-ins near you — no RSVP, no planning.'
+const TAGLINE = 'Playdates with other families — just show up.'
 
 test('the signed-out first screen says what Drop In is, and fits a portrait phone', async ({
   browser,
@@ -41,7 +50,8 @@ test('the signed-out first screen says what Drop In is, and fits a portrait phon
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
 
-  // v29-8: the noun, the payoff and the low commitment, before any tap.
+  // v29-8 + V30: the people and the thing first, the low commitment trailing,
+  // before any tap.
   await expect(page.getByText(TAGLINE)).toBeVisible()
   // …with no presumption that the visitor has been here before, and no claim
   // about activity this screen cannot see.
