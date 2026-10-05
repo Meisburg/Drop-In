@@ -53,6 +53,8 @@
  * `docs/adr/0003-place-photos-are-copied-and-cropped.md`.
  */
 
+import type { PlacePhotoReviewState } from './types'
+
 /** The image types a place photo may be. Deliberately narrow. */
 export const PLACE_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 export type PlacePhotoType = (typeof PLACE_PHOTO_TYPES)[number]
@@ -332,15 +334,25 @@ export function placePhotoObjectPath(
 /**
  * The `places` patch for a moderator's replacement photo.
  *
- * ⚠️ WHY ALL FIVE COLUMNS ARE STILL WRITTEN TOGETHER. Rewriting `photo_url`
- * without also writing the four provenance columns would leave the row claiming
- * a licence and author that belong to the OLD image — worse than no metadata at
- * all, because the credit line would attribute the new picture to the wrong
- * person. Every replacement therefore carries its own provenance (all four
- * columns together, the same discipline `apply-place-photos.mjs` already
+ * ⚠️ WHY ALL FIVE PROVENANCE COLUMNS ARE STILL WRITTEN TOGETHER. Rewriting
+ * `photo_url` without also writing the four provenance columns would leave the
+ * row claiming a licence and author that belong to the OLD image — worse than no
+ * metadata at all, because the credit line would attribute the new picture to
+ * the wrong person. Every replacement therefore carries its own provenance (all
+ * four columns together, the same discipline `apply-place-photos.mjs` already
  * follows: "never `photo_url` alone"). Since the 2026-10-05 reversal the editor
  * passes all three as `null`, which CLEARS them with the photo — that is the
  * point, not an oversight: the new picture must not wear the old credit.
+ *
+ * Place-photo sourcing (slice 5) added the SIXTH column, `photo_review_state`,
+ * to the same set for the same reason: a picture and its review state are one
+ * fact, and a write that set a URL while leaving the previous row's
+ * `'confirmed'` behind would show an unreviewed machine fill to parents. So the
+ * state travels with the photo here rather than being patched separately
+ * wherever a caller remembers to. It DEFAULTS to `'confirmed'`, because the
+ * callers of this function are a moderator who has just chosen a picture (the
+ * editor) — "a human looked at this" is the honest default. The sourcing
+ * pipeline is the one caller that passes `'unreviewed'` explicitly, for tier 2.
  *
  * A whitespace-only value is normalised to `null` rather than stored as `''`, so
  * `photoCreditLine`'s existing "empty means absent" checks keep working without
@@ -351,6 +363,7 @@ export function placePhotoPatch(input: {
   sourceUrl?: string | null
   license?: string | null
   author?: string | null
+  reviewState?: PlacePhotoReviewState
 }): Record<string, unknown> {
   const attribution = [input.author, input.license]
     .map((part) => (part ?? '').trim())
@@ -364,13 +377,15 @@ export function placePhotoPatch(input: {
     // Built from the two parts it displays, so the credit line cannot disagree
     // with the fields beside it (the same rule 0046's backfill follows).
     photo_attribution: attribution === '' ? null : attribution,
+    photo_review_state: input.reviewState ?? 'confirmed',
   }
 }
 
 /**
- * Clearing a photo. `null` on all five columns, written together — a row with a
+ * Clearing a photo. `null` on all six columns, written together — a row with a
  * URL but no provenance is the state this tool exists to avoid, so the reverse
- * (provenance with no URL) must not be reachable either.
+ * (provenance with no URL, or a review state with no picture) must not be
+ * reachable either.
  */
 export function clearPlacePhotoPatch(): Record<string, unknown> {
   return {
@@ -379,7 +394,26 @@ export function clearPlacePhotoPatch(): Record<string, unknown> {
     photo_license: null,
     photo_author: null,
     photo_attribution: null,
+    photo_review_state: null,
   }
+}
+
+/**
+ * The moderator's "this picture is right" write — the review pass's one tap.
+ *
+ * A tier-2 sourcing fill is invisible to parents until a human confirms it, and
+ * the only way to confirm a picture you have just LOOKED AT is to say so without
+ * replacing it. Re-pasting its URL through `placePhotoPatch` would work but would
+ * also re-derive the attribution and re-trim the URL — a confirm is not a
+ * replacement, and it must not be able to change the picture it confirms.
+ *
+ * So this writes `photo_review_state` ALONE, and that is the deliberate
+ * exception to "the columns travel together": the rule exists so a new photo can
+ * never wear an old credit, and this patch introduces no new photo. It touches
+ * no URL and no provenance, so there is nothing for it to disagree with.
+ */
+export function confirmPlacePhotoPatch(): Record<string, unknown> {
+  return { photo_review_state: 'confirmed' }
 }
 
 function normalise(value: string | null | undefined): string | null {

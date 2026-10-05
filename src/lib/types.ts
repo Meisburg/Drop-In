@@ -300,6 +300,18 @@ export type PlaceKind =
  * ranges. NULL is UNKNOWN, so the place page's age line (placeAgeFitLabel) is
  * omitted when there is nothing to say, never invented.
  */
+/**
+ * Place-photo sourcing (slice 5, migration 0063) — the review state of a row's
+ * picture, one vocabulary everywhere (`places.photo_review_state`).
+ *
+ * The founder's model of the system: *"it will automatically try to add the
+ * correct images for every place and then I'll go through it as the manual
+ * reviewer."* So a fill is best-effort and the human is the filter — which only
+ * works if a machine-filled picture can be distinguished from a reviewed one.
+ * That distinction is this type.
+ */
+export type PlacePhotoReviewState = 'confirmed' | 'unreviewed'
+
 export interface Place {
   id: string
   name: string
@@ -338,6 +350,20 @@ export interface Place {
    * than re-derived at each render site.
    */
   photo_attribution?: string | null
+  /**
+   * Place-photo sourcing (slice 5, migration 0063): has a human looked at this
+   * picture yet?
+   *
+   * `'confirmed'` is the state of every photo that already existed when the
+   * column arrived (the migration backfills it) and of every tier-1 sourcing
+   * write — the candidate's own title names the place, so the evidence travels
+   * with the image. `'unreviewed'` is a best-effort tier-2 write: a real image
+   * from a real search that nothing ties to this place, so a moderator confirms
+   * it before parents see it (`placePhotoVisibleTo`, lib/places.ts).
+   *
+   * NULL means "no photo", and it is what a blank row carries.
+   */
+  photo_review_state?: PlacePhotoReviewState | null
   /**
    * V20 t01 (0048): the place's OWN website — what "Learn more" opens.
    *

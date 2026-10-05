@@ -12,6 +12,8 @@ import {
   filterPlacesByRadius,
   filterTriggerLabels,
   hasPlacePhoto,
+  placePhotoNeedsReview,
+  placePhotoVisibleTo,
   feedMapPins,
   pinMoreDropInsLabel,
   soonestFeedPinEvent,
@@ -2858,5 +2860,62 @@ describe('hasPlacePhoto (v30-6, the ONE rule the card and the place page share)'
     const without = place(null)
     expect(hasPlacePhoto(withPhoto)).toBe(true)
     expect(hasPlacePhoto(without)).toBe(false)
+  })
+})
+
+describe('placePhotoVisibleTo (slice 5 — no unvetted picture reaches a family)', () => {
+  const place = (photo_url: string | null, photo_review_state?: 'confirmed' | 'unreviewed' | null) =>
+    ({ photo_url, photo_review_state }) as never
+
+  it('hides an UNREVIEWED picture from a parent', () => {
+    expect(placePhotoVisibleTo(place('https://example.test/a.jpg', 'unreviewed'), 'parent')).toBe(
+      false,
+    )
+  })
+
+  it('shows the same UNREVIEWED picture to a moderator, who is the reviewer', () => {
+    expect(placePhotoVisibleTo(place('https://example.test/a.jpg', 'unreviewed'), 'moderator')).toBe(
+      true,
+    )
+  })
+
+  it('shows a CONFIRMED picture to everyone', () => {
+    expect(placePhotoVisibleTo(place('https://example.test/a.jpg', 'confirmed'), 'parent')).toBe(true)
+    expect(placePhotoVisibleTo(place('https://example.test/a.jpg', 'confirmed'), 'moderator')).toBe(
+      true,
+    )
+  })
+
+  it('treats a NULL review state as visible rather than hidden', () => {
+    // The migration's own population: 127 photos applied before the column
+    // existed. Failing closed would delete every one of them from the directory
+    // the moment the column arrived.
+    expect(placePhotoVisibleTo(place('https://example.test/a.jpg', null), 'parent')).toBe(true)
+    expect(placePhotoVisibleTo(place('https://example.test/a.jpg'), 'parent')).toBe(true)
+  })
+
+  it('never shows a blank URL to anyone, moderator included', () => {
+    expect(placePhotoVisibleTo(place(null, 'confirmed'), 'moderator')).toBe(false)
+    expect(placePhotoVisibleTo(place('', 'confirmed'), 'parent')).toBe(false)
+  })
+})
+
+describe('placePhotoNeedsReview (the badge, on the same fact as the gate)', () => {
+  const place = (photo_url: string | null, photo_review_state?: 'confirmed' | 'unreviewed' | null) =>
+    ({ photo_url, photo_review_state }) as never
+
+  it('flags exactly the rows whose picture is withheld from parents', () => {
+    const unreviewed = place('https://example.test/a.jpg', 'unreviewed')
+    expect(placePhotoNeedsReview(unreviewed)).toBe(true)
+    expect(placePhotoVisibleTo(unreviewed, 'parent')).toBe(false)
+
+    const confirmed = place('https://example.test/a.jpg', 'confirmed')
+    expect(placePhotoNeedsReview(confirmed)).toBe(false)
+    expect(placePhotoVisibleTo(confirmed, 'parent')).toBe(true)
+  })
+
+  it('flags nothing for a row with no picture', () => {
+    expect(placePhotoNeedsReview(place(null, 'unreviewed'))).toBe(false)
+    expect(placePhotoNeedsReview(place('', 'unreviewed'))).toBe(false)
   })
 })

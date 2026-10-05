@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { prepareCroppedPhotoFile, setPlacePhoto, uploadPlacePhoto } from '../lib/db'
+import { placePhotoNeedsReview } from '../lib/places'
 import {
   PLACE_PHOTO_SIZE,
   clearPlacePhotoPatch,
+  confirmPlacePhotoPatch,
   fetchPlacePhotoFile,
   linkFallbackNotice,
   placePhotoPatch,
@@ -221,6 +223,28 @@ export function PlacePhotoAdmin({
   }
 
   /**
+   * THE REVIEW PASS'S ONE TAP (slice 5). A tier-2 sourcing fill is on the row and
+   * invisible to parents until a human confirms it, and the only honest way to
+   * say "I looked at this and it is the right place" is without re-entering the
+   * picture. So this writes the review state alone (`confirmPlacePhotoPatch`) and
+   * finishes the editor exactly like a save: the host closes it, re-reads the
+   * row, and the picture is now live for parents.
+   */
+  async function handleKeep() {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await setPlacePhoto(place.id, confirmPlacePhotoPatch())
+      onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not confirm that photo.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
    * Clear a photo entirely. Offered because "this picture is wrong" sometimes has
    * no replacement yet, and the directory's per-kind illustration is a better
    * answer than a confidently wrong photograph. The patch clears all five columns
@@ -381,6 +405,20 @@ export function PlacePhotoAdmin({
           className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50"
         >
           {busy ? 'Saving…' : 'Save photo'}
+        </button>
+      ) : null}
+
+      {/* slice 5: only an UNREVIEWED picture needs confirming, so the control
+          exists exactly when there is a decision to make. */}
+      {placePhotoNeedsReview(place) ? (
+        <button
+          type="button"
+          data-testid="photo-keep-btn"
+          disabled={busy}
+          onClick={() => void handleKeep()}
+          className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Keep this photo
         </button>
       ) : null}
 

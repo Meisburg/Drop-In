@@ -28,8 +28,9 @@ import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import { canModerate } from '../lib/moderation'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import {
-  hasPlacePhoto,
   photoCreditLine,
+  placePhotoNeedsReview,
+  placePhotoVisibleTo,
   placeAgeFitLabel,
   placeDistanceMiles,
   placeIndoorLabel,
@@ -495,8 +496,17 @@ export function PlacePage() {
   // v30-6 — the hero's two facts. The DATA half is the shared pure predicate
   // (the directory card asks the same question); the failed-load half is this
   // page's own state. The credit comes from the one existing formatter.
+  //
+  // slice 5: the DATA half is viewer-aware. A tier-2 sourcing fill is stored on
+  // the row so the moderator can judge it, and a parent sees the per-kind
+  // illustration instead until it is confirmed — exactly what these rows show
+  // today, so nothing regresses while the review is pending.
+  const isModeratorViewer = canModerate(profile)
   const placePhotoUrl = place.photo_url
-  const showPlacePhoto = hasPlacePhoto(place) && photoFailedUrl !== placePhotoUrl
+  const showPlacePhoto =
+    placePhotoVisibleTo(place, isModeratorViewer ? 'moderator' : 'parent') &&
+    photoFailedUrl !== placePhotoUrl
+  const photoNeedsReview = placePhotoNeedsReview(place)
   const placePhotoCredit = photoCreditLine(place)
 
   return (
@@ -551,6 +561,15 @@ export function PlacePage() {
           ) : (
             <PlaceKindArt kind={place.kind} className="h-16 w-16" />
           )}
+          {/* slice 5 — the moderator's review checklist, on the picture itself. */}
+          {photoNeedsReview && isModeratorViewer ? (
+            <span
+              data-testid="place-photo-review"
+              className="absolute left-2 top-2 rounded bg-amber-100/95 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 shadow-sm"
+            >
+              review
+            </span>
+          ) : null}
           {showPlacePhoto && placePhotoCredit !== null ? (
             <span
               data-testid="place-photo-credit"

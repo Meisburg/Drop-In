@@ -19,6 +19,7 @@ import {
   PLACE_PHOTO_TYPES,
   PLACE_PHOTO_WIDTH_PX,
   clearPlacePhotoPatch,
+  confirmPlacePhotoPatch,
   fetchPlacePhotoFile,
   formatMegabytes,
   linkFallbackNotice,
@@ -198,7 +199,7 @@ describe('placePhotoObjectPath (the cache-busting generation)', () => {
 })
 
 describe('placePhotoPatch (provenance travels with the image)', () => {
-  it('writes all five columns together, never photo_url alone', () => {
+  it('writes all six columns together, never photo_url alone', () => {
     const patch = placePhotoPatch({
       photoUrl: 'https://example.org/park.jpg',
       sourceUrl: 'https://commons.wikimedia.org/wiki/File:Park.jpg',
@@ -209,9 +210,23 @@ describe('placePhotoPatch (provenance travels with the image)', () => {
       'photo_attribution',
       'photo_author',
       'photo_license',
+      'photo_review_state',
       'photo_source_url',
       'photo_url',
     ])
+  })
+
+  it('defaults the review state to confirmed — the editor IS the human looking', () => {
+    // Slice 5: the sixth column travels with the other five, so a picture and its
+    // review state can never disagree. The default is the one that is true of a
+    // moderator who has just chosen this picture.
+    expect(placePhotoPatch({ photoUrl: 'https://example.org/p.jpg' }).photo_review_state).toBe(
+      'confirmed',
+    )
+    expect(
+      placePhotoPatch({ photoUrl: 'https://example.org/p.jpg', reviewState: 'unreviewed' })
+        .photo_review_state,
+    ).toBe('unreviewed')
   })
 
   it('builds the attribution line from author and licence', () => {
@@ -256,10 +271,21 @@ describe('placePhotoPatch (provenance travels with the image)', () => {
 })
 
 describe('clearPlacePhotoPatch', () => {
-  it('clears all five columns, so provenance cannot outlive the image', () => {
+  it('clears all six columns, so provenance and review state cannot outlive the image', () => {
     const patch = clearPlacePhotoPatch()
     expect(Object.values(patch).every((value) => value === null)).toBe(true)
-    expect(Object.keys(patch)).toHaveLength(5)
+    expect(Object.keys(patch)).toHaveLength(6)
+    expect(patch.photo_review_state).toBeNull()
+  })
+})
+
+describe('confirmPlacePhotoPatch (the reviewer\'s one tap)', () => {
+  it('writes the review state alone, so confirming cannot change the picture', () => {
+    const patch = confirmPlacePhotoPatch()
+    expect(patch).toEqual({ photo_review_state: 'confirmed' })
+    // The whole point: no URL, no provenance — nothing for a new photo to wear.
+    expect(Object.keys(patch)).not.toContain('photo_url')
+    expect(Object.keys(patch)).not.toContain('photo_attribution')
   })
 })
 

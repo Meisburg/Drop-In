@@ -23,8 +23,9 @@ import {
   DATE_WINDOWS,
   dateWindowEmptyCopy,
   filterTriggerLabels,
-  hasPlacePhoto,
   kindEmptyCopy,
+  placePhotoNeedsReview,
+  placePhotoVisibleTo,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
   PLACE_KINDS,
@@ -39,7 +40,7 @@ import {
   resolveMapCoords,
   savedPlacesEmptyCopy,
 } from '../lib/places'
-import type { DateWindow, PlaceListRow, SortMode } from '../lib/places'
+import type { DateWindow, PlaceListRow, PlacePhotoViewer, SortMode } from '../lib/places'
 import type { ReviewSummary } from '../lib/reviews'
 import { scrollBehaviorFor } from '../lib/mapStrip'
 import { hoursSourceNote, hoursStatus } from '../lib/placeHours'
@@ -1339,6 +1340,10 @@ export function PlaceDirectory({
               onEditPhoto={
                 canEditPlacePhotos ? () => setEditingPhotoPlace(row.place) : undefined
               }
+              /* slice 5: the audience for the review rule. The moderator IS the
+                 reviewer, and `canEditPlacePhotos` is already the host's answer
+                 to "is this viewer the moderator" — one fact, not two. */
+              photoViewer={canEditPlacePhotos ? 'moderator' : 'parent'}
               /* place-photo-crop slice 4: the card's own node, registered so the
                  save's scroll-into-view has something to point at. Deleting on
                  unmount is what keeps a filtered-out place from being scrolled
@@ -1649,6 +1654,7 @@ function DirectoryRow({
   selectable,
   onSelect,
   onEditPhoto,
+  photoViewer,
   cardRef,
 }: {
   row: PlaceListRow
@@ -1668,6 +1674,16 @@ function DirectoryRow({
    * PlaceDirectory). Its presence is the whole permission UI on this surface.
    */
   onEditPhoto?: () => void
+  /**
+   * Place-photo sourcing (slice 5) — WHO is looking at this card.
+   *
+   * A moderator sees a tier-2 picture (they are the reviewer) and the "review"
+   * badge; a parent keeps the per-kind illustration until it is confirmed. WHICH
+   * viewer gets what is decided by the pure `placePhotoVisibleTo` /
+   * `placePhotoNeedsReview` in lib/places.ts — this prop is only the audience, so
+   * the card cannot invent its own rule.
+   */
+  photoViewer: PlacePhotoViewer
   /**
    * place-photo-crop slice 4 — the card's outer node, handed to the directory so
    * a save can scroll this card back into view. A callback ref rather than a
@@ -1692,7 +1708,12 @@ function DirectoryRow({
   const photoUrl = row.place.photo_url
   // v30-6: the DATA half of "show a photo" is the shared pure predicate (the
   // place page asks the same question); the failed-load half stays local state.
-  const showPhoto = hasPlacePhoto(row.place) && photoFailedUrl !== photoUrl
+  //
+  // slice 5 makes that DATA half viewer-aware: a tier-2 sourcing fill is real
+  // enough to store and not real enough to show a family, so a parent keeps the
+  // per-kind illustration until the picture is confirmed.
+  const showPhoto = placePhotoVisibleTo(row.place, photoViewer) && photoFailedUrl !== photoUrl
+  const photoNeedsReview = placePhotoNeedsReview(row.place)
   const photoCredit = photoCreditLine(row.place)
   const ageFit = placeAgeFitLabel(row.place)
   /**
@@ -1817,6 +1838,18 @@ function DirectoryRow({
         {showPhoto && photoCredit !== null ? (
           <span className="absolute bottom-1 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90">
             {photoCredit}
+          </span>
+        ) : null}
+        {/* slice 5 — THE REVIEW BADGE, moderator-only. It turns the review pass
+            into a visible checklist item on the card where the picture is
+            actually seen; a parent never sees it, because a parent never sees
+            this picture at all until it is confirmed. */}
+        {photoNeedsReview && photoViewer === 'moderator' ? (
+          <span
+            data-testid={`place-photo-review-${row.place.id}`}
+            className="absolute left-2 top-2 rounded bg-amber-100/95 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 shadow-sm"
+          >
+            review
           </span>
         ) : null}
       </div>

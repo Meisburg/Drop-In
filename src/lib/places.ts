@@ -1113,6 +1113,59 @@ export function hasPlacePhoto(place: Pick<Place, 'photo_url'>): boolean {
 }
 
 /**
+ * Who is looking at the directory? The two viewers the review rule distinguishes.
+ *
+ * A named value rather than a boolean because the RULE is about the audience:
+ * "a moderator reviews, a parent must never be shown an unvetted picture" is a
+ * sentence about two viewers, and spelling the viewer at the call site is what
+ * keeps the render from turning into a bare `if (isModerator)`.
+ */
+export type PlacePhotoViewer = 'parent' | 'moderator'
+
+/**
+ * Place-photo sourcing (slice 5, migration 0063) — does this viewer get to see
+ * this row's picture?
+ *
+ * THE RULE, and why it lives here rather than in either render: the founder's
+ * model is *"it will automatically try to add the correct images for every place
+ * and then I'll go through it as the manual reviewer."* A tier-2 fill is a real
+ * image from a real search with NOTHING tying it to the place, so it is stored on
+ * the row — the moderator has to see it to judge it — while parents keep the
+ * per-kind illustration until a moderator confirms it. Nothing regresses, because
+ * the illustration is exactly what those rows show today.
+ *
+ * A blank URL is never visible to anyone (the `hasPlacePhoto` half). A
+ * `'confirmed'` picture is visible to everyone — including the migration's own
+ * backfill of the photos that already existed — and an `'unreviewed'` one only to
+ * a moderator.
+ *
+ * NULL review state is treated as VISIBLE rather than hidden, deliberately: NULL
+ * means the row was written before the column existed, and that population is the
+ * 127 seeded photos a human already reviewed when they were applied. Failing
+ * closed here would delete every existing photo from the directory the moment the
+ * column arrived.
+ */
+export function placePhotoVisibleTo(
+  place: Pick<Place, 'photo_url' | 'photo_review_state'>,
+  viewer: PlacePhotoViewer,
+): boolean {
+  if (!hasPlacePhoto(place)) return false
+  if (viewer === 'moderator') return true
+  return place.photo_review_state !== 'unreviewed'
+}
+
+/**
+ * Does this row's picture still need the moderator's eye? The badge's rule, and
+ * the same fact `placePhotoVisibleTo` gates on — so a picture cannot be flagged
+ * without being withheld from parents, or withheld without being flagged.
+ */
+export function placePhotoNeedsReview(
+  place: Pick<Place, 'photo_url' | 'photo_review_state'>,
+): boolean {
+  return hasPlacePhoto(place) && place.photo_review_state === 'unreviewed'
+}
+
+/**
  * The directory, A→Z, capped — the BROWSE list. Deterministic (name, then id,
  * the matchPlaces tiebreak) so the same directory never reshuffles between
  * renders, and NOT a ranking: browsing shows the alphabet, not a guess at
