@@ -403,3 +403,26 @@ the app when installed. Both files are served from the web app.
   The two remaining `location.origin` reads are in `src/sw.ts` and are CORRECT
   there — a service worker resolving against its own clients (and the SW does not
   run in the shell at all; native push is slice 2's FCM path).
+- 2026-10-05 (branding) — **THE SHELL NO LONGER SHIPS CAPACITOR'S LOGO.**
+  `npx cap add android` writes the FRAMEWORK'S own icon and splash into every
+  density bucket, so the app installed on a phone looked like Capacitor — which
+  for a store submission is worse than cosmetic (Apple 4.2 rejects
+  template-looking apps, and a reviewer sees the icon first). New:
+  `scripts/build-native-assets.sh`, which regenerates all of it from the app's own
+  `assets/drop-in-icon.svg` and **preserves Capacitor's exact dimensions** (the
+  native splash maths and Android's density buckets are built around them).
+  `@capacitor/assets` was the obvious tool and is NOT used: it needs `sharp`,
+  whose native build fails on this box's Node 26 (`node-gyp`/`make`), and the repo
+  already rasterises its art with `rsvg-convert`. The script also **deletes
+  `drawable-v24/ic_launcher_foreground.xml`**, a hand-written VECTOR of the
+  Capacitor logo that OVERRIDES the mipmaps on API 24+ — without that, every
+  modern device keeps the framework's logo whatever the PNGs say. The 432px PNG
+  foreground is crisp at every density that matters, and a hand-transcribed vector
+  path is not something anyone can verify without eyes on the screen.
+  `./gradlew assembleDebug` → **BUILD SUCCESSFUL, 4.98 MB** (was 4.84 MB).
+  ⚠️ **NOT YET SEEN ON A SCREEN**: the geometry is the app's own art rendered by
+  the repo's own tool, and the pixel probes are right (transparent rounded corners,
+  white mark at the centre, `#e8552f` plate) — but a human should glance at the
+  launcher icon and the splash on the real device. A screenshot of the branded
+  shell would also replace the unbranded one at
+  `.scratch/native-shell-emulator.png`.
