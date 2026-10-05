@@ -2280,6 +2280,47 @@ export function emptyRadiusCopy(radiusMiles: number): string {
 }
 
 /**
+ * V31 v31-1: the empty-radius state's DOOR to the places directory, and the
+ * headline that frames it.
+ *
+ * WHY THEY EXIST (and the tier of the evidence, stated so it cannot be
+ * inherited as more than it is): a **simulated** five-archetype panel ran the
+ * pre-registered first-open instrument's shape
+ * (`research/first-open-validation/2026-10-05-simulated-panel.md`). It is NOT
+ * that test, which is still unrun, and its own B1 number (2/5) does not clear
+ * the 3+ bar it is scored against. What DID fire is the instrument's W bar —
+ * any-of-five, on two modelled parents reaching for the places directory
+ * unprompted — whose pre-registered remedy is "the first screen changes".
+ *
+ * The measured half of the problem, from the TREE rather than the panel: the
+ * empty feed offered only radius escapes, and `RadiusEmptyState` rendered a
+ * filled primary control on no feed screen at all. So the first thing a
+ * brand-new parent could be offered was a way to widen a search they had not
+ * yet made, while the capability they reached for sat one nav tab away.
+ *
+ * WHAT THE HEADLINE MAY SAY. It names no number and no count: the honest count
+ * is `emptyRadiusCopy`'s job and it is rendered directly beneath this line. It
+ * also promises no content — `/browse` is radius-filtered too
+ * (`places.ts` planForViewer's `radiusReason`), so it points at the directory
+ * without claiming the directory has anything in range.
+ *
+ * Neither string names a place CATEGORY. That is deliberate rather than
+ * incidental: the taxonomy guard judges only the copy consts it is registered
+ * for (`scripts/guards/copy-taxonomy-guard.mjs`), and `lib/feed.ts` is not one
+ * of them — so an unregistered category word here would be scanned by nothing.
+ * A category claim belongs in a module the guard reads, with a declaration.
+ */
+export const EMPTY_RADIUS_BROWSE_HEADLINE = 'Find something to do nearby'
+
+/**
+ * The door's label, pinned as a const so the e2e spec asserts against the SAME
+ * string the app renders rather than a copy of it (the `emptyRadiusCopy` /
+ * `PAST_DROP_INS_LABEL` discipline). The words are the panel's own and the
+ * instrument's: "what's around" is what P3 said out loud before tapping.
+ */
+export const EMPTY_RADIUS_BROWSE_LABEL = 'See what’s around'
+
+/**
  * V29 v29-6: how many drop-ins exist OUTSIDE the viewer's radius but inside the
  * widest one — the honest answer to the question the empty state raises and does
  * not answer ("is it worth widening?").

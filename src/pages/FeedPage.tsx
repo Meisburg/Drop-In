@@ -1367,10 +1367,16 @@ export function FeedPage() {
            therefore lets the component render its default escapes (its Browse
            caller is untouched). showPostCta stays false: the raised nav "+" is
            the persistent post action, so a second "Post a drop-in" link here is
-           the duplication V23 removed. */
+           the duplication V23 removed.
+
+           V31 v31-1: showBrowseCta is TRUE here and only here. The feed's parent
+           has not seen the places directory (it is one nav tab away and nothing
+           in this state offered it), while Browse's parent is already on it — so
+           the door is a prop, not a behaviour of the shared component. */
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
           showPostCta={false}
+          showBrowseCta
           beyondRadiusCount={beyondRadiusCount}
         />
       ) : feedViewShowsMap(feedView) ? (

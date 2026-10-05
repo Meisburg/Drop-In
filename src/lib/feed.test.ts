@@ -25,6 +25,8 @@ import {
   durationLabel,
   dueToRefreshLastSeen,
   emptyRadiusCopy,
+  EMPTY_RADIUS_BROWSE_HEADLINE,
+  EMPTY_RADIUS_BROWSE_LABEL,
   filterFeed,
   formatDayLabel,
   formatDistanceLabel,
@@ -2505,6 +2507,47 @@ describe('emptyRadiusCopy (V8 ticket 02: the honest empty state)', () => {
     for (const radius of RADIUS_MILES_OPTIONS) {
       expect(emptyRadiusCopy(radius).toLowerCase()).not.toContain('today')
     }
+  })
+})
+
+describe('the empty state\'s door to the directory (V31 v31-1)', () => {
+  /**
+   * The two strings are pinned as LITERALS here on purpose, for the reason the
+   * archive link's test gives: the e2e spec asserts the app's own rule through
+   * these consts, so a rename would keep every browser assertion green while
+   * changing the product's words. Changing the copy must break a test here.
+   */
+  it('pins the door\'s label', () => {
+    expect(EMPTY_RADIUS_BROWSE_LABEL).toBe('See what’s around')
+  })
+
+  it('pins the headline', () => {
+    expect(EMPTY_RADIUS_BROWSE_HEADLINE).toBe('Find something to do nearby')
+  })
+
+  /**
+   * The headline sits directly above `emptyRadiusCopy`, which carries the only
+   * honest count on the screen. A digit in the headline would be a second,
+   * unbacked number — the class of claim the empty state exists to avoid.
+   */
+  it('puts no number in the headline', () => {
+    expect(EMPTY_RADIUS_BROWSE_HEADLINE).not.toMatch(/\d/)
+  })
+
+  /**
+   * No place CATEGORY either: `lib/feed.ts` is not in the taxonomy guard's
+   * COPY_MODULES registry, so a category word here would be judged by nothing.
+   * Pinned as a rule rather than trusted to the comment above the const.
+   */
+  it('names no place category', () => {
+    const categoryWord = /\b(park|playground|library|libraries|pool|beach|splash|museum|trail)s?\b/i
+    expect(EMPTY_RADIUS_BROWSE_HEADLINE).not.toMatch(categoryWord)
+    expect(EMPTY_RADIUS_BROWSE_LABEL).not.toMatch(categoryWord)
+  })
+
+  it('does not promise content (the directory is radius-filtered too)', () => {
+    const promises = /\b(has|have|there are|you.ll find|full)\b/i
+    expect(EMPTY_RADIUS_BROWSE_HEADLINE).not.toMatch(promises)
   })
 })
 

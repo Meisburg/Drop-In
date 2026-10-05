@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
 import { hasHomeZip } from '../lib/homeZip'
-import { emptyRadiusBeyondCopy, emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage } from '../lib/feed'
+import { emptyRadiusBeyondCopy, emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 import { LocationRequiredNotice } from './LocationRequiredNotice'
 
@@ -73,12 +73,28 @@ export function RadiusEmptyState({
   radiusMiles,
   showEscapes = true,
   showPostCta = true,
+  showBrowseCta = false,
   beyondRadiusCount = 0,
 }: {
   radiusMiles: number
   showEscapes?: boolean
   /** Render the "Post a drop-in" link (default true; the feed opts out). */
   showPostCta?: boolean
+  /**
+   * V31 v31-1: render the value-first headline and the door to the places
+   * directory (default FALSE — Browse opts in to nothing).
+   *
+   * It defaults OFF because this component is shared with Browse, where the
+   * door would point at the screen the parent is already on: a browse → browse
+   * link is a control that cannot do anything. The feed — the one caller whose
+   * parent has not seen the directory — passes it.
+   *
+   * When true, this is the state's ONLY filled control: the radius escapes stay
+   * secondary buttons below it, because the panel's finding was about what the
+   * screen OFFERS FIRST, not about removing the escapes (they are the feed's
+   * one-tap widen path, V27 slice 1).
+   */
+  showBrowseCta?: boolean
   /**
    * V29 v29-6: how many drop-ins the SAME fetch found outside this radius but
    * inside the widest one. 0 (the default, and Browse's value today) renders no
@@ -164,6 +180,11 @@ export function RadiusEmptyState({
       data-testid="empty-radius-state"
       className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm"
     >
+      {/* V31 v31-1: value first, then the honest count — the headline names no
+          number (the line under it does) and promises no content. */}
+      {showBrowseCta ? (
+        <p className="text-sm font-medium text-slate-700">{EMPTY_RADIUS_BROWSE_HEADLINE}</p>
+      ) : null}
       <p className="text-sm text-slate-600">{emptyRadiusCopy(radiusMiles)}</p>
       {/* V29 v29-6: the answer to "is it worth widening?" — only when the same
           read counted something further out, and quoting the same ceiling the
@@ -174,6 +195,20 @@ export function RadiusEmptyState({
         <p data-testid="empty-radius-beyond" className="text-sm text-slate-600">
           {emptyRadiusBeyondCopy(beyondRadiusCount)}
         </p>
+      ) : null}
+      {/* V31 v31-1: THE DOOR. The state's one filled control, above the escapes
+          — the panel's parents reached for the directory while the screen in
+          front of them offered three ways to widen a radius. Deliberately NOT a
+          post CTA: `showPostCta` stays false on the feed, so V27's ruling ("the
+          raised nav + is the persistent post action") is untouched. */}
+      {showBrowseCta ? (
+        <Link
+          to="/browse"
+          data-testid="empty-radius-browse"
+          className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
+        >
+          {EMPTY_RADIUS_BROWSE_LABEL}
+        </Link>
       ) : null}
       {escapes.length > 0 ? (
         <div className="flex flex-wrap justify-center gap-2">

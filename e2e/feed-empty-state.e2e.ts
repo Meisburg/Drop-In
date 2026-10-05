@@ -27,7 +27,7 @@
  * It creates no rows and no accounts, so there is nothing else to sweep.
  */
 import { expect, test } from '@playwright/test'
-import { WIDEN_RADIUS_MILES, emptyRadiusCopy } from '../src/lib/feed'
+import { WIDEN_RADIUS_MILES, emptyRadiusCopy, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../src/lib/feed'
 import {
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSessionFromBrowserPage, readSupabaseEnv, settleOnRoute, finishSignup,
@@ -160,6 +160,44 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   await expect(empty.getByRole('button', { name: 'See everything in Seattle' })).toBeEnabled()
   await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toHaveCount(0)
 
+  /* V31 v31-1: THE DOOR, AND WHERE IT SITS. A simulated panel (NOT the
+     pre-registered test — see research/first-open-validation/2026-10-05-
+     simulated-panel.md) had two of five modelled parents reach for the places
+     directory while this state offered them three ways to widen a radius. So
+     the directory is now the state's ONE filled control, and it sits above the
+     escapes rather than beside them. */
+  const headline = empty.getByText(EMPTY_RADIUS_BROWSE_HEADLINE)
+  await expect(headline).toBeVisible()
+  const door = empty.getByTestId('empty-radius-browse')
+  await expect(door).toBeVisible()
+  await expect(door).toHaveAttribute('href', '/browse')
+  await expect(door).toHaveAccessibleName(EMPTY_RADIUS_BROWSE_LABEL)
+
+  // ORDER, measured rather than eyeballed: headline above the honest count,
+  // count above the door, door above the escapes.
+  const headlineBox = await headline.boundingBox()
+  const countBox = await empty.getByText(emptyRadiusCopy(FAR_RADIUS)).boundingBox()
+  const doorBox = await door.boundingBox()
+  const escapeBox = await empty
+    .getByRole('button', { name: 'Widen to 20 miles' })
+    .boundingBox()
+  expect(headlineBox!.y).toBeLessThan(countBox!.y)
+  expect(countBox!.y).toBeLessThan(doorBox!.y)
+  expect(doorBox!.y).toBeLessThan(escapeBox!.y)
+
+  // The 44px tap floor (the mobile audit's rule), and "filled" as a
+  // difference rather than a hex: the door's background is neither the
+  // escapes' background nor transparent, so it is the state's only filled
+  // control. Pinning the palette value would break on a theme change that is
+  // not a defect.
+  expect(doorBox!.height).toBeGreaterThanOrEqual(44)
+  const doorBg = await door.evaluate((el) => getComputedStyle(el).backgroundColor)
+  const escapeBg = await empty
+    .getByRole('button', { name: 'Widen to 20 miles' })
+    .evaluate((el) => getComputedStyle(el).backgroundColor)
+  expect(doorBg).not.toBe(escapeBg)
+  expect(doorBg).not.toBe('rgba(0, 0, 0, 0)')
+
   // V23 slice 1: the feed's empty state no longer renders its own "Post a drop-in"
   // link — the action row at the top of the page owns the ONE primary CTA. The
   // way out of an empty radius is now the secondary location control (the button
@@ -217,6 +255,25 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   const stored = await readMarkerLocation()
   expect(stored?.radius_miles).toBe(WIDEN_RADIUS_MILES)
   expect(stored?.home_zip).toBe(FAR_ZIP)
+})
+
+/**
+ * V31 v31-1: THE DOOR ACTUALLY GOES SOMEWHERE. The assertion above proves the
+ * link exists on the right screen with the right name and position; this one
+ * proves the panel's behaviour — the parent who reaches for "what's around"
+ * lands on the directory. It is its own test so the state's write path above
+ * (which re-renders the same screen) is not entangled with a navigation.
+ */
+test('the empty feed\'s door opens the places directory', async ({ page }) => {
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+
+  const door = page.getByTestId('empty-radius-browse')
+  await expect(door).toBeVisible()
+  await door.click()
+
+  await settleOnRoute(page, '/browse')
+  await expect(page).toHaveURL(/\/browse(\?|$)/)
 })
 
 /**
@@ -315,6 +372,14 @@ test('browse shows the same honest empty state (one component, both screens)', a
   await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toBeEnabled()
   await expect(empty.getByRole('button', { name: 'See everything in Seattle' })).toBeEnabled()
   await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toBeVisible()
+
+  /* V31 v31-1: THE SAME COMPONENT, ONE DELIBERATE DIFFERENCE. The door is a
+     prop the feed passes, because a browse → browse link would be a control
+     that cannot do anything. This is the control that keeps that true: if the
+     door ever moves into the component's default rendering, Browse grows a
+     link to itself and this fails. */
+  await expect(empty.getByTestId('empty-radius-browse')).toHaveCount(0)
+  await expect(empty.getByText(EMPTY_RADIUS_BROWSE_HEADLINE)).toHaveCount(0)
 })
 
 /**
