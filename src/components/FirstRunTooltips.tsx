@@ -19,6 +19,12 @@ import { TOUR_PROGRESS_LABEL, TOUR_TITLE } from '../lib/firstRunTour'
  * teaches, and a small card saying what that control does — the step's line
  * is the tour's own word (imported from `firstRunTour.ts`), never restated.
  *
+ * v30-4: the veil and the ring are the SAME rectangle — the veil is a 9999px
+ * spread shadow cast by the ring's own box, so the highlighted control sits in
+ * a transparent hole rather than under the darkening. Before the first
+ * measurement lands there is no ring, so a flat veil stands in for that one
+ * frame.
+ *
  * It is a tour, not a modal: no `role="dialog"`, no `aria-modal`, no focus
  * trap, no scroll lock, and it NEVER captures focus on load — the parent's
  * focus stays exactly where it was, Tab moves normally, and the two buttons
@@ -167,13 +173,29 @@ export function FirstRunTooltips({ onDismiss }: { onDismiss: () => void }) {
       data-testid="first-run-tooltips"
       className={`pointer-events-none fixed inset-0 ${MODAL_OVER_LEAFLET_Z_CLASS}`}
     >
-      {/* The lightbox veil. Visual only — pointer-events are inherited off,
-          so it darkens without blocking. */}
-      <div aria-hidden="true" className="absolute inset-0 bg-slate-900/25" />
+      {deco === null ? (
+        // Before the first measurement lands there is no ring to spotlight, so
+        // the flat veil stands in for the one frame the card is still invisible.
+        <div aria-hidden="true" className="absolute inset-0 bg-slate-900/25" />
+      ) : (
+        // v30-4: the veil IS the ring's own shadow — a 9999px spread around
+        // `deco.ring`, so the hole in the dark is exactly the rectangle the ring
+        // outlines and the control being taught renders at full brightness.
+        // ONE derivation feeds both (founder annotation 2: the darkened icon
+        // inside the ring was the defect). Same idiom as CropPhotoDialog's
+        // circular mask.
+        <div
+          aria-hidden="true"
+          data-testid="first-run-tooltips-veil"
+          className="absolute rounded-2xl"
+          style={{ ...deco.ring, boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.25)' }}
+        />
+      )}
 
       {deco !== null ? (
         <div
           aria-hidden="true"
+          data-testid="first-run-tooltips-ring"
           className="absolute rounded-2xl ring-2 ring-indigo-400"
           style={deco.ring}
         />

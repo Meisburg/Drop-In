@@ -139,3 +139,42 @@ test('a tap on the app passes through the tour (the veil never blocks)', async (
     await context.close()
   }
 })
+
+/**
+ * v30-4 (founder annotation 2): the ring was drawn around the control while the
+ * veil covered it, so the thing being taught was the dimmest thing on screen.
+ *
+ * The veil is now a 9999px spread shadow cast by the ring's own box, which makes
+ * "the hole is the ring" a DOM fact a browser can check: the two rectangles must
+ * be the same rectangle, on every step.
+ */
+test('the veil leaves a hole exactly where the ring is — on every step', async ({ browser }) => {
+  const { viewer, context } = await signUpAndFinishRun(browser, 'd')
+  try {
+    const tour = tourOf(viewer)
+    await expect(tour).toBeVisible({ timeout: 30_000 })
+
+    // Five steps, five targets, five rectangles: the veil follows the ring.
+    for (let step = 0; step < 5; step++) {
+      const ring = viewer.getByTestId('first-run-tooltips-ring')
+      const veil = viewer.getByTestId('first-run-tooltips-veil')
+      await expect(ring).toBeVisible()
+      await expect(veil).toBeVisible()
+
+      const ringBox = await ring.boundingBox()
+      const veilBox = await veil.boundingBox()
+      expect(ringBox, 'the ring must have a box').not.toBeNull()
+      expect(veilBox, 'the veil must have a box').not.toBeNull()
+      expect(veilBox!.x).toBeCloseTo(ringBox!.x, 0)
+      expect(veilBox!.y).toBeCloseTo(ringBox!.y, 0)
+      expect(veilBox!.width).toBeCloseTo(ringBox!.width, 0)
+      expect(veilBox!.height).toBeCloseTo(ringBox!.height, 0)
+
+      if (step < 4) {
+        await tour.getByRole('button', { name: 'Next' }).click()
+      }
+    }
+  } finally {
+    await context.close()
+  }
+})
