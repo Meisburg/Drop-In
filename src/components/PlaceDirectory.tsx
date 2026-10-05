@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { DropInMark } from './DropInMark'
 import { LocationModal } from './LocationModal'
 import { PlaceFilterSheet } from './PlaceFilterSheet'
 import { NAV_ICONS, PLACE_KIND_ICONS } from './icons'
@@ -1924,9 +1925,16 @@ function DirectoryRow({
               type="button"
               data-testid={`row-start-dropin-${row.place.id}`}
               onClick={(e) => startDropIn(e)}
-              className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
             >
-              🚀 Start a drop-in
+              {/* V30 (founder decision, over impeccable live 2026-10-05): the
+                  app's OWN mark — the slide under a tree — replaces 🚀, which he
+                  read as a category reflex that does not mean "start a drop-in".
+                  `mono` draws it in currentColor, so it is white on the action
+                  fill like the label beside it. The emoji was also an extra word
+                  in the accessible name ("rocket, Start a drop-in"). */}
+              <DropInMark variant="mono" className="h-4 w-4 shrink-0" />
+              Start a drop-in
             </button>
           ) : null}
           {learnMore !== null ? (
