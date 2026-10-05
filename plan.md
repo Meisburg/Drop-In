@@ -197,6 +197,69 @@ rather than reordering one.
 
 ---
 
+## 5b. v31-5 — The nightly reaches the database with a PROJECT-SCOPED key
+
+- **Objective:** the three V30 moderator specs run in CI on a key whose blast
+  radius is this project, not the whole account — and the nightly stops needing
+  `SUPABASE_ACCESS_TOKEN`.
+- **Problem, measured in the dispatched nightly (`37321138731`, the first run to
+  include V30's specs):** `e2e/moderator-door.e2e.ts:35`,
+  `e2e/place-photo-admin.e2e.ts:98` and `:176` each fail in ~200ms with
+  `scripts/db-sql.sh:34: SUPABASE_ACCESS_TOKEN: FATAL: not set in .env`. They go
+  through `runSqlHeadless` (`e2e/fixtures.ts:362`) → `scripts/db-sql.sh` → the
+  Supabase **Management API**, whose token is ACCOUNT-level (`sbp_…`) and can run
+  arbitrary SQL against every project. The founder's decision (2026-10-05) is the
+  narrowest privilege that still runs the coverage: a project-scoped
+  service-role key over PostgREST.
+- **Files in scope:** `e2e/fixtures.ts`, `e2e/moderator-door.e2e.ts`,
+  `e2e/place-photo-admin.e2e.ts`, `.github/workflows/e2e-scheduled.yml`,
+  `docs/agents/ci.md`.
+- **Approach:** replace the transport, not the specs' intent. The raw-SQL calls
+  become typed PostgREST calls authenticated with the project's service-role key
+  (`SUPABASE_SERVICE_ROLE_KEY`, read from the repo `.env` FILE exactly as
+  `VITE_SUPABASE_URL` is, since that is what the specs read). `scripts/db-sql.sh`
+  stays untouched — it is a legitimate migration/read tool and it keeps its
+  management token. The three operations are: elevate a profile's
+  `moderators` flag, read it back, and read/restore a place's `photo_url`.
+- **Acceptance criteria:**
+  - **No spec depends on the management token.** The three specs complete with
+    `SUPABASE_ACCESS_TOKEN` **unset in the environment** — that is the test, and
+    the raw command output is the evidence. `runSqlHeadless` and `sqlLiteral` are
+    deleted if they end up with no caller.
+  - **A missing service key fails with its own name**, not an opaque fetch error:
+    the message names `SUPABASE_SERVICE_ROLE_KEY`.
+  - **The key never reaches the client.** It must not be added under any
+    `VITE_` prefix, and `dist/assets/*.js` must contain **none of**: the full
+    service-role key, its 24-character **signature tail**, the literal
+    `service_role`, or the variable name. Measured, not assumed — the app bundle
+    is public, and the probes carry CONTROLS (the same probes must HIT for the
+    public anon key, or the instrument proves nothing).
+    ⚠️ **THIS CRITERION WAS WRONG WHEN FIRST WRITTEN, and the builder refused to
+    fudge it — recorded because the mistake is instructive.** It demanded zero
+    hits for the key's **first 24 characters**, which is **1** and can never be
+    0: a legacy Supabase anon JWT and a legacy service-role JWT share those 24
+    characters, because they are the base64url of the same JWT header
+    (`{"alg":"HS256","typ":"JWT"}`). A prefix test on two keys that agree on
+    their prefix measures the header, not the secret — and the "hit" it finds is
+    the **anon** key's own copy, which is *supposed* to be in the bundle. Judge
+    the payload and the signature, never the shared header.
+  - **Restore semantics survive:** both specs still restore the marker's
+    moderator flag and the place's photo **and assert the restore**, which V30
+    recorded as the lesson that cost it two strays in the live database.
+  - **CI wiring:** `SUPABASE_SERVICE_ROLE_KEY` is a repository **secret** (not a
+    variable — it bypasses RLS), written into `.env` by the workflow beside the
+    other three, and named by the configuration gate's notice so an unconfigured
+    lane SKIPS loudly instead of failing three mysteries.
+  - `npm run verify` exit 0.
+- **Verification command:** `npx playwright test e2e/moderator-door.e2e.ts
+  e2e/place-photo-admin.e2e.ts --reporter=list` with `SUPABASE_ACCESS_TOKEN=`
+  forced empty; `npm run verify`; then **re-dispatch the nightly** and read the
+  three specs' outcomes out of the CI log.
+- **Budget:** one local builder context.
+- **Depends on:** v31-2 (the workflow and the gate it edits).
+
+---
+
 ## 6. Supersessions and decisions recorded, not implied
 
 - **W is treated as triggered by a SIMULATION, and the record says so.** The
