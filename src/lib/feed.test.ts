@@ -108,7 +108,6 @@ import {
   statedAgeRangeLine,
   stepTimeMinutes,
   suggestedDurationMinutes,
-  timePresets,
   TIME_STEP_MINUTES,
   TITLE_MAX_LENGTH,
   toDuplicatePrefill,
@@ -2391,61 +2390,6 @@ describe('durationChipForUntilNextHour / suggestedDurationMinutes (V8 ticket 01)
   it('the suggested duration for a now is a valid chip (1h on today\u2019s 30-minute grid)', () => {
     expect(suggestedDurationMinutes(localIso(14, 20))).toBe(60)
     expect(isDuration(suggestedDurationMinutes(localIso(14, 20)))).toBe(true)
-  })
-})
-
-describe('timePresets (the /new quick-start row)', () => {
-  it('opens on Now — the same slot the form defaults to', () => {
-    const [now] = timePresets(localIso(14, 20))
-    expect(now).toMatchObject({ id: 'now', startDate: '2026-09-12', startMinutes: 14 * 60 + 30 })
-  })
-
-  it('In an hour rounds the SHIFTED time up to the grid', () => {
-    // 14:20 + 1h = 15:20 → the 15:30 slot.
-    expect(timePresets(localIso(14, 20)).find((p) => p.id === 'in-an-hour')).toMatchObject({
-      startDate: '2026-09-12',
-      startMinutes: 15 * 60 + 30,
-    })
-  })
-
-  it('Tomorrow 10am is the next local day at 10:00', () => {
-    expect(timePresets(localIso(14, 20)).find((p) => p.id === 'tomorrow')).toMatchObject({
-      startDate: '2026-09-13',
-      startMinutes: 10 * 60,
-    })
-  })
-
-  it('Sat 10am is today when today is Saturday and 10:00 is still ahead', () => {
-    // 2026-09-12 is a Saturday.
-    expect(timePresets(localIso(8, 0)).find((p) => p.id === 'saturday')).toMatchObject({
-      startDate: '2026-09-12',
-      startMinutes: 10 * 60,
-    })
-  })
-
-  it('Sat 10am rolls a week when today is Saturday and 10:00 has passed', () => {
-    expect(timePresets(localIso(11, 0)).find((p) => p.id === 'saturday')).toMatchObject({
-      startDate: '2026-09-19',
-      startMinutes: 10 * 60,
-    })
-  })
-
-  it('de-duplicates a Saturday that is also tomorrow (Friday 2026-09-18)', () => {
-    const presets = timePresets(localIso(14, 0, 18))
-    const keys = presets.map((p) => `${p.startDate}:${p.startMinutes}`)
-    expect(new Set(keys).size).toBe(keys.length)
-    // Tomorrow IS Saturday, so the redundant "Sat 10am" is dropped.
-    expect(presets.some((p) => p.id === 'saturday')).toBe(false)
-    expect(presets.find((p) => p.id === 'tomorrow')?.startDate).toBe('2026-09-19')
-  })
-
-  it('every preset is a valid grid time and a well-formed local day key', () => {
-    for (const hour of [0, 9, 14, 23]) {
-      for (const preset of timePresets(localIso(hour, 45))) {
-        expect(isSteppedTime(preset.startMinutes)).toBe(true)
-        expect(preset.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-      }
-    }
   })
 })
 

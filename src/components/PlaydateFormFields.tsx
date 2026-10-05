@@ -188,19 +188,11 @@ export interface PlaydateFormFieldsProps {
    */
   mapSlot?: ReactNode
   /**
-   * /new only: the quick-start row ("Now", "In an hour", "Tomorrow 10am",
-   * "Sat 10am") — a stateless slot like `preset`, rendered under the "When"
-   * label and above the date/start steppers it fills. The PAGE owns both the
-   * preset values (lib/feed `timePresets`) and the write; /edit passes nothing,
-   * so no shortcut appears there.
-   */
-  timePresetsSlot?: ReactNode
-  /**
-   * V27 slice 2: the /new-only VIBE CHIPS — a stateless slot like `preset` and
-   * `timePresetsSlot`, rendered inside the Details block between its label and
-   * its textarea. The PAGE owns the chip list (`lib/vibeChips`) and the write
-   * (`applyVibeChip`); this component owns no state. `/edit` passes nothing, so
-   * its Details block renders exactly the markup it always has — no chips.
+   * V27 slice 2: the /new-only VIBE CHIPS — a stateless slot like `preset`,
+   * rendered inside the Details block between its label and its textarea. The
+   * PAGE owns the chip list (`lib/vibeChips`) and the write (`applyVibeChip`);
+   * this component owns no state. `/edit` passes nothing, so its Details block
+   * renders exactly the markup it always has — no chips.
    */
   detailsChipsSlot?: ReactNode
   /**
@@ -272,7 +264,6 @@ export function PlaydateFormFields({
   onPickPlace,
   onSomewhereElse,
   mapSlot,
-  timePresetsSlot,
   detailsChipsSlot,
   privacySlot,
   preset,
@@ -556,9 +547,6 @@ export function PlaydateFormFields({
   const whenBlock = (
     <div className="flex flex-col gap-1">
       <span className="text-sm font-semibold text-slate-700">When</span>
-      {/* /new's quick-start row (a stateless slot the page owns); branches 2/3
-          pass nothing, so /edit keeps its exact markup. */}
-      {timePresetsSlot}
       {startBlock}
     </div>
   )

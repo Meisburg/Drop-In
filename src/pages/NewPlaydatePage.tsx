@@ -37,10 +37,9 @@ import {
   nextSlotMinutes,
   pastPostStatusLabel,
   suggestedDurationMinutes,
-  timePresets,
   validatePlaydateForm,
 } from '../lib/feed'
-import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, TimePreset, ZipCoords } from '../lib/feed'
+import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
 import { addressAfterPlaceTextEdit, generatedTitle, privacyPreview } from '../lib/postSummary'
 // V27 slice 2: the pure seam behind the Details chips — the page renders the
@@ -844,18 +843,6 @@ export function NewPlaydatePage({
   }
 
   /**
-   * /new quick-start (founder pick, 2026-09-27): one tap writes the preset's
-   * WHEN (date + 30-minute slot). It goes through `update`, not a direct
-   * `setValues`, so every existing rule applies — the start-slot duration
-   * derivation, the error clearing, the submit-error reset. The preset owns
-   * only the time; place, kids, and title are untouched.
-   */
-  function applyTimePreset(preset: TimePreset) {
-    update('startDate', preset.startDate)
-    update('startMinutes', preset.startMinutes)
-  }
-
-  /**
    * V9 ticket 03 (review cycle 1, F1): the address's ONE writer. Typing it (or
    * correcting a picked one) is what makes it the parent's own — from then on a
    * place-text edit never clears it.
@@ -1143,50 +1130,11 @@ export function NewPlaydatePage({
     ) : null
 
   /**
-   * /new quick-start row (founder pick, 2026-09-27): the four times a
-   * spontaneous drop-in usually means — Now, In an hour, Tomorrow 10am,
-   * Sat 10am — rendered under the "When" label, above the date/start steppers
-   * they fill. The values come from the pure `timePresets` seam on the
-   * MOUNT-time now (the same `mountedNowIso` the defaults use), so the row does
-   * not move under the parent's finger. The write goes through
-   * `applyTimePreset` (which goes through `update`); `aria-pressed` mirrors the
-   * current start so the parent can see which preset is in effect — at mount
-   * that is "Now", which is exactly the form's default.
-   *
-   * A slot, not props on the form (the mapSlot/kidsSectionSlot pattern): /edit
-   * passes nothing, so no shortcut appears there.
-   */
-  const timePresetsSlot = (
-    <div className="flex flex-wrap gap-2" data-testid="time-presets">
-      {timePresets(mountedNowIso).map((preset) => {
-        const selected =
-          values.startDate === preset.startDate && values.startMinutes === preset.startMinutes
-        return (
-          <button
-            key={preset.id}
-            type="button"
-            data-testid="time-preset"
-            aria-pressed={selected}
-            onClick={() => applyTimePreset(preset)}
-            className={
-              'min-h-11 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ' +
-              (selected
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
-            }
-          >
-            {preset.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-
-  /**
    * V27 slice 2: the Details VIBE CHIPS — one row of starters that turns the
    * optional description into an inviting sentence with no typing. A slot, not
-   * props on the form (the timePresetsSlot pattern): the form renders it inside
-   * the Details block, and `/edit` passes nothing, so no chips appear there.
+   * props on the form (the mapSlot/kidsSectionSlot pattern): the form renders it
+   * inside the Details block, and `/edit` passes nothing, so no chips appear
+   * there.
    *
    * The row WRAPS (`flex-wrap`) so four chips never push a 320px phone
    * sideways, and every chip is `min-h-11` (the 44px tap floor this page
@@ -1496,10 +1444,6 @@ export function NewPlaydatePage({
            this parent has kids (the slot renders the section); null/loading
            keeps the picker inside the disclosure — today's exact form. */
         kidsSectionSlot={kidsSectionSlot ?? undefined}
-        /* /new quick-start time presets (founder pick, 2026-09-27): the slot
-           fills the "When" section above the date/start steppers. /edit passes
-           nothing, so no shortcut appears there. */
-        timePresetsSlot={timePresetsSlot}
         /* V27 slice 2: the Details chips — the one-tap starters for the optional
            Details field, written through the pure `applyVibeChip`. /edit passes
            nothing, so no chips appear there. */
