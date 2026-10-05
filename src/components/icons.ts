@@ -123,23 +123,37 @@ export const PLACE_KIND_ICONS = {
 } as const
 
 /**
- * V21 t03: REACTION-KIND glyphs — the emoji each message reaction renders as.
+ * V21 t03 — the six REACTION kinds, drawn.
  *
- * Deliberately EMOJI (not stroked SVG paths like NAV_ICONS / PLACE_KIND_ICONS):
- * reactions are expressive colour, and the six faces + heart + thumb read at a
- * glance in a way line-art would not. The key is the reaction's `kind`, verbatim
- * from `REACTION_KINDS` (`lib/db.ts`, migration 0049's CHECK mirror) — the six
- * kinds the DB allows, so every row renders SOMETHING and an unknown kind falls
- * back to `like` at the call site rather than rendering an empty box.
+ * AMENDED by inbox-messenger slice B (the founder's `delight` pass). These were
+ * EMOJI (`REACTION_GLYPHS`): a colour glyph standing in for an icon system. Two
+ * things were wrong with that, and both were measured rather than assumed —
+ * an emoji paints its OWN yellow and ignores the button's `color`, which is why
+ * the react pill read as "already selected" at rest (V16 ticket 02's defect,
+ * pinned in `lib/db-messages.test.ts`), and a text glyph cannot inherit a
+ * pressed state's white. They are STROKED PATHS now, in the app's one icon
+ * family (24px viewBox, `currentColor`, stroke 1.8, round caps/joins), so the
+ * pill, the six-option picker, light and dark and the pressed fill all agree.
  *
- * The glyph map lives here (components/) exactly where PLACE_KIND_ICONS lives;
+ * The key is the reaction's `kind`, verbatim from `REACTION_KINDS`
+ * (`lib/db.ts`, migration 0049's CHECK mirror) — the six kinds the DB allows,
+ * so every row renders SOMETHING and an unknown kind falls back to `like` at
+ * the call site rather than rendering an empty box.
+ *
+ * The icon map lives here (components/) exactly where PLACE_KIND_ICONS lives;
  * the KINDS list lives in lib/ (db.ts) exactly where PLACE_KINDS lives (places.ts).
  */
-export const REACTION_GLYPHS = {
-  like: '👍',
-  love: '❤️',
-  laugh: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😠',
+export const REACTION_ICONS = {
+  // A thumb up: the hand, and the cuff it rises out of. The resting state.
+  like: 'M7 21V9.6l3-5.1a1.7 1.7 0 0 1 3.1 1.3L12 9h5a2 2 0 0 1 2 2.4l-1.2 7.2A2 2 0 0 1 15.8 21H7Z M7 21H4.5A1.5 1.5 0 0 1 3 19.5v-8A1.5 1.5 0 0 1 4.5 10H7',
+  // A heart — two lobes meeting at a point.
+  love: 'M12 20.4 5 13.3a4.5 4.5 0 0 1 6.3-6.4l.7.7.7-.7A4.5 4.5 0 0 1 19 13.3Z',
+  // A grin: closed eyes, one wide smile.
+  laugh: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M8.6 10h.01 M15.4 10h.01 M8.2 13.6a4.6 4.6 0 0 0 7.6 0',
+  // Surprise: closed eyes, a small round mouth.
+  wow: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M8.6 10h.01 M15.4 10h.01 M12 13.9a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2Z',
+  // A frown: closed eyes, the smile turned over.
+  sad: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M8.6 10h.01 M15.4 10h.01 M8.2 16.4a4.6 4.6 0 0 1 7.6 0',
+  // Anger: brows down toward the nose, plus the frown.
+  angry: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M8.2 9.2l2.6 1.2 M15.8 9.2l-2.6 1.2 M8.2 16.4a4.6 4.6 0 0 1 7.6 0',
 } as const

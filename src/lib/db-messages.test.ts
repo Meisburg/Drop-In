@@ -21,7 +21,7 @@ import {
   REACTION_KINDS,
 } from './db'
 import type { MessageRow, ReactionState } from './db'
-import { REACTION_GLYPHS } from '../components/icons'
+import { REACTION_ICONS } from '../components/icons'
 
 /**
  * V14 ticket 01 (migration 0042): the inbox's db.ts seams against a recording
@@ -574,12 +574,17 @@ describe('applyReactionSet (V21 t03 — set / replace / remove)', () => {
 })
 
 /**
- * V21 t03: the six kinds + their glyphs are complete and match migration 0049's
+ * V21 t03: the six kinds + their icons are complete and match migration 0049's
  * CHECK constraint value list. This is the drift guard between SQL and TS — if
  * the SQL list ever changes, this assertion fails loudly rather than rendering
  * an unknown kind as nothing.
+ *
+ * inbox-messenger slice B: the map holds STROKED SVG PATHS now, not emoji
+ * (`components/icons.REACTION_ICONS`), so "is it a real glyph?" is assertable
+ * the same way `icons.test.ts` asserts the place-kind map: non-blank, carries a
+ * drawing command, and no two kinds draw the same thing.
  */
-describe('REACTION_KINDS + REACTION_GLYPHS (V21 t03 — completeness vs the 0049 CHECK)', () => {
+describe('REACTION_KINDS + REACTION_ICONS (V21 t03 — completeness vs the 0049 CHECK)', () => {
   // The exact value list in 0049_message_reaction_kinds.sql's CHECK constraint.
   const SQL_CHECK_VALUES = ['like', 'love', 'laugh', 'wow', 'sad', 'angry']
 
@@ -587,22 +592,34 @@ describe('REACTION_KINDS + REACTION_GLYPHS (V21 t03 — completeness vs the 0049
     expect([...REACTION_KINDS]).toEqual(SQL_CHECK_VALUES)
   })
 
-  it('has a glyph for every kind (no missing key)', () => {
+  it('has an icon for every kind (no missing key)', () => {
     for (const kind of REACTION_KINDS) {
-      expect(REACTION_GLYPHS[kind]).toBeTruthy()
+      expect(REACTION_ICONS[kind]).toBeTruthy()
     }
   })
 
-  it('has no glyph keys beyond the six kinds (no orphan glyph)', () => {
-    const glyphKeys = Object.keys(REACTION_GLYPHS)
-    expect(glyphKeys.sort()).toEqual([...SQL_CHECK_VALUES].sort())
+  it('has no icon keys beyond the six kinds (no orphan icon)', () => {
+    const iconKeys = Object.keys(REACTION_ICONS)
+    expect(iconKeys.sort()).toEqual([...SQL_CHECK_VALUES].sort())
   })
 
-  it('every glyph is a non-empty string (an empty box would render as nothing)', () => {
+  it('every icon is a real, non-empty path — never a blank slot', () => {
     for (const kind of REACTION_KINDS) {
-      expect(typeof REACTION_GLYPHS[kind]).toBe('string')
-      expect((REACTION_GLYPHS[kind] as string).length).toBeGreaterThan(0)
+      const path = REACTION_ICONS[kind]
+      expect(typeof path, `${kind} must map to a path string`).toBe('string')
+      // A whitespace-only or empty `d` draws nothing, which is the "empty box"
+      // an unknown kind must never render as.
+      expect(path.trim().length, `${kind}'s path must not be blank`).toBeGreaterThan(0)
+      // Every icon must at least move the pen; a bare `M` draws an invisible dot.
+      expect(path, `${kind}'s path must contain a drawing command`).toMatch(/[MLCAQZmlcaqz]/)
     }
+  })
+
+  it('draws every kind with a DISTINCT path (no two kinds share an icon)', () => {
+    const paths = REACTION_KINDS.map((kind) => REACTION_ICONS[kind])
+    // Duplicates would make two reactions visually identical, so the picker
+    // would claim a distinction it does not draw.
+    expect(new Set(paths).size).toBe(paths.length)
   })
 })
 

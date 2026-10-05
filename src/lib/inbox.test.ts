@@ -12,6 +12,7 @@ import {
   singleSenderCounterpart,
   sumUnread,
   threadContextLine,
+  threadItems,
 } from './inbox'
 import { cardWhenLabel } from './feed'
 import type { DmConversationRow, MessageSenderFields, PlaydateConversationRow } from './inbox'
@@ -803,5 +804,210 @@ describe('daySeparatorLabel (V27 s5 — Today / Yesterday / an older local date)
     // A broken `now` must not throw through `.toISOString()` either.
     expect(daySeparatorLabel('not-a-date', 'also-not-a-date')).toBe('')
     expect(daySeparatorLabel(todayIso, 'also-not-a-date')).not.toBe('Today')
+  })
+})
+
+/**
+ * inbox-messenger slice B — the thread's group/separator decision
+ * (`threadItems`). This is the pure half of the slice's acceptance criteria:
+ * "two consecutive messages from one sender share a group; a message from the
+ * other person flips sides; a day change renders a separator". The rendered
+ * half (bubble fills, radii, the pinned composer) is the e2e spec's job; what
+ * no browser run should have to discover is which bubbles belong together.
+ *
+ * Every case below is written against LOCAL Date components, like the
+ * `daySeparatorLabel` block above, so the day boundaries mean the same thing in
+ * any test-runner timezone.
+ */
+describe('threadItems (inbox-messenger B — grouping, sides, day separators)', () => {
+  const now = new Date(2026, 8, 27, 18, 0).toISOString()
+  const today = new Date(2026, 8, 27, 9, 30).toISOString()
+  const todayLater = new Date(2026, 8, 27, 9, 45).toISOString()
+  const yesterday = new Date(2026, 8, 26, 21, 0).toISOString()
+  const ME = 'viewer-id'
+  const THEM = 'other-id'
+  const THIRD = 'third-id'
+
+  /** One message row, with an explicit id so keys can be asserted. */
+  function row(
+    id: string,
+    senderId: string,
+    iso: string,
+    senderName?: string | null,
+  ): { id: string; sender_id: string; created_at: string; sender_display_name?: string | null } {
+    return { id, sender_id: senderId, created_at: iso, sender_display_name: senderName ?? null }
+  }
+
+  /** Fold the items back into a shape a test can read: groups of message ids. */
+  function shape(items: ReturnType<typeof threadItems>) {
+    return items.map((item) =>
+      item.kind === 'separator'
+        ? { separator: item.label, dayKey: item.dayKey }
+        : { group: item.messages.map((bubble) => bubble.message.id), isOwn: item.isOwn },
+    )
+  }
+
+  const context = { viewerId: ME, viewerDisplayName: 'Me', counterpart: null, nowIso: now }
+
+  it('renders nothing for an empty thread', () => {
+    expect(threadItems([], context)).toEqual([])
+  })
+
+  it('groups consecutive messages from one sender into ONE block', () => {
+    const items = threadItems(
+      [row('a', ME, today), row('b', ME, todayLater)],
+      context,
+    )
+    expect(shape(items)).toEqual([
+      { separator: 'Today', dayKey: '2026-09-27' },
+      { group: ['a', 'b'], isOwn: true },
+    ])
+  })
+
+  it('opens a new group when the sender changes — the other person flips sides', () => {
+    const items = threadItems(
+      [row('a', ME, today), row('b', THEM, todayLater)],
+      context,
+    )
+    expect(shape(items)).toEqual([
+      { separator: 'Today', dayKey: '2026-09-27' },
+      { group: ['a'], isOwn: true },
+      { group: ['b'], isOwn: false },
+    ])
+  })
+
+  it('keeps two OTHER senders apart (they are both non-own, and NOT one group)', () => {
+    // A group thread: `isOwn` alone would merge two parents' messages and
+    // attribute one person's words to the other.
+    const items = threadItems(
+      [row('a', THEM, today), row('b', THIRD, todayLater), row('c', THEM, todayLater)],
+      context,
+    )
+    expect(shape(items)).toEqual([
+      { separator: 'Today', dayKey: '2026-09-27' },
+      { group: ['a'], isOwn: false },
+      { group: ['b'], isOwn: false },
+      { group: ['c'], isOwn: false },
+    ])
+  })
+
+  it('breaks the group at a day change, even for the same sender', () => {
+    const items = threadItems(
+      [row('a', ME, yesterday), row('b', ME, today)],
+      context,
+    )
+    expect(shape(items)).toEqual([
+      { separator: 'Yesterday', dayKey: '2026-09-26' },
+      { group: ['a'], isOwn: true },
+      { separator: 'Today', dayKey: '2026-09-27' },
+      { group: ['b'], isOwn: true },
+    ])
+  })
+
+  it('emits exactly ONE separator per day, not one per message', () => {
+    const items = threadItems(
+      [row('a', ME, today), row('b', THEM, todayLater), row('c', ME, todayLater)],
+      context,
+    )
+    expect(items.filter((item) => item.kind === 'separator')).toHaveLength(1)
+  })
+
+  it('labels the separator with the message that OPENS the day (key + dayKey)', () => {
+    const items = threadItems([row('a', ME, today), row('b', ME, todayLater)], context)
+    const separator = items[0]
+    if (separator.kind !== 'separator') throw new Error('the first item must be a separator')
+    // The `day-` prefix is what keeps this key distinct from the group that the
+    // SAME message opens (see the distinct-key case below).
+    expect(separator.key).toBe('day-a')
+    expect(separator.dayKey).toBe('2026-09-27')
+    expect(separator.label).toBe('Today')
+  })
+
+  it('shows the sender name ONCE per group, on its first bubble', () => {
+    const items = threadItems(
+      [
+        row('a', THEM, today, 'Priya'),
+        row('b', THEM, todayLater, 'Priya'),
+        row('c', ME, todayLater, 'Me'),
+      ],
+      context,
+    )
+    const bubbles = items.flatMap((item) => (item.kind === 'group' ? item.messages : []))
+    expect(bubbles.map((bubble) => bubble.senderName)).toEqual(['Priya', null, 'Me'])
+  })
+
+  it('shows the time ONCE per group, on its LAST bubble', () => {
+    const items = threadItems(
+      [
+        row('a', THEM, today, 'Priya'),
+        row('b', THEM, todayLater, 'Priya'),
+        row('c', ME, todayLater, 'Me'),
+      ],
+      context,
+    )
+    const bubbles = items.flatMap((item) => (item.kind === 'group' ? item.messages : []))
+    expect(bubbles.map((bubble) => bubble.timeLabel)).toEqual(['', '9:45 AM', '9:45 AM'])
+  })
+
+  it('preserves message order inside a group', () => {
+    const items = threadItems(
+      [row('a', ME, today), row('b', ME, today), row('c', ME, today)],
+      context,
+    )
+    const group = items[1]
+    if (group.kind !== 'group') throw new Error('the second item must be the group')
+    expect(group.messages.map((bubble) => bubble.message.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('names a bare sender from the counterpart ONLY when the id matches', () => {
+    const items = threadItems(
+      [row('a', THEM, today), row('b', 'stranger-id', todayLater)],
+      { ...context, counterpart: { id: THEM, name: 'Priya' } },
+    )
+    const bubbles = items.flatMap((item) => (item.kind === 'group' ? item.messages : []))
+    // The counterpart names their own message; a third profile the thread cannot
+    // name renders NO label — never the counterpart's, and never "Unknown".
+    expect(bubbles.map((bubble) => bubble.senderName)).toEqual(['Priya', null])
+  })
+
+  it('labels an own bubble with the viewer\'s name, or "You" when it is unknown', () => {
+    const items = threadItems([row('a', ME, today)], context)
+    const bubbles = items.flatMap((item) => (item.kind === 'group' ? item.messages : []))
+    expect(bubbles[0].senderName).toBe('Me')
+    const anonymous = threadItems([row('a', ME, today)], { ...context, viewerDisplayName: null })
+    const anonBubbles = anonymous.flatMap((item) => (item.kind === 'group' ? item.messages : []))
+    expect(anonBubbles[0].senderName).toBe('You')
+  })
+
+  it('carries an unparseable instant without a separator — but still splits the group', () => {
+    const items = threadItems([row('a', ME, today), row('b', ME, 'not-a-date')], context)
+    // No separator for the broken day (daySeparatorLabel's own contract)…
+    expect(items.filter((item) => item.kind === 'separator')).toHaveLength(1)
+    // …and the two messages are NOT merged into one block, because the day did
+    // change: a bad timestamp must not attribute a message to the wrong day.
+    expect(shape(items).filter((item) => 'group' in item)).toHaveLength(2)
+  })
+
+  it('gives every item a distinct key (a React key must not collide)', () => {
+    const items = threadItems(
+      [
+        row('a', ME, yesterday),
+        row('b', ME, yesterday),
+        row('c', THEM, today),
+        row('d', THEM, today),
+      ],
+      context,
+    )
+    const keys = items.map((item) => item.key)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('decides own-vs-other by ID, never by position', () => {
+    // The same sender id flipped to the viewer flips every bubble's side; a
+    // signed-out render has no own side at all.
+    const items = threadItems([row('a', ME, today), row('b', THEM, todayLater)], context)
+    expect(items.flatMap((i) => (i.kind === 'group' ? [i.isOwn] : []))).toEqual([true, false])
+    const signedOut = threadItems([row('a', ME, today)], { ...context, viewerId: null })
+    expect(signedOut.flatMap((i) => (i.kind === 'group' ? [i.isOwn] : []))).toEqual([false])
   })
 })

@@ -587,3 +587,154 @@ export function daySeparatorLabel(iso: string, nowIso: string): string {
   }
   return formatStartDayLabel(key)
 }
+
+/**
+ * inbox-messenger slice B — the thread's rendered ITEMS: the day separators,
+ * and the GROUPS of consecutive bubbles between them.
+ *
+ * THE DEFECT THIS EXISTS FOR. The page used to render one row per message and
+ * decided the day boundary, the sender label and the time inline, so every
+ * bubble in a 1:1 thread repeated the sender's name and carried its own
+ * clock time — the founder's "looks like AI slop" read. A messenger groups:
+ * consecutive messages from one person on one day are ONE block, labelled
+ * once and timed once.
+ *
+ * THE RULES, in order (all of them pure — no I/O, no clock read, no mutation):
+ *   - a message's local day is `localDayKey` (feed.ts), the app's ONE day rule,
+ *     so a thread can only ever break where the feed would break;
+ *   - when the local day CHANGES (or the first message has one), a separator
+ *     item is emitted. A day whose label is '' (an unparseable instant,
+ *     `daySeparatorLabel`'s own contract) emits NO separator — but still
+ *     starts a new group, so a bad timestamp cannot merge two days' bubbles;
+ *   - a GROUP is a maximal run of messages with the same `sender_id` on the
+ *     same day. A different sender, a new day, or the start of the thread
+ *     begins one;
+ *   - the group's FIRST bubble carries `senderName` (the label above it; see
+ *     `messageSenderLabel`) and its LAST carries `timeLabel` (the clock time
+ *     under it, `messageTimestampLabel`). Every other bubble carries `null`
+ *     and `''` respectively — that is what "once per group" means, and it is
+ *     the whole reason this is a function instead of an inline `if`;
+ *   - `isOwn` is decided by ID against the viewer, never by position, so a
+ *     group can never flip sides because of an ordering change.
+ *
+ * An empty thread yields an empty list. Both item kinds carry `key` (the id of
+ * the message that begins them; the separator's is prefixed `day-`, since that
+ * message also opens the group under it) so the caller renders them without
+ * inventing an identity of its own.
+ */
+export interface ThreadMessageFields extends MessageSenderFields {
+  /** The message's own id — the key of the group or separator it begins. */
+  id: string
+  /** The message's instant; unparseable is tolerated (see the rule above). */
+  created_at: string
+}
+
+/** One bubble inside a group, with its once-per-group label and time. */
+export interface ThreadBubble<M> {
+  /** The row itself — the caller renders it and needs `body`/`id` off it. */
+  message: M
+  /** This message's sender is the viewer. Decided by id, never by position. */
+  isOwn: boolean
+  /** The label above this bubble, or `null` — only the group's first has one. */
+  senderName: string | null
+  /** The clock time under this bubble, or `''` — only the group's last has one. */
+  timeLabel: string
+}
+
+/** Consecutive messages from one sender, on one local day. */
+export interface ThreadGroup<M> {
+  kind: 'group'
+  /** React's identity for the block: the group's first message id. */
+  key: string
+  isOwn: boolean
+  /** The group's bubbles, in message order. Never empty. */
+  messages: ThreadBubble<M>[]
+}
+
+/** The centred day break between two groups of bubbles. */
+export interface ThreadDaySeparator {
+  kind: 'separator'
+  /**
+   * React's identity: the id of the message that opens the day, namespaced with
+   * `day-` because that SAME message also opens the group that follows it — an
+   * unprefixed id would be a duplicate key among siblings.
+   */
+  key: string
+  /** The local day key — the suffix of the `day-separator-<key>` testid. */
+  dayKey: string
+  /** `Today` / `Yesterday` / `Sat, Sep 27`. Never `''` (else nothing renders). */
+  label: string
+}
+
+/** One rendered row of the thread: a day separator or a group of bubbles. */
+export type ThreadItem<M> = ThreadGroup<M> | ThreadDaySeparator
+
+/** The thread-level facts every bubble's label and time are resolved against. */
+export interface ThreadItemContext {
+  /** The signed-in viewer's profile id, or `null` when signed out. */
+  viewerId: string | null
+  /** The viewer's own display name, for an own bubble with no sender embed. */
+  viewerDisplayName?: string | null
+  /** The thread's counterpart — the LAST resort for naming one sender. */
+  counterpart?: Counterpart | null
+  /** ONE `now` for the whole render, so every separator agrees. */
+  nowIso: string
+}
+
+export function threadItems<M extends ThreadMessageFields>(
+  messages: readonly M[],
+  context: ThreadItemContext,
+): Array<ThreadItem<M>> {
+  const items: Array<ThreadItem<M>> = []
+  let group: ThreadGroup<M> | null = null
+  let dayKey: string | null = null
+  // The OPEN group's sender, by ID. `isOwn` cannot serve here: two OTHER
+  // parents in a group thread are both `isOwn === false`, and grouping them
+  // together would attribute one person's messages to the other — exactly the
+  // mislabelling `messageSenderLabel` exists to prevent.
+  let groupSenderId: string | null = null
+
+  for (const message of messages) {
+    const messageDayKey = localDayKey(message.created_at)
+    const isOwn = context.viewerId !== null && message.sender_id === context.viewerId
+    // A new day closes the open group, and opens one only if the day has a
+    // label to render above it (see the rule above).
+    if (messageDayKey !== dayKey) {
+      const label = daySeparatorLabel(message.created_at, context.nowIso)
+      if (label !== '') {
+        items.push({ kind: 'separator', key: `day-${message.id}`, dayKey: messageDayKey, label })
+      }
+      dayKey = messageDayKey
+      group = null
+    }
+    // Same sender AND same day: continue the block. Anything else opens one.
+    if (group === null || groupSenderId !== message.sender_id) {
+      groupSenderId = message.sender_id
+      group = { kind: 'group', key: message.id, isOwn, messages: [] }
+      items.push(group)
+    }
+    const isFirstOfGroup = group.messages.length === 0
+    group.messages.push({
+      message,
+      isOwn,
+      senderName: isFirstOfGroup
+        ? messageSenderLabel(message, {
+            viewerId: context.viewerId,
+            viewerDisplayName: context.viewerDisplayName ?? null,
+            counterpart: context.counterpart ?? null,
+          })
+        : null,
+      timeLabel: '',
+    })
+  }
+
+  // The time belongs to the group's LAST bubble, which the loop above cannot
+  // know until the group has closed. Assigned in a second pass so the rule
+  // ("once per group, at its tail") is stated once rather than guessed at.
+  for (const item of items) {
+    if (item.kind !== 'group') continue
+    const last = item.messages[item.messages.length - 1]
+    last.timeLabel = messageTimestampLabel(last.message.created_at, context.nowIso)
+  }
+  return items
+}

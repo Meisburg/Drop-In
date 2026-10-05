@@ -1,11 +1,11 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 // V24 slice 04: the row's FACE reuses the app's ONE avatar primitive (40px,
 // `avatar_url` or the deterministic initial circle, plus its own dead-URL
 // fallback) instead of a second implementation living in this page.
 import { HostAvatar } from '../components/DropInCard'
-import { NAV_ICONS, REACTION_GLYPHS } from '../components/icons'
+import { NAV_ICONS, REACTION_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { useSessionContext } from '../components/SessionProvider'
 import {
@@ -38,15 +38,13 @@ import type {
 import { REACTION_KINDS } from '../lib/db'
 import {
   activeTodayLabel,
-  daySeparatorLabel,
   firstNamedCounterpart,
   groupLabel,
   mergeConversations,
-  messageSenderLabel,
-  messageTimestampLabel,
   QUICK_REPLIES,
   singleSenderCounterpart,
   threadContextLine,
+  threadItems,
 } from '../lib/inbox'
 import type {
   Counterpart,
@@ -54,7 +52,6 @@ import type {
   GroupParticipant,
   MergedConversation,
 } from '../lib/inbox'
-import { localDayKey } from '../lib/feed'
 import { inboxThreadOpen } from '../lib/threadGeometry'
 
 /**
@@ -232,14 +229,49 @@ function SearchGlyph() {
 }
 
 /**
- * One bubble in the thread: the sender's display name (small, muted, above
- * the bubble) + the body in a rounded bubble. Own messages are right-aligned
- * + tinted; the other party's are left-aligned + white.
+ * One reaction kind, DRAWN (components/icons.REACTION_ICONS) in the app's one
+ * icon family: 24px viewBox, `currentColor`, one 1.8 stroke, round caps/joins.
+ *
+ * inbox-messenger slice B: this replaced a unicode emoji. An emoji is a glyph
+ * standing in for an icon system — it paints its own colours, ignores the
+ * button's `color` (the V16 t02 "looks already selected" defect), and cannot
+ * take the white of a pressed fill. A stroked path does all three for free.
+ */
+function ReactionIcon({ kind, className }: { kind: ReactionKind; className: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={REACTION_ICONS[kind]} />
+    </svg>
+  )
+}
+
+/**
+ * One bubble in the thread.
+ *
+ * inbox-messenger slice B — the two sides are no longer the same white box:
+ * the viewer's own messages carry the ACTION tone (`indigo-600`, the one fill
+ * the design system allows under white text at 4.97:1, with the shell's
+ * dark-mode label flip doing the rest) and the other party's carry the warm
+ * fill (`slate-50`) with NO border. Both are `rounded-xl` — the body radius;
+ * `rounded-full` belongs to pills, avatars, dots and circular icon buttons.
+ *
+ * The label above and the time below arrive from `lib/inbox.threadItems`:
+ * the group's first bubble is labelled, its last is timed, so a run of
+ * messages from one person is named once instead of on every bubble.
  *
  * V15 ticket 08 (A26) + V21 t03: a compact reaction row sits under each bubble —
- * a SUMMARY PILL (the viewer's own glyph + the participant count) that opens a
+ * a SUMMARY PILL (the viewer's own icon + the participant count) that opens a
  * six-option PICKER. The count is hidden at 0 so a quiet thread is not littered
- * with "👍 0", but the pill always renders (there must be something to tap).
+ * with "0", but the pill always renders (there must be something to tap).
  * Your own reaction fills the pill indigo; no reaction is a plain slate outline.
  * The pill is presentational — the page owns the set/replace/remove + the
  * optimistic math (applyReactionSet).
@@ -264,13 +296,15 @@ function MessageBubble({
   /**
    * V25 ticket 11: the SENDER's own name, or `null` for no label. A message
    * whose sender the thread cannot name renders NO name line — never the word
-   * "Unknown" (which reads as a broken person, the founder's report).
+   * "Unknown" (which reads as a broken person, the founder's report). Slice B
+   * adds the second reason for `null`: a CONTINUATION bubble inside a group.
    */
   senderName: string | null
   /**
-   * V27 slice 5: this message's local time-of-day (`messageTimestampLabel`).
-   * Computed by the page (one `now` per render) and rendered in the meta row at
-   * the 14px floor.
+   * V27 slice 5: this group's local time-of-day (`messageTimestampLabel`),
+   * computed by the page (one `now` per render). Slice B: the group's LAST
+   * bubble carries it, at the 14px floor in the quietest tone the system has
+   * for text — the time used to be 17px and louder than the name above it.
    */
   timeLabel: string
   /**
@@ -285,9 +319,9 @@ function MessageBubble({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const countLabel = reactionCountLabel(reaction.count)
-  // The pill shows the viewer's own glyph (a neutral thumb when they have not
+  // The pill shows the viewer's own kind (a neutral thumb when they have not
   // reacted yet) plus the running count.
-  const myGlyph = reaction.myKind !== null ? REACTION_GLYPHS[reaction.myKind] : REACTION_GLYPHS.like
+  const myKind: ReactionKind = reaction.myKind !== null ? reaction.myKind : 'like'
   const chooseKind = (kind: ReactionKind) => {
     // Tapping the kind you already have REMOVES the reaction (null); any other
     // kind SETS it (replacing in place when different, so the count holds).
@@ -302,20 +336,21 @@ function MessageBubble({
         ) : null}
         <p
           data-testid={isOwn ? 'own-message' : 'other-message'}
-          className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2.5 text-base ${
-            isOwn ? 'bg-indigo-100 text-slate-900' : 'border border-slate-200 bg-white text-slate-900'
+          className={`whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 text-base ${
+            isOwn ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-900'
           }`}
         >
           {message.body}
         </p>
         <div className={`relative mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-          {/* V27 s5: the bubble's local time-of-day, at the 14px text floor. */}
+          {/* V27 s5 + slice B: the group's clock time, at the 14px floor and in
+              the quietest text tone (slate-500, 4.89:1) — once per group. */}
           {timeLabel !== '' ? (
-            <span data-testid={`message-time-${message.id}`} className="text-sm text-slate-500">
+            <span data-testid={`message-time-${message.id}`} className="text-xs text-slate-500">
               {timeLabel}
             </span>
           ) : null}
-          {/* The summary pill: the viewer's glyph + count; opens the picker. */}
+          {/* The summary pill: the viewer's icon + count; opens the picker. */}
           <button
             type="button"
             data-testid={`react-${message.id}`}
@@ -326,7 +361,7 @@ function MessageBubble({
             onClick={() => setPickerOpen((o) => !o)}
             className={reactionButtonClasses(reaction.mine)}
           >
-            <span aria-hidden>{myGlyph}</span>
+            <ReactionIcon kind={myKind} className="h-4 w-4" />
             {countLabel !== null ? (
               <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
             ) : null}
@@ -364,11 +399,11 @@ function MessageBubble({
                     aria-label={kind}
                     aria-pressed={active}
                     onClick={() => chooseKind(kind)}
-                    className={`flex h-11 w-11 items-center justify-center rounded-lg text-xl transition-colors motion-reduce:transition-none ${
-                      active ? 'bg-indigo-600' : 'hover:bg-slate-100'
+                    className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors motion-reduce:transition-none ${
+                      active ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <span aria-hidden>{REACTION_GLYPHS[kind]}</span>
+                    <ReactionIcon kind={kind} className="h-6 w-6" />
                   </button>
                 )
               })}
@@ -411,12 +446,15 @@ export function InboxPage() {
   // discarded by its readiness guard. A derived header (see the useMemos
   // below) reads this state, so it cannot be clobbered by load ordering.
   const [fallbackCounterpart, setFallbackCounterpart] = useState<Counterpart>({ id: '', name: '' })
-  const [fallbackTitle, setFallbackTitle] = useState('')
   // V27 slice 4: the playdate thread's CONTEXT — the drop-in's window/place and
   // its participant set — resolved by the read below. Deliberately its OWN state:
-  // routing it through `fallbackCounterpart`/`fallbackTitle` would feed the t11
-  // counterpart priority chain and could change a 1:1's header. `?dm=` threads
+  // routing it through `fallbackCounterpart` would feed the t11 counterpart
+  // priority chain and could change a 1:1's header. `?dm=` threads
   // never fill these (the read only runs for a `?thread=` id).
+  //
+  // inbox-messenger slice B removed this block's `fallbackTitle`: the header no
+  // longer draws the post's generated title ("Drop-in at <place>"), which
+  // repeated the place the context line already names.
   const [contextStartsAt, setContextStartsAt] = useState<string | null>(null)
   const [contextEndsAt, setContextEndsAt] = useState<string | null>(null)
   const [contextPlaceName, setContextPlaceName] = useState<string | null>(null)
@@ -522,7 +560,6 @@ export function InboxPage() {
     setReactions({})
     // A counterpart resolved for the PREVIOUS thread must never name this one.
     setFallbackCounterpart({ id: '', name: '' })
-    setFallbackTitle('')
     // V27 s4: neither must the previous thread's drop-in context paint this one.
     setContextStartsAt(null)
     setContextEndsAt(null)
@@ -642,7 +679,10 @@ export function InboxPage() {
         const { data, error } = await supabase
           .from('playdates')
           .select(
-            'title, starts_at, ends_at, host_profile_id, ' +
+            // inbox-messenger slice B: `title` is gone from this read — the
+            // thread header no longer draws the generated "Drop-in at <place>"
+            // title, so the only consumer of the column went with it.
+            'starts_at, ends_at, host_profile_id, ' +
               'place:places!playdates_place_id_fkey ( name ), ' +
               'host:profiles!playdates_host_profile_id_fkey ( id, display_name ), ' +
               'pings:going_pings ( profile:profiles!going_pings_profile_id_fkey ( id, display_name ) )',
@@ -651,7 +691,6 @@ export function InboxPage() {
           .limit(1)
         if (error || cancelled || data === null || data.length === 0) return
         const row = data[0] as unknown as {
-          title: string | null
           starts_at: string | null
           ends_at: string | null
           host_profile_id: string
@@ -678,7 +717,6 @@ export function InboxPage() {
         if (list.status !== 'ready') return
         const conv = list.conversations.find((c) => c.playdateId === threadId)
         if (conv !== undefined && conv.otherPartyDisplayName !== '') return
-        setFallbackTitle(row.title ?? '')
         if (row.host_profile_id !== userId) {
           // The caller is a pinger; the other party is the host.
           setFallbackCounterpart({
@@ -1098,17 +1136,30 @@ export function InboxPage() {
   //   3. the thread's OWN single non-own sender, from the sender embed the
   //      thread read now carries — this is the founder's case: one message
   //      from one parent, whose name the header could not previously keep.
-  const listCounterpart = useMemo<Counterpart>(() => {
+  //
+  // inbox-messenger slice B widens this row by ONE field — the counterpart's
+  // PUBLIC avatar — because the empty state draws their face. It is read off the
+  // same row in the same place rather than looked up a second time, so the two
+  // can never disagree about which row this thread's counterpart is.
+  const listCounterpart = useMemo<Counterpart & { avatarUrl: string | null }>(() => {
     if (dmTargetId !== null) {
       const conv = directConvs.find((c) => c.otherPartyId === dmTargetId)
       // The DM target's id is known even before its row loads (we opened the
       // thread with it) — only the NAME depends on the row.
-      return { id: dmTargetId, name: conv?.otherPartyName ?? '' }
+      return {
+        id: dmTargetId,
+        name: conv?.otherPartyName ?? '',
+        avatarUrl: conv?.otherPartyAvatarUrl ?? null,
+      }
     }
-    if (threadId === null || list.status !== 'ready') return { id: '', name: '' }
+    if (threadId === null || list.status !== 'ready') return { id: '', name: '', avatarUrl: null }
     const conv = list.conversations.find((c) => c.playdateId === threadId)
-    if (conv === undefined) return { id: '', name: '' }
-    return { id: conv.otherPartyId, name: conv.otherPartyDisplayName }
+    if (conv === undefined) return { id: '', name: '', avatarUrl: null }
+    return {
+      id: conv.otherPartyId,
+      name: conv.otherPartyDisplayName,
+      avatarUrl: conv.otherPartyAvatarUrl,
+    }
   }, [dmTargetId, threadId, directConvs, list])
 
   const counterpart = useMemo<Counterpart>(
@@ -1124,15 +1175,19 @@ export function InboxPage() {
     [listCounterpart, fallbackCounterpart, thread, userId],
   )
 
+  /**
+   * The empty state's face. `counterpart.name` can come from the list row, the
+   * playdates fallback or a message's own sender embed; the avatar exists on
+   * ONE of those (the list row), so it is used only when the name that won came
+   * from that same row — otherwise the face would belong to someone other than
+   * the name beside it, which is a worse lie than no photo. A `null` here is the
+   * app's ordinary "no photo": HostAvatar draws its initial circle.
+   */
+  const counterpartAvatarUrl =
+    counterpart.id !== '' && counterpart.id === listCounterpart.id ? listCounterpart.avatarUrl : null
+
   /** The counterpart is written down once, in the header — never over a bubble. */
   const threadHeaderName = counterpart.name
-  const threadHeaderTitle = useMemo(() => {
-    if (threadId !== null && list.status === 'ready') {
-      const conv = list.conversations.find((c) => c.playdateId === threadId)
-      if (conv !== undefined) return conv.playdateTitle
-    }
-    return fallbackTitle
-  }, [threadId, list, fallbackTitle])
 
   // V27 slice 4: the header's GROUP label, derived from the context read. `null`
   // for a 1:1 (0–1 others) or a DM, so the counterpart name stands unchanged.
@@ -1287,7 +1342,7 @@ export function InboxPage() {
         </>
       ) : (
         <>
-          {/* Thread header: the shared back control + the post's title + the other party.
+          {/* Thread header: the shared back control + the person (or the group).
               V24 slice 02: the ad-hoc bordered "←" square became BackControl (one
               circular control app-wide); the destination ("conversations") lives in
               the heading below, not inside the control.
@@ -1298,7 +1353,15 @@ export function InboxPage() {
               ancestor — so it cannot swallow the back tap, and the inner
               `div.min-w-0` is kept so the e2e header selector
               (`div.min-w-0 > p`) still resolves. A DM thread has no playdate to
-              link to, so it keeps the plain block. */}
+              link to, so it keeps the plain block.
+
+              inbox-messenger slice B (the founder's `delight` pass, tell 5): the
+              stack is TWO lines, not three. The generated title ("Drop-in at
+              Green Lake Park (East)") is gone — the context line already ends in
+              the same place name, so the third line only repeated it. The NAME
+              is the header, with one line of context under it (or, for a DM,
+              nothing: a DM has no drop-in context to state). The avatar + handle
+              this heading will eventually carry are slice C's, not this one's. */}
           <div className="flex shrink-0 items-center gap-2">
             <BackControl onClick={closeThread} testId="inbox-back-to-conversations" />
             {threadId !== null ? (
@@ -1311,7 +1374,6 @@ export function InboxPage() {
                   <p className="truncate text-sm font-semibold text-slate-900">
                     {threadHeaderGroupLabel ?? threadHeaderName}
                   </p>
-                  <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
                   {threadDropInLine !== null ? (
                     <p
                       data-testid="inbox-thread-context"
@@ -1325,7 +1387,6 @@ export function InboxPage() {
             ) : (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
-                <p className="truncate text-xs text-slate-500">{threadHeaderTitle}</p>
               </div>
             )}
           </div>
@@ -1362,58 +1423,98 @@ export function InboxPage() {
                   `min-h-0` that makes it scrollable rather than growing.
                   `data-testid` is the handle e2e/inbox-thread-geometry.e2e.ts
                   measures the pinned claims against — the composer must not
-                  move when THIS element scrolls. */}
+                  move when THIS element scrolls.
+
+                  inbox-messenger slice B (tell 1): the FRAME is gone —
+                  `rounded-xl border bg-slate-50 p-4` made the conversation a
+                  panel inside the page's panel. The thread is the page now: the
+                  surface reaches the column's own 16px gutter (which <main>
+                  already sets) and carries no border and no radius. It keeps
+                  `bg-white` rather than going transparent because that token IS
+                  the card surface in both appearances (#ffffff light, #241f1c
+                  dark) — and it is what lets the other party's `slate-50`
+                  bubbles stay visible in dark mode, where `slate-50` and the
+                  page are the same #181412. */}
               <div
                 ref={messagesScrollRef}
                 data-testid="thread-messages"
-                className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4"
+                className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-white py-4"
               >
                 {thread.messages.length === 0 ? (
-                  <p className="text-sm text-slate-600">
-                    No messages yet — say hi below.
-                  </p>
+                  // Tell 1's other half: no panel and no apology — a quiet
+                  // invitation centred in the empty canvas, with the person's
+                  // own face above it (the app's ONE avatar primitive; a `null`
+                  // photo is its ordinary initial circle). The face needs a
+                  // NAME, not just an id: a thread opened from a search knows
+                  // the id before anything can name the person, and HostAvatar
+                  // would draw its anonymous `?` circle — a mystery face is
+                  // worse than none. "No messages yet" stays as its own line
+                  // because two e2e specs wait on it as the thread's ready
+                  // signal.
+                  <div className="m-auto flex flex-col items-center gap-1.5 px-6 text-center">
+                    {counterpart.id !== '' && counterpart.name !== '' ? (
+                      <HostAvatar
+                        host={{
+                          id: counterpart.id,
+                          display_name: counterpart.name,
+                          avatar_url: counterpartAvatarUrl,
+                        }}
+                      />
+                    ) : null}
+                    <p className="text-sm font-semibold text-slate-900">No messages yet</p>
+                    <p className="text-sm text-slate-600">
+                      Say hi below — this is where your conversation starts.
+                    </p>
+                  </div>
                 ) : (
-                  thread.messages.map((message, index) => {
-                    // V27 s5: one separator per DAY — the app's ONE day rule
-                    // (localDayKey) decides the boundary, so the thread breaks
-                    // exactly where the feed would start a new day section.
-                    // The FIRST message always gets its day label.
-                    const dayKey = localDayKey(message.created_at)
-                    const previous = index > 0 ? thread.messages[index - 1] : null
-                    const separatorLabel =
-                      previous === null || localDayKey(previous.created_at) !== dayKey
-                        ? daySeparatorLabel(message.created_at, nowIso)
-                        : ''
-                    return (
-                      <Fragment key={message.id}>
-                        {separatorLabel !== '' ? (
-                          <p
-                            data-testid={`day-separator-${dayKey}`}
-                            className="mt-1 text-center text-sm font-medium text-slate-500"
-                          >
-                            {separatorLabel}
-                          </p>
-                        ) : null}
-                        <MessageBubble
-                          message={message}
-                          isOwn={userId !== null && message.sender_id === userId}
-                          senderName={messageSenderLabel(message, {
-                            viewerId: userId,
-                            viewerDisplayName: profile?.display_name ?? null,
-                            // The thread-level name is a LAST resort, and only when
-                            // the ids match — a group thread can never attribute
-                            // one participant's message to another.
-                            counterpart,
-                          })}
-                          timeLabel={messageTimestampLabel(message.created_at, nowIso)}
-                          failed={failedIds.includes(message.id)}
-                          reaction={reactions[message.id] ?? { count: 0, mine: false, myKind: null }}
-                          onReact={(messageId, kind) => void handleReact(messageId, kind)}
-                          onRetry={(failedMessage) => void handleRetry(failedMessage)}
-                        />
-                      </Fragment>
-                    )
-                  })
+                  // The thread's rows, decided by the PURE `lib/inbox.threadItems`
+                  // (never inline here): day separators, and groups of
+                  // consecutive messages from one sender on one day. A group is
+                  // labelled once (its first bubble) and timed once (its last),
+                  // which is what stops the founder's "name above every bubble"
+                  // repetition.
+                  threadItems(thread.messages, {
+                    viewerId: userId,
+                    viewerDisplayName: profile?.display_name ?? null,
+                    // The thread-level name is a LAST resort for a bubble's own
+                    // sender, and only when the ids match — a group thread can
+                    // never attribute one participant's message to another.
+                    counterpart,
+                    nowIso,
+                  }).map((item) =>
+                    item.kind === 'separator' ? (
+                      // V27 s5 + slice B: one separator per DAY — the app's ONE
+                      // day rule (localDayKey) decides the boundary, so the
+                      // thread breaks exactly where the feed would start a new
+                      // day section. Its tone matches the time's: the quietest
+                      // text colour, at the 14px floor.
+                      <p
+                        key={item.key}
+                        data-testid={`day-separator-${item.dayKey}`}
+                        className="mt-1 text-center text-xs font-medium text-slate-500"
+                      >
+                        {item.label}
+                      </p>
+                    ) : (
+                      <div key={item.key} className="flex flex-col gap-0.5">
+                        {item.messages.map((bubble) => (
+                          <MessageBubble
+                            key={bubble.message.id}
+                            message={bubble.message}
+                            isOwn={bubble.isOwn}
+                            senderName={bubble.senderName}
+                            timeLabel={bubble.timeLabel}
+                            failed={failedIds.includes(bubble.message.id)}
+                            reaction={
+                              reactions[bubble.message.id] ?? { count: 0, mine: false, myKind: null }
+                            }
+                            onReact={(messageId, kind) => void handleReact(messageId, kind)}
+                            onRetry={(failedMessage) => void handleRetry(failedMessage)}
+                          />
+                        ))}
+                      </div>
+                    ),
+                  )
                 )}
               </div>
 
@@ -1448,7 +1549,15 @@ export function InboxPage() {
                     ))}
                   </div>
                 ) : null}
-                <div data-testid="composer" className="rounded-2xl border border-slate-200 bg-white p-1.5 pl-3">
+                {/* inbox-messenger slice B: `rounded-2xl` → `rounded-xl`. The
+                    composer is a control surface, and this system's body/control
+                    radius is `rounded-xl` (241 sites; `rounded-2xl` is the
+                    8-site exception for larger panels and sheets). With every
+                    bubble now at `rounded-xl`, leaving the composer at 2xl would
+                    also make it the one shape in the thread that agreed with
+                    nothing. Geometry (inline send, pinned bottom) is slice A's
+                    and is untouched. */}
+                <div data-testid="composer" className="rounded-xl border border-slate-200 bg-white p-1.5 pl-3">
                   <div className="flex items-end gap-1">
                     <textarea
                       ref={composerRef}

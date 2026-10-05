@@ -5197,7 +5197,8 @@ export async function listDirectConversations(userId: string): Promise<
 // V15 ticket 08: message reactions (thumbs-up).
 // V21 t03: six reaction kinds — one row per person per message, kind is a
 // mutable attribute (the Facebook model). The DB stores the STRING kind, never
-// the emoji; the glyph map lives in components/icons.ts (REACTION_GLYPHS),
+// the icon; the STROKED PATH map lives in components/icons.ts
+// (REACTION_ICONS — emoji until inbox-messenger slice B drew it),
 // mirroring the PLACE_KINDS / PLACE_KIND_ICONS house pattern.
 // ---------------------------------------------------------------------------
 
