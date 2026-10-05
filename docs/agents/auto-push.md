@@ -178,7 +178,9 @@ bash scripts/remind-human.sh --hook   # the terse pre-push form
 **Keep it working — it reads two things from `task-state.md`:**
 
 1. Any **entry** whose first line (`- …`) matches `ACTION REQUIRED` (or
-   `⚠️ ACTION`) — the phrase belongs on the `- ` line, not wrapped below it.
+   `⚠️ ACTION`) — the phrase belongs on the `- ` line, not wrapped below it —
+   **that is not already inside the Escalations section** (those print once,
+   from scan 2).
 2. Open entries (lines starting with `- `) in the
    `## Escalations (waiting on human)` section.
 
@@ -191,6 +193,9 @@ sentence — a line-by-line match printed the closed V24 read-surface item
 forever, and it was the only thing the reminder showed. (The asymmetry is
 deliberate: matching the phrase on *any* line would also fire on prose that
 merely quotes it — the noise class that made this reminder unreadable once
-already. So: when you record human-pending work, put it in one of those two
-places, with the phrase on the entry's own first line — anywhere else in the
-file is invisible to the reminder, which defeats the point.)
+already. And the two scans are deduped: a recorded escalation that ALSO says
+`ACTION REQUIRED` used to print twice, because the reminder prints a call to
+action once or it teaches its reader to skim.) So: when you record
+human-pending work, put it in one of those two places, with the phrase on the
+entry's own first line — anywhere else in the file is invisible to the
+reminder, which defeats the point.

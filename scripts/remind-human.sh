@@ -46,8 +46,10 @@ found=0
 CLOSED_RE='RESOLVED|APPLIED [+] VERIFIED|SUPERSEDED|not blocking|no further action'
 actions="$(awk -v re="$CLOSED_RE" '
   function emit() {
-    if (action && !closed && n < 5) { print start ":" text; n++ }
+    if (action && !closed && !insec && n < 5) { print start ":" text; n++ }
   }
+  /^## Escalations \(waiting on human\)/ { emit(); insec=1; action=0; next }
+  /^## / { emit(); insec=0; action=0; next }
   /^- / {
     emit()
     start = NR; text = $0
@@ -60,6 +62,11 @@ actions="$(awk -v re="$CLOSED_RE" '
   # the ruling lands below it. Matching the phrase on ANY line would also fire on
   # prose that merely quotes it — the noise class that made this reminder
   # unreadable once already.
+  #
+  # An entry INSIDE the Escalations section is reported by scan 2 and never by
+  # this one, because that section is where a human-pending item is supposed to
+  # live — a recorded escalation that also says ACTION REQUIRED used to print
+  # TWICE, which is how a reminder teaches its reader to skim it.
   { if (action && $0 ~ re) closed = 1 }
   END { emit() }
 ' "$STATE")"
