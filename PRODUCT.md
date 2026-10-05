@@ -68,7 +68,8 @@ Confirmed functionality (from `plan.md`, `README.md`, and the route table):
 
 Technical constraints:
 
-- Vite 6 / React 18 / TypeScript / Tailwind CSS v4 (CSS-first `@theme` tokens) /
+- Vite 8 (pinned `^8.2.2`; its `engines` note requires Node ^20.19 || >=22.12) /
+  React 18 / TypeScript / Tailwind CSS v4 (CSS-first `@theme` tokens) /
   react-router / Supabase / vite-plugin-pwa.
 - Design tokens are overridden inside `src/index.css` `@theme`, deliberately
   rather than editing call sites. The type scale is role-based and raised:
@@ -101,8 +102,9 @@ visual world; it does not inherit this one by default.
 
 **Explicitly undecided:** wide-screen layout — the app is a single phone-width
 column with no `lg:`/`xl:` breakpoints — and any visual rework beyond the
-committed palette and type. No `DESIGN.md` exists, so the incumbent world is
-defined by the implementation rather than by a document.
+committed palette and type. `DESIGN.md` now records the incumbent world
+(generated 2026-10-04); it is present in the working tree but **not yet tracked
+by git**, so a fresh clone still sees only the implementation.
 
 ## Brand Commitments
 
@@ -160,8 +162,10 @@ defined by the implementation rather than by a document.
   16px minimum text controls, WCAG AA contrast on rendered pixels, no text below
   14px. These are enforced by `scripts/mobile-audit.mjs`.
 - Screen-reader support is expected at parity with visual use — the app's error
-  and status text must be announced, not merely shown (see audit finding: this
-  is currently a gap).
+  and status text must be announced, not merely shown. The original audit
+  finding (0 announced nodes) is **fixed**: 38 `role="alert"` and 13
+  `role="status"` nodes on the tree as of 2026-10-05, recorded verified in
+  `docs/design-review/frontend-design-pass.md`.
 - Respect system preferences: reduced motion, and the platform appearance
   setting. Appearance is a parent's choice on `/settings` — **Light** (the
   default), **Dark**, or **Match my phone** (follows `prefers-color-scheme`).
