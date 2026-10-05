@@ -27,19 +27,21 @@ outside the checkout and whose worktree config layer supplies a path inside
 that common dir — and it prints every such acceptance. See
 `docs/agents/borrowed-guards.md`.
 
-## Turning it on (two repository variables, no secrets)
+## Turning it on (three repository variables, no secrets)
 
 The build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`: `src/lib/db.ts`
 throws at module load without them, so `npm run build` and `npm test` both fail
-(measured by moving `.env` aside, not assumed).
+(measured by moving `.env` aside, not assumed). The **scheduled live lane** needs
+a third one, `VITE_VAPID_PUBLIC_KEY` — see below; the PR gate does not.
 
 Add them at **Settings → Secrets and variables → Actions → Variables** (the
 **Variables** tab, not Secrets):
 
-| Variable | Where to get it |
-|---|---|
-| `VITE_SUPABASE_URL` | the same value as `VITE_SUPABASE_URL` in your local `.env` |
-| `VITE_SUPABASE_ANON_KEY` | the same value as `VITE_SUPABASE_ANON_KEY` in your local `.env` |
+| Variable | Where to get it | Needed by |
+|---|---|---|
+| `VITE_SUPABASE_URL` | the same value as `VITE_SUPABASE_URL` in your local `.env` | gate + live lane |
+| `VITE_SUPABASE_ANON_KEY` | the same value as `VITE_SUPABASE_ANON_KEY` in your local `.env` | gate + live lane |
+| `VITE_VAPID_PUBLIC_KEY` | the same value as `VITE_VAPID_PUBLIC_KEY` in your local `.env` | **live lane only** |
 
 **They are variables rather than secrets because they are not confidential.**
 The anon key is compiled into the shipped bundle (`dist/assets/index-*.js`) — any
@@ -48,7 +50,30 @@ does: probed with the anon key, `profiles`, `messages`, `place_comments` and
 `parent_cards` each return **zero rows**, while `places` returns the public
 directory. Calling it a secret would imply a confidentiality it does not have,
 and a future reader would then treat it as sensitive and be confused when it
-appears in a bundle.
+appears in a bundle. The VAPID **public** key is the same kind of value by design:
+it is the browser's own subscription key, and only its private half is server
+side.
+
+### `VITE_VAPID_PUBLIC_KEY`, and the two days it was missing (2026-10-05)
+
+The live lane's push spec does not merely prefer this key — **it cannot pass
+without it.** V28 r3-2 hardened `e2e/push-subscribe.e2e.ts`'s stub to refuse a
+keyless `subscribe()` (matching the app, which refuses honestly rather than
+calling `subscribe()` with no `applicationServerKey`). So a CI build without the
+key fails **exactly one** spec, at "Notifications are on", with a received string
+of "Notifications are off…" — a symptom indistinguishable from a flake or from
+live-database state, which is how it was read for two days.
+
+**Measured, A/B, only the key differing** (V31 v31-2, 2026-10-05):
+
+    VITE_VAPID_PUBLIC_KEY='' npx playwright test e2e/push-subscribe.e2e.ts --reporter=list
+      → 1 failed / 8 passed, EXIT=1   (received: "Notifications are off…")
+    npx playwright test e2e/push-subscribe.e2e.ts --reporter=list
+      → 9 passed, EXIT=0
+
+Both the workflow and this doc now carry the third variable, and the lane
+**skips with a notice** rather than failing red when any of the three is absent —
+the same rule as the other two, for the same reason.
 
 **If the variables are missing, the workflow SKIPS the gate with a notice instead
 of failing.** A red X for "you have not configured this yet" teaches people to

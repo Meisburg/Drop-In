@@ -35,14 +35,21 @@
 # ---------------------------------------------------------------------------
 # THE SECRETS QUESTION — SAME ANSWER AS `verify.yml`
 # ---------------------------------------------------------------------------
-# `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` come from repository
-# VARIABLES (`vars.*`), never secrets: the anon key is compiled into the
-# shipped bundle and RLS is what protects the data. See `verify.yml`'s header
-# for the full reasoning. The e2e specs read the repo `.env` FILE directly
+# `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_VAPID_PUBLIC_KEY` come
+# from repository VARIABLES (`vars.*`), never secrets: the anon key and the
+# VAPID PUBLIC key are both compiled into the shipped bundle (the VAPID one is
+# the browser's own subscription key — its private half is what stays server
+# side), and RLS is what protects the data. See `verify.yml`'s header for the
+# full reasoning. The e2e specs read the repo `.env` FILE directly
 # (`e2e/fixtures.ts` `readEnvFile`), not the process environment, so this
-# workflow WRITES a gitignored `.env` from the same two variables before the
-# suite runs. If the variables are absent the lane SKIPS with a notice instead
-# of failing — an unconfigured variable is a setup step, not a broken night.
+# workflow WRITES a gitignored `.env` from the same three variables before the
+# suite runs. If any of them is absent the lane SKIPS with a notice instead of
+# failing — an unconfigured variable is a setup step, not a broken night.
+# ⚠️ THE VAPID KEY IS THE ONE THAT PROVED THE POINT: it was missing here from
+# 2026-10-03, and the only symptom was ONE spec failing with "Notifications are
+# off" — indistinguishable from a flake or a live-data problem, and it was read
+# as one for two days (V31 v31-2, 2026-10-05). A keyless build cannot subscribe;
+# the app refuses honestly (`pushClient.ts`) and the spec's stub refuses too.
 #
 # ---------------------------------------------------------------------------
 # WHAT RUNS WHERE, AND HOW THE RUN CLEANS UP
@@ -112,30 +119,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # THREE variables, and the third one is not optional. V28 r3-2 hardened
+      # the push spec's stub to REFUSE a keyless subscribe (the app refuses it
+      # too — `pushClient.ts` will not call `subscribe()` without an
+      # `applicationServerKey`), so a keyless CI build fails exactly one spec
+      # with "Notifications are off" and looks like a flake or a live-data
+      # problem. It did: 2026-10-05's V31 v31-2 spent a diagnosis on it. A
+      # missing key now SKIPS the lane loudly instead of failing it confusingly.
       - name: Check the Supabase variables are configured
         id: env
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
         run: |
-          if [ -z "${VITE_SUPABASE_URL}" ] || [ -z "${VITE_SUPABASE_ANON_KEY}" ]; then
-            echo "::notice title=Live lane skipped::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set as repository variables. This lane signs up real accounts against the live project, so it cannot run without them. See .github/workflows/e2e-scheduled.yml for why they are needed and why they are not secrets (Settings -> Secrets and variables -> Actions -> Variables)."
+          if [ -z "${VITE_SUPABASE_URL}" ] || [ -z "${VITE_SUPABASE_ANON_KEY}" ] || [ -z "${VITE_VAPID_PUBLIC_KEY}" ]; then
+            echo "::notice title=Live lane skipped::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / VITE_VAPID_PUBLIC_KEY are not all set as repository variables. This lane signs up real accounts against the live project, and its push spec REQUIRES the VAPID public key in the build (a keyless build fails it). See .github/workflows/e2e-scheduled.yml for why they are needed and why none of them is a secret (Settings -> Secrets and variables -> Actions -> Variables)."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
       # The e2e specs read the repo `.env` file directly (`e2e/fixtures.ts`),
-      # not the process environment — so the same two variables the build
+      # not the process environment — so the same three variables the build
       # reads are written to the gitignored file the specs read. Never echoed.
       - name: Write the repo .env from the repository variables
         if: steps.env.outputs.configured == 'true'
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
         run: |
-          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n' \
-            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" > .env
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\nVITE_VAPID_PUBLIC_KEY=%s\n' \
+            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" "$VITE_VAPID_PUBLIC_KEY" > .env
 
       - name: Install the Playwright chromium browser
         if: steps.env.outputs.configured == 'true'
@@ -149,6 +165,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
         run: npm run test:e2e
 
       # A browser + a preview server over the suite's own freshly-built dist.
@@ -159,6 +176,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
         run: |
           npm run preview -- --strictPort > preview.log 2>&1 &
           PREVIEW_PID=$!
