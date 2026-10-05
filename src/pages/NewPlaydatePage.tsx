@@ -1361,13 +1361,42 @@ export function NewPlaydatePage({
           applyLastPost(row.post); tapping the control again collapses the list. */}
       {pastPosts.length > 0 ? (
         <div className="flex flex-col gap-1">
+          {/* DELIGHT (accepted over impeccable live, 2026-10-05): this was a
+              white box with a shadow — kit chrome. It is a pill with a drawn copy
+              glyph in its own tint well now, and it loses both the radius the
+              system reserves for smaller controls and a shadow that claims
+              "floating" about something that is not. The glyph turns into a
+              chevron while the picker is open, so the state reads without
+              re-reading the label. */}
           <button
             type="button"
             data-testid="dup-duplicate"
             aria-expanded={dupPickerOpen}
             onClick={() => setDupPickerOpen((open) => !open)}
-            className="min-h-11 self-start rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-indigo-700 shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
+            className="inline-flex min-h-11 self-start items-center gap-2 rounded-full border border-slate-300 bg-white pl-1.5 pr-3.5 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:border-indigo-300 hover:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
+            <span
+              aria-hidden="true"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path
+                  d={
+                    dupPickerOpen
+                      ? 'M6 15l6-6 6 6'
+                      : 'M9 9V5.5A1.5 1.5 0 0 1 10.5 4h8A1.5 1.5 0 0 1 20 5.5v8a1.5 1.5 0 0 1-1.5 1.5H15M5.5 9h8A1.5 1.5 0 0 1 15 10.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 4 18.5v-8A1.5 1.5 0 0 1 5.5 9Z'
+                  }
+                />
+              </svg>
+            </span>
             {dupPickerOpen ? 'Hide previous drop-ins' : 'Duplicate a previous drop-in'}
           </button>
           {dupPickerOpen ? (
