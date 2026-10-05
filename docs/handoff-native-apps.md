@@ -97,18 +97,19 @@ the native work, or fix it in passing — but do not discover it during submissi
 This file was written against commit `62c996a`. Everything below is a fact with a
 date, not a permanent truth:
 
-| Claim at time of writing | Re-check with |
-|---|---|
-| Capacitor **8.5.2**, `@capacitor/push-notifications` **8.1.2** | `npm view @capacitor/core version` |
-| Next free migration is **0061** | `ls supabase/migrations/ \| sort \| tail` |
-| Notification kinds: **8** | `NOTIFICATION_KINDS` in `_shared/pushCopy.ts` |
-| `send-push` is **v8** | `GET /v1/projects/<ref>/functions/send-push` |
-| App bundle is **1.5 MB** | `du -sh dist` |
-| Repo is **private**, Actions enabled | `gh repo view Meisburg/Drop-In --json visibility` |
-| Apple Developer **$99/yr**, Play **$25** one-time | Apple's and Google's own pages |
+| Claim at time of writing | Re-check with | ✅ Re-verified 2026-10-05 (`62cec8f`) |
+|---|---|---|
+| Capacitor **8.5.2**, `@capacitor/push-notifications` **8.1.2** | `npm view @capacitor/core version` | core **8.5.2** ✓, push-notifications **8.1.3** (moved) |
+| Next free migration is **0061** | `ls supabase/migrations/ \| sort \| tail` | **0064** — 0062 and 0063 landed (place-photo moderation, review state) |
+| Notification kinds: **8** | `NOTIFICATION_KINDS` in `_shared/pushCopy.ts` | **8** ✓ |
+| `send-push` is **v8** | `GET /v1/projects/<ref>/functions/send-push` | **v8, ACTIVE** ✓ |
+| App bundle is **1.5 MB** | `du -sh dist` | **1.5M** ✓ |
+| Repo is **private**, Actions enabled | `gh repo view Meisburg/Drop-In --json visibility` | ⚠️ **PUBLIC** — `isPrivate: false`. This REVERSES §2.7's cost note: the "macOS minutes bill at 10×" concern applies to private repos, and a public repo's standard runners (macOS included) are free. It also means the source is world-readable — decide whether that is intended before the store submission. |
+| Apple Developer **$99/yr**, Play **$25** one-time | Apple's and Google's own pages | not re-checked here (external pages) |
 
 **The repo moves fast** — the session that wrote this returned to a tree **86
 commits** past its last visit, with two batches landed in between. Assume change.
+The re-verification above was itself **3 days** after this file's last edit.
 
 ## 6. The risks that decide success or failure
 
