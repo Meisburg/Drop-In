@@ -493,3 +493,74 @@ the spec's seven decisions (2026-10-05) and the ticket acceptance criteria.
   86 warnings / 0 errors / GUARDS PASS, exit 0**. V29's plan archived
   byte-identically at `plan-v29-backup.md` (sha256 `e74970c5…`, matching
   `plan.md` at `969315b`). **Next: re-measure the base, then dispatch v30-1.**
+- **2026-10-05 — BATCH BUILT INLINE, all nine slices (recorded deviation).** The
+  delivery objective was set by the founder mid-session, so the lane question was
+  resolved by shipping: every slice was built and verified **in this DSH session,
+  not by the 5090 fleet** — the deviation V27, V28, V29 and the r3 batch all
+  recorded, and the same one. The fleet was measured **up and idle** (router:
+  `route builder -> ninfer/qwen3.8-27b`, 0/4 in flight, no leases) and remains the
+  right lane for the next batch; nothing here was blocked on it.
+  **Slices and evidence** (`npm run verify` exit 0 on every one):
+  `a0e9664` v30-1 · `cac95c5` v30-2 · `f2f75f8` v30-3 · `73068b3` v30-4 ·
+  `c3832b8` v30-5 · `b101025` v30-6 · `85bc6a0` v30-7 · `a41d585` v30-8 ·
+  `c1f49ee` v30-9. Browser checks, each re-run after its slice: place-filters
+  4 passed (incl. a new 390px assertion), first-run-tooltips 5 passed (incl. the
+  new veil-equals-ring test on all five steps), name-card-photo 2 passed (shown →
+  removed → re-added), places 3 of 4 passed (see below), moderator-door 2 passed,
+  place-photo-admin 3 passed. Unit tests 2191 → 2192 (the deletions removed 7, the
+  new seams added 8).
+  **THREE THINGS THE BATCH LEARNED, recorded so they are not re-learned:**
+  (a) **an elevation in a spec must be restored, and the restore asserted** — the
+  first draft of the place-photo spec elevated the marker and restored only the
+  place row, leaving a stray `moderators = true` in the live database (found by a
+  count, cleared, fixed with a second restore and a re-read);
+  (b) **`runLiveSql` is the wrong instrument here** — it shells out to
+  `apply-migration.mjs`, which needs a CDP Chrome on :9222 (a human's session on
+  this machine) and fails with `ECONNREFUSED` without one; the headless
+  `scripts/db-sql.sh` path is what the new specs use;
+  (c) **the trailing-newline guard caught a half-done deletion** — it reads
+  `git ls-files`, so a deleted-but-unstaged file is "listed but unreadable"; the
+  deletion had to be staged. A guard doing exactly its job.
+- **2026-10-05 — the one reverted acceptance shape:** v30-6's ticket says the
+  photo goes *above the heading* (the annotation: *"the first thing you should
+  see"*), which conflicts with V25 t04's recorded sequence (name → picture). The
+  annotation wins and the ADR records the conflict; the e2e order test was
+  rewritten to measure picture → name → description rather than deleted.
+- **2026-10-05 — v30-10, BATCH CLOSE.** Everything below is measured, not
+  asserted.
+  **GATE:** `npm run verify` **exit 0** — 75 files / **2192 tests** / **86
+  warnings / 0 errors** / **GUARDS PASS**. The lint baseline did not move: the
+  one new warning the `ocr` fixes introduced (a `setState`-in-effect) was removed
+  by keying the editor's state on the place id instead of patching the rule.
+  **FULL PLAYWRIGHT SUITE:** `npx playwright test` → **188 passed / 4 failed /
+  2 skipped, 18.2m**, every failure classified with an instrument rather than a
+  shrug:
+  - `places-map-view.e2e.ts:574` — the **persistent** `aria-current` failure the
+    plan's §2.4 already recorded as nightly-red since 2026-09-28. Not this
+    batch's, and not newly broken by it.
+  - `places.e2e.ts:917` and `places.e2e.ts:1674` — **both reproduce identically
+    at the base commit** `c2a83ff` in a throwaway worktree (the base worktree was
+    the instrument; it has been removed).
+  - `places.e2e.ts:2835` — **passes in isolation** (2 passed in 13.0s): the
+    intermittent Leaflet flake class the v29 record names at this test.
+  **THE TWO FAILURES THIS BATCH DID INTRODUCE ARE FIXED, and both were found by
+  running the suite rather than by a slice's own check:** the new filter
+  assertion passed alone but failed in-suite, because an earlier spec gives the
+  marker a saved place and the fourth control squeezes the captions (measured:
+  86px pill, 52px text column, "Distance" needs 66px) — the row now wraps; and
+  the `new-form-draft` spec was an **inherited** red (it asserted an empty title
+  where the app generates one), proven at base and fixed here.
+  **`ocr` LANE:** ran over `c2a83ff..HEAD` — **10 findings (1 high, 4 medium, 5
+  low), ALL UPHELD and ALL FIXED**. The high one was real and would have shipped:
+  the place page's editor dialog sat at `z-50` while Leaflet's controls are
+  `z-index: 1000`, so the map painted over the dialog — the exact defect
+  `lib/stacking.ts` records as having shipped before, and `ModalShell` had no way
+  to pass the token its own doc promised. Adjudication detail is in `f534850`'s
+  body and `.scratch/v30/ocr-v30.json`.
+  **MOBILE AUDIT:** `node scripts/mobile-audit.mjs` **exit 0** across 7 viewports
+  × light/dark × 4 routes (`/login`, `/reset-password`, `/playdate/:id`,
+  `/browse`). **Declared gap, unchanged: it does not visit `/place/:id`**, which
+  is the route this batch changed most — that is why the hero has its own e2e.
+  **LIVE DATA, CHECKED AFTER THE RUNS:** exactly **1** moderator profile (the
+  founder's) and Green Lake Park back to **no photo** — the two specs that
+  elevate and edit restore both, and assert it.
