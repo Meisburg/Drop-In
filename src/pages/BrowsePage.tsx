@@ -14,6 +14,8 @@ import {
 import type { ReviewSummaryRow } from '../lib/db'
 import { DEFAULT_RADIUS_MILES, type ZipCoords } from '../lib/feed'
 import { placeFollowIdSet } from '../lib/places'
+// v30-8: the ONE moderator predicate the /mod route guard also reads.
+import { canModerate } from '../lib/moderation'
 // V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts).
 import { hasHomeZip } from '../lib/homeZip'
 import { planSaveToggle, savedPlaceIdSetAfterToggle } from '../lib/follows'
@@ -97,6 +99,12 @@ export function BrowsePage() {
   const { session, loading, profile } = useSessionContext()
   const [places, setPlaces] = useState<Place[] | null>(null)
   const [placesFailed, setPlacesFailed] = useState(false)
+  /**
+   * v30-8 — bumping this re-runs the directory read. A replaced place photo
+   * lives on the row this page loaded, so the honest update is a re-read, not a
+   * locally patched URL.
+   */
+  const [placesReloadTick, setPlacesReloadTick] = useState(0)
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
   // null = the start-time read failed (pre-0030-apply: no place_id column) → no
   // start times rendered at all, because "0 upcoming" is a claim we cannot make.
@@ -175,7 +183,7 @@ export function BrowsePage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [placesReloadTick])
 
   // The gazetteer (for every place distance). A failed load leaves zipCoords
   // null → every distance is UNKNOWN → every place lands in the
@@ -406,6 +414,11 @@ export function BrowsePage() {
         viewerRadius={viewerRadius}
         homeZip={profile.home_zip ?? null}
         locationLabel="Seattle, WA"
+        /* v30-8: permission is decided HERE (the same pure canModerate the /mod
+           guard reads) and handed down as a plain boolean — the directory
+           renders what it is told and never inspects a profile. */
+        canEditPlacePhotos={canModerate(profile)}
+        onPlacePhotoSaved={() => setPlacesReloadTick((tick) => tick + 1)}
       />
     </div>
   )

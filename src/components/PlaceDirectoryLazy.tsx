@@ -79,6 +79,14 @@ interface DirectoryProps {
   selectable?: boolean
   /** V23 slice 3: when true, the search + filter card pins to the top of the scroll area. */
   stickyControls?: boolean
+  /**
+   * v30-8 — may this viewer replace a place's photo from a card? The HOST
+   * answers it (BrowsePage passes the pure `canModerate(profile)`); false — the
+   * default, and what /new's picker passes — renders no edit control at all.
+   */
+  canEditPlacePhotos?: boolean
+  /** v30-8 — fired after a replacement, so the host can re-read the directory. */
+  onPlacePhotoSaved?: () => void
   /** Called with the tapped place in selectable mode. */
   onSelect?: (place: Place) => void
 }

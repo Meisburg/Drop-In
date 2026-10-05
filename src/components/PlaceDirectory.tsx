@@ -47,6 +47,8 @@ import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 import type { Place, PlacePrefill } from '../lib/types'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import { KIND_ACCENTS, PlaceKindArt } from './PlaceKindArt'
+import { ModalShell } from './ModalShell'
+import { PlacePhotoAdmin } from './PlacePhotoAdmin'
 
 /**
  * V27 — one of the three prominent dropdown triggers. A shared presentational
@@ -179,6 +181,8 @@ export function PlaceDirectory({
   locationLabel,
   selectable = false,
   stickyControls = false,
+  canEditPlacePhotos = false,
+  onPlacePhotoSaved,
   onSelect,
 }: {
   /** The loaded directory rows. `null` while the host's read is in flight. */
@@ -235,6 +239,22 @@ export function PlaceDirectory({
   selectable?: boolean
   /** V23 slice 3: when true, the search + filter card pins to the top of the scroll area. */
   stickyControls?: boolean
+  /**
+   * v30-8 — may the viewer replace a place's photo from a card?
+   *
+   * The HOST answers this (BrowsePage passes the pure `canModerate(profile)`),
+   * because permission is not this component's to decide. False — the default,
+   * and what /new's picker gets — renders no edit control anywhere, so a parent
+   * never sees one.
+   */
+  canEditPlacePhotos?: boolean
+  /**
+   * v30-8 — called after a photo is replaced, so the host can re-read the
+   * directory. The card cannot update itself: the photo URL lives on the row
+   * the host loaded, and inventing a new one here would be a second source of
+   * truth for `places.photo_url`.
+   */
+  onPlacePhotoSaved?: () => void
   /** Called with the tapped place in selectable mode. */
   onSelect?: (place: Place) => void
 }) {
@@ -299,6 +319,14 @@ export function PlaceDirectory({
   // are what the map preview and the filtered list consume.
   const [locationModalOpen, setLocationModalOpen] = useState(false)
   const [geocodeCenter, setGeocodeCenter] = useState<{ lat: number; lng: number } | null>(null)
+  /**
+   * v30-8 — the place whose photo a moderator is replacing.
+   *
+   * ONE modal for the whole directory, not one per card: 239 rows must not each
+   * mount a dialog, and a single instance is also what keeps "one editor" true —
+   * the same component /mod mounts, never a second copy.
+   */
+  const [editingPhotoPlace, setEditingPhotoPlace] = useState<Place | null>(null)
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
 
   // --- V27: the top controls ------------------------------------------------
@@ -1230,6 +1258,9 @@ export function PlaceDirectory({
               onToggleFollow={onToggleFollow}
               selectable={selectable}
               onSelect={onSelect}
+              onEditPhoto={
+                canEditPlacePhotos ? () => setEditingPhotoPlace(row.place) : undefined
+              }
             />
           ))}
         </div>
@@ -1387,6 +1418,36 @@ export function PlaceDirectory({
         onDeviceCoords={handleDeviceCoords}
       />
 
+      {/* v30-8 — THE SAME EDITOR, opened from the card whose photo is wrong.
+          The founder's complaint was specifically that he could not fix a photo
+          from where he NOTICED it ("I still don't see an option for me to click
+          upload or edit a photo on each place"). The modal is the shared
+          ModalShell and the body is the shipped PlacePhotoAdmin — this mounts
+          an existing tool, it does not build one. */}
+      {editingPhotoPlace !== null ? (
+        <ModalShell
+          title="Fix a place photo"
+          testId="place-photo-editor"
+          onDismiss={() => setEditingPhotoPlace(null)}
+          dismissLabel="Close"
+        >
+          <PlacePhotoAdmin
+            place={editingPhotoPlace}
+            onSaved={() => {
+              // The dialog STAYS OPEN so the editor's own "Photo updated."
+              // confirmation is actually seen — the component renders it and
+              // then calls this. The host re-reads behind the dialog, so the
+              // card is already correct when the moderator closes it. The
+              // accepted trade: the dialog's "current photo" preview shows the
+              // row it opened with until it closes, which is why /mod remounts
+              // its picker instead — a confirmation is worth more here than a
+              // preview refresh the moderator is about to dismiss.
+              onPlacePhotoSaved?.()
+            }}
+          />
+        </ModalShell>
+      ) : null}
+
       {/* V27: the three dropdown sheets. One shared component, one open at a
           time (`openDropdown`), each committing straight into the same state the
           controls above render — there is no separate "apply" step. */}
@@ -1487,6 +1548,7 @@ function DirectoryRow({
   onToggleFollow,
   selectable,
   onSelect,
+  onEditPhoto,
 }: {
   row: PlaceListRow
   /** V27: this place's newest review with a body, or null (none / read failed). */
@@ -1500,6 +1562,11 @@ function DirectoryRow({
   onToggleFollow: (placeId: string) => void
   selectable: boolean
   onSelect?: (place: Place) => void
+  /**
+   * v30-8 — present ONLY for a moderator (the host decides; see the prop on
+   * PlaceDirectory). Its presence is the whole permission UI on this surface.
+   */
+  onEditPhoto?: () => void
 }) {
   const navigate = useNavigate()
   /**
@@ -1767,6 +1834,28 @@ function DirectoryRow({
         </div>
       </div>
       </Link>
+
+      {/* v30-8 — the moderator's photo control, a SIBLING of the link like the
+          save control below (a button inside an anchor is invalid HTML, and
+          under a synthetic click the browser can resolve the tap to the link and
+          navigate away instead). It floats over the picture's top-right corner,
+          the corner the credit chip does not use, and it is rendered ONLY when
+          the host said the viewer is a moderator. */}
+      {onEditPhoto !== undefined ? (
+        <button
+          type="button"
+          data-testid={`place-edit-photo-${row.place.id}`}
+          aria-label={`Edit the photo for ${row.place.name}`}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onEditPhoto()
+          }}
+          className="absolute right-2 top-2 inline-flex min-h-11 items-center rounded-full border border-slate-300 bg-white/95 px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition-colors motion-reduce:transition-none hover:bg-white focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          Edit photo
+        </button>
+      ) : null}
 
       {/* The save control, a SIBLING of the link (never nested in the anchor),
           floating at the title row's height — 9rem photo banner + 0.75rem card
