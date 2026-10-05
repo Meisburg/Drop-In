@@ -33,24 +33,51 @@ found=0
 # the entry flagged forever — and a reminder that shows resolved work is a
 # reminder that stops being read. Resolved-ness is detected the same way here as
 # in the escalations scan below, so both agree.
-actions="$(grep -nE 'ACTION REQUIRED|⚠️ ACTION' "$STATE" 2>/dev/null \
-  | grep -vE 'RESOLVED|APPLIED \+ VERIFIED|SUPERSEDED|not blocking' \
-  | head -5 || true)"
+#
+# CLOSED-NESS IS DECIDED BY THE WHOLE ENTRY, NOT ITS FIRST LINE. An entry is a
+# `- ` line plus its indented continuation lines, and this repo's convention is
+# that the ✅ RULING lands *below* the ⚠️ ACTION REQUIRED sentence. A line-by-line
+# match therefore fires forever on a closed item: V24's read-surface item was
+# ruled closed 2026-10-01 and still printed on 2026-10-05 (the case that fixed
+# this). Any line in the block closes it.
+# `[+]` not `\+`: this reaches awk through -v, where a backslash escape is
+# consumed once and the bare `+` would become an ERE quantifier ("one or more
+# spaces"), silently un-matching the literal "APPLIED + VERIFIED" marker.
+CLOSED_RE='RESOLVED|APPLIED [+] VERIFIED|SUPERSEDED|not blocking|no further action'
+actions="$(awk -v re="$CLOSED_RE" '
+  function emit() {
+    if (action && !closed && n < 5) { print start ":" text; n++ }
+  }
+  /^- / {
+    emit()
+    action = ($0 ~ /ACTION REQUIRED/ || $0 ~ /⚠️ ACTION/)
+    closed = ($0 ~ re)
+    start = NR; text = $0
+    next
+  }
+  { if (action && $0 ~ re) closed = 1 }
+  END { emit() }
+' "$STATE")"
 
 # --- 2. Open escalations ----------------------------------------------------
 # The `## Escalations (waiting on human)` section, minus resolved entries.
 escalations=""
 if grep -q '^## Escalations (waiting on human)' "$STATE"; then
-  escalations="$(awk '
-    /^## Escalations \(waiting on human\)/ { inseg=1; next }
-    /^## / { inseg=0 }
-    inseg && /^- / {
-      line=$0
-      # Skip entries already marked resolved/applied/verified.
-      if (line ~ /RESOLVED|APPLIED \+ VERIFIED|not blocking/) next
-      print
+  escalations="$(awk -v re="$CLOSED_RE" '
+    function emit() {
+      if (open && !closed && n < 4) { print text; n++ }
     }
-  ' "$STATE" | head -4)"
+    /^## Escalations \(waiting on human\)/ { inseg=1; open=0; next }
+    /^## / { if (inseg) emit(); inseg=0; open=0; next }
+    !inseg { next }
+    /^- / {
+      emit()
+      open=1; closed=($0 ~ re); text=$0
+      next
+    }
+    { if (open && $0 ~ re) closed=1 }
+    END { if (inseg) emit() }
+  ' "$STATE")"
 fi
 
 [ -n "$actions" ] && found=1
