@@ -19,7 +19,7 @@
         "timeout_ms": 2000
       },
       "resources": {
-        "ram_gb": 55,
+        "ram_gb": 52,
         "vram_gb": 30,
         "exclusive": "local-inference",
         "footprint_source": "measured",

@@ -48,15 +48,21 @@ Two independent causes, **both now fixed** (each verified 2026-10-04):
 1. ~~**ADMISSIBILITY.**~~ **FIXED.** `strata` and `ninfer` now carry
    `footprint_source: "measured"` in `factory/config.json` (ninfer 3 GB RAM /
    24 GB VRAM; strata 48 GB / 13 GB), each with a `MEASURED 2026-10-02` evidence
-   string. Change 1 below is what fixed it. ⚠️ **One number is still
-   unreconciled, and it is a known open item rather than a fixed one:**
-   `strata-max` declares `ram_gb: 55` while **its own `footprint_evidence` says
-   52 is the measured figure and 55 was the unit banner's estimate**. The router
-   uses the declared **55**, and `scripts/factory/scheduler.test.mjs:299` pins it
-   (`/RAM: needs 62 GB/` = 55 + task 3 + reserve 4) — lowering the config to the
-   measured 52 fails 4 tests in that file. Reconciling them means moving the
-   config and that assertion **together**, in its own slice. It is recorded here
-   rather than done silently.
+   string. Change 1 below is what fixed it. **✅ RECONCILED 2026-10-05 (V31 v31-3):**
+   `strata-max` declared `ram_gb: 55` while **its own `footprint_evidence` said
+   52 was the measured figure and 55 was the unit banner's estimate** — the
+   declaration contradicted its own evidence, and `compute-policy.md`'s own
+   arithmetic a few lines below this one (`52 + 4 reserve + 3 task = 59 GB`)
+   already used 52. The config now declares **52**, and
+   `scripts/factory/scheduler.test.mjs` moved with it in the same diff: the four
+   assertions that encoded the old arithmetic (`requiredGb` 62 → **59**, 61 →
+   **58** twice, and the pinned `/RAM: needs 62 GB/` reason → **59**) plus the
+   machine fixture's resident reading and every comment that restated the sum.
+   **Verified: `npx vitest run scripts/factory/scheduler.test.mjs` → 42 passed**,
+   and `npm run guards` (inside `npm run verify`) → PASS. No number was changed
+   without its evidence: the 52 came from the config's own MEASURED 2026-10-02
+   string (arena + weights/KV, corroborated by ninfer's observed 51.4 GB RSS),
+   not from a re-run — strata-max is crash-looping and keeps no `MemoryPeak`.
 2. ~~**CAPABILITY.**~~ **FIXED for `ninfer`.** Its `tool_use` is **3**, not 2 —
    `_tool_use_source` records the empirical verification, verbatim: *"Was
    declared tool_use: 2, which failed the builder/reviewer/verifier floor of 3

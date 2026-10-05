@@ -2,7 +2,7 @@
  * Resource admission, capability routing, independence and work-state rules.
  *
  * WHY THIS FILE EXISTS. The constraint it pins is the one that cost four
- * `systemd-oomd` kills in a single day: a 55 GB local model cannot coexist with
+ * `systemd-oomd` kills in a single day: a 52 GB local model cannot coexist with
  * the gate run that the same task triggers, on a 62 GB machine — and a factory
  * that discovers that AFTER starting the work has already lost the work.
  *
@@ -44,7 +44,7 @@ function machine({
   freeVramGb = 6.5,
   active = ['strata-max'],
   activating = [],
-  resident = { 'strata-max': 55 },
+  resident = { 'strata-max': 52 },
   now = 1_000_000,
   reachable = {},
   defaultReachable = true,
@@ -67,7 +67,7 @@ const CLOUD = 'ollama-cloud/deepseek-v4.1-flash:cloud'
 
 describe('admission control', () => {
   it('refuses the exact combination from the logs, before starting it', () => {
-    // 2026-10-02 04:56: the local model resident at 55 GB, 5 GB available, and a
+    // 2026-10-02 04:56: the local model resident at 52 GB, 5 GB available, and a
     // builder that must run `npm run verify` inside itself.
     const decision = admit({ config: realConfig, kind: 'builder', id: 'r2-6c', modelKey: LOCAL, probes: machine() })
 
@@ -96,10 +96,10 @@ describe('admission control', () => {
       modelKey: LOCAL,
       probes: machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }),
     })
-    // 3 task + 4 reserve + 55 model load = 62 > 50 available: refused, and
+    // 3 task + 4 reserve + 52 model load = 59 > 50 available: refused, and
     // correctly so — this machine cannot hold the model AND the gate.
     expect(tight.state).toBe('BLOCKED_RESOURCE')
-    expect(tight.requiredGb).toBe(62)
+    expect(tight.requiredGb).toBe(59)
 
     const roomy = admit({
       config: realConfig,
@@ -109,12 +109,12 @@ describe('admission control', () => {
       probes: machine({ availableGb: 62, active: [], resident: {}, freeVramGb: 32 }),
     })
     expect(roomy.state).toBe('ADMITTED')
-    expect(roomy.requiredGb).toBe(62)
+    expect(roomy.requiredGb).toBe(59)
     expect(roomy.exclusive).toBe('local-inference')
   })
 
   it('does not charge twice for a model that is already resident', () => {
-    // The model's 55 GB is already inside "available"; adding it again would
+    // The model's 52 GB is already inside "available"; adding it again would
     // make the factory refuse work it can actually do.
     const resident = admit({ config: realConfig, kind: 'gate', id: 'g', probes: machine({ availableGb: 20 }) })
     expect(resident.requiredGb).toBe(7) // 3 task + 4 reserve, no model load
@@ -148,7 +148,7 @@ describe('admission control', () => {
   })
 
   it('serializes local inference: one exclusive holder at a time', () => {
-    const probes = machine({ availableGb: 50, active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const probes = machine({ availableGb: 50, active: ['strata-max'], resident: { 'strata-max': 52 } })
     const reservations = [{ id: 'ocr-running', kind: 'ocr', state: 'RUNNING', requiredGb: 2, exclusive: 'local-inference' }]
     const decision = admit({ config: realConfig, kind: 'ocr', id: 'second', modelKey: LOCAL, probes, reservations })
     expect(decision.state).toBe('BLOCKED_RESOURCE')
@@ -185,7 +185,7 @@ describe('admission control', () => {
   it('charges a model that is only ACTIVATING, and blocks it on a GPU someone else holds', () => {
     // The bug this test exists for was found live: `systemctl is-active` exits
     // non-zero for `activating`, so a model on its way up read as ABSENT — its
-    // 55 GB went uncharged and its claim on the GPU was invisible. strata-max
+    // 52 GB went uncharged and its claim on the GPU was invisible. strata-max
     // sat in exactly this state while crash-looping against the VRAM that
     // ninfer-serve held.
     const decision = admit({
@@ -196,7 +196,7 @@ describe('admission control', () => {
       probes: machine({ availableGb: 50, freeVramGb: 6.5, active: ['ninfer-serve'], activating: ['strata-max'], resident: {} }),
     })
     expect(decision.state).toBe('BLOCKED_RESOURCE')
-    expect(decision.requiredGb).toBe(61) // 2 task + 4 reserve + 55 — the load is charged
+    expect(decision.requiredGb).toBe(58) // 2 task + 4 reserve + 52 — the load is charged
     expect(decision.reasons.join(' ')).toMatch(/VRAM: .* needs 30 GB, 6\.5 GB free — held by ninfer\/qwen3\.8-27b/)
     expect(decision.reclaimable.map((r) => r.what)).toContain('ninfer/qwen3.8-27b')
   })
@@ -204,9 +204,9 @@ describe('admission control', () => {
   it('treats an unknown service state as not-running rather than as safe', () => {
     const probes = { ...machine({ availableGb: 50, active: [], resident: {}, freeVramGb: 32 }), serviceState: () => 'unknown' }
     const decision = admit({ config: realConfig, kind: 'explorer', id: 'e', modelKey: LOCAL, probes })
-    // 2 + 4 + 55 = 61 > 50: an unknown state must never be read as "already loaded".
+    // 2 + 4 + 52 = 58 > 50: an unknown state must never be read as "already loaded".
     expect(decision.state).toBe('BLOCKED_RESOURCE')
-    expect(decision.requiredGb).toBe(61)
+    expect(decision.requiredGb).toBe(58)
   })
 })
 
@@ -282,7 +282,7 @@ describe('capability routing', () => {
 
   it('falls back to cloud when the local preference is resource-blocked, and calls it a fallback', () => {
     // The real 04:00 decision: the model is NOT resident, reloading it would
-    // cost 55 GB of a 50 GB pool, and the gate alone fits comfortably. Local is
+    // cost 52 GB of a 50 GB pool, and the gate alone fits comfortably. Local is
     // cost_tier 0 and the policy preference; it is simply not admissible, so the
     // router falls back rather than failing. A fallback is an outcome, not an
     // incident — it belongs in telemetry, not in the ledger.
@@ -290,13 +290,13 @@ describe('capability routing', () => {
     // was measured at 3 (650646c) the builder has a SECOND admissible local model,
     // so 50 GB now admits ninfer at cost_tier 0 and never falls back at all. The
     // case wants the local TIER blocked, both models in it, so 8 GB it is: strata
-    // needs 62, ninfer needs 10, and cloud needs exactly 8.
+    // needs 59, ninfer needs 10, and cloud needs exactly 8.
     const result = selectModel({ config: realConfig, kind: 'builder', probes: machine({ availableGb: 8, active: [], resident: {}, freeVramGb: 32 }) })
     expect(result.modelKey).toBe(CLOUD)
     expect(result.fallback).toBe(true)
     expect(result.reason).toMatch(/fell back to cost_tier 2/)
     // And the model it refused is named, with the reason.
-    expect(result.rejected.find((r) => r.modelKey === LOCAL).why).toMatch(/RAM: needs 62 GB/)
+    expect(result.rejected.find((r) => r.modelKey === LOCAL).why).toMatch(/RAM: needs 59 GB/)
   })
 
   it('blocks outright when even the fallback does not fit', () => {
@@ -570,7 +570,7 @@ describe('reclaim never kills a model that is in use (D-004)', () => {
   ]
 
   it('refuses to stop a model a live reservation holds, and names the holder', () => {
-    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 52 } })
     const { candidates, refused } = reclaimCandidates(realConfig, probes, live)
     expect(candidates.map((c) => c.key)).not.toContain('strata-max/qwen3.8-flash-next-iq3_s')
     const r = refused.find((x) => x.key === 'strata-max/qwen3.8-flash-next-iq3_s')
@@ -578,14 +578,14 @@ describe('reclaim never kills a model that is in use (D-004)', () => {
   })
 
   it('still reclaims a resident model nobody holds — the rule is ownership, not refusal to act', () => {
-    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 52 } })
     const { candidates, refused } = reclaimCandidates(realConfig, probes, [])
     expect(candidates.map((c) => c.key)).toContain('strata-max/qwen3.8-flash-next-iq3_s')
     expect(refused).toHaveLength(0)
   })
 
   it('ignores a RELEASED reservation, so a finished lane does not block reclamation forever', () => {
-    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 55 } })
+    const probes = machine({ active: ['strata-max'], resident: { 'strata-max': 52 } })
     const released = [{ ...live[0], state: 'RELEASED', releasedAt: '2026-10-02T12:10:00.000Z' }]
     const { candidates } = reclaimCandidates(realConfig, probes, released)
     expect(candidates.map((c) => c.key)).toContain('strata-max/qwen3.8-flash-next-iq3_s')
