@@ -102,9 +102,9 @@ visual world; it does not inherit this one by default.
 
 **Explicitly undecided:** wide-screen layout — the app is a single phone-width
 column with no `lg:`/`xl:` breakpoints — and any visual rework beyond the
-committed palette and type. `DESIGN.md` now records the incumbent world
-(generated 2026-10-04); it is present in the working tree but **not yet tracked
-by git**, so a fresh clone still sees only the implementation.
+committed palette and type. `DESIGN.md` records the incumbent world (generated
+2026-10-04) and is tracked as of `58ece8e`, so a fresh clone sees both the
+implementation and the document.
 
 ## Brand Commitments
 
