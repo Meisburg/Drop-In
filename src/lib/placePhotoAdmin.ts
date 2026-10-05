@@ -27,25 +27,29 @@
  * `photo_url` alone" has one home and a caller that does know the provenance can
  * still supply it.
  *
- * ⚠️ AND IT COPIES ONE ONLY WHEN THE MODERATOR FRAMES IT — A RECORDED REVERSAL
- * (2026-10-05). This module used to state, categorically, that it never fetched
- * or re-hosted a third-party image: Google's Maps Platform Terms 3.2.4(a)(i)
- * forbid *"pre-fetch, index, store, reshare, or rehost Google Maps Content"*,
- * and the research at `research/place-photos/2026-10-03-strategies.md` found the
- * same shape at TripAdvisor and Foursquare. The founder was shown that trade and
- * ruled twice. First, that a pasted link may be copied so it can be framed —
- * necessary, because a cross-origin image taints a canvas and cannot be encoded.
- * Then, on cost: *"I think we should prefer hosting using whoever has already
- * got the image hosted on their link if possible, but then you have the option
- * to — if you need to crop or pan the image — then it gets copied to our
+ * ⚠️ AND IT COPIES ONE, FALLING BACK TO THE LINK WHEN IT CANNOT — A RECORDED
+ * REVERSAL (2026-10-05). This module used to state, categorically, that it never
+ * fetched or re-hosted a third-party image: Google's Maps Platform Terms
+ * 3.2.4(a)(i) forbid *"pre-fetch, index, store, reshare, or rehost Google Maps
+ * Content"*, and the research at `research/place-photos/2026-10-03-strategies.md`
+ * found the same shape at TripAdvisor and Foursquare. The founder was shown that
+ * trade and ruled twice. First, that a pasted link may be copied so it can be
+ * framed — necessary, because a cross-origin image taints a canvas and cannot be
+ * encoded. Then, on cost: *"I think we should prefer hosting using whoever has
+ * already got the image hosted on their link if possible, but then you have the
+ * option to — if you need to crop or pan the image — then it gets copied to our
  * database, because otherwise we're going to be paying to serve up every image
  * for everyone."*
  *
- * So there are two exits and this module owns both of them: `Save` stores the
- * plain remote URL (`validatePhotoUrl` — nothing is fetched), and `Crop or
- * adjust` is the ONLY caller of `fetchPlacePhotoFile`. The accepted risks —
- * re-hosting a third party's image against its terms, and a hotlinked image that
- * can rot or be blocked later — are recorded, not argued, in
+ * SLICE 4 (2026-10-05) TOOK THE CHOICE AWAY AND KEPT BOTH OUTCOMES. The founder,
+ * after using slices 1–3: *"I don't think we need a crop or adjust button
+ * anymore here."* So URL mode is one action, `fetchPlacePhotoFile` is the only
+ * fetch it makes, and the FALLBACK is what preserves the cost ruling: a host
+ * that refuses the copy has its URL stored instead (and the moderator reads
+ * `linkFallbackNotice`), while a host that answers gets our own `place-photos`
+ * object, because that is the price of framing. The accepted risks — re-hosting
+ * a third party's image against its terms, and a link that can rot or be blocked
+ * later — are recorded, not argued, in
  * `docs/adr/0003-place-photos-are-copied-and-cropped.md`.
  */
 
@@ -195,6 +199,24 @@ function tooLargeMessage(bytes: number): string {
  */
 function cannotCopyMessage(): string {
   return "That site wouldn't let us copy the photo. Save it to your device and use Upload a file."
+}
+
+/**
+ * The sentence the moderator reads when the copy was refused and the LINK was
+ * stored instead (place-photo-crop slice 4).
+ *
+ * WHY IT LEADS WITH THE OUTCOME RATHER THAN BEING THE REASON ALONE. Until slice
+ * 4 a refusal meant NOTHING was saved: `cannotCopyMessage` and its siblings only
+ * had to explain the failure. Now the same refusal arrives with a stored link,
+ * and a moderator who read the reason alone would believe the photo was not
+ * saved at all — the editor has closed and the picture is on the card, so the
+ * message has to agree with what they can see. It states the outcome first and
+ * hands the refusal's own words after it, keeping that reason's way out ("save
+ * it to your device and use Upload a file"), which is what makes framing
+ * reachable for a host that will not let us copy.
+ */
+export function linkFallbackNotice(reason: string): string {
+  return `We saved the link instead. ${reason}`
 }
 
 /** The bare media type from a Content-Type header: parameters dropped, lowercased. */

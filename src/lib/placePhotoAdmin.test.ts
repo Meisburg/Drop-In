@@ -21,6 +21,7 @@ import {
   clearPlacePhotoPatch,
   fetchPlacePhotoFile,
   formatMegabytes,
+  linkFallbackNotice,
   placePhotoObjectPath,
   placePhotoPatch,
   validatePhotoFile,
@@ -427,5 +428,33 @@ describe('fetchPlacePhotoFile (the copy only the crop path asks for)', () => {
     })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toMatch(/wouldn't let us copy the photo/i)
+  })
+})
+
+/**
+ * Slice 4's fallback message. The refusal itself is tested above; this pins the
+ * half the moderator reads AFTER the link was stored, which is the sentence that
+ * stops "we could not copy it" from reading as "nothing was saved".
+ */
+describe('linkFallbackNotice (the refused copy that stored the link)', () => {
+  it('states the outcome FIRST, so it agrees with the photo already on the card', () => {
+    const notice = linkFallbackNotice('That link answered with 404.')
+    expect(notice.startsWith('We saved the link instead. ')).toBe(true)
+  })
+
+  it("carries the refusal's own sentence, including its way out", () => {
+    const notice = linkFallbackNotice(
+      "That site wouldn't let us copy the photo. Save it to your device and use Upload a file.",
+    )
+    expect(notice).toContain("wouldn't let us copy the photo")
+    expect(notice).toMatch(/upload a file/i)
+  })
+
+  it('says NOTHING about the copy succeeding, and nothing about the crop', () => {
+    // The honest sentence: the bytes were never read. A word like "copied" or
+    // "adjusted" here would claim work that did not happen.
+    const notice = linkFallbackNotice('That link is not an image we can use.')
+    expect(notice).not.toMatch(/copied/i)
+    expect(notice).not.toMatch(/adjust/i)
   })
 })

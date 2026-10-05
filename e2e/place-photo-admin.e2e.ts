@@ -46,13 +46,23 @@ async function readTarget(): Promise<PlacePhotoRow> {
   return readPlaceByName(PLACE_NAME)
 }
 
-/** Land on /browse with no distance ceiling and the target row on screen. */
-async function openDirectoryAt(page: import('@playwright/test').Page) {
+/**
+ * Land on /browse with no distance ceiling and the target row on screen.
+ *
+ * `search` defaults to the edited place's name. The slice-4 scroll test passes a
+ * BROAD term instead, because proving "the changed card is brought back into
+ * view" needs a page that can actually scroll the card off screen first — a
+ * one-row list is not a measurement.
+ */
+async function openDirectoryAt(
+  page: import('@playwright/test').Page,
+  search: string = PLACE_NAME,
+) {
   await page.goto('/browse')
   await expect(page.getByTestId('places-distance-filter-btn')).toBeVisible()
   await page.getByTestId('places-distance-filter-btn').click()
   await page.getByTestId('places-distance-sheet-option-any').click()
-  await page.getByTestId('places-search').fill(PLACE_NAME)
+  await page.getByTestId('places-search').fill(search)
   await expect(page.getByTestId('places-list')).toBeVisible()
 }
 
@@ -102,15 +112,34 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
     // It opens the SHIPPED editor (the same component /mod mounts).
     const editor = page.getByTestId('place-photo-editor')
     await expect(editor).toBeVisible()
+    // place-photo-crop slice 4: there is ONE action in URL mode, and it opens the
+    // crop step — the "Crop or adjust" button is gone from the DOM (criterion 1).
+    await expect(editor.getByTestId('photo-crop-btn')).toHaveCount(0)
     await editor.getByTestId('photo-url-input').fill(donorUrl)
     await editor.getByTestId('photo-save-btn').click()
-    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
 
-    // Close the dialog; the host re-read behind it, so the card shows the new
+    // The link is copied and framed: the crop dialog opens on the fetched image
+    // and confirming IS the save.
+    const cropDialog = page.getByTestId('crop-photo-dialog')
+    await expect(cropDialog).toBeVisible()
+    await cropDialog.getByTestId('crop-confirm').click()
+
+    // FINISHING CLOSES THE EDITOR — the dialog's test id is gone, rather than a
+    // "Photo updated." line being rendered inside it.
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+    // A framed copy is the outcome we wanted, so there is no notice to read.
+    await expect(page.getByTestId('place-photo-notice')).toHaveCount(0)
+
+    // THE COPY IS OURS: the row no longer points at the donor's URL.
+    const after = await readTarget()
+    expect(after.photo_url, 'the crop must store our own object').toContain(
+      '/storage/v1/object/public/place-photos/',
+    )
+    expect(after.photo_url).not.toBe(donorUrl)
+
+    // The host re-read behind the closed dialog, so the card shows the new
     // picture — this row had NO photo before, so an <img> here is the save
     // reaching the screen.
-    await editor.getByRole('button', { name: 'Close' }).click()
-    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
     await expect(page.getByTestId(`place-photo-${snapshot.id}`)).toBeVisible({ timeout: 15_000 })
   } finally {
     // BOTH restores, always: the place's five photo columns AND the marker's
@@ -170,9 +199,12 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
     await expect(editor).toBeVisible()
     await editor.getByTestId('photo-url-input').fill(donorUrl)
     await editor.getByTestId('photo-save-btn').click()
-    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
 
-    await editor.getByRole('button', { name: 'Close' }).click()
+    // place-photo-crop slice 4: the one action opens the crop step, and the
+    // dialog's confirm closes the editor on the PLACE PAGE too.
+    const cropDialog = page.getByTestId('crop-photo-dialog')
+    await expect(cropDialog).toBeVisible()
+    await cropDialog.getByTestId('crop-confirm').click()
     await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
 
     // The page re-read its own row, so the HERO shows the picture — still above
@@ -184,6 +216,42 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
     expect(heroBox).not.toBeNull()
     expect(headingBox).not.toBeNull()
     expect(heroBox!.y, 'the picture must still sit above the name').toBeLessThan(headingBox!.y)
+
+    // --- AND THE PLACE PAGE'S OTHER OUTCOME (slice 4, changes 1 and 3): a host
+    // that refuses the copy stores the link, the editor closes, one sentence says
+    // so, and the HERO is brought back into view on this door too.
+    await control.click()
+    const secondEditor = page.getByTestId('place-photo-editor')
+    await expect(secondEditor).toBeVisible()
+    // Scroll the hero off screen WHILE the editor is open (a programmatic scroll
+    // still moves an `overflow: hidden` viewport), so "it came back into view"
+    // is a measurement rather than a coincidence.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    const viewport = page.viewportSize()!
+    const slot = page.getByTestId('place-page-photo-slot')
+    const slotBefore = await slot.boundingBox()
+    expect(slotBefore, 'the hero must render a box').not.toBeNull()
+    expect(
+      slotBefore!.y >= viewport.height || slotBefore!.y + slotBefore!.height <= 0,
+      `the hero must be OFF screen before the save (y=${slotBefore!.y}, h=${slotBefore!.height}, viewport=${viewport.height})`,
+    ).toBe(true)
+
+    await secondEditor.getByTestId('photo-url-input').fill('https://example.invalid/hero.jpg')
+    await secondEditor.getByTestId('photo-save-btn').click()
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+    await expect(page.getByTestId('place-photo-notice')).toContainText('We saved the link instead.')
+    expect(
+      (await readTarget()).photo_url,
+      'a refused copy on the place page still saves the link',
+    ).toBe('https://example.invalid/hero.jpg')
+
+    await expect(async () => {
+      const box = await slot.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.y, `the hero must be back in view (y=${box!.y})`).toBeGreaterThanOrEqual(0)
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height)
+    }).toPass({ timeout: 10_000 })
+    console.log(`[slice4] place page hero scrolled back into view at y=${(await slot.boundingBox())!.y}`)
   } finally {
     restoreEnvelope = await setPlacePhotos(snapshot)
     unmoderateEnvelope = await setModerator(userId, false)
@@ -234,7 +302,10 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
     const elevate = await setModerator(userId, true)
     expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
     await page.reload()
-    await openDirectoryAt(page)
+    // A WIDE search: this test has to be able to scroll the target card OFF
+    // screen to prove the save brings it back (criterion 5). "Park" matches many
+    // seeded rows, so the target is not the whole list.
+    await openDirectoryAt(page, 'Park')
     await expect(editControl).toBeVisible()
     await editControl.click()
 
@@ -252,7 +323,9 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
     expect(await readTarget(), 'a cancelled crop must leave all five columns alone').toEqual(
       snapshot,
     )
-    await expect(editor.getByTestId('photo-admin-done')).toHaveCount(0)
+    // Cancelling the CROP leaves the EDITOR open — only a completed save closes
+    // it (slice 4, change 2), and nothing at all was written.
+    await expect(editor).toBeVisible()
     await expect(editor.getByTestId('photo-admin-error')).toHaveCount(0)
 
     // --- AND THEN COMMIT ONE. ---
@@ -291,13 +364,46 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
     // not depend on the last viewport it measured in.
     await page.setViewportSize({ width: 1280, height: 720 })
 
+    // --- SCROLL THE CHANGED PLACE AWAY BEFORE SAVING (slice 4, criterion 5).
+    // The founder: *"Ideally, it would show you that place automatically so you
+    // don't have to scroll down and find it, but whatever."* Proving it needs the
+    // card OFF screen first, or "it is in the viewport" is true by accident. The
+    // card is named as one box (`place-card-<id>`, added for this measurement).
+    const card = page.getByTestId(`place-card-${snapshot.id}`)
+    const viewport = page.viewportSize()!
+    const offScreen = await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight)
+      return window.scrollY
+    })
+    expect(offScreen, 'the directory must be scrollable for this measurement to mean anything').toBeGreaterThan(0)
+    const escaped = await card.boundingBox()
+    expect(escaped, 'the card must render a box').not.toBeNull()
+    expect(
+      escaped!.y >= viewport.height || escaped!.y + escaped!.height <= 0,
+      `the card must be OUT of the viewport before the save (y=${escaped!.y}, h=${escaped!.height}, viewport=${viewport.height})`,
+    ).toBe(true)
+
     // The dialog's confirm IS the save — there is no separate upload step.
     await cropDialog.getByTestId('crop-confirm').click()
-    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
     await expect(cropDialog).toHaveCount(0)
-
-    await editor.getByRole('button', { name: 'Close' }).click()
+    // FINISHING CLOSES THE EDITOR (slice 4, change 2): the test id is GONE, which
+    // is the assertion criterion 2 asks for rather than a confirmation line.
     await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+
+    // --- AND THE CHANGED CARD COMES BACK INTO VIEW. `scrollIntoView` animates
+    // (unless the viewer asked for reduced motion), so this polls rather than
+    // measuring mid-flight: the whole card must be inside the viewport.
+    await expect(async () => {
+      const box = await card.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.y, `the changed card must be in the viewport (y=${box!.y})`).toBeGreaterThanOrEqual(0)
+      expect(
+        box!.y + box!.height,
+        `the changed card must be inside the viewport (bottom=${box!.y + box!.height}, viewport=${viewport.height})`,
+      ).toBeLessThanOrEqual(viewport.height)
+    }).toPass({ timeout: 10_000 })
+    console.log(`[slice4] changed card scrolled back into view at y=${(await card.boundingBox())!.y}`)
+
     await expect(page.getByTestId(`place-photo-${snapshot.id}`)).toBeVisible({ timeout: 15_000 })
 
     // THE ROW POINTS AT OUR OWN OBJECT — never a third-party URL (slice 1 AC5),
@@ -339,25 +445,26 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
 })
 
 /**
- * place-photo-crop slice 2 (amended 2026-10-05) — A PASTED LINK STAYS A LINK
- * UNLESS THE MODERATOR FRAMES IT.
+ * place-photo-crop slice 4 (2026-10-05) — ONE PRIMARY ACTION, AND IT FRAMES.
  *
- * The founder's cost ruling: *"we should prefer hosting using whoever has
- * already got the image hosted on their link if possible, but then you have the
- * option to — if you need to crop or pan the image — then it gets copied to our
- * database, because otherwise we're going to be paying to serve up every image
- * for everyone."*
+ * The founder, after using slices 1–3: *"I don't think we need a crop or adjust
+ * button anymore here. Basically, just when you click upload a file, it should
+ * just automatically give you the option to crop or adjust and then … when you're
+ * finished, this fix up place photo modal should disappear and the photo will
+ * just be populated on the place now."*
  *
- * So this walks BOTH exits of URL mode in one run:
- *   1. Save stores the remote URL verbatim — no fetch, no upload, no new object;
- *   2. Crop or adjust copies the bytes and stores OUR `place-photos` URL.
+ * So this is the old two-exit test collapsed to the one flow that replaced it:
+ * paste a link → the ONE primary button → the crop dialog opens on the FETCHED
+ * image → confirm → the row carries OUR `place-photos` object and the editor is
+ * GONE. The link-first half of the old test did not disappear, it moved: it is
+ * now the refusal fallback, and the next test proves it.
  *
  * THE DONOR: another seeded row's own `photo_url`. In the live directory that is
  * a `thumb.wikimedia.org` URL, which answers with `image/jpeg` and
  * `access-control-allow-origin: *` — so the copy is same-run, cross-host and
  * CORS-clean, with no host we do not already depend on.
  */
-test('a pasted link saves as the remote URL; Crop or adjust stores our own copy (place-photo-crop)', async ({
+test('a pasted link is copied and framed by the one primary action, and the editor closes (place-photo-crop slice 4)', async ({
   page,
 }) => {
   const { userId } = readMarkerSession()
@@ -387,33 +494,35 @@ test('a pasted link saves as the remote URL; Crop or adjust stores our own copy 
     const editor = page.getByTestId('place-photo-editor')
     await expect(editor).toBeVisible()
 
-    // --- EXIT 1: SAVE KEEPS THE LINK. The row must carry the remote URL
-    // byte-for-byte, which is the cost rule (and criterion 1). ---
+    // --- PASTE, PREVIEW, AND THE ONE BUTTON. The preview still appears as the
+    // link is typed (the moderator has to see the picture to judge the framing),
+    // and there is no second action to choose between (criterion 1). ---
     await editor.getByTestId('photo-url-input').fill(donorUrl)
     await expect(editor.getByTestId('photo-url-preview')).toBeVisible()
+    await expect(editor.getByTestId('photo-crop-btn')).toHaveCount(0)
     await editor.getByTestId('photo-save-btn').click()
-    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
-    const savedAsLink = await readTarget()
-    expect(savedAsLink.photo_url, 'Save must store the remote URL verbatim').toBe(donorUrl)
 
-    // --- EXIT 2: CROP OR ADJUST COPIES IT, and the row stops pointing at the
-    // remote URL (criterion 2). ---
-    await editor.getByTestId('photo-url-input').fill(donorUrl)
-    await editor.getByTestId('photo-crop-btn').click()
-
+    // --- THE CROP DIALOG OPENS ON THE FETCHED IMAGE. `windowShape` is
+    // `PLACE_PHOTO_SIZE`, so it is the rectangle variant and says so. ---
     const cropDialog = page.getByTestId('crop-photo-dialog')
     await expect(cropDialog).toBeVisible()
     await expect(cropDialog).toContainText('The rectangle is what everyone will see.')
     await cropDialog.getByTestId('crop-confirm').click()
-    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+
+    // --- CONFIRMING STORES OUR COPY AND CLOSES THE EDITOR (criterion 2: the
+    // editor's test id is GONE, not merely a confirmation rendered). ---
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+    await expect(page.getByTestId('place-photo-notice')).toHaveCount(0)
 
     const savedAsCopy = await readTarget()
-    expect(savedAsCopy.photo_url, 'the crop must not leave the remote URL on the row').not.toBe(
+    expect(savedAsCopy.photo_url, 'the copy must not leave the remote URL on the row').not.toBe(
       donorUrl,
     )
     expect(savedAsCopy.photo_url!).toContain('/storage/v1/object/public/place-photos/')
     // The pasted URL is never written to the provenance column either.
     expect(savedAsCopy.photo_source_url).toBeNull()
+    // And the card shows it, from the host's own re-read.
+    await expect(page.getByTestId(`place-photo-${snapshot.id}`)).toBeVisible({ timeout: 15_000 })
   } finally {
     restoreEnvelope = await setPlacePhotos(snapshot)
     unmoderateEnvelope = await setModerator(userId, false)
@@ -424,23 +533,24 @@ test('a pasted link saves as the remote URL; Crop or adjust stores our own copy 
 })
 
 /**
- * place-photo-crop slice 2 — THE REFUSAL BLOCKS THE CROP AND NOTHING ELSE.
+ * place-photo-crop slice 4 — A REFUSED COPY STORES THE LINK AND SAYS SO.
  *
- * The link here is the preview server's OWN `/` — a committed, same-origin
- * resource that answers `text/html`, which the crop path must refuse as a
- * non-image. No external host, no network flake, and a real content-type rather
- * than a mocked one.
- *
- * The second half is the point of the amendment: **Save on the same link still
- * succeeds**, because Save never fetches. A refusal costs the moderator the
- * crop, never the save.
+ * This is slice 2's cost ruling, which slice 4 did NOT repeal: *"we should prefer
+ * hosting using whoever has already got the image hosted on their link if
+ * possible … otherwise we're going to be paying to serve up every image for
+ * everyone."* The framing cannot be done (the bytes cannot be read), so the
+ * remote URL is stored by the SAME tap, the editor closes, and one sentence tells
+ * the moderator why the picture they just saved cannot be framed.
  *
  * TWO KINDS OF REFUSAL, because they arrive as different sentences: a host the
  * browser cannot reach at all (`.invalid` is reserved by RFC 2606 and never
- * resolves, so `fetch` REJECTS — the CORS/offline branch, whose message has to
- * name the way out), and a host that answers with something that is not an image.
+ * resolves, so `fetch` REJECTS — the CORS/offline branch, whose reason has to
+ * name the way out), and a host that answers with something that is not an image
+ * (the preview server's OWN `/` — committed and same-origin, so the content-type
+ * is real rather than mocked; derived from the page's origin so this spec does not
+ * care which port the private recipe used).
  */
-test('a refused fetch is reported and blocks only the crop; Save on the same link still works (place-photo-crop)', async ({
+test('a refused copy stores the remote link, closes the editor, and says why (place-photo-crop slice 4)', async ({
   page,
 }) => {
   const { userId } = readMarkerSession()
@@ -468,35 +578,40 @@ test('a refused fetch is reported and blocks only the crop; Save on the same lin
     const editor = page.getByTestId('place-photo-editor')
     await expect(editor).toBeVisible()
 
-    // --- REFUSAL 1: the host cannot be reached, so `fetch` throws. The message
-    // must name the way out. ---
+    // --- REFUSAL 1: the host cannot be reached, so `fetch` throws. The link is
+    // STORED, the editor CLOSES, and the notice names the outcome before the
+    // reason ("we saved the link instead"), then keeps the reason's way out. ---
     await editor.getByTestId('photo-url-input').fill('https://example.invalid/park.jpg')
-    await editor.getByTestId('photo-crop-btn').click()
-    await expect(editor.getByTestId('photo-admin-error')).toContainText(
-      "That site wouldn't let us copy the photo",
-    )
-    await expect(editor.getByTestId('photo-admin-error')).toContainText('Upload a file')
+    await editor.getByTestId('photo-save-btn').click()
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
     await expect(page.getByTestId('crop-photo-dialog')).toHaveCount(0)
-    expect((await readTarget()).photo_url, 'a refused crop must store nothing').toBe(
-      snapshot.photo_url,
-    )
 
-    // --- REFUSAL 2: the host answers, with something that is not an image. The
-    // link here is the preview server's OWN `/` — committed and same-origin, so
-    // the content-type is real rather than mocked. Derived from the page's
-    // origin, so this spec does not care which port the private recipe used. ---
+    const notice = page.getByTestId('place-photo-notice')
+    await expect(notice).toBeVisible()
+    await expect(notice).toContainText('We saved the link instead.')
+    await expect(notice).toContainText("That site wouldn't let us copy the photo")
+    await expect(notice).toContainText('Upload a file')
+
+    const afterRefusal = await readTarget()
+    expect(
+      afterRefusal.photo_url,
+      'a refused copy must still leave the moderator with the photo they pasted',
+    ).toBe('https://example.invalid/park.jpg')
+    expect(afterRefusal.photo_source_url, 'the pasted URL never enters provenance').toBeNull()
+    // NOTHING IS STORED TWICE: the row carries the remote URL itself, so the
+    // fallback did not also upload a `place-photos` object behind it.
+    expect(afterRefusal.photo_url).not.toContain('/place-photos/')
+
+    // --- REFUSAL 2: the host answers, with something that is not an image. ---
+    await editControl.click()
+    await expect(editor).toBeVisible()
     const notAnImage = new URL('/', page.url()).toString()
     await editor.getByTestId('photo-url-input').fill(notAnImage)
-    await editor.getByTestId('photo-crop-btn').click()
-    await expect(editor.getByTestId('photo-admin-error')).toContainText('not an image')
-    await expect(page.getByTestId('crop-photo-dialog')).toHaveCount(0)
-    expect((await readTarget()).photo_url, 'a refused crop must store nothing').toBe(
-      snapshot.photo_url,
-    )
-
-    // --- AND SAVE ON THE SAME LINK STILL WORKS. ---
     await editor.getByTestId('photo-save-btn').click()
-    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+    await expect(page.getByTestId('crop-photo-dialog')).toHaveCount(0)
+    await expect(notice).toContainText('We saved the link instead.')
+    await expect(notice).toContainText('not an image')
     expect((await readTarget()).photo_url).toBe(notAnImage)
   } finally {
     restoreEnvelope = await setPlacePhotos(snapshot)

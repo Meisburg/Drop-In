@@ -331,6 +331,35 @@ export function PlaceDirectory({
    * the same component /mod mounts, never a second copy.
    */
   const [editingPhotoPlace, setEditingPhotoPlace] = useState<Place | null>(null)
+  /**
+   * place-photo-crop slice 4 — the moderator should not have to hunt for the
+   * card they just changed, and the one sentence a refused copy produces has to
+   * outlive the editor that produced it (the editor unmounts on save).
+   *
+   * `photoNotice` is that sentence; the editor hands it to `onSaved` and is gone
+   * by the time this renders it. `pendingPhotoScrollId` is the place whose card
+   * must be brought back into view, and it stays set until that card is actually
+   * on screen: BrowsePage's re-read sets `places` to null for a beat, so the
+   * card's node does not exist yet in the commit that closes the modal. An id
+   * rather than a flag, so a re-render can still find the right row.
+   */
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null)
+  const [pendingPhotoScrollId, setPendingPhotoScrollId] = useState<string | null>(null)
+  /**
+   * The `places` array as it stood when the save was requested — the identity the
+   * scroll effect waits to see replaced. The host's re-read blanks the list for a
+   * beat (BrowsePage sets `places` to null while loading), and scrolling to a card
+   * that is about to unmount is thrown away when the page shortens under it, so
+   * the effect holds until a NEW list has arrived. It is re-armed by the next
+   * save, alongside the pending id.
+   */
+  const photoScrollArmedRef = useRef<Place[] | null>(null)
+  /**
+   * The card nodes by place id — a map rather than one ref, because the row that
+   * must scroll into view is chosen at SAVE time, long after the 239 rows were
+   * rendered, and it is not necessarily the first one.
+   */
+  const photoRowNodes = useRef(new Map<string, HTMLDivElement>())
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
 
   // --- V27: the top controls ------------------------------------------------
@@ -413,6 +442,34 @@ export function PlaceDirectory({
     if (saved === null) return
     window.scrollTo({ top: saved, behavior: focusBehavior })
   }, [view, focusBehavior])
+
+  /**
+   * place-photo-crop slice 4, change 3 — BRING THE CHANGED PLACE BACK INTO VIEW.
+   * The founder, after using slices 1–3: *"Ideally, it would show you that place
+   * automatically so you don't have to scroll down and find it, but whatever."*
+   *
+   * WHY IT WAITS FOR THE HOST'S RE-READ. The save closes the editor and asks the
+   * host to re-read the directory, and that re-read blanks the list for a beat
+   * (BrowsePage sets `places` to null while loading). Scrolling in the commit
+   * that closes the modal would move a card that is about to be unmounted — and
+   * the browser clamps the scroll back when the page shortens under it, so the
+   * moderator would land somewhere arbitrary. So the effect holds until `places`
+   * is a NEW array (a host that does not re-read has no `onPlacePhotoSaved` and
+   * scrolls at once), then retries until the card's node exists.
+   *
+   * `block: 'center'` because the founder's ask is to SEE the picture, and a
+   * centred card shows it whatever the card's height does next. `photoRowNodes`
+   * drops a node when its row unmounts, so a stale node can never be scrolled to
+   * after a place is filtered out.
+   */
+  useEffect(() => {
+    if (pendingPhotoScrollId === null) return
+    if (onPlacePhotoSaved !== undefined && places === photoScrollArmedRef.current) return
+    const node = photoRowNodes.current.get(pendingPhotoScrollId)
+    if (node === undefined) return
+    node.scrollIntoView({ block: 'center', behavior: focusBehavior })
+    setPendingPhotoScrollId(null)
+  }, [pendingPhotoScrollId, places, focusBehavior, onPlacePhotoSaved])
 
   /**
    * V27 — the floating map toggle's visibility. It is hidden at the top of the
@@ -1108,6 +1165,26 @@ export function PlaceDirectory({
           ABOUT THE LIST, and map mode is not showing a list. The mode toggle is
           always on screen (see the floating control below), so the way back to
           those messages is one tap and never a dead end. */}
+      {/* place-photo-crop slice 4 — THE EDITOR'S ONE SENTENCE, AFTER IT CLOSES.
+          The link fallback stores the remote photo and finishes; the moderator
+          has to be told why the picture they just saved cannot be framed, and a
+          message rendered by the editor could not survive the editor unmounting.
+          It sits above the list, the region the save scrolls back to.
+
+          `role="status"` rather than `role="alert"`: the write SUCCEEDED (the
+          photo is on the card), so this is a report, not a failure. It stays
+          until the next photo change — no timer, because a sentence that
+          disappears on its own is a sentence a slow reader does not get. */}
+      {photoNotice !== null ? (
+        <p
+          role="status"
+          data-testid="place-photo-notice"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm md:col-start-2"
+        >
+          {photoNotice}
+        </p>
+      ) : null}
+
       {view !== 'list' ? null : places === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
           Loading…
@@ -1261,6 +1338,14 @@ export function PlaceDirectory({
               onEditPhoto={
                 canEditPlacePhotos ? () => setEditingPhotoPlace(row.place) : undefined
               }
+              /* place-photo-crop slice 4: the card's own node, registered so the
+                 save's scroll-into-view has something to point at. Deleting on
+                 unmount is what keeps a filtered-out place from being scrolled
+                 to later. */
+              cardRef={(node) => {
+                if (node === null) photoRowNodes.current.delete(row.place.id)
+                else photoRowNodes.current.set(row.place.id, node)
+              }}
             />
           ))}
         </div>
@@ -1437,15 +1522,25 @@ export function PlaceDirectory({
         >
           <PlacePhotoAdmin
             place={editingPhotoPlace}
-            onSaved={() => {
-              // The dialog STAYS OPEN so the editor's own "Photo updated."
-              // confirmation is actually seen — the component renders it and
-              // then calls this. The host re-reads behind the dialog, so the
-              // card is already correct when the moderator closes it. The
-              // accepted trade: the dialog's "current photo" preview shows the
-              // row it opened with until it closes, which is why /mod remounts
-              // its picker instead — a confirmation is worth more here than a
-              // preview refresh the moderator is about to dismiss.
+            onSaved={(notice) => {
+              /**
+               * place-photo-crop slice 4 — FINISHING CLOSES THE EDITOR.
+               *
+               * The founder: *"when you're finished, this fix up place photo
+               * modal should disappear and the photo will just be populated on
+               * the place now."* So the empty string of work below is the whole
+               * confirmation: the modal goes, the host re-reads behind it, and
+               * the card (with the picture) is scrolled back into view.
+               *
+               * `notice` is set only by the link fallback — a host refused the
+               * copy and the remote URL was stored instead — and it is rendered
+               * above the list, which is where the scroll lands. A later save
+               * clears the previous sentence rather than stacking them.
+               */
+              setEditingPhotoPlace(null)
+              setPhotoNotice(notice ?? null)
+              photoScrollArmedRef.current = places
+              setPendingPhotoScrollId(editingPhotoPlace.id)
               onPlacePhotoSaved?.()
             }}
           />
@@ -1553,6 +1648,7 @@ function DirectoryRow({
   selectable,
   onSelect,
   onEditPhoto,
+  cardRef,
 }: {
   row: PlaceListRow
   /** V27: this place's newest review with a body, or null (none / read failed). */
@@ -1571,6 +1667,13 @@ function DirectoryRow({
    * PlaceDirectory). Its presence is the whole permission UI on this surface.
    */
   onEditPhoto?: () => void
+  /**
+   * place-photo-crop slice 4 — the card's outer node, handed to the directory so
+   * a save can scroll this card back into view. A callback ref rather than a
+   * `forwardRef`: it is one element and the directory needs "which node for
+   * which place", not a ref the directory would have to keep in an array anyway.
+   */
+  cardRef?: (node: HTMLDivElement | null) => void
 }) {
   const navigate = useNavigate()
   /**
@@ -1666,7 +1769,15 @@ function DirectoryRow({
        still wraps the whole card, so a tap anywhere else navigates; the bookmark
        floats above it at the title row's height. The title row reserves a
        matching 44px spacer so the name never runs under the floating control. */
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50">
+    <div
+      ref={cardRef}
+      /* place-photo-crop slice 4: the CARD as one box, named per place. Slice 4's
+         acceptance criterion is "the changed place is in the viewport", and the
+         only honest way to measure that is a box around the whole card rather
+         than around a control inside it. */
+      data-testid={`place-card-${row.place.id}`}
+      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-colors motion-reduce:transition-none hover:bg-slate-50"
+    >
       <Link
         to={placePath(row.place.id)}
         data-testid="place-row"

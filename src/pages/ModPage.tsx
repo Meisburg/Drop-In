@@ -394,6 +394,13 @@ function PlacePhotoPicker({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [savedTick, setSavedTick] = useState(0)
+  /**
+   * place-photo-crop slice 4 — this surface has no dialog to close (the editor
+   * is embedded in the page), so the one sentence a refused copy produces has to
+   * be rendered here instead. The photo itself is the confirmation on every
+   * other outcome.
+   */
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null)
 
   const needle = query.trim().toLowerCase()
   const matches = needle === ''
@@ -419,7 +426,13 @@ function PlacePhotoPicker({
               <button
                 type="button"
                 data-testid={`place-photo-pick-${place.id}`}
-                onClick={() => setSelectedId(place.id)}
+                onClick={() => {
+                  setSelectedId(place.id)
+                  // The sentence names the place it is about, so it goes with the
+                  // row that produced it rather than following the moderator to
+                  // the next one.
+                  setPhotoNotice(null)
+                }}
                 className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
               >
                 <span className="truncate">{place.name}</span>
@@ -440,7 +453,10 @@ function PlacePhotoPicker({
           <button
             type="button"
             data-testid="place-photo-back"
-            onClick={() => setSelectedId(null)}
+            onClick={() => {
+              setSelectedId(null)
+              setPhotoNotice(null)
+            }}
             className="min-h-11 self-start text-sm text-indigo-600"
           >
             ← Choose a different place
@@ -448,14 +464,28 @@ function PlacePhotoPicker({
           <PlacePhotoAdmin
             key={`${selected.id}-${savedTick}`}
             place={places.find((place) => place.id === selected.id) ?? selected}
-            onSaved={() => {
-              // The picker holds the ROW it is editing; a save must refresh it
-              // so the preview and the credit line show what was just written
-              // rather than the state that prompted the edit.
+            onSaved={(notice) => {
+              /**
+               * place-photo-crop slice 4: a save (or a removal) still refreshes
+               * the picker's row — the editor is embedded here rather than in a
+               * modal, so it is the row's own new photo that confirms the write.
+               * `notice` is set only when a host refused the copy and the pasted
+               * link was stored instead; it is reported above the editor.
+               */
+              setPhotoNotice(notice ?? null)
               setSavedTick((tick) => tick + 1)
               onSaved({ ...selected })
             }}
           />
+          {photoNotice !== null ? (
+            <p
+              role="status"
+              data-testid="place-photo-notice"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
+            >
+              {photoNotice}
+            </p>
+          ) : null}
         </div>
       )}
     </div>

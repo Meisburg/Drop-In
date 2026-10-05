@@ -41,14 +41,22 @@ The founder was shown both trades and ruled, 2026-10-05:
 
 ## Decision
 
-**A pasted link STAYS A LINK unless the moderator frames it.** URL mode has two
-exits:
+**A pasted link STAYS A LINK unless the moderator frames it.** One action, with
+no separate crop button (slice 4, 2026-10-05 — the founder: *"I don't think we
+need a crop or adjust button anymore here. Basically, just when you click upload
+a file, it should just automatically give you the option to crop or adjust"*):
 
-- **Save** stores the remote URL exactly as the editor always did. Nothing is
-  fetched, nothing is uploaded, no object exists in `place-photos`. A link the
-  browser cannot load still saves fine.
-- **Crop or adjust** fetches the image (`fetchPlacePhotoFile`), opens the crop
-  dialog, and on confirm uploads OUR copy and stores that URL.
+- The editor's primary action fetches the image (`fetchPlacePhotoFile`) and opens
+  the crop dialog; confirming uploads OUR copy and stores that URL. Uploading a
+  file goes straight to the same dialog.
+- **If the copy is refused** — CORS, an error response, a non-image, an oversize
+  body — the same tap stores the REMOTE url instead, as the editor always did,
+  and says so in one sentence: *"We saved the link instead. …"*. Nothing is
+  uploaded, no object exists in `place-photos`, and a refusal never leaves the
+  moderator with nothing.
+- Finishing closes the editor and the host re-reads, so the picture appearing on
+  the card (or the hero) IS the confirmation; the changed place is scrolled back
+  into view so the moderator does not have to hunt for it.
 
 The reason is cost, in the founder's words the day after slice 1 landed:
 
@@ -61,10 +69,17 @@ Upload mode always stores our copy, necessarily: a chosen file has no remote
 home. Both modes converge on the same encoder, the same upload and the same
 patch — the only difference is where the bytes came from.
 
-**The stored crop lands on a 1200px square** — the one shape both surfaces eat
-(the place banner `h-48 w-full` ~1.87:1 and the card thumb `h-16 w-20` 4:5
-portrait, both `object-cover`). The moderator's pan/zoom is what fixes the
-framing; the aspect is not parameterized.
+**The stored crop is a 2:1 rectangle (1400x700), and the place hero carries that
+same shape** (`aspect-[2/1]`, replacing a fixed `h-48`). The founder caught the
+original square himself once he used it: *"Why is it a square that I'm editing in
+when what I see for each place is a rectangle? … It is the wrong size."* He was
+right, and the measurement is why: a fixed `h-48` hero rendered 1.86:1 at 390px
+but 3.85:1 at 844px (the content column is `max-w-md md:max-w-3xl`), so a square
+was TALLER than either surface and `object-cover` re-cropped the moderator's
+framing on every render. 2:1 is within ~7% of the hero and the directory card
+keeps the middle band of the same image. The moderator's pan/zoom is what fixes
+the framing; avatars keep their square window and circle mask (`SQUARE_WINDOW` is
+still the default everywhere else).
 
 **The three provenance fields come out of the editor.** Existing rows keep
 whatever is already stored and `photo_attribution` keeps rendering. A photo
@@ -85,17 +100,18 @@ decided by the code.
 The hotlink's failure mode is already the app's existing one: a photo that fails
 to load falls back to the per-kind illustration (`onError`), so a dead link
 degrades the way a missing photo does rather than as a broken card. (One known
-gap, found while e2e-testing this work and recorded here rather than fixed: on
-the place page `photoFailed` is never reset when the row's photo changes, so a
-dead current link also hides a replacement saved in the same session until the
-page reloads. `src/pages/PlacePage.tsx:135/452/490`.)
+gap was found while e2e-testing this work and **fixed in the same batch**: on the
+place page and on the directory card the failed-load flag is now keyed to the URL
+that failed, so a replacement renders over a picture that had already broken —
+before that, saving over the dead `seattle.gov` row on Green Lake Park looked
+like it had done nothing at all.)
 
 The reversal is bounded rather than open-ended:
 
 - The moderator is the only person who can reach the editor (0062 is
   UPDATE-only and moderator-gated), so a copy is a deliberate human act, not a
-  crawler — and with the amended rule it happens only when the moderator chooses
-  **Crop or adjust**.
+  crawler — and it happens only when the moderator adds or replaces a picture
+  AND the fetch succeeds.
 - A host that refuses the fetch (CORS, an error response, a non-image, an
   oversize body) is **reported**, not worked around — the message names the way
   out: *save it to your device and use Upload a file.* There is no server-side
@@ -123,15 +139,15 @@ The reversal is bounded rather than open-ended:
 - **Copy every pasted link.** This was slice 2's first shape, and the founder
   reversed it on cost the next day: it makes us pay to serve every image,
   including the ones the host already serves fine. Copying is now the price of
-  **Crop or adjust** alone.
+  **framing** a link — and of nothing else.
 
 ## Consequences
 
-- **Two kinds of row are now deliberate**: a plain hotlink (Save, no hosting cost,
-  and a link that may rot) and our own `place-photos` object (Crop or adjust, and
-  every upload). A surface must therefore keep treating `photo_url` as opaque,
-  which it already does — and the place page's `onError` fallback is what makes
-  the hotlink's rot survivable.
+- **Two kinds of row are now deliberate**: a plain hotlink (a link whose copy was
+  refused, or one of the seeded rows — no hosting cost, and a link that may rot)
+  and our own `place-photos` object (a framed link, and every upload). A surface
+  must therefore keep treating `photo_url` as opaque, which it already does — and
+  the place page's `onError` fallback is what makes the hotlink's rot survivable.
 - The pasted URL is never written to `photo_source_url`. The three provenance
   fields are gone from the editor entirely, so there is no field left to put it
   in.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
@@ -7,7 +7,9 @@ import { PlaceKindArt } from '../components/PlaceKindArt'
 import { ModalShell } from '../components/ModalShell'
 import { PlacePhotoAdmin } from '../components/PlacePhotoAdmin'
 import { useSessionContext } from '../components/SessionProvider'
+import { usePrefersReducedMotion } from '../components/usePrefersReducedMotion'
 import { NAV_ICONS } from '../components/icons'
+import { scrollBehaviorFor } from '../lib/mapStrip'
 import {
   countPlaceFollowers,
   getPlaceById,
@@ -160,6 +162,20 @@ export function PlacePage() {
    * would be a second source of truth for `places.photo_url`.
    */
   const [placeReloadTick, setPlaceReloadTick] = useState(0)
+  /**
+   * place-photo-crop slice 4 — after the editor closes, the hero is brought back
+   * into view (the founder: *"Ideally, it would show you that place
+   * automatically so you don't have to scroll down and find it, but whatever."*)
+   * and, when a host refused the copy, one sentence says so. The sentence cannot
+   * live in the editor: the editor unmounts on save.
+   */
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null)
+  const [pendingPhotoScroll, setPendingPhotoScroll] = useState(false)
+  const photoSlotRef = useRef<HTMLDivElement>(null)
+  const reducedMotion = usePrefersReducedMotion()
+  // The pure rule decides what the preference MEANS (src/lib/mapStrip.ts); this
+  // page only reads it, exactly as the directory does.
+  const photoScrollBehavior = scrollBehaviorFor(reducedMotion)
 
   /**
    * V29 v29-2: this place's posts' going pings, in ONE batched read (never one
@@ -188,8 +204,11 @@ export function PlacePage() {
     if (id === undefined) return
     let cancelled = false
     // v30-9: a re-read of the SAME place (a moderator just replaced its photo)
-    // keeps the row on screen — blanking it would unmount the editor dialog and
-    // throw away the "Photo updated." confirmation the moderator is owed.
+    // keeps the row on screen. Slice 4 gave that a second reason: the scroll that
+    // brings the hero back into view has no node to move if the re-read blanks the
+    // page, and the hero keeps its 2:1 box so nothing the moderator was looking at
+    // jumps. (v30-9's original reason — not throwing away the editor's own "Photo
+    // updated." line — is gone with that line: the editor now closes on save.)
     // Navigating to a DIFFERENT place still clears, exactly as before.
     setPlace((current) => (current !== null && current.id === id ? current : null))
     setMissing(false)
@@ -216,6 +235,25 @@ export function PlacePage() {
       cancelled = true
     }
   }, [id, placeReloadTick])
+
+  /**
+   * place-photo-crop slice 4, change 3 — bring the hero back into view once the
+   * editor has closed. It runs AFTER the modal's own cleanup has released the
+   * page's scroll lock (React flushes the deleted subtree's effect cleanups
+   * before the new effects of the same commit), so this scroll is not fought by
+   * `body { overflow: hidden }`.
+   *
+   * The retry key is `place`: a same-place re-read keeps the row on screen, but
+   * the slot is not rendered at all until the read has landed, and a scroll
+   * attempted before that has no node to move.
+   */
+  useEffect(() => {
+    if (!pendingPhotoScroll) return
+    const node = photoSlotRef.current
+    if (node === null) return
+    node.scrollIntoView({ block: 'center', behavior: photoScrollBehavior })
+    setPendingPhotoScroll(false)
+  }, [pendingPhotoScroll, place, photoScrollBehavior])
 
   // The gazetteer, for the "N mi from you" line. A failed load degrades to no
   // distance line at all — never to a guess (the pure seam returns null and the
@@ -496,6 +534,7 @@ export function PlacePage() {
             (`PLACE_PHOTO_SIZE`, 1400×700), which makes the crop window and this
             surface the same 2:1 rectangle at every width. */}
         <div
+          ref={photoSlotRef}
           data-testid="place-page-photo-slot"
           className="relative mt-2 aspect-[2/1] w-full overflow-hidden rounded-2xl bg-slate-100"
         >
@@ -536,6 +575,21 @@ export function PlacePage() {
             </button>
           ) : null}
         </div>
+
+        {/* place-photo-crop slice 4 — the editor's one sentence, after it closes.
+            `role="status"` rather than `role="alert"`: the write succeeded (the
+            photo is on the hero), so this is a report. Only the link fallback
+            sets it; a save that framed the photo leaves it null, because the new
+            picture above IS the confirmation. */}
+        {photoNotice !== null ? (
+          <p
+            role="status"
+            data-testid="place-photo-notice"
+            className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
+          >
+            {photoNotice}
+          </p>
+        ) : null}
 
         <h1 className="mt-2 text-xl font-semibold text-slate-900">{place.name}</h1>
         <p className="mt-1 text-sm text-slate-600">
@@ -850,7 +904,21 @@ export function PlacePage() {
         >
           <PlacePhotoAdmin
             place={place}
-            onSaved={() => setPlaceReloadTick((tick) => tick + 1)}
+            onSaved={(notice) => {
+              /**
+               * place-photo-crop slice 4 — FINISHING CLOSES THE EDITOR, and the
+               * page re-reads its own row behind the closed dialog so the hero
+               * shows the photo that was just written.
+               *
+               * The scroll flag is what carries the founder's "show you that
+               * place automatically": closing alone can leave the hero above the
+               * viewport the moderator is scrolled to.
+               */
+              setPhotoEditorForId(null)
+              setPhotoNotice(notice ?? null)
+              setPendingPhotoScroll(true)
+              setPlaceReloadTick((tick) => tick + 1)
+            }}
           />
         </ModalShell>
       ) : null}

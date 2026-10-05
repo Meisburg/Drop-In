@@ -257,6 +257,61 @@ re-crops the moderator's framing on every render — the framing is thrown away.
 6. Nothing overflows at 390×664 or 844×390: the hero's new aspect must not push
    a control off screen anywhere the mobile audit measures.
 
+## Slice 4 — one flow, no extra button: the crop IS the step
+
+**Founder, 2026-10-05, after using slices 1–3 (committed `f9d7c7a`, `4963f3e`):**
+
+> *"Yeah, this looks great. I'm happy with the setup. That said, I don't think we
+> need a crop or adjust button anymore here. Basically, just when you click
+> upload a file, it should just automatically give you the option to crop or
+> adjust and then … when you're finished, this fix up place photo modal should
+> disappear and the photo will just be populated on the place now. Ideally, it
+> would show you that place automatically so you don't have to scroll down and
+> find it, but whatever."*
+
+Today the moderator has to *choose* to crop (`photo-crop-btn`), and after saving
+the editor stays open on its own data URL with a "Photo updated." line. Three
+changes, in the founder's words:
+
+1. **The `Crop or adjust` button goes away.** Framing is part of adding the
+   photo, not a separate decision:
+   - **Upload a file** → the crop dialog opens on the chosen file (this already
+     happens; the file input is the whole interaction).
+   - **Paste a link** → the one primary button fetches the image and opens the
+     crop dialog. If the host refuses the fetch, fall back to what slice 2 does
+     today — store the remote URL (the founder's link-first cost rule) and say so
+     in one plain sentence. Framing is unavailable on those, which is honest.
+2. **Finishing closes the editor.** Confirm the crop → upload → the "Fix a place
+   photo" dialog disappears, and the host re-reads so the picture is on the card
+   or the hero immediately. No `done` line required; the photo appearing IS the
+   confirmation. Keep `data-testid="photo-admin-done"`'s element for the specs
+   that assert it, or update those specs — do not leave a dead hook.
+3. **Bring the place back into view** (his "but whatever"): after the editor
+   closes, the changed card/hero is scrolled into view and, on /browse and
+   /place/:id, the moderator does not have to hunt for it.
+
+**Acceptance criteria (slice 4):**
+
+1. `photo-crop-btn` no longer exists anywhere in the DOM; a moderator cannot
+   reach a state where a photo is saved unframed *by that route*.
+2. Paste a link → the single primary action → the crop dialog opens on the
+   fetched image; confirming stores our own `place-photos` URL and the editor
+   closes (assert the editor's test id is gone, not just that a confirmation
+   rendered).
+3. A refused fetch → the link is stored as the remote URL, the editor closes, and
+   one sentence says the picture could not be copied. Nothing is stored twice.
+4. Upload a file → crop → confirm → the editor closes, the row points at our
+   stored 2:1 1400×700 object, and the card/hero shows it without a manual
+   refresh.
+5. After the close, the changed place is in the viewport on `/browse` (the
+   scroll/focus claim, measured with `boundingBox`).
+6. `place-photo-admin.e2e.ts`'s five tests are updated to the new flow and pass;
+   `avatar-square.e2e.ts` passes unchanged.
+
+**Verification:** `npm run verify` (baseline the one slice 3 left: 75 files /
+2226 tests / 86 warnings / 0 errors / GUARDS PASS, and it must grow), the private
+port recipe for `place-photo-admin` + `avatar-square`, and the mobile audit.
+
 ## Not in scope
 
 - The directory card's own box (`h-36 w-full`): it keeps its geometry and takes a

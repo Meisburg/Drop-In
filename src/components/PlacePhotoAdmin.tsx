@@ -4,6 +4,7 @@ import {
   PLACE_PHOTO_SIZE,
   clearPlacePhotoPatch,
   fetchPlacePhotoFile,
+  linkFallbackNotice,
   placePhotoPatch,
   validatePhotoUrl,
   validatePlacePhotoCropFile,
@@ -22,25 +23,40 @@ import type { Place } from '../lib/types'
  *
  * TWO WAYS IN, because they are genuinely different situations and the founder
  * asked for both: PASTE a link for an image found online, or UPLOAD a file
- * (their own photo of the park, or one saved from elsewhere) — and framing is
- * the rest of the ask (2026-10-05): *"be able to like pan it or crop it to make
- * it look right for our app."* The pasted image is previewed inline, because the
- * moderator has to see it to judge whether it needs framing.
+ * (their own photo of the park, or one saved from elsewhere). The pasted image
+ * is previewed inline, because the moderator has to see it to judge whether it
+ * needs framing.
  *
- * URL MODE HAS TWO EXITS, and which one the moderator takes decides who hosts
- * the bytes:
- *   - **Save** keeps the plain remote URL. Nothing is fetched, nothing is
- *     uploaded, no object is created — a link the browser cannot even load still
- *     saves fine.
- *   - **Crop or adjust** copies the image into our own `place-photos` bucket:
- *     the only way to frame it (a cross-origin image taints the canvas), and the
- *     only time we pay to host it.
- * UPLOAD MODE ALWAYS STORES OUR COPY, necessarily: a chosen file has no remote
- * home. The founder's ruling, 2026-10-05: *"we should prefer hosting using
- * whoever has already got the image hosted on their link if possible, but then
- * you have the option to — if you need to crop or pan the image — then it gets
- * copied to our database, because otherwise we're going to be paying to serve up
- * every image for everyone."*
+ * ONE FLOW, AND NO SEPARATE FRAMING DECISION (place-photo-crop slice 4,
+ * 2026-10-05). The founder used slices 1–3 and ruled: *"I don't think we need a
+ * crop or adjust button anymore here. Basically, just when you click upload a
+ * file, it should just automatically give you the option to crop or adjust and
+ * then … when you're finished, this fix up place photo modal should disappear
+ * and the photo will just be populated on the place now."* So the crop step IS
+ * the step for both ways in, and a photo is saved UNFRAMED only when it cannot
+ * be copied at all:
+ *   - **Upload a file** — picking the file opens the crop dialog (slice 1's
+ *     behaviour, unchanged); the dialog's confirm is the save.
+ *   - **Paste a link** — the one primary button (`photo-save-btn`) FETCHES the
+ *     image and opens that same dialog. Confirming copies it into our own
+ *     `place-photos` bucket, which is the only way to frame it (a cross-origin
+ *     image taints the canvas and cannot be encoded).
+ *   - **A HOST THAT REFUSES THE FETCH STILL SAVES THE LINK.** The founder's cost
+ *     ruling of the same day survives the one-flow change: *"we should prefer
+ *     hosting using whoever has already got the image hosted on their link if
+ *     possible."* A refused image cannot be framed, so the remote URL is stored
+ *     as `photo_url` — the moderator is left with a photo rather than with
+ *     nothing — and the refusal's own sentence travels out through `onSaved`,
+ *     because this component is unmounted by then.
+ * The one button is labelled "Save photo" and that is what it does on both
+ * paths; what it does NOT do is save the un-framed original behind the
+ * moderator's back, and cancelling the crop dialog leaves nothing written (the
+ * same contract as cancelling an upload).
+ *
+ * FINISHING CLOSES THE EDITOR (slice 4, change 2). A save calls `onSaved` and
+ * the host unmounts this component; nothing here renders a "Photo updated."
+ * line any more, because the photo appearing on the card or the hero IS the
+ * confirmation, and the host's own re-read is what puts it there.
  *
  * ⚠️ PROVENANCE IS NO LONGER ASKED FOR — A RECORDED REVERSAL (2026-10-05). This
  * editor used to require *Who took it*, *Licence* and *Where it came from*, and
@@ -54,16 +70,21 @@ import type { Place } from '../lib/types'
  * provenance columns WITH the picture (`placePhotoPatch` writes all five
  * together), so a new picture never wears the old credit.
  *
- * ⚠️ IT COPIES AN IMAGE ONLY WHEN THE MODERATOR FRAMES IT — A RECORDED REVERSAL
- * (2026-10-05). The rule was "does not download anything", and the reason is
- * kept, not argued away: re-hosting a third party's image may breach that host's
- * terms (Google's especially), and a CC licence expects the attribution we no
- * longer ask for. The founder was shown the trade and ruled twice — the second
- * time on cost, and the cost half is exactly what makes the copy conditional.
+ * ⚠️ IT COPIES A PASTED IMAGE, AND IT ALWAYS STORES SOMETHING — A RECORDED
+ * REVERSAL (2026-10-05). The rule was "does not download anything", and the
+ * reason is kept, not argued away: re-hosting a third party's image may breach
+ * that host's terms (Google's especially), and a CC licence expects the
+ * attribution we no longer ask for. The founder was shown the trade and ruled
+ * twice — the second time on cost, which is exactly what makes the COPY the
+ * price of framing a link and the LINK what a refused fetch keeps. That second
+ * half is slice 4's: the refusal used to block the crop and save nothing, and
+ * now it stores the link on the same tap, so a host we cannot copy from never
+ * leaves the moderator with nothing.
  * `fetchPlacePhotoFile` (in `lib/placePhotoAdmin.ts`) is the app's only fetch
- * whose response is STORED, it is reached only from **Crop or adjust**, and a
- * host that refuses is reported with the way out ("save it to your device and
- * use Upload a file") rather than worked around: there is no server-side fetch.
+ * whose response is STORED, it is reached only from URL mode's one primary
+ * action, and a host that refuses is reported with the way out ("save it to your
+ * device and use Upload a file") rather than worked around: there is no
+ * server-side fetch.
  *
  * The accepted risks — re-hosting terms, and a hotlinked image that can rot or be
  * blocked later — are recorded in
@@ -73,12 +94,28 @@ import type { Place } from '../lib/types'
  * file type and size, the object path, the patch shape, and the copy. The
  * framing decisions live in `lib/photoCrop.ts`.
  */
-export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () => void }) {
+export function PlacePhotoAdmin({
+  place,
+  onSaved,
+}: {
+  place: Place
+  /**
+   * The photo is written and this editor is FINISHED — the host closes it (or,
+   * on /mod, refreshes the row it is embedded in) and re-reads, so the card or
+   * the hero shows what was just saved.
+   *
+   * `notice` is at most one sentence for the moderator to read AFTER this
+   * component is gone, and it is set only by the link fallback: the fetch was
+   * refused, the remote URL was stored instead, and the moderator has to be told
+   * why the picture they just saved cannot be framed. Everywhere else it is
+   * undefined, because the photo appearing is the whole confirmation.
+   */
+  onSaved: (notice?: string) => void
+}) {
   const [mode, setMode] = useState<'url' | 'upload'>('url')
   const [urlValue, setUrlValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
 
   /**
    * THE ONE SAVE PATH for a framed photo. Both ways in end here: the crop
@@ -92,11 +129,13 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
    * frames in is the shape the place page shows (slice 3). The SAME constant is
    * the encoder's output size, so there is one rectangle in the app rather than
    * a window and a stored size that can drift apart.
+   *
+   * `onSaved` is called with NO notice: a framed photo is the outcome the
+   * moderator asked for, and the host closing the editor is the confirmation.
    */
   const crop = useCropStep(
     async (source, rect) => {
       setError(null)
-      setDone(false)
       try {
         const blob = await prepareCroppedPhotoFile(source, rect, PLACE_PHOTO_SIZE)
         const file = new File([blob], 'place-photo.jpg', { type: 'image/jpeg' })
@@ -105,7 +144,6 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
           place.id,
           placePhotoPatch({ photoUrl, sourceUrl: null, license: null, author: null }),
         )
-        setDone(true)
         onSaved()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not save that photo.')
@@ -128,59 +166,34 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
    */
   async function handlePickFile(file: File) {
     setError(null)
-    setDone(false)
     const message = await crop.beginCrop(file)
     if (message !== null) setError(message)
   }
 
   /**
-   * URL mode's SAVE — the link-first exit. It validates the link and stores the
-   * REMOTE url as `photo_url`, exactly as this editor always did.
+   * URL MODE'S ONE PRIMARY ACTION (slice 4), and the ONLY caller of
+   * `fetchPlacePhotoFile`.
    *
-   * NOTHING IS FETCHED, and that is the founder's cost rule (2026-10-05): if the
-   * host already serves the image, let it. It is also why a link the browser
-   * cannot load still saves fine — we never look at the bytes here. Framing is
-   * the other button.
+   * THE ORDER IS THE WHOLE DESIGN: copy first, and fall back to the link only
+   * when the copy is impossible.
+   *   - the fetch succeeds → the decoded file goes through the SAME gate, dialog,
+   *     encoder, upload and patch as a chosen file (slice 1's one save path), so
+   *     a framed link and a framed upload cannot drift apart;
+   *   - the fetch is refused (CORS, a non-image, an error response, an oversize
+   *     body) → the image cannot be framed — a cross-origin image taints the
+   *     canvas — so the REMOTE url is stored as `photo_url` on this same tap.
+   *     That is the founder's cost ruling (2026-10-05) surviving the one-flow
+   *     change, and it is why a refused fetch leaves the moderator with a photo
+   *     rather than with nothing. The refusal's own sentence rides out through
+   *     `onSaved`, because this component is unmounted by then.
+   *
+   * NOTHING IS STORED TWICE: exactly one of the two branches writes, and the
+   * link branch writes the same five columns through the same `placePhotoPatch`
+   * the old Save used.
    */
-  async function handleUrlSave() {
+  async function handleUrlPrimary() {
     if (busy) return
     setError(null)
-    setDone(false)
-    const checked = validatePhotoUrl(urlValue)
-    if ('error' in checked) {
-      setError(checked.error)
-      return
-    }
-    setBusy(true)
-    try {
-      await setPlacePhoto(
-        place.id,
-        placePhotoPatch({ photoUrl: checked.url, sourceUrl: null, license: null, author: null }),
-      )
-      setDone(true)
-      setUrlValue('')
-      onSaved()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save that photo.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /**
-   * URL mode's CROP exit — the only path that copies someone else's image into
-   * our bucket, and the only caller of `fetchPlacePhotoFile`.
-   *
-   * A FAILED FETCH BLOCKS ONLY THE CROP. It reports the sentence the fetch
-   * produced and stores nothing; Save on the same link is untouched, because it
-   * never fetched anything either. The decoded file then goes through the SAME
-   * gate, dialog, encoder, upload and patch as a chosen file (slice 1's one
-   * save path) — there is no second framing implementation.
-   */
-  async function handleUrlCrop() {
-    if (busy) return
-    setError(null)
-    setDone(false)
     const checked = validatePhotoUrl(urlValue)
     if ('error' in checked) {
       setError(checked.error)
@@ -190,11 +203,18 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
     try {
       const fetched = await fetchPlacePhotoFile(checked.url)
       if (!fetched.ok) {
-        setError(fetched.error)
+        await setPlacePhoto(
+          place.id,
+          placePhotoPatch({ photoUrl: checked.url, sourceUrl: null, license: null, author: null }),
+        )
+        setUrlValue('')
+        onSaved(linkFallbackNotice(fetched.error))
         return
       }
       const message = await crop.beginCrop(fetched.file)
       if (message !== null) setError(message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that photo.')
     } finally {
       setBusy(false)
     }
@@ -205,15 +225,16 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
    * no replacement yet, and the directory's per-kind illustration is a better
    * answer than a confidently wrong photograph. The patch clears all five columns
    * together (`clearPlacePhotoPatch`) — provenance must not outlive its image.
+   *
+   * It finishes the editor exactly like a save does, because it changes the same
+   * row and the illustration appearing is the confirmation.
    */
   async function handleClear() {
     if (busy) return
     setBusy(true)
     setError(null)
-    setDone(false)
     try {
       await setPlacePhoto(place.id, clearPlacePhotoPatch())
-      setDone(true)
       onSaved()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not clear that photo.')
@@ -334,7 +355,7 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
       )}
 
       {/* The crop step's portal, in both modes: a picked file opens it here, and
-          URL mode's "Crop or adjust" opens it on the fetched image. It renders
+          URL mode's one primary action opens it on the fetched image. It renders
           nothing until there is a decoded bitmap to frame. */}
       {crop.dialog}
 
@@ -343,40 +364,24 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
           {error}
         </p>
       ) : null}
-      {done ? (
-        <p role="status" data-testid="photo-admin-done" className="text-sm text-green-700">
-          Photo updated.
-        </p>
-      ) : null}
 
-      {/* URL mode's two exits, side by side: SAVE keeps the link (cheap, works
-          even when the browser cannot load it), CROP OR ADJUST copies it into our
-          bucket so it can be framed. Upload mode has neither — its file input
-          opens the crop step directly, and the dialog's confirm IS its save.
-          Remove photo gets its own row rather than sharing one: three controls
-          on a 320px phone leave "Crop or adjust" about 86px of text box, which
-          wraps a two-word label onto two lines. */}
+      {/* URL mode's ONE control (slice 4). It fetches the pasted image and opens
+          the crop step; a host that refuses has its link stored instead by
+          `handleUrlPrimary`, and the sentence explaining that comes from the host
+          because this component is gone by then. Upload mode has no button at all
+          — its file input opens the crop step directly, and the dialog's confirm
+          IS its save. Remove photo sits in its own row below, so a 320px phone
+          never has to fit two controls on one line. */}
       {mode === 'url' ? (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            data-testid="photo-save-btn"
-            disabled={busy}
-            onClick={() => void handleUrlSave()}
-            className="min-h-11 flex-1 rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {busy ? 'Saving…' : 'Save photo'}
-          </button>
-          <button
-            type="button"
-            data-testid="photo-crop-btn"
-            disabled={busy}
-            onClick={() => void handleUrlCrop()}
-            className="min-h-11 flex-1 rounded-xl border border-indigo-500 bg-white px-3 text-sm font-medium text-indigo-700 disabled:opacity-50"
-          >
-            Crop or adjust
-          </button>
-        </div>
+        <button
+          type="button"
+          data-testid="photo-save-btn"
+          disabled={busy}
+          onClick={() => void handleUrlPrimary()}
+          className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save photo'}
+        </button>
       ) : null}
 
       <div className="flex gap-2">
