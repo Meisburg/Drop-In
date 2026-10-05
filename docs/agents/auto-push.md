@@ -181,7 +181,12 @@ bash scripts/remind-human.sh --hook   # the terse pre-push form
 2. Open entries (lines starting with `- `) in the
    `## Escalations (waiting on human)` section.
 
-Entries containing `RESOLVED`, `APPLIED + VERIFIED`, or `not blocking` are
-skipped automatically. So: when you record human-pending work, put it in one of
-those two places — anywhere else in the file is invisible to the reminder, which
-defeats the point.
+Entries are judged **as a whole entry, not by their first line**. An entry is a
+`- ` line plus its indented continuation lines, and it is skipped when **any**
+line in that block contains `RESOLVED`, `APPLIED + VERIFIED`, `SUPERSEDED`,
+`not blocking`, or `no further action`. This matters because the house
+convention is to record the ruling *below* the ⚠️ sentence — a line-by-line
+match printed the closed V24 read-surface item forever, and it was the only
+thing the reminder showed. So: when you record human-pending work, put it in
+one of those two places — anywhere else in the file is invisible to the
+reminder, which defeats the point.
