@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-10-05T21:03:22.980Z",
+  "dryRun": true,
+  "rows": [
+    {
+      "placeId": "017f6e4b-4827-46ae-bc8f-7d0acd3a99ff",
+      "placeName": "Ross Playground",
+      "kind": "playground",
+      "outcome": "applied",
+      "tier": "tier1",
+      "title": "File:Beresford-Diana Ross Playground.jpg",
+      "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/93/Beresford-Diana_Ross_Playground.jpg/960px-Beresford-Diana_Ross_Playground.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source": "commons",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/File:Beresford-Diana_Ross_Playground.jpg",
+      "license": "CC BY-SA 4.0",
+      "author": "Micki L. Katz",
+      "verified": true,
+      "contentType": "image/jpeg"
+    }
+  ]
+}

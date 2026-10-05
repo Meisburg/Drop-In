@@ -44,6 +44,14 @@
  * P178 yielded nothing usable for these small parks — geosearch returned
  * photographs taken NEAR them, which is what the name gate exists to reject.
  *
+ * BOTH QUERIES CARRY THE CITY (2026-10-05). Commons name search is not
+ * locality-bound; measured, the bare name returned a playground in England for
+ * "Beacon Hill Playground" and Central Park's Diana Ross Playground for "Ross
+ * Playground". `gsrsearch` is therefore `<name> Seattle`, and the gate still
+ * checks the file's own geotag when it has one (see `isWrongLocation` in
+ * `src/lib/placePhotoSourcing.ts`) — the query improves the candidates, the gate
+ * refuses the ones that are still provably elsewhere.
+ *
  * Usage:
  *   node scripts/source-place-photos.mjs --dry-run            # all blanks, no writes
  *   node scripts/source-place-photos.mjs --dry-run --limit 10 # the smoke run
@@ -244,10 +252,20 @@ async function fetchCommons(place) {
   const params = new URLSearchParams({
     action: 'query',
     generator: 'search',
-    gsrsearch: place.name,
+    // ⚠️ THE CITY IS PART OF THE QUERY, and that is a 2026-10-05 fix measured
+    // against the bare-name search the V18 pipeline used. Commons search is NOT
+    // locality-bound, so the bare name matched a Seattle park to a playground in
+    // ENGLAND ("Beacon Hill Playground - geograph.org.uk"), to Dan Ross
+    // Playground in BROOKLYN, to Diana Ross Playground in CENTRAL PARK, and to
+    // Norwegian churches for "Kirke Park" — and a photograph 4,000 km away looks
+    // exactly like a correct answer. Measured both ways for eight places: the
+    // qualified query kept every Seattle hit AND found ones the bare query missed
+    // (Kirke Park's own P-Patch, three modern Hiawatha Playfield photos), so this
+    // is precision AND yield, not a trade.
+    gsrsearch: `${place.name} ${DIRECTORY_CITY}`,
     gsrnamespace: '6',
     gsrlimit: String(COMMONS_LIMIT),
-    prop: 'imageinfo|categories',
+    prop: 'imageinfo|categories|coordinates',
     iiprop: 'url|extmetadata',
     iiurlwidth: '800',
     cllimit: '20',
@@ -284,6 +302,14 @@ async function fetchCommons(place) {
           .map((category) => (category && typeof category.title === 'string' ? category.title : ''))
           .filter((category) => category !== '')
       : []
+    // The file's OWN geotag, when it has one. This is what stops a perfect name
+    // match 4,000 km away: Commons name search is not locality-bound, and the
+    // 2026-10-05 run matched a Seattle park to a playground in England.
+    const fileCoordinates = Array.isArray(page.coordinates) ? page.coordinates[0] : null
+    const coordinates =
+      fileCoordinates && Number.isFinite(Number(fileCoordinates.lat)) && Number.isFinite(Number(fileCoordinates.lon))
+        ? { lat: Number(fileCoordinates.lat), lng: Number(fileCoordinates.lon) }
+        : null
     candidates.push({
       title,
       description: null,
@@ -293,6 +319,7 @@ async function fetchCommons(place) {
       license: license === '' ? null : license,
       author: author === '' ? null : author,
       categories,
+      coordinates,
     })
   }
   return { candidates, failure: null }
@@ -464,7 +491,7 @@ async function main() {
   if (limit !== null) places = places.slice(0, limit)
 
   console.log(`${dryRun ? 'DRY RUN' : 'LIVE RUN'} — ${places.length} of ${totalBlanks} blank place(s)`)
-  console.log(`sources: Openverse (q="<name> Seattle", page_size=${OPENVERSE_PAGE_SIZE}) + Commons name search`)
+  console.log(`sources: Openverse (q="<name> ${DIRECTORY_CITY}", page_size=${OPENVERSE_PAGE_SIZE}) + Commons name search (q="<name> ${DIRECTORY_CITY}")`)
   console.log('')
 
   const rows = []
@@ -497,8 +524,21 @@ async function main() {
       continue
     }
 
-    const ranked = rankCandidates(place.name, candidates, { city: DIRECTORY_CITY })
+    const ranked = rankCandidates(place.name, candidates, {
+      city: DIRECTORY_CITY,
+      // PostgREST returns `numeric` as a string; the gate coerces, and passing
+      // null for the three rows without coordinates simply skips the check.
+      lat: place.lat,
+      lng: place.lng,
+    })
     if (ranked.accepted.length === 0) {
+      // Say WHICH titles the gate dropped and why, so the log is an audit trail
+      // rather than a verdict. "all failed the gate" alone cannot be checked.
+      console.log(
+        `      nothing passed the gate — ${ranked.dropped
+          .map((entry) => `${entry.reason}:"${entry.title}"`)
+          .join(', ')}`,
+      )
       rows.push({
         placeId: place.id,
         placeName: place.name,

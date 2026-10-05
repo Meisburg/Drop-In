@@ -35,6 +35,14 @@
  * a person, a historical document — is DROPPED outright rather than demoted. A
  * wrong live picture costs more than a blank.
  *
+ * ⚠️ AND THE DEFECT THE FIRST FIX DID NOT CATCH, found by reading the tightened
+ * list: Commons name search is not locality-bound, so **"Beacon Hill Playground"
+ * matched a playground in ENGLAND** (the file's own geotag says 51.12, -0.75) and
+ * **"Ross Playground" matched Dan Ross Playground in BROOKLYN** (40.62, -74.02) —
+ * right name, right kind word, wrong continent. A candidate's OWN geotag is
+ * therefore a drop when it is provably far from the place (`isWrongLocation`),
+ * and the shell now asks Commons for the city as well as the name.
+ *
  * WHY THE GATE IS THE DESIGN, and its measured basis. The probe that decided this
  * slice (`.scratch/place-photo-sourcing/spec.md` §1) searched three blank places
  * against Commons geosearch, Wikidata, Openverse and Commons name search. Only
@@ -90,6 +98,19 @@ export interface SourceCandidate {
    * asks Commons for them; Openverse does not offer an equivalent field.
    */
   categories?: readonly string[] | null
+  /**
+   * The file's OWN geolocation, when the source states one (Commons
+   * `prop=coordinates`). It is the one locality fact a candidate can carry:
+   * Openverse aggregates Flickr and states none, Commons states one whenever the
+   * uploader geocoded the file.
+   *
+   * WHY IT MATTERS, measured 2026-10-05: Commons NAME search is not
+   * locality-bound, so "Ross Playground" returned *Dan Ross Playground, Brooklyn
+   * NYC* (40.62, -74.02) and "Beacon Hill Playground" returned a geograph.org.uk
+   * playground in ENGLAND (51.12, -0.75) — both correct name matches, both
+   * 4,000–8,000 km from the Seattle place, both about to go live to parents.
+   */
+  coordinates?: { lat: number; lng: number } | null
 }
 
 /**
@@ -306,19 +327,39 @@ export function distinctivePlaceTokens(name: string): string[] {
  * surname and half of Seattle), and a single-word match would make a photo of
  * anything on that street tier 1 — that is, live to parents with no review. A
  * two-word core is the smallest thing this gate trusts on its own.
+ *
+ * ⚠️ THE TWO WAYS ARE NOT EQUAL EVIDENCE, which the gate uses: way 1 is the
+ * place's own name in its own order, way 2 is a bag of words that can reassemble
+ * into a different referent. The measured case is "Chinatown-International
+ * District, Seattle, Washington" for the place "International District Community
+ * Center" — every distinctive token is there, and the photograph is of the
+ * neighbourhood, not the building.
  */
 export function titleNamesPlace(text: string, placeName: string): boolean {
   const haystack = normalizeForMatch(text)
   if (haystack === '') return false
-  const padded = ` ${haystack} `
+  if (placeNameAppearsVerbatim(text, placeName)) return true
+  const words = new Set(haystack.split(' '))
   for (const alias of placeNameAliases(placeName)) {
-    if (padded.includes(` ${alias} `)) return true
     const tokens = distinctivePlaceTokens(alias)
     if (tokens.length < 2) continue
-    const words = new Set(haystack.split(' '))
     if (tokens.every((token) => words.has(token))) return true
   }
   return false
+}
+
+/**
+ * The STRONG half of `titleNamesPlace`: the whole name, in its own order.
+ *
+ * Exposed separately because the gate trusts it more — a verbatim name may ride
+ * on the city as its place signal, while an any-order token match needs a
+ * place-kind word before it can go live (see `gateCandidate`).
+ */
+export function placeNameAppearsVerbatim(text: string, placeName: string): boolean {
+  const haystack = normalizeForMatch(text)
+  if (haystack === '') return false
+  const padded = ` ${haystack} `
+  return placeNameAliases(placeName).some((alias) => padded.includes(` ${alias} `))
 }
 
 /** The title and description as one searchable string (the spec's "title/description"). */
@@ -398,6 +439,35 @@ const PLACE_SIGNAL_SINGLE = new Set(PLACE_SIGNAL_WORDS.filter((term) => !term.in
 const PLACE_SIGNAL_PHRASES = PLACE_SIGNAL_WORDS.filter((term) => term.includes(' '))
 
 /**
+ * The place-kind NOUNS that can sit inside a place's OWN name — "…Community
+ * Center", "…Wading Pool", "…Playground". Derived from the signal vocabulary, so
+ * the two lists cannot drift apart.
+ */
+const PLACE_KIND_NOUNS = new Set(
+  PLACE_SIGNAL_WORDS.flatMap((term) => term.split(' ')).filter((word) => word.length > 2),
+)
+
+/**
+ * The kind words the place calls ITSELF: "International District **Community
+ * Center**" → ['community', 'center']; "Warren G Magnuson" → [].
+ *
+ * Used for the loose half of the name test (see `gateCandidate`): a bag of words
+ * that happens to contain the place's distinctive tokens is only believed when
+ * the title also echoes what kind of place it is. The measured failure is a
+ * photograph of Hing Hay Park titled "…Chinatown-International District…" for the
+ * place "International District Community Center": the neighbourhood supplied the
+ * distinctive tokens, a different park supplied the place-kind word, and the
+ * community center itself appears nowhere.
+ */
+export function placeKindWordsInName(name: string): string[] {
+  const found: string[] = []
+  for (const word of normalizeForMatch(name).split(' ')) {
+    if (PLACE_KIND_NOUNS.has(word) && !found.includes(word)) found.push(word)
+  }
+  return found
+}
+
+/**
  * Does this text call itself a place? Word-wise, so "parking" is not "park" and
  * "counterpane" is not "court", and phrase-wise for "community center" and
  * "wading pool".
@@ -423,6 +493,67 @@ export interface PlaceSignalContext {
   city?: string | null
   /** Extra text that may say what the candidate is (a Commons category list). */
   categories?: readonly string[] | null
+  /**
+   * The place's own coordinates, for the locality check. PostgREST returns
+   * `numeric` as a STRING, so these are coerced with `Number` before use.
+   */
+  lat?: number | string | null
+  lng?: number | string | null
+}
+
+/** A latitude/longitude pair. */
+export interface LatLng {
+  lat: number
+  lng: number
+}
+
+/** `Number(value)` when it is a finite number, else null. Tolerates a numeric string. */
+function toFiniteNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * How far a file may be geotagged from the place and still BE that place.
+ *
+ * Deliberately loose, because the check must never lose a real photo to an
+ * approximate geotag: 50 km is wider than the Seattle metro, so a photo taken
+ * across town passes, while the two measured wrong-locality hits — Brooklyn
+ * (~3,900 km) and England (~7,700 km) — are nowhere near it.
+ */
+export const MAX_SAME_PLACE_KM = 50
+
+/** Great-circle distance in km. Enough to answer "is this even the same city?". */
+export function distanceKm(a: LatLng, b: LatLng): number {
+  const earthRadiusKm = 6371
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180
+  const deltaLat = toRadians(b.lat - a.lat)
+  const deltaLng = toRadians(b.lng - a.lng)
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(a.lat)) * Math.cos(toRadians(b.lat)) * Math.sin(deltaLng / 2) ** 2
+  return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(haversine)))
+}
+
+/**
+ * Is the candidate's own location provably NOT this place?
+ *
+ * Only answered when BOTH sides state coordinates: a missing geotag is UNKNOWN,
+ * never "wrong" (the same rule the rest of this codebase follows for absent
+ * data). Three of the 112 blank places have `lat`/`lng` NULL, and they simply do
+ * not get this check.
+ */
+export function isWrongLocation(candidate: SourceCandidate, context: PlaceSignalContext): boolean {
+  const candidateLat = toFiniteNumber(candidate.coordinates?.lat)
+  const candidateLng = toFiniteNumber(candidate.coordinates?.lng)
+  const placeLat = toFiniteNumber(context.lat)
+  const placeLng = toFiniteNumber(context.lng)
+  if (candidateLat === null || candidateLng === null || placeLat === null || placeLng === null) {
+    return false
+  }
+  return distanceKm({ lat: candidateLat, lng: candidateLng }, { lat: placeLat, lng: placeLng }) >
+    MAX_SAME_PLACE_KM
 }
 
 /**
@@ -497,6 +628,55 @@ export function carriesArchivalYear(title: string): boolean {
 }
 
 /**
+ * HUMAN-REVIEWED REJECTIONS — the 2026-10-05 tier-1 list, read title by title.
+ *
+ * These are the wince cases that no rule reaches: the place's name really is in
+ * the title, in its own order, and the photograph is still of something else. A
+ * rule broad enough to catch "White house details, …, Washington Park, Seattle"
+ * would also demote "Dogs at play, …, Warren G. Magnuson Dog Park, Seattle",
+ * which is a real picture of the place — so instead of guessing, the reviewer
+ * (this session, on the founder's behalf) read the list and said no.
+ *
+ * THEY ARE SCOPED TO THEIR PLACE, which is the point: "white house details" is
+ * not a universal non-place word (a field house is a real thing), but it is
+ * decisive for a park named Washington Park. Each entry carries WHY, because the
+ * next reviewer has to be able to disagree with the reason rather than the code.
+ *
+ * THIS IS A MEASURED LIST, NOT A HEURISTIC — the same genus as `SOURCE_BLOCKLIST`
+ * one screen up. It is keyed on the exact measured title, so a different
+ * candidate for the same place is judged on its own merits next run.
+ */
+export interface ReviewedRejection {
+  place: string
+  titleIncludes: string
+  why: string
+}
+
+export const REVIEWED_REJECTIONS: readonly ReviewedRejection[] = [
+  {
+    place: 'Washington Park',
+    titleIncludes: 'white house details',
+    why: 'the title is a list of architectural details — a house near the park, not the park',
+  },
+  {
+    place: 'Pritchard Beach',
+    titleIncludes: 'a babe of a house',
+    why: 'the subject is a house (and a person), not the beach; the place name is only a location tag',
+  },
+]
+
+/** The reason this title was rejected by hand for this place, or null. */
+export function reviewedRejectionReason(placeName: string, title: string): string | null {
+  const place = normalizeForMatch(placeName)
+  const value = normalizeForMatch(title)
+  for (const entry of REVIEWED_REJECTIONS) {
+    if (normalizeForMatch(entry.place) !== place) continue
+    if (value.includes(normalizeForMatch(entry.titleIncludes))) return entry.why
+  }
+  return null
+}
+
+/**
  * The gate's verdict on ONE candidate.
  *
  * `tier: null` means DROPPED — not demoted. The reason is carried because the
@@ -504,19 +684,34 @@ export function carriesArchivalYear(title: string): boolean {
  * results were a truck and two book scans" is a different fact from "the search
  * returned nothing".
  */
+/**
+ * WHY a candidate was dropped — ONE vocabulary, shared by the gate's verdict and
+ * the report's audit trail, so the two cannot drift apart (they did once, and the
+ * build caught it).
+ */
+export type DropReason =
+  | 'blocklisted'
+  | 'person-name'
+  | 'archival'
+  | 'reviewed-non-place'
+  | 'wrong-location'
+
 export type CandidateGateResult =
   | { tier: SourcingTier; reason: null }
-  | { tier: null; reason: 'blocklisted' | 'person-name' | 'archival' }
+  | { tier: null; reason: DropReason }
 
 /**
- * THE GATE. Four questions, in this order:
+ * THE GATE. Six questions, in this order:
  *
  *   1. is a person the subject? → DROP (the general form; a role word plus a
  *      capitalized name);
  *   2. is it a measured non-place subject, a book, a film or a scanned
  *      document? → DROP;
- *   3. does the title carry an archival year (before 1955)? → DROP;
- *   4. does the text name the place AND carry a place signal? → TIER 1, else
+ *   3. did a human read this exact title and wince? → DROP;
+ *   4. does the title carry an archival year (before 1955)? → DROP;
+ *   5. is the FILE's own geotag provably not this place? → DROP (this is the one
+ *      check that catches a perfect name match 4,000 km away);
+ *   6. does the text name the place AND carry a place signal? → TIER 1, else
  *      TIER 2.
  *
  * The drops come first, and that ordering is the one real decision in this
@@ -525,12 +720,29 @@ export type CandidateGateResult =
  * Animal Shelter" and is still a photograph of a person at a podium. If the name
  * check ran first, that candidate would be tier 1 and LIVE TO PARENTS.
  *
- * THE FOURTH QUESTION IS THE 2026-10-05 FIX. A name match alone is not enough
- * for the tier that goes live to parents: "Wunderkind" is a one-word place name,
- * and every book, pamphlet and scan whose text contains that word used to be tier
- * 1. Now the same title is tier 2 at best (stored, hidden), and an archival one
- * is dropped. The good ones still pass because a real photo of a park says
- * "park", "playground", "community center" or its own city.
+ * THE FIFTH QUESTION IS THE SECOND HALF OF THE 2026-10-05 FIX, and it exists
+ * because the fourth one cannot see locality. Commons name search is not
+ * locality-bound: "Beacon Hill Playground" matched a playground in England and
+ * "Ross Playground" matched Dan Ross Playground in Brooklyn, both with the right
+ * name and a place-kind word. The file's own coordinates settle it — a geotag
+ * 4,000 km away is not this place, whatever the title says.
+ *
+ * THE SIXTH QUESTION IS THE FIRST HALF. A name match alone is not enough for the
+ * tier that goes live to parents: "Wunderkind" is a one-word place name, and every
+ * book, pamphlet and scan whose text contains that word used to be tier 1. Now the
+ * same title is tier 2 at best (stored, hidden), and an archival one is dropped.
+ * The good ones still pass because a real photo of a park says "park",
+ * "playground", "community center" or its own city.
+ *
+ * AND THE TWO HALVES OF THE NAME ARE NOT EQUAL. A VERBATIM name ("Albert Davis
+ * Park") may use the city or a category as its signal; an ANY-ORDER token match
+ * must be corroborated — the title has to echo the kind words the place calls
+ * ITSELF ("community center", "wading pool"), because a bag of words can
+ * reassemble into a different referent. Two measured failures: "Chinatown-
+ * International District, Seattle, Washington" for the place "International
+ * District Community Center" (the neighbourhood, not the building), and "Hing
+ * Hay Park, Chinatown-International District, Seattle, Washington" (a different
+ * park's photo, whose kind word "Park" belongs to Hing Hay, not to the center).
  *
  * NOTE WHAT IS NOT GATED: THE LICENCE. The candidate's licence is recorded and
  * reported, never used to refuse it — the founder's 2026-10-05 ruling is that
@@ -546,15 +758,36 @@ export function gateCandidate(
   const text = candidateText(candidate)
   if (hasPersonNameShape(text)) return { tier: null, reason: 'person-name' }
   if (matchesBlocklist(text)) return { tier: null, reason: 'blocklisted' }
+  if (reviewedRejectionReason(placeName, text) !== null) return { tier: null, reason: 'reviewed-non-place' }
   if (carriesArchivalYear(candidate.title ?? '')) return { tier: null, reason: 'archival' }
-  const signalContext: PlaceSignalContext = {
-    ...context,
-    categories: [...(candidate.categories ?? []), ...(context.categories ?? [])],
-  }
-  if (titleNamesPlace(text, placeName) && hasPlaceSignal(placeName, text, signalContext)) {
-    return { tier: 'tier1', reason: null }
-  }
+  if (isWrongLocation(candidate, context)) return { tier: null, reason: 'wrong-location' }
+  if (!titleNamesPlace(text, placeName)) return { tier: 'tier2', reason: null }
+  const categories = [...(candidate.categories ?? []), ...(context.categories ?? [])]
+  if (!hasPlaceSignal(placeName, text, { ...context, categories })) return { tier: 'tier2', reason: null }
+  // THE STRONG HALF: the place's own name, in its own order.
+  if (placeNameAppearsVerbatim(text, placeName)) return { tier: 'tier1', reason: null }
+  // THE LOOSE HALF needs the place's own kind words echoed ("community center"),
+  // or — for a name that has no kind words of its own ("Warren G Magnuson") —
+  // any place-kind word at all.
+  const ownKind = placeKindWordsInName(placeName)
+  const echoesKind =
+    ownKind.length > 0
+      ? ownKind.some(
+          (word) =>
+            hasWord(text, word) || categories.some((category) => hasWord(category, word)),
+        )
+      : hasPlaceKindWord(text) || categories.some((category) => hasPlaceKindWord(category))
+  if (echoesKind) return { tier: 'tier1', reason: null }
   return { tier: 'tier2', reason: null }
+}
+
+/**
+ * Is this word present in this text AS A WORD? ("center" is in "community center",
+ * not in "centered".) The tiny companion to `normalizeForMatch`.
+ */
+export function hasWord(text: string, word: string): boolean {
+  const normalized = normalizeForMatch(text)
+  return normalized !== '' && normalized.split(' ').includes(normalizeForMatch(word))
 }
 
 /** One accepted candidate with the tier it earned. */
@@ -563,11 +796,24 @@ export interface RankedCandidate {
   candidate: SourceCandidate
 }
 
+/** One rejected candidate, with the reason it was dropped. */
+export interface DroppedCandidate {
+  title: string
+  reason: DropReason
+}
+
 export interface RankCandidatesResult {
   /** Every accepted candidate, ALL tier 1s before ANY tier 2, order preserved within a tier. */
   accepted: RankedCandidate[]
   /** How many candidates the gate dropped, so the report can say why a place got nothing. */
   rejected: number
+  /**
+   * WHY each one was dropped, in source order. The count alone says "all failed
+   * the gate"; this is the part that lets a human check the gate's work without
+   * re-running it — "the only results were a 1912 scan and a dump truck" is a
+   * fact, and a gate nobody can audit is a gate nobody should trust.
+   */
+  dropped: DroppedCandidate[]
 }
 
 /**
@@ -585,6 +831,7 @@ export function rankCandidates(
 ): RankCandidatesResult {
   const tier1: RankedCandidate[] = []
   const tier2: RankedCandidate[] = []
+  const dropped: DroppedCandidate[] = []
   const seen = new Set<string>()
   let rejected = 0
   for (const candidate of candidates) {
@@ -594,13 +841,14 @@ export function rankCandidates(
     const verdict = gateCandidate(placeName, candidate, context)
     if (verdict.tier === null) {
       rejected++
+      dropped.push({ title: candidate.title, reason: verdict.reason })
       continue
     }
     const ranked: RankedCandidate = { tier: verdict.tier, candidate }
     if (verdict.tier === 'tier1') tier1.push(ranked)
     else tier2.push(ranked)
   }
-  return { accepted: [...tier1, ...tier2], rejected }
+  return { accepted: [...tier1, ...tier2], rejected, dropped }
 }
 
 /**

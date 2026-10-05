@@ -1,21 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_SAME_PLACE_KM,
   PLACE_SIGNAL_WORDS,
+  REVIEWED_REJECTIONS,
   SOURCE_BLOCKLIST,
   candidateText,
   carriesArchivalYear,
   chooseSourceCandidate,
+  distanceKm,
   distinctivePlaceTokens,
   gateCandidate,
   hasPersonNameShape,
   hasPlaceKindWord,
   hasPlaceSignal,
+  isWrongLocation,
   matchesBlocklist,
   normalizeForMatch,
   placeNameAliases,
+  placeNameAppearsVerbatim,
+  placeKindWordsInName,
   rankCandidates,
   renderSourcingReport,
   reviewStateForTier,
+  reviewedRejectionReason,
   sourcingPhotoPatch,
   titleNamesPlace,
   type SourceCandidate,
@@ -95,10 +102,13 @@ describe('the measured false positives (spec §1) are all rejected from tier 1',
     const blocked = rankCandidates('Albert Davis Park', [candidate({ title: '1914 Packard dump truck' })])
     expect(blocked.accepted).toEqual([])
     expect(blocked.rejected).toBe(1)
+    // The drop carries its reason and title, so an empty place can be audited.
+    expect(blocked.dropped).toEqual([{ title: '1914 Packard dump truck', reason: 'blocklisted' }])
 
     const weak = rankCandidates('Albert Davis Park', [candidate({ title: 'A sunny afternoon' })])
     expect(weak.accepted.map((entry) => entry.tier)).toEqual(['tier2'])
     expect(weak.rejected).toBe(0)
+    expect(weak.dropped).toEqual([])
   })
 })
 
@@ -229,6 +239,184 @@ describe('the PLACE SIGNAL — the second half of tier 1', () => {
     expect(hasPlaceKindWord('Parking lot')).toBe(false)
     expect(hasPlaceKindWord('Courtney’s house')).toBe(false)
     expect(hasPlaceSignal('Wunderkind', 'Wunderkind', { city: 'Seattle' })).toBe(false)
+  })
+
+  it('makes an any-order token match earn a place-kind word, not just the city', () => {
+    // MEASURED, from the 2026-10-05 tier-1 list: "Chinatown-International
+    // District, Seattle, Washington" contains every distinctive token of
+    // "International District Community Center" — in a different order, and
+    // about the neighbourhood rather than the building. The city alone is not
+    // enough to make a bag of words a name.
+    expect(
+      gateCandidate(
+        'International District Community Center',
+        candidate({ title: 'Chinatown-International District, Seattle, Washington' }),
+        { city: 'Seattle' },
+      ).tier,
+    ).toBe('tier2')
+  })
+
+  it('keeps an any-order token match when a place-kind word is there too', () => {
+    expect(
+      gateCandidate(
+        'International District Community Center',
+        candidate({ title: 'International District, Seattle — community center entrance' }),
+        { city: 'Seattle' },
+      ).tier,
+    ).toBe('tier1')
+    // The verbatim half may still ride on the city.
+    expect(
+      gateCandidate('Wunderkind', candidate({ title: 'Wunderkind, Seattle' }), { city: 'Seattle' }).tier,
+    ).toBe('tier1')
+    // …and `titleNamesPlace` itself keeps both halves (the loose match is real,
+    // it is just not tier-1 evidence on its own).
+    expect(
+      titleNamesPlace('Chinatown-International District, Seattle, Washington', 'International District Community Center'),
+    ).toBe(true)
+    expect(
+      placeNameAppearsVerbatim(
+        'Chinatown-International District, Seattle, Washington',
+        'International District Community Center',
+      ),
+    ).toBe(false)
+  })
+
+  it('makes a loose match echo the place’s OWN kind words, not a neighbour’s', () => {
+    // THE SECOND measured failure of the loose half: "Hing Hay Park,
+    // Chinatown-International District, Seattle, Washington" for the place
+    // "International District Community Center". The neighbourhood supplied the
+    // distinctive tokens, ANOTHER PLACE supplied the place-kind word ("Park"),
+    // and the community center itself is nowhere in the title.
+    expect(
+      gateCandidate(
+        'International District Community Center',
+        candidate({ title: 'Hing Hay Park, Chinatown-International District, Seattle, Washington' }),
+        { city: 'Seattle' },
+      ).tier,
+    ).toBe('tier2')
+    expect(placeKindWordsInName('International District Community Center')).toEqual([
+      'community',
+      'center',
+    ])
+    // A place with no kind words of its own falls back to any place-kind word,
+    // which is what keeps the protected "Warren G Magnuson" hit live.
+    expect(placeKindWordsInName('Warren G Magnuson')).toEqual([])
+    expect(
+      gateCandidate(
+        'Warren G Magnuson',
+        candidate({ title: 'Dogs at play, Warren G. Magnuson Dog Park, Seattle' }),
+        { city: 'Seattle' },
+      ).tier,
+    ).toBe('tier1')
+  })
+})
+
+describe('the titles a human read and winced at (2026-10-05 tier-1 list)', () => {
+  it('rejects the Washington Park title that is a list of house details', () => {
+    expect(
+      gateCandidate(
+        'Washington Park',
+        candidate({
+          title:
+            'White house details, white flowering trees, green hedge, octagonal window, black shutters, Washington Park, Seattle, Washington, USA',
+        }),
+        { city: 'Seattle' },
+      ),
+    ).toEqual({ tier: null, reason: 'reviewed-non-place' })
+  })
+
+  it('rejects the Pritchard Beach title whose subject is a house', () => {
+    expect(
+      gateCandidate('Pritchard Beach', candidate({ title: 'A babe of a house in Pritchard Beach' })),
+    ).toEqual({ tier: null, reason: 'reviewed-non-place' })
+  })
+
+  it('scopes a reviewed rejection to its own place', () => {
+    // The reason is the PLACE plus the title, not a global word ban: the same
+    // phrase for another place is judged on its own merits.
+    expect(
+      gateCandidate('Woodland Park', candidate({ title: 'A babe of a house in Woodland Park' })).tier,
+    ).not.toBeNull()
+    expect(reviewedRejectionReason('Pritchard Beach', 'A babe of a house in Pritchard Beach')).toContain(
+      'not the beach',
+    )
+    expect(reviewedRejectionReason('Washington Park', 'Olive trees in the park')).toBeNull()
+    // Every entry carries WHY — the next reviewer has to be able to disagree
+    // with the reason rather than with the code.
+    for (const entry of REVIEWED_REJECTIONS) {
+      expect(entry.why.length).toBeGreaterThan(20)
+      expect(entry.titleIncludes).not.toBe('')
+    }
+  })
+})
+
+describe('the file’s own geotag — the one check a name match cannot argue with', () => {
+  // REAL coordinates, read from the Commons API on 2026-10-05.
+  const SEATTLE_ROSS = { lat: 47.66019865, lng: -122.36121739 } // places: Ross Playground
+  const BROOKLYN = { lat: 40.62255, lng: -74.0218 } // File:Dan Ross Playground 2025 jeh.jpg
+  const ENGLAND = { lat: 51.12273, lng: -0.7549 } // File:Beacon Hill Playground - geograph…
+
+  it('measures the ground distance', () => {
+    expect(distanceKm(SEATTLE_ROSS, SEATTLE_ROSS)).toBe(0)
+    expect(distanceKm(SEATTLE_ROSS, BROOKLYN)).toBeGreaterThan(3000)
+    expect(distanceKm(SEATTLE_ROSS, ENGLAND)).toBeGreaterThan(7000)
+  })
+
+  it('DROPS a perfect name match whose own geotag is on another continent', () => {
+    // The measured defect of the tightened gate's first pass: the title names
+    // the place, the kind word is there, and the photograph is of a park in
+    // Brooklyn / a recreation ground in England.
+    expect(
+      gateCandidate(
+        'Ross Playground',
+        candidate({ title: 'File:Dan Ross Playground 2025 jeh.jpg', coordinates: BROOKLYN }),
+        { ...SEATTLE_ROSS, city: 'Seattle' },
+      ),
+    ).toEqual({ tier: null, reason: 'wrong-location' })
+    expect(
+      gateCandidate(
+        'Beacon Hill Playground',
+        candidate({
+          title: 'File:Beacon Hill Playground - geograph.org.uk - 1152815.jpg',
+          coordinates: ENGLAND,
+        }),
+        { ...SEATTLE_ROSS, city: 'Seattle' },
+      ).tier,
+    ).toBeNull()
+  })
+
+  it('keeps a geotagged photo taken at the place, and treats a missing geotag as UNKNOWN', () => {
+    expect(
+      gateCandidate(
+        'Ross Playground',
+        candidate({ title: 'Ross Playground', coordinates: SEATTLE_ROSS }),
+        { ...SEATTLE_ROSS, city: 'Seattle' },
+      ).tier,
+    ).toBe('tier1')
+    // No candidate coordinates → not wrong, just unproven.
+    expect(
+      gateCandidate('Ross Playground', candidate({ title: 'Ross Playground' }), {
+        ...SEATTLE_ROSS,
+        city: 'Seattle',
+      }).tier,
+    ).toBe('tier1')
+    // No place coordinates (three blank rows have NULL lat/lng) → the check is
+    // skipped, never guessed.
+    expect(
+      gateCandidate(
+        'Ross Playground',
+        candidate({ title: 'Ross Playground', coordinates: BROOKLYN }),
+        { city: 'Seattle' },
+      ).tier,
+    ).toBe('tier1')
+    // PostgREST returns `numeric` as a STRING, so the string form must work.
+    expect(
+      isWrongLocation(candidate({ coordinates: BROOKLYN }), {
+        lat: '47.66019865',
+        lng: '-122.36121739',
+      }),
+    ).toBe(true)
+    expect(MAX_SAME_PLACE_KM).toBe(50)
   })
 })
 
