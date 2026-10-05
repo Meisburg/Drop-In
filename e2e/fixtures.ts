@@ -343,6 +343,41 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
   }
 }
 
+/**
+ * v30-10 — the HEADLESS SQL path, for specs that need to write as a moderator.
+ *
+ * WHY IT EXISTS BESIDE `runLiveSql`: that helper shells out to
+ * `apply-migration.mjs`, which harvests its token from a **CDP-attached Chrome
+ * on :9222** — a human's own desktop session on this machine, and simply absent
+ * in a plain run (`connectOverCDP ECONNREFUSED 127.0.0.1:9222`, which is how the
+ * first draft of the moderator-door spec failed). `scripts/db-sql.sh` talks to
+ * the management API with `SUPABASE_ACCESS_TOKEN` and needs no browser at all.
+ *
+ * The timeout sits BELOW the Playwright test timeout on purpose: `spawnSync`
+ * blocks the event loop, so the runner's own timer cannot fire while it runs —
+ * a hung call would burn the whole test budget. `result.error` is folded into
+ * the output, because a spawn failure/kill leaves `status === null` and would
+ * otherwise report an empty reason.
+ */
+export function runSqlHeadless(sql: string): { ok: boolean; output: string } {
+  const result = spawnSync('bash', ['scripts/db-sql.sh', sql], {
+    cwd: CWD,
+    encoding: 'utf8',
+    timeout: 60_000,
+  })
+  const error = result.error === undefined ? '' : ` ${String(result.error)}`
+  return {
+    ok: result.status === 0,
+    output: `${result.stdout ?? ''}${result.stderr ?? ''}${error}`.trim(),
+  }
+}
+
+/** A SQL literal: `null`, or a quoted string with its single quotes doubled. */
+export function sqlLiteral(value: string | null): string {
+  if (value === null) return 'null'
+  return `'${value.replace(/'/g, "''")}'`
+}
+
 
 /**
  * V20 t06 → V28 slice 3b — fill the signup form, submit it, and complete the

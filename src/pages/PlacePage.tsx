@@ -24,6 +24,7 @@ import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 // v30-9: the ONE moderator predicate the /mod route guard also reads.
 import { canModerate } from '../lib/moderation'
+import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import {
   hasPlacePhoto,
   photoCreditLine,
@@ -136,14 +137,23 @@ export function PlacePage() {
    * v30-9 — the moderator's photo editor, the SAME one /mod and the directory
    * card mount. It lives here so the fix can start from the place the moderator
    * is looking at, which is the founder's complaint verbatim.
+   *
+   * KEYED BY PLACE ID, not a boolean (v30-10 `ocr` finding, medium): a boolean
+   * survived a same-mount A → B navigation, so the dialog re-appeared over the
+   * NEW place with the OLD url still in the field, and a moderator could save a
+   * photo onto a row they never opened it on. Deriving openness from the id
+   * closes it on navigation and keeps it open across a same-place re-read —
+   * without an effect that sets state during render (which the lint rule bans).
    */
-  const [photoEditorOpen, setPhotoEditorOpen] = useState(false)
+  const [photoEditorForId, setPhotoEditorForId] = useState<string | null>(null)
+  const photoEditorOpen = photoEditorForId !== null && photoEditorForId === id
   /**
    * v30-9 — bumping this re-reads the place, so the hero shows the photo that
    * was just written. The page's row is its own read; a locally patched URL
    * would be a second source of truth for `places.photo_url`.
    */
   const [placeReloadTick, setPlaceReloadTick] = useState(0)
+
   /**
    * V29 v29-2: this place's posts' going pings, in ONE batched read (never one
    * per card). null = NOT READ — and that is the distinction the card needs:
@@ -502,7 +512,7 @@ export function PlacePage() {
               type="button"
               data-testid="place-edit-photo"
               aria-label={`Edit the photo for ${place.name}`}
-              onClick={() => setPhotoEditorOpen(true)}
+              onClick={() => setPhotoEditorForId(place.id)}
               className="absolute right-2 top-2 inline-flex min-h-11 items-center rounded-full border border-slate-300 bg-white/95 px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition-colors motion-reduce:transition-none hover:bg-white focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               Edit photo
@@ -813,7 +823,12 @@ export function PlacePage() {
         <ModalShell
           title="Fix a place photo"
           testId="place-photo-editor"
-          onDismiss={() => setPhotoEditorOpen(false)}
+          /* THIS PAGE HAS A LEAFLET MAP. At the shell's default z-50 the map's
+             own controls (z-index 1000) paint over the dialog — the exact defect
+             lib/stacking.ts records as having shipped before, and what the
+             batch-close `ocr` lane caught here. */
+          zClass={MODAL_OVER_LEAFLET_Z_CLASS}
+          onDismiss={() => setPhotoEditorForId(null)}
           dismissLabel="Close"
         >
           <PlacePhotoAdmin

@@ -176,7 +176,16 @@ export function FirstRunTooltips({ onDismiss }: { onDismiss: () => void }) {
       {deco === null ? (
         // Before the first measurement lands there is no ring to spotlight, so
         // the flat veil stands in for the one frame the card is still invisible.
-        <div aria-hidden="true" className="absolute inset-0 bg-slate-900/25" />
+        // It carries the SAME testid as the cutout veil (v30-10 `ocr` finding):
+        // without it the element does not exist in that frame, and a spec that
+        // waits for it inherits Playwright's 5s default instead of this tour's
+        // own 30s gate on a slow host. The box-identity assertion in the spec
+        // still measures the CUTOUT veil, because it checks the ring first.
+        <div
+          aria-hidden="true"
+          data-testid="first-run-tooltips-veil"
+          className="absolute inset-0 bg-slate-900/25"
+        />
       ) : (
         // v30-4: the veil IS the ring's own shadow — a 9999px spread around
         // `deco.ring`, so the hole in the dark is exactly the rectangle the ring

@@ -28,6 +28,10 @@
  * leg can be green on the marker's state.
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
+// v30-10 (`ocr` finding, low): the tour's step count comes from the tour's own
+// data, never a restated literal — adding or removing a line must not silently
+// under-test this leg (it used to stop one step early in that case).
+import { TOOLTIPS_STEPS } from '../src/lib/firstRunTooltips'
 import { finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
 
 /** The tour's overlay root (the veil + ring + card all live under it). */
@@ -154,8 +158,10 @@ test('the veil leaves a hole exactly where the ring is — on every step', async
     const tour = tourOf(viewer)
     await expect(tour).toBeVisible({ timeout: 30_000 })
 
-    // Five steps, five targets, five rectangles: the veil follows the ring.
-    for (let step = 0; step < 5; step++) {
+    // One iteration per tour step, from the tour's OWN length: the veil follows
+    // the ring on every step, whatever the count is.
+    const stepCount = TOOLTIPS_STEPS.length
+    for (let step = 0; step < stepCount; step++) {
       const ring = viewer.getByTestId('first-run-tooltips-ring')
       const veil = viewer.getByTestId('first-run-tooltips-veil')
       await expect(ring).toBeVisible()
@@ -170,7 +176,7 @@ test('the veil leaves a hole exactly where the ring is — on every step', async
       expect(veilBox!.width).toBeCloseTo(ringBox!.width, 0)
       expect(veilBox!.height).toBeCloseTo(ringBox!.height, 0)
 
-      if (step < 4) {
+      if (step < stepCount - 1) {
         await tour.getByRole('button', { name: 'Next' }).click()
       }
     }

@@ -1462,6 +1462,25 @@ export function OnboardingPage() {
   // signUpViewer fills the two name fields and clicks Continue with no photo
   // at all).
   if (paintedView === 'name') {
+    /**
+     * The name card's file input, in ONE copy (v30-10, `ocr` finding, medium):
+     * it is rendered inside both photo states — the tappable preview and the
+     * empty-state "Add a photo" label — and two literal copies meant any change
+     * (a ref, a different `accept`, other a11y wiring) had to land on both or
+     * silently diverge. The surrounding `<label>` still differs; only the input
+     * is shared.
+     */
+    const nameCardPhotoInput = (
+      <input
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        data-testid="name-card-photo-input"
+        disabled={photoCrop.busy}
+        onChange={(e) => void handleNameCardPhotoChange(e)}
+        {...fieldA11y('name-photo', photoError)}
+      />
+    )
     return (
       <FirstRunCard
         progressLabel={progressLabel('name')}
@@ -1553,15 +1572,7 @@ export function OnboardingPage() {
                   data-testid="name-card-photo-trigger"
                   className="relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95 motion-reduce:transition-none"
                 >
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="sr-only"
-                    data-testid="name-card-photo-input"
-                    disabled={photoCrop.busy}
-                    onChange={(e) => void handleNameCardPhotoChange(e)}
-                    {...fieldA11y('name-photo', photoError)}
-                  />
+                  {nameCardPhotoInput}
                   <img
                     data-testid="name-card-photo"
                     src={pendingAvatarUrl}
@@ -1582,15 +1593,7 @@ export function OnboardingPage() {
             ) : (
               <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
                 {photoPickerLabel(photoCrop.busy)}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  data-testid="name-card-photo-input"
-                  disabled={photoCrop.busy}
-                  onChange={(e) => void handleNameCardPhotoChange(e)}
-                  {...fieldA11y('name-photo', photoError)}
-                />
+                {nameCardPhotoInput}
               </label>
             )}
             {photoError !== null ? <p role="alert" id={errorId('name-photo')} className="text-sm text-red-600">{photoError}</p> : null}

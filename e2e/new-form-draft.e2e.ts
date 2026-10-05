@@ -16,6 +16,9 @@
  * for the batch-end sweep (scripts/sweep-e2e-markers.mjs).
  */
 import { expect, test } from '@playwright/test'
+// The app's own fallback for a generated title — imported rather than
+// re-spelled, so a wording change cannot silently break this assertion.
+import { GENERATED_TITLE_FALLBACK } from '../src/lib/postSummary'
 import {
   editTitle,
   readMarkerMeta,
@@ -74,7 +77,12 @@ test('leaving /new mid-form keeps a draft; returning restores it (disclosure); p
   await settleOnRoute(page, '/new')
   await expect(page.getByTestId('draft-restore-notice')).toHaveCount(0)
   await editTitle(page)
-  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue('')
+  // v30 batch-close correction (a PRE-EXISTING defect, not a v30 change): this
+  // asserted an EMPTY field, which fails on correct behaviour — a fresh /new
+  // generates its own fallback title. The acceptance criterion is "no stale
+  // DRAFT", so the honest assertion is the DEFAULT title, never the draft's.
+  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveValue(GENERATED_TITLE_FALLBACK)
+  await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).not.toHaveValue(title)
 })
 
 test.afterEach(async () => {

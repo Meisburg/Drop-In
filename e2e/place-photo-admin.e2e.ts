@@ -1,6 +1,18 @@
 import { expect, test } from '@playwright/test'
-import { spawnSync } from 'node:child_process'
-import { readMarkerSession } from './fixtures'
+import { readMarkerSession, runSqlHeadless, sqlLiteral } from './fixtures'
+
+/**
+ * A read through the headless SQL path: the management API prints its JSON
+ * array, so the rows are sliced out of that envelope.
+ */
+function readSql<T>(query: string): T[] {
+  const result = runSqlHeadless(query)
+  if (!result.ok) throw new Error(`SQL read failed: ${result.output}`)
+  const start = result.output.indexOf('[')
+  const end = result.output.lastIndexOf(']')
+  if (start === -1 || end === -1) throw new Error(`no JSON in SQL output: ${result.output}`)
+  return JSON.parse(result.output.slice(start, end + 1)) as T[]
+}
 
 /**
  * v30-8 / v30-9 — THE PLACE-PHOTO EDITOR, REACHED FROM WHERE THE PROBLEM IS.
@@ -28,32 +40,6 @@ import { readMarkerSession } from './fixtures'
  * and absent in a plain run. `scripts/db-sql.sh` goes to the management API with
  * `SUPABASE_ACCESS_TOKEN` and needs no browser.
  */
-function runSql(query: string): { ok: boolean; output: string } {
-  const result = spawnSync('bash', ['scripts/db-sql.sh', query], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    timeout: 120_000,
-  })
-  return {
-    ok: result.status === 0,
-    output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim(),
-  }
-}
-
-function readSql<T>(query: string): T[] {
-  const result = runSql(query)
-  if (!result.ok) throw new Error(`SQL read failed: ${result.output}`)
-  const start = result.output.indexOf('[')
-  const end = result.output.lastIndexOf(']')
-  if (start === -1 || end === -1) throw new Error(`no JSON in SQL output: ${result.output}`)
-  return JSON.parse(result.output.slice(start, end + 1)) as T[]
-}
-
-/** A SQL literal: null, or a quoted string with its quotes doubled. */
-function lit(value: string | null): string {
-  if (value === null) return 'null'
-  return `'${value.replace(/'/g, "''")}'`
-}
 
 interface PlacePhotoRow {
   id: string
@@ -70,7 +56,7 @@ const DONOR_PLACE = 'Green Lake Park (East)'
 /** The seeded row this spec edits (it currently carries NO photo). */
 function readTarget(): PlacePhotoRow {
   const rows = readSql<PlacePhotoRow>(
-    `select id, photo_url, photo_source_url, photo_license, photo_author, photo_attribution from public.places where name = ${lit(PLACE_NAME)};`,
+    `select id, photo_url, photo_source_url, photo_license, photo_author, photo_attribution from public.places where name = ${sqlLiteral(PLACE_NAME)};`,
   )
   if (rows.length !== 1) throw new Error(`expected exactly one ${PLACE_NAME}, got ${rows.length}`)
   return rows[0]
@@ -79,12 +65,12 @@ function readTarget(): PlacePhotoRow {
 /** The one restoration statement, built from the snapshot. */
 function restoreSql(snapshot: PlacePhotoRow): string {
   return (
-    `update public.places set photo_url = ${lit(snapshot.photo_url)},` +
-    ` photo_source_url = ${lit(snapshot.photo_source_url)},` +
-    ` photo_license = ${lit(snapshot.photo_license)},` +
-    ` photo_author = ${lit(snapshot.photo_author)},` +
-    ` photo_attribution = ${lit(snapshot.photo_attribution)}` +
-    ` where id = ${lit(snapshot.id)};`
+    `update public.places set photo_url = ${sqlLiteral(snapshot.photo_url)},` +
+    ` photo_source_url = ${sqlLiteral(snapshot.photo_source_url)},` +
+    ` photo_license = ${sqlLiteral(snapshot.photo_license)},` +
+    ` photo_author = ${sqlLiteral(snapshot.photo_author)},` +
+    ` photo_attribution = ${sqlLiteral(snapshot.photo_attribution)}` +
+    ` where id = ${sqlLiteral(snapshot.id)};`
   )
 }
 
@@ -101,7 +87,7 @@ async function openDirectoryAt(page: import('@playwright/test').Page) {
 /** The donor photo: another seeded row's own image (known to load, already public). */
 function readDonorUrl(): string {
   const donor = readSql<{ photo_url: string | null }>(
-    `select photo_url from public.places where name = ${lit(DONOR_PLACE)};`,
+    `select photo_url from public.places where name = ${sqlLiteral(DONOR_PLACE)};`,
   )[0]
   if (donor?.photo_url === null || donor?.photo_url === undefined) {
     throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
@@ -118,6 +104,17 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
 
   const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
 
+  // --- SELF-HEAL (v30-10 `ocr` finding): a KILLED previous run skips its
+  // `finally`, so the marker could still be elevated and the row could still
+  // carry the donor photo. Both are reset idempotently BEFORE the absence is
+  // asserted, so HALF 1 fails only for a reason that belongs to this run. ---
+  const preReset = runSqlHeadless(restoreSql(snapshot))
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = runSqlHeadless(
+    `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
+  )
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(true)
+
   // --- HALF 1 — an ordinary parent sees NO control on any card. ---
   await openDirectoryAt(page)
   await expect(page.getByTestId('place-row').first()).toBeVisible()
@@ -127,8 +124,8 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
   let unmoderateEnvelope: { ok: boolean; output: string } | null = null
   try {
     // --- HALF 2 — elevate the marker, and the control appears. ---
-    const elevate = runSql(
-      `update public.profiles set moderators = true where id = ${lit(userId)};`,
+    const elevate = runSqlHeadless(
+      `update public.profiles set moderators = true where id = ${sqlLiteral(userId)};`,
     )
     expect(elevate.ok, `the elevate SQL must land: ${elevate.output}`).toBe(true)
     await page.reload()
@@ -155,9 +152,9 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
     // elevates and does not put it back changes the behaviour of every spec
     // that runs after it (and leaves a stray moderator in the live database,
     // which is exactly what the first draft of this file did).
-    restoreEnvelope = runSql(restoreSql(snapshot))
-    unmoderateEnvelope = runSql(
-      `update public.profiles set moderators = false where id = ${lit(userId)};`,
+    restoreEnvelope = runSqlHeadless(restoreSql(snapshot))
+    unmoderateEnvelope = runSqlHeadless(
+      `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
     )
   }
   expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
@@ -183,6 +180,15 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
 
   const control = page.getByTestId('place-edit-photo')
 
+  // --- SELF-HEAL, same reason as the card test above: a killed run skips its
+  // `finally`, so both the row and the flag are reset before HALF 1. ---
+  const preReset = runSqlHeadless(restoreSql(snapshot))
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = runSqlHeadless(
+    `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
+  )
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(true)
+
   // --- HALF 1 — a parent sees the picture slot, and no way to change it. ---
   await page.goto(`/place/${snapshot.id}`)
   await expect(page.getByTestId('place-page-photo-slot')).toBeVisible()
@@ -191,8 +197,8 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
   let restoreEnvelope: { ok: boolean; output: string } | null = null
   let unmoderateEnvelope: { ok: boolean; output: string } | null = null
   try {
-    const elevate = runSql(
-      `update public.profiles set moderators = true where id = ${lit(userId)};`,
+    const elevate = runSqlHeadless(
+      `update public.profiles set moderators = true where id = ${sqlLiteral(userId)};`,
     )
     expect(elevate.ok, `the elevate SQL must land: ${elevate.output}`).toBe(true)
 
@@ -219,9 +225,9 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
     expect(headingBox).not.toBeNull()
     expect(heroBox!.y, 'the picture must still sit above the name').toBeLessThan(headingBox!.y)
   } finally {
-    restoreEnvelope = runSql(restoreSql(snapshot))
-    unmoderateEnvelope = runSql(
-      `update public.profiles set moderators = false where id = ${lit(userId)};`,
+    restoreEnvelope = runSqlHeadless(restoreSql(snapshot))
+    unmoderateEnvelope = runSqlHeadless(
+      `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
     )
   }
   expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)

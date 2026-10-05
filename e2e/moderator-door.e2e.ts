@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { spawnSync } from 'node:child_process'
-import { readMarkerSession } from './fixtures'
+import { readMarkerSession, runSqlHeadless, sqlLiteral } from './fixtures'
 
 /**
  * v30-7 (founder annotation 5) — THE MODERATOR DOOR IN SETTINGS.
@@ -12,32 +11,25 @@ import { readMarkerSession } from './fixtures'
  * halves of the fix: a parent sees no door, a moderator sees one that opens the
  * tools.
  *
- * HOW THE MODERATOR HALF IS TESTED, and why it is not a mock: the marker is an
- * ordinary parent, so the spec ELEVATES it, reloads so the session's profile
- * carries the flag, asserts, and RESTORES the flag — asserting the restore,
- * because a spec that left the marker a moderator would change the behaviour of
- * every spec that runs after it.
+ * THE MARKER IS AN ORDINARY PARENT, so the spec ELEVATES it for the second half.
+ * Three properties make that safe, and each was an `ocr` finding in v30-10:
+ *   1. the flag is reset IDEMPOTENTLY before the first assertion, so a
+ *      hard-killed previous run cannot leave the marker elevated and make this
+ *      spec fail for a reason that is not its own;
+ *   2. the restore runs on EVERY path (catch/`finally`, not a post-`try` line
+ *      that a thrown assertion skips);
+ *   3. the restore's own result is asserted BEFORE the original failure is
+ *      re-thrown, so a failed restore can never be silent — it would change the
+ *      behaviour of every spec that runs after this one.
  *
- * WHY THIS USES THE HEADLESS SQL PATH rather than `runLiveSql` (the
- * `polish.e2e.ts` helper): `runLiveSql` shells out to `apply-migration.mjs`,
- * which harvests its token from a **CDP-attached Chrome on :9222** — and on
- * this machine that port belongs to a human's own desktop session. It is also
- * simply unavailable when nothing is listening there (measured:
- * `connectOverCDP ECONNREFUSED 127.0.0.1:9222`). `scripts/db-sql.sh` talks to
- * the management API with `SUPABASE_ACCESS_TOKEN` and needs no browser at all,
- * so this spec runs anywhere the repo's own migration tooling runs.
+ * WHY THE SQL IS HEADLESS (`runSqlHeadless`): `runLiveSql` shells out to
+ * `apply-migration.mjs`, which needs a CDP Chrome on :9222 — a human's desktop
+ * session on this machine, and absent in a plain run.
  */
 function markModerator(userId: string, enabled: boolean): { ok: boolean; output: string } {
-  const sql = `update public.profiles set moderators = ${enabled} where id = '${userId}';`
-  const result = spawnSync('bash', ['scripts/db-sql.sh', sql], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    timeout: 120_000,
-  })
-  return {
-    ok: result.status === 0,
-    output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim(),
-  }
+  return runSqlHeadless(
+    `update public.profiles set moderators = ${enabled} where id = ${sqlLiteral(userId)};`,
+  )
 }
 
 test('the moderator door is there for a moderator and never for a parent (v30-7)', async ({
@@ -46,11 +38,16 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
   const { userId } = readMarkerSession()
   const door = page.getByTestId('moderator-tools-link')
 
+  // --- SELF-HEAL: start from a known state, whatever a killed run left. ---
+  const preReset = markModerator(userId, false)
+  expect(preReset.ok, `the pre-flight reset must land: ${preReset.output}`).toBe(true)
+
   // --- HALF 1 — an ordinary parent sees no moderator control at all. ---
   await page.goto('/settings')
   await expect(page.getByTestId('account-sign-out')).toBeVisible()
   await expect(door).toHaveCount(0)
 
+  let originalFailure: unknown = null
   let restore: { ok: boolean; output: string } | null = null
   try {
     // --- HALF 2 — elevate, reload, and the door appears. ---
@@ -65,12 +62,16 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
     // authority, and the tool that was invisible is the one already shipped.
     await expect(page).toHaveURL(/\/mod$/)
     await expect(page.getByTestId('place-photo-tool-toggle')).toContainText('Fix a place photo')
+  } catch (error) {
+    originalFailure = error
   } finally {
-    // The restore runs whatever happened above, and it must not throw here —
-    // a throwing `finally` would replace the real failure with its own.
     restore = markModerator(userId, false)
   }
+
+  // The restore is verified FIRST: it is the one failure that would leak into
+  // every later spec, so it may not hide behind the original one.
   expect(restore.ok, `the restore SQL MUST land: ${restore.output}`).toBe(true)
+  if (originalFailure !== null) throw originalFailure
 
   // --- The restore is REAL: on a fresh load, the door is gone again. ---
   await page.goto('/settings')

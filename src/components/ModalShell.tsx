@@ -82,6 +82,7 @@ export function ModalShell({
   busy = false,
   dismissLabel,
   describedBy,
+  zClass = 'z-50',
   initialFocusRef,
   children,
 }: {
@@ -100,6 +101,18 @@ export function ModalShell({
   dismissLabel?: string
   /** The id of a body paragraph that describes the dialog, when there is one. */
   describedBy?: string
+  /**
+   * The stacking class for the backdrop, defaulting to the house `z-50`.
+   *
+   * A dialog shown over a Leaflet map MUST pass `MODAL_OVER_LEAFLET_Z_CLASS`
+   * (`z-[1100]`): Leaflet's own control wrappers sit at `z-index: 1000`, so at
+   * `z-50` the map's zoom box and attribution paint ON TOP of a dimmed backdrop
+   * and its dialog — the defect `src/lib/stacking.ts` records as having shipped
+   * before. This prop is what the doc above always promised ("passes its own
+   * token") and did not exist until v30-10's `ocr` lane found a caller that
+   * needed it.
+   */
+  zClass?: string
   /** Where focus lands on open (defaults to the dismiss control, if rendered). */
   initialFocusRef?: React.RefObject<HTMLButtonElement | null>
   children: ReactNode
@@ -151,7 +164,7 @@ export function ModalShell({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      className={`fixed inset-0 ${zClass} flex items-center justify-center bg-slate-900/40 p-4`}
       role="presentation"
       onClick={(event) => {
         if (event.target === event.currentTarget && !busy) onDismiss()

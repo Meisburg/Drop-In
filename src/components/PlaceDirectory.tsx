@@ -74,7 +74,7 @@ function DropdownTrigger({
       type="button"
       data-testid={testId}
       onClick={onClick}
-      className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-full border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+      className="flex min-h-11 min-w-0 grow basis-28 items-center justify-center gap-1 rounded-full border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
       <svg
         viewBox="0 0 24 24"
@@ -865,8 +865,16 @@ export function PlaceDirectory({
 
         {/* The three prominent dropdowns. Equal width, one open sheet at a time;
             the fourth control is the Saved gate, rendered only when it is not a
-            door to nowhere (see `savedToggleAvailable`). */}
-        <div className="flex items-center gap-2">
+            door to nowhere (see `savedToggleAvailable`).
+
+            v30-3, measured: with the Saved gate present at 390px each pill was
+            86px wide and the caption column only 52px — "Distance" needs 66px,
+            so it ellipsized by 14px and the parent could not read what the pill
+            filtered, which is the whole defect. The row therefore WRAPS
+            (`flex-wrap`) with a real `basis` on each trigger, so a fourth
+            control moves to a second line instead of squeezing the captions out
+            of the first. Without the Saved gate the three still share one line. */}
+        <div className="flex flex-wrap items-center gap-2">
           <DropdownTrigger
             testId="places-type-filter"
             caption={triggers.setting.caption}
@@ -1428,6 +1436,10 @@ export function PlaceDirectory({
         <ModalShell
           title="Fix a place photo"
           testId="place-photo-editor"
+          /* The directory renders a Leaflet map band, so this dialog must
+             out-stack it (z-[1100], not z-50) — the defect lib/stacking.ts
+             records as having shipped before. */
+          zClass={MODAL_OVER_LEAFLET_Z_CLASS}
           onDismiss={() => setEditingPhotoPlace(null)}
           dismissLabel="Close"
         >
