@@ -637,7 +637,8 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
     WRAP-UP + DEPLOY (2026-10-04, evening): **the live site is current, the third
       audit is adjudicated, and the human reminder is clean.** fr-2's
       doc-staleness audit was the last unadjudicated report — **10/10 STALE
-      UPHELD, 9 of its 10 UNVERIFIABLE items decided from omarchy**, the box it
+      UPHELD, and 4 of its 7 numbered UNVERIFIABLE claims decided from omarchy**,
+      the box it
       could not ssh into. Its fixes are applied (`bdb4ff5`): routing table, both
       causes, the **ROTATED unit-state column**, the hostname, the offline list,
       change 7's status, the checklist's broken link, and both rotten test counts
@@ -652,13 +653,15 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       gitignored — that item is **closed, with no rotation needed**. The `ocr`
       lane was re-run over `580eb82..241c5c3` after v29-11 skipped it on a false
       "not installed" premise (it is `v1.12.11`). **🔴 THE FORGE GATE WAS RED ON
-      EVERY PUSH SINCE 2026-10-03 AND NOBODY HAD RECORDED IT** — fixed in
-      `50eed5b` and green for the first time (`success`). Two environment defects,
-      zero code defects: `check-acceptance-greps` shells out to `rg` and the
-      runner does not ship ripgrep (every claim → `rg ENOENT`, 9 of its own 14
-      behavior checks red), and `e2e-target-guard` reads the `.env` FILE while the
-      workflow only set process env. **A gate whose failure is indistinguishable
-      from its baseline is not a gate.**
+      16 CONSECUTIVE MASTER PUSHES OVER 29.9 HOURS (2026-10-03T20:54Z →
+      2026-10-05T02:48Z) AND NOBODY HAD RECORDED IT** — master had been green
+      before the streak; the streak starts when the guard reached master
+      (`62f7b78`). Fixed in `50eed5b`, green for the first time (`success`). Two
+      environment defects, zero code defects: `check-acceptance-greps` shells out
+      to `rg` and the runner does not ship ripgrep (every claim → `rg ENOENT`, 9
+      of its own 14 behavior checks red), and `e2e-target-guard` reads the `.env`
+      FILE while the workflow only set process env. **A gate whose failure is
+      indistinguishable from its baseline is not a gate.**
       **Remaining, human-owned:** the
       destructive marker sweep (**279 accounts / 563 rows**), the V24 read-surface
       privacy decision, and the 5-parent first-open test.

@@ -29,8 +29,9 @@ snapshot is kept because it is what the fixes were measured against:
 | gate | no model | deterministic; correctly needs none |
 
 **RE-MEASURED 2026-10-04** (`node scripts/factory/factory.mjs route <kind>`) —
-**local-first now holds for six of the seven kinds.** Do not use the old table to
-predict a route:
+**local-first now holds for five of the seven kinds** (builder, reviewer,
+verifier, ocr, explorer). `researcher` still falls back to cloud and `gate`
+correctly needs no model. Do not use the old table to predict a route:
 
 | task kind | routed to | why |
 |---|---|---|
@@ -85,11 +86,14 @@ were left alone.
 RTX 5090, 32 GB VRAM (`nvidia-smi --query-gpu=memory.total` → `32607 MiB`),
 62 GB RAM (`free -g` → 62 total, 37 available). Both re-verified 2026-10-04.
 
-Three local inference servers. **They are mutually exclusive** — the units
-declare `Conflicts=` and the scheduler gives all three the same `exclusive`
-resource, so **the 5090 serves exactly one local model at a time.** This is the
-single most important constraint in this document: it means the 5090 cannot run
-a builder and a reviewer concurrently.
+Three local inference servers. **They are mutually exclusive** — the scheduler
+gives all three the same `exclusive` resource, the two `strata` units also
+declare `Conflicts=` against each other, and the engine config's `before_load`
+list keeps `ninfer` off them — so **the 5090 serves exactly one local model at a
+time.** This is the single most important constraint in this document: it means
+the 5090 cannot run a builder and a reviewer concurrently. (⚠️ Corrected
+2026-10-04: this paragraph used to say the units' `Conflicts=` is what covers all
+three. It is not — see the note under the unit table below.)
 
 **⚠️ THE STATE COLUMN WAS ROTATED — corrected 2026-10-04.** The 2026-10-02
 snapshot had assigned each unit the state of another one, and the roles have
@@ -98,15 +102,22 @@ that belongs to `strata-max`.
 
 | unit | model | endpoint | state (measured 2026-10-04) | footprint |
 |---|---|---|---|---|
-| `strata-serve` | qwen3.8-flash-next-coder-iq1_m | `:8080` | **inactive (dead)** — `:8080` refuses on the host itself | **47.5 GB RAM peak, 12.7 GB VRAM** (measured `systemctl show MemoryPeak` = 50957361152; `nvidia-smi` per-process) |
-| `strata-max` | qwen3.8-flash-next-iq3_s | `:8081` | **activating (auto-restart) — crash-looping** — `status=1/FAILURE`, **NRestarts 3544**, Mem peak 855 MB; `:8081` refuses | **52 GB RAM measured** — the unit banner's 55 is still what `config.json` declares (cause 1 above), 30 GB VRAM |
-| `ninfer-serve` | qwen3.8-27b | `:18080` | **active (running)** — **NRestarts 0**, holds 25340 MiB, `/v1/models` → 200 serving `qwen3.8-27b` | 24 GB VRAM; **3 GB RAM** (measured: `MemoryPeak` 2.3 GB after loading and answering) |
+| `strata-serve` | qwen3.8-flash-next-coder-iq1_m | `:8080` | **inactive (dead)** — `:8080` refuses on the host itself | **47.5 GB RAM peak, 12.7 GB VRAM**, from the config's `footprint_evidence` (`MemoryPeak` = 50957361152). ⚠️ The live `systemctl --user show strata-serve -p MemoryPeak` reads **`[not set]`** — an inactive unit that has not run this boot keeps no peak, so this figure is the recorded measurement, not a repeatable one. |
+| `strata-max` | qwen3.8-flash-next-iq3_s | `:8081` | **activating (auto-restart) — crash-looping** — `status=1/FAILURE`, **`NRestarts` 4934 and climbing** (3544 → 4934 across ~2 h — read it, never quote it), Mem peak 855 MB; `:8081` refuses | **52 GB RAM measured** — the unit banner's 55 is still what `config.json` declares (cause 1 above), 30 GB VRAM |
+| `ninfer-serve` | qwen3.8-27b | `:18080` | **active (running)** — **NRestarts 0**, holds 25340 MiB, `/v1/models` → 200 serving `qwen3.8-27b` | 24 GB VRAM; **3 GB RAM** — the config's `footprint_evidence` records 2.3 GB after loading and answering, and the live `MemoryPeak` reads 2.69 GiB (2890633216 bytes) |
 
 **Why the rotation happened — and it is this document's own thesis working in
-reverse.** `ninfer` now holds the card (25.3 of 32.6 GB), and both strata units
-`Conflicts=` against it. So the two units the old table called *running* are the
-two that **cannot** run, and the unit it called *crash-looping* is the one
-carrying every lane.
+reverse.** ⚠️ **Corrected 2026-10-04: the `Conflicts=` mechanism stated here (and
+in the audit that produced it) was WRONG.** `ninfer-serve` declares only
+`Conflicts=shutdown.target` — it does **not** conflict with either strata unit
+(`systemctl --user show ninfer-serve -p Conflicts --value`). The two strata units
+conflict with **each other** (`strata-serve Conflicts=… strata-max.service`, and
+the reverse). What actually keeps `ninfer` and `strata` apart is the engine
+config's `before_load` list — the units' own comments say so — plus the
+scheduler's `exclusive` resource. **The conclusion is unaffected:** `ninfer` holds
+the card (25.3 of 32.6 GB), so the two units the old table called *running* are
+the two that cannot run, and the one it called *crash-looping* is the one carrying
+every lane.
 
 ### Why `ninfer` used to be locked out — the lock has since moved (2026-10-04)
 
@@ -177,9 +188,13 @@ work that needs to run commands there.**
 `DESKTOP-JMR591K` (Windows, 40 d), `jon-1` (26 d), `omarchy` `100.97.204.54`
 (26 d).
 
-> **Corrected 2026-10-04:** `omarchy-5` was on this list and is **`active`**
-> (relay "sea"). It is not offline and should be planned against accordingly.
-> The ages above are drift from the 2026-10-02 snapshot (+2 d), not errors.
+> **Corrected 2026-10-04, then corrected AGAIN the same evening: `omarchy-5`
+> flaps, so do not put it in either list.** It read `active` (relay "sea") when
+> this correction was first written, and `offline, last seen 4h ago` under two
+> hours later (`tailscale status | grep omarchy-5`). It is a tailnet node that
+> comes and goes; **re-read it rather than trusting this line.** The ages above
+> are drift from the 2026-10-02 snapshot (+2 d), not errors — and they are drift
+> too, so re-measure them.
 
 ## The routing policy
 

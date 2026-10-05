@@ -230,9 +230,12 @@ The report above is unchanged and its findings stand; this section is the ruling
 was re-tested **from `omarchy`** — the machine fr-2 could not `ssh` into
 (`Permission denied (publickey,password)`, quoted in the report above) and
 therefore the machine whose claims this report could only label unprovable. That
-is where the adjudication adds the most: **9 of the report's 10 `UNVERIFIABLE`
-items are decided here.** A verdict is overturned only by a command that
-contradicts it. **None was.**
+is where the adjudication adds the most: **of the report's own 7 numbered
+`UNVERIFIABLE` claims, 4 are decided here** (omarchy-2's internals, the tailnet
+port ambiguity, the live-DB counts, the skills set) **and 3 remain genuinely
+undecidable** (fr-3's model name, the provider credit ceiling, the post-RAM
+routing table). Within the first of those, 11 individual claims are resolved. A
+verdict is overturned only by a command that contradicts it. **None was.**
 
 ## Headline: unlike fr-1's audit, this one holds
 
@@ -255,12 +258,12 @@ command* is evidence.
 | 4 | `:61` `ninfer-serve` **crash-looping**; RAM unmeasured | **UPHELD** | `ninfer-serve` = `active (running)`, **NRestarts 0**, holding **25340 MiB**; `:18080/v1/models` → **200** serving `qwen3.8-27b`. RAM is `ram_gb: 3`, `"measured"`. |
 | 5 | `:227-233` DSH local mode **"a target that will not start"** | **UPHELD, now measured** | `dsh-model show` → `{'provider': 'qwen-local', 'model': 'qwen3.8-27b'}` — the switch is *made*, and the target is serving (row 4). Change 7 is done, not pending. |
 | 6 | `:48` host `omarchy` at `100.120.87.29` | **UPHELD, corrected grounds** | Correct that the tailnet node at `100.120.87.29` is **`omarchy-2`**, and `omarchy` = `100.97.204.54` (offline 26 d) — two different machines. But the local **hostname is literally `omarchy`**, so the fix is to name both (*"this box — hostname `omarchy`, tailnet node `omarchy-2`"*), not a bare rename that invents a third name. |
-| 7 | `:121` `omarchy-5 (4 d)` in the offline list | **UPHELD** | `tailscale status`: **omarchy-5 `active`** (relay "sea"). The rest of the line is drift, not error: DESKTOP-JMR591K 38 d → **40 d**, jon-1 24 d → **26 d**, `omarchy` 24 d → **26 d**. |
+| 7 | `:121` `omarchy-5 (4 d)` in the offline list | **UPHELD — but `omarchy-5` FLAPS, so the correction is "neither list"** | When first measured it was **`active`** (relay "sea"); under two hours later `tailscale status` showed `offline, last seen 4h ago`. It comes and goes — read it, do not quote it. The rest of the line is drift, not error: DESKTOP-JMR591K 38 d → **40 d**, jon-1 24 d → **26 d**, `omarchy` 24 d → **26 d**. |
 | 8 | `:60` `strata-max` **"55 GB RAM (measured)"** | **UPHELD, sharper cause** | The config's own `footprint_evidence` says *"52 is the measured figure and the earlier 55 was the unit banner's estimate."* ⚠️ **The doc mirrors a defect in the source:** `factory/config.json` still carries `resources.ram_gb: 55` for strata-max while its own evidence string says 52. Fix the config and the doc together, or the next audit re-finds this. |
 | 9 | `RELEASE-CHECKLIST.md:298` "1,953 unit tests / 161-spec Playwright suite" | **UPHELD** | Measured: **72** `*.test.ts` files / **2091** cases; **63** e2e specs / **191** cases. Neither number survives. (Counts differ by grep method; the gate's own authoritative figure at the last verified run was **74 files / 2170 tests**, recorded in `task-state.md`.) The fix should quote the gate, not a hand-rolled grep. |
 | 10 | `RELEASE-CHECKLIST.md:5` broken `2026-10-03-store-readiness.md` link | **UPHELD, off-by-one** | The link is on **line 6** (line 5 is the `>` blockquote). Target `docs/2026-10-03-store-readiness.md` does not exist; the file is at `docs/audits/2026-10-03-store-readiness.md`. Broken as claimed. |
 
-## The UNVERIFIABLE verdicts — 9 of 10 now decided
+## The UNVERIFIABLE verdicts — 4 of the report's 7 numbered items now decided
 
 fr-2 recorded these honestly as its own limits. From `omarchy` they are ordinary
 measurements. **None contradicts a doc claim fr-2 had already called correct —
@@ -269,7 +272,7 @@ but three contradict the doc's *state* table, which is the new finding below.**
 | fr-2's UNVERIFIABLE item | Now | Measurement |
 |---|---|---|
 | `compute-policy.md:50` RTX 5090, 32 GB VRAM, 62 GB RAM | **VERIFIED** | `nvidia-smi`: `NVIDIA GeForce RTX 5090, 32607 MiB`; `free -g`: 62 GiB total, 37 available. **The doc is right**, and the superseded first fr-2 version (`1e46139`) that reported "AMD RX 6700 XT / 31 GB" was describing fr-2 itself — as the report above already says. |
-| `:52-54` units `Conflicts=` | **VERIFIED** | `Conflicts=` is declared in the unit files; ninfer holds the card at 25340/32607 MiB, so one local model at a time is real. |
+| `:52-54` units `Conflicts=` | **VERIFIED, mechanism CORRECTED** | `Conflicts=` is declared — but **not** across all three. `systemctl --user show ninfer-serve -p Conflicts --value` → `shutdown.target` **only**; the two strata units conflict with **each other** (`strata-serve Conflicts=… strata-max.service`, and the reverse). The ninfer↔strata exclusion is the engine config's `before_load` list plus the scheduler's `exclusive` resource. One local model at a time is still real: ninfer holds 25340 of 32607 MiB. **The first version of this adjudication stated the wrong mechanism, and `compute-policy.md` copied it; both corrected 2026-10-04 by the reviewer lane.** |
 | `:59-60` unit states (strata-serve active; strata-max inactive/dead) | **STALE — new finding** | See below. |
 | `:308` two empty DIMM slots, ceiling 192 GiB | **VERIFIED** | `dmidecode`: `Maximum Capacity: 192 GiB`, 4 devices, **2 × 32 GiB installed, 2 empty**. |
 | `:77-78` `libcudart.so.13`, driver 610.57.04 | **VERIFIED** | `ldconfig -p` → `libcudart.so.13 => /opt/cuda/lib64/`; `nvidia-smi` driver **610.57.04**. |
@@ -294,15 +297,23 @@ misassigned** — the description the doc gives `ninfer-serve` belongs to
 | unit | doc says (`:48-50`) | measured | verdict |
 |---|---|---|---|
 | `strata-serve` | **active** | `inactive (dead)` | **STALE** |
-| `strata-max` | **inactive/dead** | `activating (auto-restart)`, `status=1/FAILURE`, **NRestarts 3544**, Mem peak 855 MB | **STALE** — it is the crash-looper |
+| `strata-max` | **inactive/dead** | `activating (auto-restart)`, `status=1/FAILURE`, **`NRestarts` in the thousands and climbing** (3544 when first read, 4934 two hours later — it is a counter, not a constant), Mem peak 855 MB | **STALE** — it is the crash-looper |
 | `ninfer-serve` | **activating/auto-restart — crash-looping** | `active (running)`, **NRestarts 0**, holds 25340 MiB, `:18080` serves `qwen3.8-27b` | **STALE** — it is the healthy one |
 
 **Cause, and it is the doc's own thesis working in reverse.** The 5090 serves
 one local model at a time. `ninfer` currently holds the card (25.3 of 32.6 GB),
-and both strata units `Conflicts=` against it — so the two units the doc calls
-running are the two that *cannot* run, and the unit it calls crash-looping is
-the one carrying every lane (row 1). The doc's mutual-exclusion insight is
-correct; its state column is a snapshot taken before the roles swapped.
+so the two units the doc calls running are the two that *cannot* run, and the
+unit it calls crash-looping is the one carrying every lane (row 1). The doc's
+mutual-exclusion insight is correct; its state column is a snapshot taken before
+the roles swapped.
+
+> ⚠️ **Correction (2026-10-04, by the reviewer lane).** The first version of this
+> paragraph said "both strata units `Conflicts=` against it [ninfer]". **That is
+> false**, and `compute-policy.md` copied it. `ninfer-serve` declares only
+> `Conflicts=shutdown.target`; the two strata units conflict with **each other**.
+> What actually keeps `ninfer` and `strata` apart is the engine config's
+> `before_load` list (the units' own comments say so) plus the scheduler's
+> `exclusive` resource. The conclusion above is unaffected.
 
 ## What this changes
 

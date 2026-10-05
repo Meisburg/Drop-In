@@ -140,6 +140,11 @@ jobs:
       # the guard doing exactly the right thing and the environment doing the
       # wrong one. Installing `rg` is the fix; silencing the guard is not.
       - name: Install ripgrep (a guard shells out to rg)
+        # Same guard as the gate and the .env step: on a repo whose variables are
+        # unset this run is meant to SKIP with a notice, not red X on a transient
+        # apt failure. Installing a tool is part of running the gate, so it
+        # carries the gate's own condition.
+        if: steps.env.outputs.configured == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ripgrep
