@@ -70,14 +70,17 @@ import { errorId, fieldA11y } from '../lib/a11y'
 const AREA_ADDRESS_LOOKUP_DEBOUNCE_MS = 500
 
 /**
- * The name card's photo-picker label (V28 r2 slice 2) — an if/else chain,
- * not a nested ternary (the project rule, `.opencodereview/rule.json`: "Nested
- * ternary expressions are not allowed"). Presentation only, so it may live in
- * the page (the build law: pages may branch on how to RENDER).
+ * The name card's photo-picker label (V28 r2 slice 2; v30-5) — an if/else
+ * chain, not a nested ternary (the project rule, `.opencodereview/rule.json`:
+ * "Nested ternary expressions are not allowed"). Presentation only, so it may
+ * live in the page (the build law: pages may branch on how to RENDER).
+ *
+ * v30-5: the "Photo added" branch is GONE — a chosen photo now renders as the
+ * photo itself, with Remove beside it, so the label only ever offers the empty
+ * state.
  */
-function photoPickerLabel(uploading: boolean, photoAdded: boolean): string {
+function photoPickerLabel(uploading: boolean): string {
   if (uploading) return 'Uploading…'
-  if (photoAdded) return 'Photo added'
   return 'Add a photo'
 }
 
@@ -1376,6 +1379,19 @@ export function OnboardingPage() {
   }
 
   /**
+   * v30-5: Remove the photo this parent picked but has not yet been linked to a
+   * row (Continue creates the row; until then the URL is held here). Only the
+   * REFERENCE is dropped — the object is already in storage and this URL does
+   * not carry the stored path — which is the same orphaned-object trade the
+   * upload timeout's escape documents, and strictly better than a wall. A
+   * parent who removes it can pick another one immediately.
+   */
+  function handleRemoveNameCardPhoto() {
+    setPendingAvatarUrl(null)
+    setPhotoError(null)
+  }
+
+  /**
    * Create the profiles row for a first-run parent. Since V28 slice 3b EVERY
    * new account lands here with a session and no row (email signup no longer
    * creates it on /login, and social sign-in never did), and every write on
@@ -1523,23 +1539,60 @@ export function OnboardingPage() {
             {handleError ? <p role="alert" id={errorId('name')} className="text-sm text-red-600">{handleError}</p> : null}
           </form>
           {/* V28 r2 slice 2: the photo block (the deleted card's picker,
-              re-homed). "Add a photo" reuses the deleted card's title
-              verbatim — a parent already saw it in the playtest; the card
-              is not skippable, so there is no Skip control here (the
-              photo is simply optional: Continue walks without it). */}
+              re-homed). v30-5 (founder annotation 1): once a photo is chosen it
+              is SHOWN — the picture itself, with Remove beside it — instead of
+              the words "Photo added". Tapping the photo picks a different one
+              (the same behaviour the profile page has: re-cropping an
+              already-cropped upload would crop a crop), and every chosen image
+              still opens the unchanged "Adjust the photo" dialog. Continue
+              walks without a photo exactly as before. */}
           <div className="flex flex-col gap-1 text-sm">
-            <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
-              {photoPickerLabel(photoCrop.busy, pendingAvatarUrl !== null)}
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                data-testid="name-card-photo-input"
-                disabled={photoCrop.busy}
-                onChange={(e) => void handleNameCardPhotoChange(e)}
-                {...fieldA11y('name-photo', photoError)}
-              />
-            </label>
+            {pendingAvatarUrl !== null ? (
+              <div className="flex items-center gap-3">
+                <label
+                  data-testid="name-card-photo-trigger"
+                  className="relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95 motion-reduce:transition-none"
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    data-testid="name-card-photo-input"
+                    disabled={photoCrop.busy}
+                    onChange={(e) => void handleNameCardPhotoChange(e)}
+                    {...fieldA11y('name-photo', photoError)}
+                  />
+                  <img
+                    data-testid="name-card-photo"
+                    src={pendingAvatarUrl}
+                    alt="Your photo"
+                    className="aspect-square h-16 w-16 rounded-full object-cover"
+                  />
+                </label>
+                <button
+                  type="button"
+                  data-testid="name-card-photo-remove"
+                  onClick={handleRemoveNameCardPhoto}
+                  disabled={photoCrop.busy}
+                  className="min-h-11 self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <label className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-base font-medium text-slate-700">
+                {photoPickerLabel(photoCrop.busy)}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  data-testid="name-card-photo-input"
+                  disabled={photoCrop.busy}
+                  onChange={(e) => void handleNameCardPhotoChange(e)}
+                  {...fieldA11y('name-photo', photoError)}
+                />
+              </label>
+            )}
             {photoError !== null ? <p role="alert" id={errorId('name-photo')} className="text-sm text-red-600">{photoError}</p> : null}
             {photoCrop.dialog}
           </div>

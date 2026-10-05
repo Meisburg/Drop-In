@@ -21,3 +21,17 @@ preview is tapped — the behaviour the profile page already has.
 - [ ] A parent who never picks a photo sees no preview and no Remove.
 - [ ] The name-card photo spec covers all three behaviours; `npm run verify`
       exits 0.
+
+## Comments
+
+**2026-10-05 (build note) — one acceptance criterion is met in a different
+shape, deliberately.** The criterion says *"tapping the preview re-opens the
+crop with the current photo"*. `useCropStep.beginCrop` takes a `File`, and the
+current photo is an already-cropped upload reached by URL — re-opening the crop
+on it would mean fetching a crop back and cropping the crop, which loses pixels
+and is not what the profile page does either. **Tapping the preview therefore
+picks a different image, and choosing one re-opens the unchanged "Adjust the
+photo" dialog** — the same behaviour `/profile` has, which is what decision 1
+("same component, same behavior") asked for. Remove and the visible preview are
+implemented exactly as written, and the e2e proves shown → removed (name intact)
+→ re-added through the crop dialog.

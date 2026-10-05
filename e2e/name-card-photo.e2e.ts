@@ -18,7 +18,11 @@
  * no unit coverage, so this spec IS its sibling test):
  *
  * (1) The name card carries the photo: pick a file → confirm the crop dialog →
- *     the upload runs at confirm ("Uploading…" busy line, then "Photo added").
+ *     the upload runs at confirm ("Uploading…" busy line, then the photo
+ *     itself). v30-5: the card now SHOWS the chosen photo with a Remove control
+ *     rather than the words "Photo added" — and this spec proves all three:
+ *     shown, removed (leaving the typed name intact), and re-added through the
+ *     same unchanged crop dialog.
  * (2) THE IN-FLIGHT GATE (fix round 1): while the upload is in flight the
  *     card's Continue is DISABLED — a row created mid-upload would be born
  *     with avatar_url NULL and the late URL would be read by nothing (the
@@ -200,8 +204,29 @@ test('the name card photo lands on the profiles row (object in the bucket + avat
     true,
   )
   releaseUpload()
-  await expect(page.getByText('Photo added')).toBeVisible()
+  // v30-5: the card shows the PHOTO (it used to say the words "Photo added").
+  await expect(page.getByTestId('name-card-photo')).toBeVisible()
+  await expect(page.getByTestId('name-card-photo-remove')).toBeVisible()
   await expect(continueButton).toBeEnabled()
+
+  // --- v30-5: REMOVE drops the photo, keeps the name, and re-arms the picker. ---
+  await page.getByTestId('name-card-photo-remove').click()
+  await expect(page.getByTestId('name-card-photo')).toHaveCount(0)
+  await expect(page.getByTestId('name-card-photo-remove')).toHaveCount(0)
+  await expect(page.getByText('Add a photo')).toBeVisible()
+  // The card's other answer is untouched: Remove removes the photo, not the run.
+  await expect(page.locator('input[autocomplete="given-name"]')).toHaveValue(first)
+
+  // --- …and the parent can put one back: choosing an image re-opens the SAME
+  // "Adjust the photo" dialog, so the zoom/pan/circle gesture is still there
+  // after a removal. ---
+  await page.getByTestId('name-card-photo-input').setInputFiles({
+    name: 'parent.png',
+    mimeType: 'image/png',
+    buffer: png,
+  })
+  await page.getByRole('button', { name: 'Use this photo' }).click()
+  await expect(page.getByTestId('name-card-photo')).toBeVisible()
 
   // --- Continue creates the profiles row; the photo must ride along. ---
   await continueButton.click()
