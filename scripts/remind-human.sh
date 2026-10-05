@@ -50,11 +50,16 @@ actions="$(awk -v re="$CLOSED_RE" '
   }
   /^- / {
     emit()
+    start = NR; text = $0
     action = ($0 ~ /ACTION REQUIRED/ || $0 ~ /⚠️ ACTION/)
     closed = ($0 ~ re)
-    start = NR; text = $0
     next
   }
+  # OPENED by the entry'"'"'s first line, CLOSED by any line in it. That asymmetry
+  # is deliberate: the phrase is recorded on the `- ` line by convention, while
+  # the ruling lands below it. Matching the phrase on ANY line would also fire on
+  # prose that merely quotes it — the noise class that made this reminder
+  # unreadable once already.
   { if (action && $0 ~ re) closed = 1 }
   END { emit() }
 ' "$STATE")"

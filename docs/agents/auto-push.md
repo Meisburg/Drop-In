@@ -177,16 +177,20 @@ bash scripts/remind-human.sh --hook   # the terse pre-push form
 
 **Keep it working — it reads two things from `task-state.md`:**
 
-1. Any line matching `ACTION REQUIRED` (or `⚠️ ACTION`).
+1. Any **entry** whose first line (`- …`) matches `ACTION REQUIRED` (or
+   `⚠️ ACTION`) — the phrase belongs on the `- ` line, not wrapped below it.
 2. Open entries (lines starting with `- `) in the
    `## Escalations (waiting on human)` section.
 
-Entries are judged **as a whole entry, not by their first line**. An entry is a
-`- ` line plus its indented continuation lines, and it is skipped when **any**
-line in that block contains `RESOLVED`, `APPLIED + VERIFIED`, `SUPERSEDED`,
-`not blocking`, or `no further action`. This matters because the house
-convention is to record the ruling *below* the ⚠️ sentence — a line-by-line
-match printed the closed V24 read-surface item forever, and it was the only
-thing the reminder showed. So: when you record human-pending work, put it in
-one of those two places — anywhere else in the file is invisible to the
-reminder, which defeats the point.
+An entry is **opened by its first line and closed by any line in it**: the entry
+runs from its `- ` line through its indented continuation lines, and it is
+skipped when **any** line in that block contains `RESOLVED`,
+`APPLIED + VERIFIED`, `SUPERSEDED`, `not blocking`, or `no further action`. This
+matters because the house convention is to record the ruling *below* the ⚠️
+sentence — a line-by-line match printed the closed V24 read-surface item
+forever, and it was the only thing the reminder showed. (The asymmetry is
+deliberate: matching the phrase on *any* line would also fire on prose that
+merely quotes it — the noise class that made this reminder unreadable once
+already. So: when you record human-pending work, put it in one of those two
+places, with the phrase on the entry's own first line — anywhere else in the
+file is invisible to the reminder, which defeats the point.)
