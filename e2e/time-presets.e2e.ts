@@ -78,7 +78,18 @@ test('the /new quick-start presets write the day and slot in one tap', async ({ 
  * indistinguishable from a mistaken tap.
  */
 test('a small-hours start is flagged, and is still postable', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-10-05T02:00:00-07:00'))
+  // TIMEZONE-INDEPENDENT, and it has to be. A literal offset
+  // (`2026-10-05T02:00:00-07:00`) pins the INSTANT 09:00Z, which is 02:00 local
+  // only west of UTC-3 — so the form's default slot read 09:00 on a UTC runner,
+  // `small-hours-note` never rendered, and this test failed deterministically
+  // there. Proved by running the spec under `TZ=UTC` on 2026-10-04 (the `ocr`
+  // lane predicted it; the run confirmed it). Pinning an instant whose LOCAL
+  // hour is 02:00 keeps the fixture's meaning — a parent posting in the middle
+  // of the night — on every runner, and keeps this process's timezone aligned
+  // with the browser's, which the day/slot assertions above depend on.
+  const smallHours = new Date()
+  smallHours.setHours(2, 0, 0, 0)
+  await page.clock.setFixedTime(smallHours)
   await page.goto('/new')
   await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
 

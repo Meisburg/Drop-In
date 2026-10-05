@@ -454,14 +454,17 @@ function ProtectedShell() {
                     <NavIcon path={NAV_ICONS.gear} />
                   </Link>
                 ) : null}
-                {session !== null ? null : (
+                {session === null ? (
                   // V2 slice 5: the only route a signed-out visitor renders is
                   // the public detail page — a "Sign in" entry point instead of
-                  // a sign-out control.
+                  // a sign-out control. (V29 v29-10 removed the sign-out control
+                  // from the header; `ocr` noted this branch read backwards as
+                  // `session !== null ? null : …`, so it now leads with the
+                  // rendered element like every other conditional in this file.)
                   <Link to="/login" className="flex min-h-11 items-center text-sm font-medium text-indigo-600">
                     Sign in
                   </Link>
-                )}
+                ) : null}
               </div>
             </div>
           </header>

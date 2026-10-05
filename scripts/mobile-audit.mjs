@@ -37,8 +37,15 @@ const VIEWPORTS = [
  * a centered auth page, not a list. Only on these does "below the fold" mean a
  * hidden control rather than "scroll down". The detail page is deliberately
  * absent: it is meant to scroll.
+ *
+ * `/reset-password` added 2026-10-04 (`ocr` found it): it renders the IDENTICAL
+ * one-screen container as `/login` (`ResetPasswordPage.tsx:61` — `pt-safe pb-safe
+ * mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center`), so it made
+ * the same claim while sitting in neither this set nor ROUTES — its fold was
+ * simply unmeasured. A page that claims one screen and is not on this list is
+ * the rot this set exists to prevent.
  */
-const FITS_ONE_SCREEN = new Set(['/login'])
+const FITS_ONE_SCREEN = new Set(['/login', '/reset-password'])
 // Pass a real drop-in id as the second argument to audit a content-bearing
 // detail page; the default exercises the not-found state (also a real screen).
 const DETAIL_ID = process.argv[3] ?? '00000000-0000-0000-0000-000000000000'
@@ -49,7 +56,7 @@ const DETAIL_ID = process.argv[3] ?? '00000000-0000-0000-0000-000000000000'
 // which is the state audited here (no marker account is available to this
 // throwaway script); the signed-in layout is measured by the places e2e specs
 // at 390 and by the mobile-audit assertions those specs carry.
-const ROUTES = ['/login', `/playdate/${DETAIL_ID}`, '/browse']
+const ROUTES = ['/login', '/reset-password', `/playdate/${DETAIL_ID}`, '/browse']
 
 const browser = await chromium.launch()
 let failures = 0
@@ -196,6 +203,10 @@ for (const pass of PASSES) {
         for (const el of document.querySelectorAll('button, a[href], input, select, textarea')) {
           const rect = el.getBoundingClientRect()
           if (rect.width === 0 || rect.height === 0) continue
+          // Same skip as the tap-target loop above: an inline link inside a
+          // sentence is running text, not a control, and a long wrapped one would
+          // otherwise be reported as "below the fold" on a MUST_FIT page.
+          if (getComputedStyle(el).display === 'inline') continue
           const label = (
             el.getAttribute('aria-label') ||
             el.textContent ||
@@ -205,9 +216,19 @@ for (const pass of PASSES) {
             .trim()
             .replace(/\s+/g, ' ')
             .slice(0, 32)
-          if (rect.bottom > doc.scrollHeight + 1) {
+          // `getBoundingClientRect()` is VIEWPORT-relative, while
+          // `doc.scrollHeight` is DOCUMENT-level — so the two only compare
+          // directly when the page happens to be scrolled to the top. Add the
+          // scroll offset to get the element's document-relative bottom.
+          // (`ocr` found this on the V29 range, 2026-10-04: nothing scrolls
+          // before this `evaluate` today, so it held — but a later autofocused
+          // field or a `scrollIntoView` would have made a genuinely clipped
+          // control's `rect.bottom` fall under the threshold and silently
+          // disarmed the check.)
+          const docBottom = rect.bottom + window.scrollY
+          if (docBottom > doc.scrollHeight + 1) {
             unreachableControls.push(
-              `${el.tagName.toLowerCase()} "${label}" bottom ${Math.round(rect.bottom)} vs scrollable ${doc.scrollHeight}`,
+              `${el.tagName.toLowerCase()} "${label}" bottom ${Math.round(docBottom)} vs scrollable ${doc.scrollHeight}`,
             )
           }
           if (MUST_FIT && portrait && (rect.bottom > window.innerHeight + 1 || rect.top < -1)) {
