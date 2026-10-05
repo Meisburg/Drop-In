@@ -651,6 +651,14 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       no longer exists and was never tracked, and `.env`/`.env.local` are
       gitignored — that item is **closed, with no rotation needed**. The `ocr`
       lane was re-run over `580eb82..241c5c3` after v29-11 skipped it on a false
-      "not installed" premise (it is `v1.12.11`). **Remaining, human-owned:** the
+      "not installed" premise (it is `v1.12.11`). **🔴 THE FORGE GATE WAS RED ON
+      EVERY PUSH SINCE 2026-10-03 AND NOBODY HAD RECORDED IT** — fixed in
+      `50eed5b` and green for the first time (`success`). Two environment defects,
+      zero code defects: `check-acceptance-greps` shells out to `rg` and the
+      runner does not ship ripgrep (every claim → `rg ENOENT`, 9 of its own 14
+      behavior checks red), and `e2e-target-guard` reads the `.env` FILE while the
+      workflow only set process env. **A gate whose failure is indistinguishable
+      from its baseline is not a gate.**
+      **Remaining, human-owned:** the
       destructive marker sweep (**279 accounts / 563 rows**), the V24 read-surface
       privacy decision, and the 5-parent first-open test.
