@@ -1179,7 +1179,12 @@ export function FeedPage() {
 
       {/* V27 slice 4: the one-tap share prompt, immediately after a successful
           post. Router-state-driven and one-shot — a plain load of `/` (no
-          state) renders nothing, and dismissing clears the state. */}
+          state) renders nothing.
+          ⚠️ Corrected by V29 v29-3: the router state is CONSUMED on mount (a
+          mount-time snapshot drives this banner), so a RELOAD cannot re-announce
+          the post, and `dismissJustPosted` no longer touches history — there is
+          nothing left in it to clear. The old comment here said "dismissing
+          clears the state", which described exactly the bug v29-3 fixed. */}
       {showJustPosted ? (
         <div
           data-testid="just-posted-banner"

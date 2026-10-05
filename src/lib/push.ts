@@ -268,7 +268,9 @@ export type BrowserPermission = 'default' | 'granted' | 'denied' | 'unsupported'
  * app the parent had never seen work — on top of an empty feed. The type no
  * longer names it, so no caller can re-arm it by accident; a stored legacy
  * 'signup' in the offered list parses away to nothing
- * (`PUSH_PROMPT_TRIGGERS` is the filter `parseOfferedTriggers` uses).
+ * (`isPushPromptTrigger` is the filter `parseOfferedTriggers` uses —
+ * `PUSH_PROMPT_TRIGGERS` is the list it filters against, and the filter in
+ * `serializeOfferedTriggers`/`addOfferedTrigger`).
  */
 export type PushPromptTrigger = 'post_created' | 'ping_saved'
 

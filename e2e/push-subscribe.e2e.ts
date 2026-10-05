@@ -12,12 +12,13 @@
  *    registers NOTHING and points at the in-app fallback instead, that a saved
  *    ping arms the prompt (which never appears on a cold load), and that a
  *    denial after that action surfaces the note the AC pins.
- *  * ALSO IN SCOPE since V25 ticket 15: the THREE trigger points — the account
- *    just created, the drop-in just posted, the RSVP just given — each offered
+ *  * ALSO IN SCOPE since V25 ticket 15, and TWO points since V29 removed the
+ *    signup arm: the drop-in just posted and the RSVP just given — each offered
  *    at most once, a "Not now" at one of them NOT cancelling the others, the
  *    going-to-an-event reason naming comments and cancellations, and the
  *    detail-page deferral ending on the next non-detail visit instead of
- *    swallowing the point.
+ *    swallowing the point. (The account-just-created point is GONE; the spec
+ *    below asserts its absence rather than its behaviour.)
  *  * OUT OF SCOPE, and not testable from here: THE SERVER-SIDE SEND. A real
  *    push needs VAPID keys, the deployed `send-push` function and a real push
  *    service, all of which are human-owned console steps (docs/push-setup.md).
@@ -792,8 +793,10 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
   await expect(viewer.getByRole('heading', { name: title })).toBeVisible()
 
   // The baseline: a full load of the detail page never asks (the cold-load pin),
-  // the signup point was answered above, and nothing has RSVP'd yet — so any
-  // prompt seen later in this test would be caused by the RSVP below.
+  // nothing has RSVP'd yet, and since V29 there is no signup point to have been
+  // answered — so any prompt seen later in this test must be caused by the RSVP
+  // below. (The old comment here claimed "the signup point was answered above",
+  // which V29 removed; this baseline needs no setup.)
   await expect(viewer.getByTestId('push-optin-prompt')).toHaveCount(0)
 
   // --- 3. THE ACTION: the detail page's own RSVP control. Its label is a

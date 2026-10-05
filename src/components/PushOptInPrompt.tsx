@@ -26,8 +26,8 @@ import {
 } from '../lib/pushClient'
 
 /**
- * The post-action notification prompt (V8 ticket 08; V25 ticket 15's three
- * trigger points).
+ * The post-action notification prompt (V8 ticket 08; V25 ticket 15's trigger
+ * points — **two** of them since V29 removed the signup arm).
  *
  * THE PIN THIS COMPONENT EXISTS TO HOLD: never on a cold load. It renders
  * nothing until a MEANINGFUL ACTION has been recorded in this tab
