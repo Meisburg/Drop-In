@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { deleteMyAccount, exportMyData, signOutUser } from '../lib/db'
 import { settingsErrorMessage } from '../lib/settingsError'
+import { canModerate } from '../lib/moderation'
 import { ConfirmDialog } from './ConfirmDialog'
+import { useSessionContext } from './SessionProvider'
 
 /**
  * The Account section (V27) — the parent-facing half of leaving.
@@ -19,6 +22,7 @@ import { ConfirmDialog } from './ConfirmDialog'
  *    been applied yet.
  */
 export function AccountSection() {
+  const { profile } = useSessionContext()
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -70,6 +74,34 @@ export function AccountSection() {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* v30-7 (founder annotation 5): THE MODERATOR DOOR. The place-photo tool
+          shipped in V28 r4 and was reachable only by typing /mod — the route
+          exists, and NOTHING in the app linked to it, so the founder reported
+          the tool as missing. This row is discoverability, not permission: the
+          route guard and the database policies remain the authority.
+
+          It renders ONLY for a moderator-flagged profile (the same pure
+          `canModerate` the /mod guard reads), so a parent never sees a control
+          they cannot use. It sits FIRST because it is the one control here that
+          is not about leaving — a moderator who opened Settings to fix a wrong
+          place photo should not scroll past an export, a sign-out and a delete
+          to find it. */}
+      {canModerate(profile) ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-sm font-medium text-slate-800">Moderator tools</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Reports, and the place-photo tool for a place whose picture is missing or wrong.
+          </p>
+          <Link
+            to="/mod"
+            data-testid="moderator-tools-link"
+            className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+          >
+            Open moderator tools
+          </Link>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-slate-200 bg-white p-3">
         <p className="text-sm font-medium text-slate-800">Download your data</p>
         <p className="mt-1 text-xs text-slate-500">
