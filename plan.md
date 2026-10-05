@@ -657,7 +657,12 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       refuted. **The high one was a v29-2 regression, now fixed:** a failed
       *decorative* pings read on `PlaceDetailsPage` ran the posts `catch` and
       emptied the feed ("Nothing planned yet." for a place with drop-ins), and
-      the same stale-map class is fixed on all three card surfaces. **🔴 THE
+      the same stale-map class is fixed on all three card surfaces. **All 17 are
+      closed** — the `mobile-audit` coordinate bug, `/reset-password` added to the
+      fold check, four stale comments and the `App.tsx` conditional — and the
+      lane's one UNVERIFIED finding was settled **by experiment**: it predicted
+      the small-hours spec would fail on a UTC runner, and `TZ=UTC` did fail it
+      at `:86`, so the fixture is now timezone-independent (proved both ways). **🔴 THE
       FORGE GATE WAS RED ON
       16 CONSECUTIVE MASTER PUSHES OVER 29.9 HOURS (2026-10-03T20:54Z →
       2026-10-05T02:48Z) AND NOBODY HAD RECORDED IT** — master had been green
