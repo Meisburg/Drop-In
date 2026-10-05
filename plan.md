@@ -283,3 +283,6 @@ rather than reordering one.
     V31: v31-3 built + verified (scheduler 42 passed, gate green)
     V31: v31-4 found while gathering evidence (dev injector in dist), fixed at the build
     V31: gate measured — exit 0, 75 files / 2197 tests / 86 warnings / 0 errors / GUARDS PASS
+    V31: v31-5 built + verified (specs pass with SUPABASE_ACCESS_TOKEN unset)
+    V31: nightly re-dispatched (37329038488) — 190 passed / 3 failed / 2 skipped; all three moderator specs + push-subscribe GREEN in CI
+    V31: remaining = places:1674 (place-marker-info contains learn-more; inherited, real), places:917 (named flake), places-map-view:574 (now measured intermittent, not persistent)
