@@ -1,15 +1,43 @@
 # Implementation Plan: DropIn as a native app (App Store + Google Play)
 
-> **🟢 UNPARKED 2026-10-03 — SLICE 0/1 GROUNDWORK DONE, SHELL NOT YET BUILT.**
-> Re-verified against `758ec8f` per the handoff's §5 "what will have rotted" table.
-> **Results are in `.scratch/native-apps/reverify-2026-10-03.md`** — the short
-> version: Capacitor 8.5.2 and push-notifications 8.1.3 are current; `send-push`
-> is still v8/ACTIVE; there are **eight** notification kinds (the plan said eight,
-> correct); `dist` is 1.5M; the repo is still **PRIVATE**; and the next free
-> migration is **0063**, not 0061 (`0061` and `0062` have since landed).
-> **The four code hazards are REAL and still present**, but their line numbers
-> have drifted and two of them already have a seam: see the reverify file. The
-> Phase 0/1 store work is tracked in `docs/RELEASE-CHECKLIST.md`.
+> **🟢 UNPARKED 2026-10-03 — SLICE 0 GROUNDING IS DONE, SHELL NOT YET BUILT.**
+> **⚠️ READ THIS PARAGRAPH BEFORE THE SLICES: the 2026-10-05 grounding INVALIDATES
+> three things the slices below assume.** It is
+> `research/native-apps/2026-10-05-capacitor-grounding.md` (284 lines, 42
+> primary-source URLs; the earlier `.scratch/native-apps/reverify-2026-10-03.md`
+> is still valid for versions but predates it):
+>
+> 1. **`android.adjustMarginsForEdgeToEdge` was REMOVED in Capacitor 8.0.** A
+>    handoff written against 6/7 reaches for it; the current answer is the
+>    SystemBars plugin plus CSS `env()` safe areas — which means this app's
+>    existing edge-to-edge CSS is the thing to check, not the config key.
+> 2. **The installed 8.5.2 is a BREAKING MINOR**: it adopts the iOS UIScene
+>    lifecycle, so `SceneDelegate.swift` + an Info.plist scene manifest are
+>    required and `AppDelegate` URL/universal-link callbacks stop firing. This
+>    only bites slice 3 (deep links) and only on iOS — but it means slice 3's iOS
+>    half is NOT the mechanical change the slice text implies.
+> 3. **The toolchain floors moved**: Node 22+ (this box has 26 ✓), Xcode 26+,
+>    `minSdk 24`, `compileSdk`/`targetSdk 36`, AGP 8.13.0, Gradle 8.14.3, Kotlin
+>    2.2.20, google-services plugin 4.4.4. **The open risk is this box's JDK: the
+>    only JVM installed is Java 26**, and AGP 8.13/Gradle 8.14.3 do not support a
+>    class-file version that new. Slice 1's first job is therefore to prove or
+>    disprove `./gradlew --version` on Java 26 and install a JDK 21 toolchain if
+>    it refuses — see "Risks / open questions".
+>
+> **What did NOT rot:** `webDir: 'dist'` with **no `server.url`** is unchanged and
+> is still the anti-4.2 choice (the config reference scopes `server.url` to live
+> reload and calls it "not intended for use in production"). Capacitor core is
+> still 8.5.2; `send-push` is still v8/ACTIVE; there are still **eight**
+> notification kinds; `dist` is still 1.5M. **Two facts DID move since 10-03: the
+> next free migration is now `0064` (0063 landed), and ⚠️ THE REPO IS NOW
+> PUBLIC** (`gh repo view` → `isPrivate: false`), which reverses §2.7's "macOS
+> minutes bill at 10×" cost note for the iOS route.
+>
+> **ANDROID FIRST**, per `docs/RELEASE-CHECKLIST.md` 2.3: this box can build and
+> test Android today (SDK at `~/Android/Sdk`, build-tools 36.0.0, platform
+> android-37.0) and cannot build iOS at all.
+>
+> The Phase 0/1 store work is tracked in `docs/RELEASE-CHECKLIST.md`.
 >
 > **⏸️ Originally parked 2026-09-30 — NOT STARTED at that time, AND DELIBERATELY SO.** The app is not
 > feature-complete, and a native shell is one of the LAST things to add: every
@@ -223,14 +251,41 @@ the app when installed. Both files are served from the web app.
 
 ## Risks / open questions
 
+- **⚠️ THE JDK ON THIS BOX IS TOO NEW, AND IT IS SLICE 1'S FIRST BLOCKER
+  (measured 2026-10-05).** `ls /usr/lib/jvm` shows exactly one JVM:
+  `java-26-openjdk` (`openjdk version 26.0.2.1`), and `JAVA_HOME` is unset. The
+  Capacitor 8 floors are AGP 8.13.0 / Gradle 8.14.3, which do not support a Java
+  26 class-file version; the expected failure is Gradle refusing to start
+  ("Unsupported class file major version") or the Android plugin failing to
+  load. **This is a claim until it is run** — slice 1's first verification step
+  is `./gradlew --version` in the generated `android/`, and if it refuses, the
+  fix is a JDK 21 toolchain (user-scoped, e.g. `mise install java@21` plus
+  `org.gradle.java.home` or `JAVA_HOME` for the build only). Do NOT "fix" it by
+  editing generated gradle files to unsupported versions.
+- **⚠️ THE PLAY GATE IS A CALENDAR PROBLEM, NOT A BUILD PROBLEM (grounding,
+  2026-10-05).** Google's own page: a new **personal** Play account must run a
+  closed test with "a minimum of 12 testers who have been opted in continuously
+  for at least 14 days" before production access. The clock starts when an
+  installable build exists, which makes the Android shell the critical path and
+  makes **checklist 0.1 (personal vs organization account)** worth settling
+  before the shell is polished rather than after. An agent cannot recruit the
+  testers.
 - **⚠️ APPLE GUIDELINE 4.2 IS THE MAIN RISK.** Apple rejects apps that are "just
   a repackaged website". Bundling assets (slice 1) and shipping real native
   capability is the mitigation, but this is a **review outcome nobody can
-  guarantee**. Budget for one rejection round-trip.
+  guarantee**. Budget for one rejection round-trip. The grounding quotes today's
+  wording of 4.2, 4.2.2 and 4.2.6, and records that Apple publishes **no**
+  Capacitor-specific rejection list — community anecdotes are not evidence.
+- **⚠️ NATIVE PUSH IS A SECOND SENDER, NOT A PORT (grounding, 2026-10-05).**
+  Web Push/VAPID gives no VAPID pair, no `endpoint`/`p256dh`/`auth`, no service
+  worker; native gets a per-install FCM token, and `send-push` must gain a Google
+  service-account OAuth2 path posting to
+  `https://fcm.googleapis.com/v1/projects/{id}/messages:send`. Slice 2's text
+  below already refuses a second Edge Function — that part is right — but it must
+  not be read as "the web transport with different keys".
 - **⚠️ THE LONG POLE IS NOT CODE — IT IS ENROLMENT.** Apple Developer Program
   ($99/yr) identity verification can take **days**; Play Console is $25
-  one-time. **Start Apple enrolment before slice 1 finishes.** An agent cannot do
-  this.
+  one-time. An agent cannot do this.
 - **⚠️ e2e DRIVES THE LIVE PROJECT — and it has already caused a real incident.**
   V28's `followed_new_dropin` emails were Playwright fixtures reaching a real
   inbox. Native testing must not repeat it: fixtures stay inside the marker
