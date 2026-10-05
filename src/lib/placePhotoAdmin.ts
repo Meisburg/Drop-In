@@ -62,19 +62,49 @@ export type PlacePhotoType = (typeof PLACE_PHOTO_TYPES)[number]
 export const PLACE_PHOTO_MAX_BYTES = 8 * 1024 * 1024
 
 /**
- * The stored size of a place photo: a 1200px square JPEG (quality 0.85 — the
- * encoder's one setting, in `prepareSquarePhotoFile`).
+ * The stored shape of a place photo: a 1400×700 JPEG (quality 0.85 — the
+ * encoder's one setting, in `prepareCroppedPhotoFile`), and the SAME 2:1 window
+ * the crop dialog draws.
  *
- * WHY 1200, AND WHY SQUARE. The stored shape is SQUARE by decision (spec §1):
- * the photo feeds the place-page banner (`h-48 w-full`) and the directory card
- * thumb (`h-16 w-20`), both `object-cover`, and one square is the least-lossy
- * single shape for the pair. The banner is at most 448 CSS px wide (`max-w-md`),
- * i.e. ~1344 device px at 3× — 1200 is the smallest size that keeps a phone on
- * the good side of that. Avatars stay at `AVATAR_SIZE_PX` (512), and this is
- * deliberately NOT the original resolution, for the same reason the avatar
- * pipeline is not: the network only ever sees the small result.
+ * WHY WIDER THAN TALL, AND WHY THESE NUMBERS (place-photo-crop slice 3,
+ * 2026-10-05). Slice 1 stored a 1200px SQUARE and the founder framed in it, then
+ * reported: *"Why is it a square that I'm editing in when what I see for each
+ * place is a rectangle? … It is the wrong size."* The hero was RE-MEASURED in the
+ * shipped tree rather than copied from the spec's table, and the table is wrong
+ * about `md`: the page column is `mx-auto max-w-md md:max-w-3xl` (App.tsx), so
+ * the old `h-48` hero was 358×192 at 390px (1.86:1), **664×192 at 768px (3.46:1)
+ * and 740×192 at 844px (3.85:1)** — not 448×192 (2.33:1). The directory card is
+ * ~356×144 (~2.5:1). Every surface is WIDE, so a square was re-cropped by
+ * `object-cover` on every render and the moderator's framing was thrown away.
+ * Pinning the hero to `aspect-[2/1]` makes the crop window and that surface the
+ * same rectangle at EVERY width (measured 2.0000:1 at 390, 768 and 844), and the
+ * card keeps the middle ~80% of its height. One stored crop serves both.
+ *
+ * WHERE 1400 COMES FROM, and its known limit: the spec pinned 1400 against a
+ * 448 CSS px hero at 3× (~1344 device px), and this constant is that ruling. The
+ * re-measurement above says the widest hero is 740 CSS px, i.e. ~2220 device px
+ * at 3× — so on a 3× display the hero is upscaled slightly. The 2:1 RATIO is what
+ * buys the founder's framing; whether to raise the pixel count is a product
+ * decision outside this slice and is reported, not taken here. Avatars stay at
+ * `AVATAR_SIZE_PX` (512) and square, and this is deliberately NOT the original
+ * resolution, for the same reason the avatar pipeline is not: the network only
+ * ever sees the small result.
+ *
+ * Already-stored photos (the 239 seeded ones and any square slice-1 upload) need
+ * no migration: they render in the 2:1 box as a centre band.
  */
-export const PLACE_PHOTO_SIZE_PX = 1200
+export const PLACE_PHOTO_WIDTH_PX = 1400
+export const PLACE_PHOTO_HEIGHT_PX = 700
+
+/**
+ * The pair, as one value: the encoder's output size AND the crop window's
+ * aspect. One constant rather than the same two numbers spelled twice at the
+ * editor's two seams (the one-copy rule).
+ */
+export const PLACE_PHOTO_SIZE = {
+  width: PLACE_PHOTO_WIDTH_PX,
+  height: PLACE_PHOTO_HEIGHT_PX,
+} as const
 
 /**
  * Validate a moderator-typed image URL.

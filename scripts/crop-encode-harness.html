@@ -10,7 +10,7 @@
       and not a build entry — Vite builds only index.html — so this never ships.
 
       It exists to settle the claim the whole feature rests on, against the REAL
-      encoder rather than a replica of it: that `prepareSquarePhotoFile` keeps the
+      encoder rather than a replica of it: that `prepareCroppedPhotoFile` keeps the
       rectangle the crop dialog handed it, at the size the constant says. It
       encodes two DIFFERENT rects of the same banded test image and reports each
       result's dimensions, byte size and centre colour — if the rect were ignored
@@ -18,7 +18,7 @@
     -->
     <div id="root"></div>
     <script type="module">
-      import { AVATAR_SIZE_PX, prepareSquarePhotoFile } from '../src/lib/db.ts'
+      import { AVATAR_PHOTO_SIZE, AVATAR_SIZE_PX, prepareCroppedPhotoFile } from '../src/lib/db.ts'
 
       const WIDTH = 300
       const HEIGHT = 400
@@ -45,7 +45,7 @@
       const bitmap = await createImageBitmap(source)
 
       async function encode(rect) {
-        const blob = await prepareSquarePhotoFile(bitmap, rect)
+        const blob = await prepareCroppedPhotoFile(bitmap, rect, AVATAR_PHOTO_SIZE)
         const decoded = await createImageBitmap(blob)
         // Centre pixel of the ENCODED result: which band did the encoder keep?
         const probe = document.createElement('canvas')

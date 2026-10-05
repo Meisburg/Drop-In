@@ -13,9 +13,11 @@
 import { describe, expect, it } from 'vitest'
 import { AVATAR_SIZE_PX } from './db'
 import {
+  PLACE_PHOTO_HEIGHT_PX,
   PLACE_PHOTO_MAX_BYTES,
-  PLACE_PHOTO_SIZE_PX,
+  PLACE_PHOTO_SIZE,
   PLACE_PHOTO_TYPES,
+  PLACE_PHOTO_WIDTH_PX,
   clearPlacePhotoPatch,
   fetchPlacePhotoFile,
   formatMegabytes,
@@ -151,14 +153,20 @@ describe('validatePlacePhotoCropFile (the crop step gate)', () => {
   })
 })
 
-describe('PLACE_PHOTO_SIZE_PX (the stored size, spec §1)', () => {
-  it('is the pinned 1200px square', () => {
-    expect(PLACE_PHOTO_SIZE_PX).toBe(1200)
+describe('the stored place-photo shape (slice 3, spec §3)', () => {
+  it('is the pinned 1400×700 — a 2:1 rectangle, not a square', () => {
+    expect(PLACE_PHOTO_WIDTH_PX).toBe(1400)
+    expect(PLACE_PHOTO_HEIGHT_PX).toBe(700)
+    expect(PLACE_PHOTO_WIDTH_PX / PLACE_PHOTO_HEIGHT_PX).toBeCloseTo(2, 9)
+    // The window the editor draws and the pixels the encoder writes are the same
+    // value, so what the moderator framed is what is stored.
+    expect(PLACE_PHOTO_SIZE).toEqual({ width: 1400, height: 700 })
   })
 
-  it('is larger than an avatar, because it feeds a full-width banner', () => {
+  it('is larger than an avatar on both axes, because it feeds a full-width banner', () => {
     // 448 CSS px wide at 3x is ~1344 device px; the avatar's 512 would be mush.
-    expect(PLACE_PHOTO_SIZE_PX).toBeGreaterThan(AVATAR_SIZE_PX)
+    expect(PLACE_PHOTO_WIDTH_PX).toBeGreaterThan(AVATAR_SIZE_PX)
+    expect(PLACE_PHOTO_HEIGHT_PX).toBeGreaterThan(AVATAR_SIZE_PX)
   })
 })
 

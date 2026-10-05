@@ -5,6 +5,7 @@ import { OVERLAY_INSIDE_MODAL_Z_CLASS } from '../lib/stacking'
 import {
   MAX_ZOOM,
   MIN_ZOOM,
+  SQUARE_WINDOW,
   centerDeltaForDrag,
   clampCropState,
   cropRectFor,
@@ -13,6 +14,7 @@ import {
   zoomToPoint,
   type CropRect,
   type CropState,
+  type CropWindow,
   type ImageSize,
 } from '../lib/photoCrop'
 
@@ -20,32 +22,35 @@ import {
  * The crop step (photo-crop ticket 02).
  *
  * Why this exists: every uploaded photo used to be center-cropped by
- * `prepareSquarePhotoFile` with no say from the user, so a portrait photo of a kid
+ * `prepareCroppedPhotoFile` with no say from the user, so a portrait photo of a kid
  * came back as a circle of shoulder (see `.scratch/photo-crop/spec.md`). This is
  * the replacement: the user pans and zooms, and what gets saved is the frame
  * they chose.
  *
- * THE PREVIEW IS DRAWN FROM THE SAME FUNCTION THE ENCODER USES. The square is a
+ * THE PREVIEW IS DRAWN FROM THE SAME FUNCTION THE ENCODER USES. The window is a
  * <canvas> painted with `drawTransformFor`, and confirming returns `cropRectFor`
- * for the same state — both from `src/lib/photoCrop.ts`. That is deliberate: the
- * most likely way to ship this feature broken is to compute the on-screen frame
- * and the saved frame differently, and painting the preview with the encoder's
- * own math makes that disagreement impossible rather than merely unlikely. It is
- * a canvas rather than an <img> with object-fit for exactly that reason.
+ * for the same state — both from `src/lib/photoCrop.ts`, both given the same
+ * `windowShape`. That is deliberate: the most likely way to ship this feature
+ * broken is to compute the on-screen frame and the saved frame differently, and
+ * painting the preview with the encoder's own math makes that disagreement
+ * impossible rather than merely unlikely. It is a canvas rather than an <img>
+ * with object-fit for exactly that reason.
  *
- * The mask is not decoration, and it is the SHAPE the caller names. Avatars
- * render as circles, so for a circle the visible window is the circle INSCRIBED
- * in this square; without showing it, someone could frame a face out to the
- * square's edges and still lose the top of a head in the feed. A place photo is
- * a RECTANGLE (spec §1: the stored crop stays square), so `shape: 'frame'`
- * renders no circle — the square window IS the frame — and says so in its own
- * words. The default is `'circle'` because the five avatar-family call sites
- * must behave byte-identically; `useCropStep` passes it through.
+ * THE WINDOW'S SHAPE IS THE CALLER'S (`windowShape`), and the mask follows the
+ * SHAPE the caller names. Avatars render as circles, so for a circle the visible
+ * window is the circle INSCRIBED in the window; without showing it, someone
+ * could frame a face out to the edges and still lose the top of a head in the
+ * feed. A place photo is a 2:1 RECTANGLE (place-photo-crop slice 3: the stored
+ * crop and the hero are both `PLACE_PHOTO_SIZE`), so `shape: 'frame'` renders no
+ * circle — the window IS the frame — and says so in its own words. The default
+ * is `'circle'` + `SQUARE_WINDOW` because the five avatar-family call sites must
+ * behave byte-identically; `useCropStep` passes both through.
  */
 export function CropPhotoDialog({
   image,
   busy = false,
   shape = 'circle',
+  windowShape = SQUARE_WINDOW,
   onCancel,
   onConfirm,
 }: {
@@ -54,11 +59,19 @@ export function CropPhotoDialog({
   /** True while the caller is uploading — the controls lock. */
   busy?: boolean
   /**
-   * What the frame is FOR. `'circle'` (the default) masks the square to the
-   * circle an avatar renders as; `'frame'` shows the whole square — a place
+   * What the frame is FOR. `'circle'` (the default) masks the window to the
+   * circle an avatar renders as; `'frame'` shows the whole window — a place
    * photo is a rectangle.
    */
   shape?: 'circle' | 'frame'
+  /**
+   * The window's width-to-height ratio. Defaults to `SQUARE_WINDOW` — the shape
+   * every avatar-family crop has always had — so adding this prop changed none
+   * of them. A place photo passes `PLACE_PHOTO_SIZE`, the very value the encoder
+   * writes, so the frame the moderator sees and the JPEG that is stored are the
+   * same rectangle.
+   */
+  windowShape?: CropWindow
   onCancel: () => void
   /** The chosen frame, in source pixels. */
   onConfirm: (rect: CropRect) => void
@@ -69,8 +82,12 @@ export function CropPhotoDialog({
     () => ({ width: image.width, height: image.height }),
     [image],
   )
-  const [state, setState] = useState<CropState>(() => initialCropState(imageSize))
-  const [windowSize, setWindowSize] = useState(0)
+  const [state, setState] = useState<CropState>(() => initialCropState(imageSize, windowShape))
+  // The drawn window's box, in CSS pixels, MEASURED from the element rather than
+  // derived from the ratio: the geometry below is expressed in window pixels, and
+  // the canvas' backing store has to match the box on BOTH axes or the preview is
+  // scaled into a distortion. `{ width: 0, height: 0 }` until the observer runs.
+  const [windowBox, setWindowBox] = useState({ width: 0, height: 0 })
   const windowRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
@@ -114,13 +131,16 @@ export function CropPhotoDialog({
   }, [busy, onCancel])
 
   // The geometry is expressed in window pixels, so the window is MEASURED rather
-  // than assumed — which is also what makes the state survive a rotation.
+  // than assumed — which is also what makes the state survive a rotation, and what
+  // keeps a 2:1 window's canvas from being stretched into a square backing store.
   useEffect(() => {
     const element = windowRef.current
     if (element === null) return
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0]
-      if (entry !== undefined) setWindowSize(entry.contentRect.width)
+      if (entry !== undefined) {
+        setWindowBox({ width: entry.contentRect.width, height: entry.contentRect.height })
+      }
     })
     observer.observe(element)
     return () => observer.disconnect()
@@ -128,15 +148,18 @@ export function CropPhotoDialog({
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (canvas === null || windowSize <= 0) return
+    if (canvas === null || windowBox.width <= 0 || windowBox.height <= 0) return
     const dpr = Math.min(window.devicePixelRatio || 1, 3)
-    canvas.width = Math.round(windowSize * dpr)
-    canvas.height = Math.round(windowSize * dpr)
+    canvas.width = Math.round(windowBox.width * dpr)
+    canvas.height = Math.round(windowBox.height * dpr)
     const ctx = canvas.getContext('2d')
     if (ctx === null) return
-    const transform = drawTransformFor(imageSize, state, windowSize)
+    // `windowBox.width` is the scale basis: the window's aspect is the crop
+    // rect's aspect, so a window pixel is the same number of source pixels on
+    // both axes and one number is enough.
+    const transform = drawTransformFor(imageSize, state, windowBox.width, windowShape)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, windowSize, windowSize)
+    ctx.clearRect(0, 0, windowBox.width, windowBox.height)
     ctx.imageSmoothingQuality = 'high'
     // `transform.drawWidth/drawHeight`, not `image.width * transform.scale` computed
     // locally: the point of one transform object is that the preview consumes the
@@ -148,7 +171,7 @@ export function CropPhotoDialog({
       transform.drawWidth,
       transform.drawHeight,
     )
-  }, [image, imageSize, state, windowSize])
+  }, [image, imageSize, state, windowBox, windowShape])
 
   // Wheel zoom (desktop). Attached by hand with { passive: false } because React
   // registers wheel listeners passively, so preventDefault would be ignored — and
@@ -169,13 +192,14 @@ export function CropPhotoDialog({
           current.zoom * Math.exp(-event.deltaY * 0.0015),
           event.clientX - rect.left,
           event.clientY - rect.top,
-          windowSize,
+          windowBox.width,
+          windowShape,
         ),
       )
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
-  }, [imageSize, windowSize])
+  }, [imageSize, windowBox, windowShape])
 
   /**
    * Re-derive the pinch base from whatever pointers are down RIGHT NOW.
@@ -213,16 +237,21 @@ export function CropPhotoDialog({
       const delta = centerDeltaForDrag(
         imageSize,
         stateRef.current,
-        windowSize,
+        windowBox.width,
         next.x - previous.x,
         next.y - previous.y,
+        windowShape,
       )
       setState((current) =>
-        clampCropState(imageSize, {
-          ...current,
-          centerX: current.centerX + delta.dx,
-          centerY: current.centerY + delta.dy,
-        }),
+        clampCropState(
+          imageSize,
+          {
+            ...current,
+            centerX: current.centerX + delta.dx,
+            centerY: current.centerY + delta.dy,
+          },
+          windowShape,
+        ),
       )
       return
     }
@@ -247,7 +276,8 @@ export function CropPhotoDialog({
           pinch.zoom * (distance / pinch.distance),
           (a.x + b.x) / 2 - rect.left,
           (a.y + b.y) / 2 - rect.top,
-          windowSize,
+          windowBox.width,
+          windowShape,
         ),
       )
     }
@@ -280,16 +310,21 @@ export function CropPhotoDialog({
           <p className="text-xs text-slate-500">
             {shape === 'circle'
               ? 'Drag to move. Pinch, or use the slider, to zoom. The circle is what other parents will see.'
-              : 'Drag to move. Pinch, or use the slider, to zoom. The square is what everyone will see.'}
+              : 'Drag to move. Pinch, or use the slider, to zoom. The rectangle is what everyone will see.'}
           </p>
         </div>
 
-        {/* The crop window is a square, because a square is what gets stored. For
-            a circle the inscribed circle is what an avatar actually shows; for a
-            frame the square itself is the whole of what is kept. */}
+        {/* The window's aspect is the CALLER's stored shape, and the class list is
+            deliberately free of `aspect-*`: the value comes from a prop, so it is
+            an inline style rather than an arbitrary Tailwind class generated from
+            a constant a reader would have to chase. For a circle the inscribed
+            circle is what an avatar actually shows; for a frame the window itself
+            is the whole of what is kept. */}
         <div
           ref={windowRef}
-          className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-900"
+          data-testid="crop-window"
+          style={{ aspectRatio: `${windowShape.width} / ${windowShape.height}` }}
+          className="relative w-full overflow-hidden rounded-xl bg-slate-900"
         >
           <canvas
             ref={canvasRef}
@@ -331,7 +366,15 @@ export function CropPhotoDialog({
             onChange={(event) => {
               const zoom = Number(event.target.value)
               setState((current) =>
-                zoomToPoint(imageSize, current, zoom, windowSize / 2, windowSize / 2, windowSize),
+                zoomToPoint(
+                  imageSize,
+                  current,
+                  zoom,
+                  windowBox.width / 2,
+                  windowBox.height / 2,
+                  windowBox.width,
+                  windowShape,
+                ),
               )
             }}
           />
@@ -352,7 +395,7 @@ export function CropPhotoDialog({
             type="button"
             data-testid="crop-confirm"
             disabled={busy}
-            onClick={() => onConfirm(cropRectFor(imageSize, stateRef.current))}
+            onClick={() => onConfirm(cropRectFor(imageSize, stateRef.current, windowShape))}
             className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-50"
           >
             {busy ? 'Saving…' : 'Use this photo'}

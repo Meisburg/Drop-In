@@ -486,10 +486,18 @@ export function PlacePage() {
             draws (components/PlaceKindArt) — never a grey frame, and never a
             broken image: a URL that fails falls back on `onError` exactly as the
             card does. The credit travels with the picture, because a Commons
-            photo's attribution has to. */}
+            photo's attribution has to.
+
+            place-photo-crop slice 3 (2026-10-05): the slot's height used to be
+            `h-48`, which measured 358×192 at 390px, 664×192 at 768px and
+            740×192 at 844px (this column is `max-w-md md:max-w-3xl`) — 1.86:1
+            climbing to 3.85:1, so `object-cover` re-cropped whatever the
+            moderator framed. It now carries the STORED shape
+            (`PLACE_PHOTO_SIZE`, 1400×700), which makes the crop window and this
+            surface the same 2:1 rectangle at every width. */}
         <div
           data-testid="place-page-photo-slot"
-          className="relative mt-2 h-48 w-full overflow-hidden rounded-2xl bg-slate-100"
+          className="relative mt-2 aspect-[2/1] w-full overflow-hidden rounded-2xl bg-slate-100"
         >
           {showPlacePhoto ? (
             <img

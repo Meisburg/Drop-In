@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { CropPhotoDialog } from './CropPhotoDialog'
 import { validateAvatarFile } from '../lib/db'
-import type { CropRect } from '../lib/photoCrop'
+import { SQUARE_WINDOW, type CropRect, type CropWindow } from '../lib/photoCrop'
 
 /**
  * THE REUSABLE CROP STEP (photo-crop ticket 03).
@@ -44,6 +44,16 @@ export function useCropStep(
    * rectangle, so the dialog draws no circle.
    */
   shape: 'circle' | 'frame' = 'circle',
+  /**
+   * The crop window's shape, passed straight to the dialog AND used as the
+   * output shape's ratio. Defaults to `SQUARE_WINDOW` — the shape every
+   * avatar-family site (parent avatar, kid photo, family photo) has always had
+   * — so adding this parameter changes none of them. A place photo passes
+   * `PLACE_PHOTO_SIZE` (place-photo-crop slice 3): its stored 2:1 rectangle is
+   * the window the moderator frames in, so `object-cover` no longer re-crops
+   * the framing away on the hero.
+   */
+  windowShape: CropWindow = SQUARE_WINDOW,
 ): {
   /** Decode and open the crop step. Returns a message to show, or null. */
   beginCrop: (file: File) => Promise<string | null>
@@ -172,6 +182,7 @@ export function useCropStep(
           image={pending}
           busy={busy}
           shape={shape}
+          windowShape={windowShape}
           onCancel={cancel}
           onConfirm={(rect) => void confirm(rect)}
         />

@@ -3,6 +3,7 @@ import {
   DEFAULT_ZOOM,
   MAX_ZOOM,
   MIN_ZOOM,
+  SQUARE_WINDOW,
   centerDeltaForDrag,
   clampCropState,
   cropRectFor,
@@ -13,6 +14,7 @@ import {
   zoomToPoint,
   type CropRect,
   type CropState,
+  type CropWindow,
   type ImageSize,
 } from './photoCrop'
 
@@ -284,7 +286,7 @@ describe('zoomToPoint', () => {
 })
 
 describe('isDrawableRect — the encoder refuses a frame it cannot draw', () => {
-  // `prepareSquarePhotoFile` draws whatever rect it is handed, and a zero or non-finite
+  // `prepareCroppedPhotoFile` draws whatever rect it is handed, and a zero or non-finite
   // source rect makes drawImage produce a blank square with NO error — a silently
   // grey avatar. Unreachable from the app today, which is exactly why it is pinned
   // here rather than left to the assumption that it stays unreachable.
@@ -455,5 +457,176 @@ describe('totality — nothing a gesture layer can hand us produces NaN', () => 
       sw: 0,
       sh: 0,
     })
+  })
+})
+
+describe('the 2:1 window — a place photo frames the rectangle the place page shows', () => {
+  // place-photo-crop slice 3 (2026-10-05). The founder framed a SQUARE and the
+  // place showed a 2:1 hero, so `object-cover` re-cropped his framing away: *"it
+  // doesn't look right in the rectangles … It is the wrong size."* These cases
+  // pin the arithmetic for the shape the place surfaces actually render, beside
+  // the square cases above, which stay untouched and keep passing.
+  const WIDE: CropWindow = { width: 2, height: 1 }
+
+  it('takes the largest centred 2:1 band of a portrait photo', () => {
+    // 400x800: the image is narrower than 2:1 of its height, so the WIDTH is the
+    // binding constraint and the band is 400x200, centred vertically.
+    expect(cropRectFor(PORTRAIT, initialCropState(PORTRAIT, WIDE), WIDE)).toEqual({
+      sx: 0,
+      sy: 300,
+      sw: 400,
+      sh: 200,
+    })
+  })
+
+  it('takes the whole of an image that is already 2:1', () => {
+    expect(cropRectFor(LANDSCAPE, initialCropState(LANDSCAPE, WIDE), WIDE)).toEqual({
+      sx: 0,
+      sy: 0,
+      sw: 800,
+      sh: 400,
+    })
+  })
+
+  it('takes the middle band of a square photo — what the card and hero already do', () => {
+    expect(cropRectFor(SQUARE, initialCropState(SQUARE, WIDE), WIDE)).toEqual({
+      sx: 0,
+      sy: 125,
+      sw: 500,
+      sh: 250,
+    })
+  })
+
+  it('shrinks the band when the image cannot fill the window width', () => {
+    // 300x800: a 2:1 band would need 1600px of height, so the width binds and the
+    // window is 300x150 — never a rectangle larger than the source.
+    const narrow: ImageSize = { width: 300, height: 800 }
+    expect(cropRectFor(narrow, initialCropState(narrow, WIDE), WIDE)).toEqual({
+      sx: 0,
+      sy: 325,
+      sw: 300,
+      sh: 150,
+    })
+  })
+
+  it('reports the visible WIDTH from visibleSideFor, which is what drag and pinch divide by', () => {
+    expect(visibleSideFor(PORTRAIT, 1, WIDE)).toBe(400)
+    expect(visibleSideFor(PORTRAIT, 2, WIDE)).toBe(200)
+    expect(visibleSideFor(SQUARE, 1, WIDE)).toBe(500)
+  })
+
+  it('pins the horizontal centre when the band is as wide as the photo', () => {
+    const left = clampCropState(SQUARE, { zoom: 1, centerX: -900, centerY: 250 }, WIDE)
+    const right = clampCropState(SQUARE, { zoom: 1, centerX: 900, centerY: 250 }, WIDE)
+    expect(left.centerX).toBe(250)
+    expect(right.centerX).toBe(250)
+    // The vertical travel is the image height minus the band: 500 - 250.
+    expect(clampCropState(SQUARE, { zoom: 1, centerX: 250, centerY: -50 }, WIDE).centerY).toBe(125)
+    expect(clampCropState(SQUARE, { zoom: 1, centerX: 250, centerY: 5000 }, WIDE).centerY).toBe(375)
+  })
+
+  it('draws the band into a 2:1 window and covers it with no gap', () => {
+    // `windowSize` is the window's WIDTH; its height follows the window's shape.
+    const windowWidth = 300
+    const windowHeight = windowWidth / 2
+    const state = initialCropState(SQUARE, WIDE)
+    const rect = cropRectFor(SQUARE, state, WIDE)
+    const t = drawTransformFor(SQUARE, state, windowWidth, WIDE)
+    expect(-t.offsetX / t.scale).toBeCloseTo(rect.sx, 6)
+    expect(-t.offsetY / t.scale).toBeCloseTo(rect.sy, 6)
+    expect(t.scale * rect.sw).toBeCloseTo(windowWidth, 6)
+    expect(t.scale * rect.sh).toBeCloseTo(windowHeight, 6)
+    expect(t.offsetX).toBeLessThanOrEqual(0)
+    expect(t.offsetY).toBeLessThanOrEqual(0)
+    expect(t.offsetX + t.drawWidth).toBeGreaterThanOrEqual(windowWidth - 1e-6)
+    expect(t.offsetY + t.drawHeight).toBeGreaterThanOrEqual(windowHeight - 1e-6)
+  })
+
+  it('moves the band by the same source pixels per window pixel on both axes', () => {
+    // One isotropic scale is what keeps a drag honest in a wide window: 30 window
+    // px is 50 source px (500 / 300) whichever way the finger went.
+    const delta = centerDeltaForDrag(SQUARE, initialCropState(SQUARE, WIDE), 300, 30, 30, WIDE)
+    expect(delta.dx).toBeCloseTo(-50, 6)
+    expect(delta.dy).toBeCloseTo(-50, 6)
+  })
+
+  it('holds the image point under the fingers still on both axes', () => {
+    // `windowSize` is the window's width, and the window is 2:1, so the focal
+    // points run 0..300 across and 0..150 down. ONE isotropic scale (sw /
+    // windowWidth) carries both axes, which is what makes the preview and the
+    // saved rect agree.
+    const windowWidth = 300
+    const state = initialCropState(SQUARE, WIDE)
+    const before = cropRectFor(SQUARE, state, WIDE)
+    const sourceXAt = (rect: CropRect, px: number) => rect.sx + px * (rect.sw / windowWidth)
+    const sourceYAt = (rect: CropRect, px: number) => rect.sy + px * (rect.sw / windowWidth)
+    for (const [fx, fy] of [
+      [0, 0],
+      [75, 40],
+      [150, 75],
+      [300, 150],
+    ] as const) {
+      const zoomed = zoomToPoint(SQUARE, state, 2, fx, fy, windowWidth, WIDE)
+      const after = cropRectFor(SQUARE, zoomed, WIDE)
+      expect(sourceXAt(after, fx)).toBeCloseTo(sourceXAt(before, fx), 6)
+      expect(sourceYAt(after, fy)).toBeCloseTo(sourceYAt(before, fy), 6)
+    }
+  })
+
+  it('holds the 2:1 shape and the image bounds over 300 arbitrary states', () => {
+    let seed = 12345
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648
+      return seed / 2147483648
+    }
+    for (const image of [PORTRAIT, LANDSCAPE, SQUARE, { width: 4000, height: 100 }]) {
+      for (let step = 0; step < 300; step++) {
+        const rect = cropRectFor(
+          image,
+          {
+            zoom: next() * 8, // deliberately past MAX_ZOOM
+            centerX: (next() - 0.5) * 4000,
+            centerY: (next() - 0.5) * 4000,
+          },
+          WIDE,
+        )
+        expect(rect.sw).toBeGreaterThan(0)
+        expect(rect.sw / rect.sh).toBeCloseTo(2, 9)
+        expect(rect.sx).toBeGreaterThanOrEqual(0)
+        expect(rect.sy).toBeGreaterThanOrEqual(0)
+        expect(rect.sx + rect.sw).toBeLessThanOrEqual(image.width + 1e-9)
+        expect(rect.sy + rect.sh).toBeLessThanOrEqual(image.height + 1e-9)
+      }
+    }
+  })
+
+  it('is total for a degenerate window rather than returning NaN', () => {
+    for (const windowShape of [
+      { width: 0, height: 0 },
+      { width: 2, height: 0 },
+      { width: -2, height: 1 },
+      { width: Number.NaN, height: Number.NaN },
+    ]) {
+      const rect = cropRectFor(PORTRAIT, initialCropState(PORTRAIT), windowShape)
+      expect(rect).toEqual({ sx: 0, sy: 0, sw: 0, sh: 0 })
+      const t = drawTransformFor(PORTRAIT, initialCropState(PORTRAIT), 300, windowShape)
+      for (const value of [t.scale, t.offsetX, t.offsetY, t.drawWidth, t.drawHeight]) {
+        expect(Number.isFinite(value)).toBe(true)
+      }
+    }
+  })
+
+  it('defaults to the square window, so every avatar call site is byte-identical', () => {
+    expect(SQUARE_WINDOW).toEqual({ width: 1, height: 1 })
+    for (const state of [
+      initialCropState(PORTRAIT),
+      { zoom: 2, centerX: 100, centerY: 500 },
+      { zoom: MAX_ZOOM, centerX: 0, centerY: 0 },
+    ]) {
+      expect(cropRectFor(PORTRAIT, state)).toEqual(cropRectFor(PORTRAIT, state, SQUARE_WINDOW))
+      expect(drawTransformFor(PORTRAIT, state, 300)).toEqual(
+        drawTransformFor(PORTRAIT, state, 300, SQUARE_WINDOW),
+      )
+    }
   })
 })

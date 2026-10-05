@@ -259,11 +259,37 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
     await editor.getByTestId('photo-file-input').setInputFiles('public/pwa-192x192.png')
 
     // The crop step opens on the decoded file. It is the RECTANGLE variant: a
-    // place photo draws no avatar circle, and the dialog says so.
+    // place photo draws no avatar circle, and the dialog says so. `windowShape`
+    // is `PLACE_PHOTO_SIZE`, so the window is 2:1 at BOTH viewports the mobile
+    // audit measures — slice 3's criterion 1, and the fix for the founder's
+    // *"It is the wrong size."*
     const cropDialog = page.getByTestId('crop-photo-dialog')
     await expect(cropDialog).toBeVisible()
-    await expect(cropDialog).toContainText('The square is what everyone will see.')
+    await expect(cropDialog).toContainText('The rectangle is what everyone will see.')
     await expect(cropDialog.locator('div[style*="9999px"]')).toHaveCount(0)
+    const cropWindow = page.getByTestId('crop-window')
+    for (const viewport of [
+      { width: 390, height: 664 },
+      { width: 768, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await expect(cropWindow).toBeVisible()
+      const windowBox = await cropWindow.boundingBox()
+      expect(windowBox, `the crop window must render a box at ${viewport.width}px`).not.toBeNull()
+      const ratio = windowBox!.width / windowBox!.height
+      // Logged, not only asserted: the acceptance criterion is a MEASUREMENT, and
+      // a log line is what lets a reader check the number without a rerun.
+      console.log(
+        `[slice3] place crop window at ${viewport.width}px: ${windowBox!.width}x${windowBox!.height} = ${ratio.toFixed(4)}:1`,
+      )
+      expect(
+        Math.abs(ratio - 2),
+        `the place crop window must be 2:1 ±1% at ${viewport.width}px (measured ${windowBox!.width}x${windowBox!.height} = ${ratio.toFixed(4)}:1)`,
+      ).toBeLessThan(0.02)
+    }
+    // Back to the default viewport before the save, so this test's geometry does
+    // not depend on the last viewport it measured in.
+    await page.setViewportSize({ width: 1280, height: 720 })
 
     // The dialog's confirm IS the save — there is no separate upload step.
     await cropDialog.getByTestId('crop-confirm').click()
@@ -283,8 +309,9 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
     expect(after.photo_license).toBeNull()
     expect(after.photo_author).toBeNull()
 
-    // AND THE STORED OBJECT IS WHAT WE CLAIM: a 1200px square JPEG, decoded from
-    // the bytes the row points at rather than inferred from the encoder's
+    // AND THE STORED OBJECT IS WHAT WE CLAIM: a 1400×700 JPEG (slice 3: the 2:1
+    // rectangle the hero renders, not the 1200px square of slice 1), decoded
+    // from the bytes the row points at rather than inferred from the encoder's
     // source. The bucket serves `access-control-allow-origin: *`, so this read
     // is a real fetch of the public object.
     const stored = await page.evaluate(async (url: string) => {
@@ -296,9 +323,12 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
         height: bitmap.height,
       }
     }, after.photo_url!)
+    console.log(
+      `[slice3] stored object decoded: ${stored.contentType} ${stored.width}x${stored.height}`,
+    )
     expect(stored.contentType).toBe('image/jpeg')
-    expect(stored.width).toBe(1200)
-    expect(stored.height).toBe(1200)
+    expect(stored.width).toBe(1400)
+    expect(stored.height).toBe(700)
   } finally {
     restoreEnvelope = await setPlacePhotos(snapshot)
     unmoderateEnvelope = await setModerator(userId, false)
@@ -373,7 +403,7 @@ test('a pasted link saves as the remote URL; Crop or adjust stores our own copy 
 
     const cropDialog = page.getByTestId('crop-photo-dialog')
     await expect(cropDialog).toBeVisible()
-    await expect(cropDialog).toContainText('The square is what everyone will see.')
+    await expect(cropDialog).toContainText('The rectangle is what everyone will see.')
     await cropDialog.getByTestId('crop-confirm').click()
     await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
 
@@ -475,4 +505,65 @@ test('a refused fetch is reported and blocks only the crop; Save on the same lin
   expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
   expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
   expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
+})
+
+/**
+ * place-photo-crop slice 3 (2026-10-05) — THE HERO IS THE SHAPE HE FRAMED.
+ *
+ * The founder used slice 1's square crop and reported: *"Why is it a square that
+ * I'm editing in when what I see for each place is a rectangle? … it doesn't look
+ * right in the rectangles when it's done for each place. It is the wrong size."*
+ * The hero was `h-48 w-full`, re-measured in the shipped tree: 358×192 at 390px
+ * (1.86:1), 664×192 at 768px (3.46:1) and 740×192 at 844px (3.85:1) — the page
+ * column is `max-w-md md:max-w-3xl` (App.tsx), so the old box was wide at EVERY
+ * width and `object-cover` re-cropped a square upload on every render. (The
+ * spec's table records 448×192 at `md`; the live box is measured here instead.)
+ *
+ * This test pins the FIX on the two surfaces the criterion names, at the two
+ * viewports the mobile audit measures (390×664 and 844×390), and it needs no
+ * moderator: the slot renders the per-kind illustration when the row carries no
+ * photo, and it is the SLOT that owns the aspect. A hero whose box is not 2:1
+ * fails here, which is the regression that would silently return.
+ *
+ * It also asserts NO HORIZONTAL OVERFLOW at both viewports: the hero grew 32px
+ * taller at `md` (448/2 = 224 vs the old 192), and the thing that must not happen
+ * is a control pushed off the screen sideways.
+ */
+test('the place page hero is the stored 2:1 rectangle, with no overflow at 390×664 or 844×390 (place-photo-crop slice 3)', async ({
+  page,
+}) => {
+  const snapshot = await readTarget()
+
+  await page.goto(`/place/${snapshot.id}`)
+  const slot = page.getByTestId('place-page-photo-slot')
+  await expect(slot).toBeVisible()
+
+  for (const viewport of [
+    { width: 390, height: 664 },
+    { width: 844, height: 390 },
+    { width: 768, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    const heroBox = await slot.boundingBox()
+    expect(heroBox, `the hero must render a box at ${viewport.width}×${viewport.height}`).not.toBeNull()
+    const ratio = heroBox!.width / heroBox!.height
+    const horizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    )
+    console.log(
+      `[slice3] hero at ${viewport.width}x${viewport.height}: ${heroBox!.width}x${heroBox!.height} = ${ratio.toFixed(4)}:1 (page overflow ${horizontalOverflow}px)`,
+    )
+    expect(
+      Math.abs(ratio - 2),
+      `the hero must be the 2:1 rectangle the moderator framed for, at ${viewport.width}×${viewport.height} (measured ${heroBox!.width}x${heroBox!.height} = ${ratio.toFixed(4)}:1)`,
+    ).toBeLessThan(0.02)
+    expect(heroBox!.width, 'the hero may not exceed the viewport width').toBeLessThanOrEqual(
+      viewport.width,
+    )
+    expect(
+      horizontalOverflow,
+      `the page must not scroll sideways at ${viewport.width}×${viewport.height}`,
+    ).toBeLessThanOrEqual(0)
+  }
 })

@@ -1,11 +1,11 @@
 /**
  * Photo framing — the pure half of the crop step (photo-crop ticket 01).
  *
- * The upload pipeline used to decide the crop by itself: `prepareSquarePhotoFile`
- * scaled the photo to cover a square and kept the middle of it, which is why a
- * portrait photo of a kid came back as a circle of shoulder (see
- * `.scratch/photo-crop/spec.md`). This module replaces that silent decision with
- * one the user makes.
+ * The upload pipeline used to decide the crop by itself: the encoder scaled the
+ * photo to cover a square (its name then was `prepareAvatarFile`) and kept the
+ * middle of it, which is why a portrait photo of a kid came back as a circle of
+ * shoulder (see `.scratch/photo-crop/spec.md`). This module replaces that silent
+ * decision with one the user makes.
  *
  * It is a SEPARATE PURE MODULE for the reason the rest of `src/lib` is: every
  * way this feature can go wrong is arithmetic.
@@ -24,11 +24,23 @@
  *
  *   - it does not depend on how large the window is drawn, so the same state
  *     means the same thing on a 320px phone and on an iPad;
- *   - the visible square is `min(width, height) / zoom`, and at zoom 1 that is
- *     exactly the largest centred square — i.e. precisely what the old silent
- *     center-crop produced. "Accept without touching anything" is therefore a
- *     no-op rather than a surprise, which is the only honest default;
+ *   - the visible window is the largest rectangle of the WINDOW'S ASPECT that
+ *     fits the image, over the zoom, and at zoom 1 that is exactly the largest
+ *     centred crop of that shape — for the square window every avatar site
+ *     passes, precisely what the old silent center-crop produced. "Accept
+ *     without touching anything" is therefore a no-op rather than a surprise,
+ *     which is the only honest default;
  *   - turning it into a drawable source rectangle is a subtraction.
+ *
+ * THE WINDOW IS AN INPUT, NOT AN ASSUMPTION (place-photo-crop slice 3,
+ * 2026-10-05). Every function here used to assume a SQUARE window, which was
+ * wrong for the surface the crop feeds: a place photo renders in a wide hero
+ * (`aspect-[2/1]`) and a wide card (`h-36`), so a square was re-cropped by
+ * `object-cover` on every render and the moderator's framing was thrown away.
+ * The `window` parameter is a width-to-height ratio threaded through the
+ * arithmetic, and it DEFAULTS TO SQUARE — so the avatar-family call sites and
+ * every pre-existing expectation are untouched, and a square stays a
+ * first-class input rather than a special case.
  *
  * No React and no DOM: this file must stay importable from a test with no setup.
  */
@@ -38,6 +50,23 @@ export interface ImageSize {
   width: number
   height: number
 }
+
+/**
+ * The crop window's shape: a width-to-height ratio (a pixel pair works too,
+ * since only the ratio is read). `{ width: 2, height: 1 }` is the place photo's
+ * window; `SQUARE_WINDOW` is every avatar's.
+ */
+export interface CropWindow {
+  width: number
+  height: number
+}
+
+/**
+ * The square window: the shape of every avatar, kid and family crop, and the
+ * default of every function here so that the square case cannot regress by
+ * someone forgetting to pass a window.
+ */
+export const SQUARE_WINDOW: CropWindow = { width: 1, height: 1 }
 
 /**
  * Where the crop window sits, in source-image coordinates.
@@ -51,7 +80,7 @@ export interface CropState {
   centerY: number
 }
 
-/** The region of the source image to draw, in source pixels. Always square. */
+/** The region of the source image to draw, in source pixels. Of the window's shape. */
 export interface CropRect {
   sx: number
   sy: number
@@ -105,45 +134,103 @@ function positiveZero(value: number): number {
 }
 
 /**
+ * The largest rectangle of the window's aspect that fits inside the image — the
+ * coverage basis at zoom 1. A square window gives `min(width, height)` on both
+ * axes, which is exactly what this module did before a window existed.
+ */
+function coverSizeFor(image: ImageSize, window: CropWindow): { width: number; height: number } {
+  const imageWidth = finite(image.width, 0)
+  const imageHeight = finite(image.height, 0)
+  const aspect = finite(window.width, 0) / finite(window.height, 0)
+  if (imageWidth <= 0 || imageHeight <= 0 || !Number.isFinite(aspect) || aspect <= 0) {
+    return { width: 0, height: 0 }
+  }
+  const width = Math.min(imageWidth, imageHeight * aspect)
+  return { width, height: width / aspect }
+}
+
+/**
+ * The visible window at `zoom`, in source pixels. One scale on both axes: the
+ * window's aspect IS the crop rectangle's aspect, so a window pixel is worth the
+ * same number of source pixels horizontally and vertically, which is what lets
+ * the drag and pinch arithmetic below stay one-dimensional.
+ */
+function visibleSizeFor(
+  image: ImageSize,
+  zoom: number,
+  window: CropWindow,
+): { width: number; height: number } {
+  const cover = coverSizeFor(image, window)
+  const clampedZoom = clamp(finite(zoom, DEFAULT_ZOOM), MIN_ZOOM, MAX_ZOOM)
+  return { width: cover.width / clampedZoom, height: cover.height / clampedZoom }
+}
+
+/**
  * The starting state: the image's centre at the widest crop. Deliberately equal
  * to what the old automatic center-crop did, so a user who ignores the crop step
  * gets the result they used to get.
+ *
+ * The window is threaded through even though the IMAGE's centre is the answer
+ * for every shape, because the value is routed through `clampCropState` — one
+ * definition of "a legal state" rather than a second, silently different one.
  */
-export function initialCropState(image: ImageSize): CropState {
-  return {
-    zoom: DEFAULT_ZOOM,
-    centerX: finite(image.width, 0) / 2,
-    centerY: finite(image.height, 0) / 2,
-  }
+export function initialCropState(
+  image: ImageSize,
+  window: CropWindow = SQUARE_WINDOW,
+): CropState {
+  return clampCropState(
+    image,
+    {
+      zoom: DEFAULT_ZOOM,
+      centerX: finite(image.width, 0) / 2,
+      centerY: finite(image.height, 0) / 2,
+    },
+    window,
+  )
 }
 
-/** The side, in source pixels, of the square the window shows at this zoom. */
-export function visibleSideFor(image: ImageSize, zoom: number): number {
-  const shortest = Math.min(finite(image.width, 0), finite(image.height, 0))
-  if (shortest <= 0) return 0
-  return shortest / clamp(finite(zoom, DEFAULT_ZOOM), MIN_ZOOM, MAX_ZOOM)
+/**
+ * The visible window's width, in source pixels — its SIDE for the square window
+ * every avatar call site uses, and the same number the drag and pinch
+ * arithmetic divides by.
+ */
+export function visibleSideFor(
+  image: ImageSize,
+  zoom: number,
+  window: CropWindow = SQUARE_WINDOW,
+): number {
+  return visibleSizeFor(image, zoom, window).width
 }
 
 /**
  * Pull a state back inside the legal range: zoom within [MIN_ZOOM, MAX_ZOOM] and
- * a centre that keeps the visible square wholly inside the image.
+ * a centre that keeps the visible window wholly inside the image.
  *
  * Total on purpose — it accepts whatever a gesture layer hands it (including NaN
  * from a zero-area touch target) and returns something drawable, so no caller
  * has to defend against it.
  */
-export function clampCropState(image: ImageSize, state: CropState): CropState {
+export function clampCropState(
+  image: ImageSize,
+  state: CropState,
+  window: CropWindow = SQUARE_WINDOW,
+): CropState {
   const zoom = clamp(finite(state.zoom, DEFAULT_ZOOM), MIN_ZOOM, MAX_ZOOM)
-  const side = visibleSideFor(image, zoom)
-  const half = side / 2
+  const visible = visibleSizeFor(image, zoom, window)
+  const halfWidth = visible.width / 2
+  const halfHeight = visible.height / 2
   const width = finite(image.width, 0)
   const height = finite(image.height, 0)
   return {
     zoom,
-    // When the visible square is as wide as the image, low === high and the
+    // When the visible window is as wide as the image, low === high and the
     // centre is pinned — which is the correct answer, not a degenerate case.
-    centerX: clamp(finite(state.centerX, width / 2), half, Math.max(half, width - half)),
-    centerY: clamp(finite(state.centerY, height / 2), half, Math.max(half, height - half)),
+    centerX: clamp(finite(state.centerX, width / 2), halfWidth, Math.max(halfWidth, width - halfWidth)),
+    centerY: clamp(
+      finite(state.centerY, height / 2),
+      halfHeight,
+      Math.max(halfHeight, height - halfHeight),
+    ),
   }
 }
 
@@ -151,10 +238,14 @@ export function clampCropState(image: ImageSize, state: CropState): CropState {
  * THE source of truth for "which pixels are kept". The encoder uses this and so
  * does the preview; nothing else may compute a crop.
  */
-export function cropRectFor(image: ImageSize, state: CropState): CropRect {
-  const clamped = clampCropState(image, state)
-  const side = visibleSideFor(image, clamped.zoom)
-  if (side <= 0) return { sx: 0, sy: 0, sw: 0, sh: 0 }
+export function cropRectFor(
+  image: ImageSize,
+  state: CropState,
+  window: CropWindow = SQUARE_WINDOW,
+): CropRect {
+  const clamped = clampCropState(image, state, window)
+  const visible = visibleSizeFor(image, clamped.zoom, window)
+  if (visible.width <= 0 || visible.height <= 0) return { sx: 0, sy: 0, sw: 0, sh: 0 }
   const width = finite(image.width, 0)
   const height = finite(image.height, 0)
   // The ORIGIN is clamped as well as the centre. Centre-clamping is equivalent
@@ -163,25 +254,35 @@ export function cropRectFor(image: ImageSize, state: CropState): CropRect {
   // outside the bitmap is exactly the kind of thing a stricter consumer than a
   // canvas would refuse. Clamping the origin bounds it by construction.
   return {
-    sx: clamp(finite(clamped.centerX, 0) - side / 2, 0, Math.max(0, width - side)),
-    sy: clamp(finite(clamped.centerY, 0) - side / 2, 0, Math.max(0, height - side)),
-    sw: side,
-    sh: side,
+    sx: clamp(
+      finite(clamped.centerX, 0) - visible.width / 2,
+      0,
+      Math.max(0, width - visible.width),
+    ),
+    sy: clamp(
+      finite(clamped.centerY, 0) - visible.height / 2,
+      0,
+      Math.max(0, height - visible.height),
+    ),
+    sw: visible.width,
+    sh: visible.height,
   }
 }
 
 /**
  * The preview's half of the bargain: one transform that draws the crop region
- * into a `windowSize`-px square. Because it is derived FROM `cropRectFor`, the
- * frame the user sees and the pixels that get saved cannot disagree — the
- * failure mode this feature is most likely to ship with.
+ * into a window `windowSize` px WIDE (its height follows `window`). Because it
+ * is derived FROM `cropRectFor`, the frame the user sees and the pixels that get
+ * saved cannot disagree — the failure mode this feature is most likely to ship
+ * with.
  */
 export function drawTransformFor(
   image: ImageSize,
   state: CropState,
   windowSize: number,
+  window: CropWindow = SQUARE_WINDOW,
 ): DrawTransform {
-  const rect = cropRectFor(image, state)
+  const rect = cropRectFor(image, state, window)
   if (rect.sw <= 0 || !(finite(windowSize, 0) > 0)) {
     return { scale: 1, offsetX: 0, offsetY: 0, drawWidth: 0, drawHeight: 0 }
   }
@@ -196,7 +297,7 @@ export function drawTransformFor(
 }
 
 /**
- * Whether a rectangle is safe to hand a canvas. `prepareSquarePhotoFile` draws whatever
+ * Whether a rectangle is safe to hand a canvas. `prepareCroppedPhotoFile` draws whatever
  * it is given, and a zero or non-finite source rect produces a blank image with no
  * error at all — a silent failure in the one function whose output is what the user
  * actually gets. Unreachable from the app today (only `cropRectFor` output reaches
@@ -230,8 +331,9 @@ export function centerDeltaForDrag(
   windowSize: number,
   dx: number,
   dy: number,
+  window: CropWindow = SQUARE_WINDOW,
 ): { dx: number; dy: number } {
-  const rect = cropRectFor(image, state)
+  const rect = cropRectFor(image, state, window)
   if (rect.sw <= 0 || !(finite(windowSize, 0) > 0)) return { dx: 0, dy: 0 }
   const sourcePxPerWindowPx = rect.sw / windowSize
   return {
@@ -255,19 +357,24 @@ export function zoomToPoint(
   focalX: number,
   focalY: number,
   windowSize: number,
+  window: CropWindow = SQUARE_WINDOW,
 ): CropState {
-  const before = cropRectFor(image, state)
-  const afterSide = visibleSideFor(image, zoom)
-  if (before.sw <= 0 || afterSide <= 0 || !(finite(windowSize, 0) > 0)) {
-    return clampCropState(image, { ...state, zoom })
+  const before = cropRectFor(image, state, window)
+  const after = visibleSizeFor(image, zoom, window)
+  if (before.sw <= 0 || after.width <= 0 || !(finite(windowSize, 0) > 0)) {
+    return clampCropState(image, { ...state, zoom }, window)
   }
   const sourcePxPerWindowPxBefore = before.sw / windowSize
-  const sourcePxPerWindowPxAfter = afterSide / windowSize
+  const sourcePxPerWindowPxAfter = after.width / windowSize
   const focalSourceX = before.sx + finite(focalX, 0) * sourcePxPerWindowPxBefore
   const focalSourceY = before.sy + finite(focalY, 0) * sourcePxPerWindowPxBefore
-  return clampCropState(image, {
-    zoom,
-    centerX: focalSourceX - finite(focalX, 0) * sourcePxPerWindowPxAfter + afterSide / 2,
-    centerY: focalSourceY - finite(focalY, 0) * sourcePxPerWindowPxAfter + afterSide / 2,
-  })
+  return clampCropState(
+    image,
+    {
+      zoom,
+      centerX: focalSourceX - finite(focalX, 0) * sourcePxPerWindowPxAfter + after.width / 2,
+      centerY: focalSourceY - finite(focalY, 0) * sourcePxPerWindowPxAfter + after.height / 2,
+    },
+    window,
+  )
 }

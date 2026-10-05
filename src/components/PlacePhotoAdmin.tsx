@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { prepareSquarePhotoFile, setPlacePhoto, uploadPlacePhoto } from '../lib/db'
+import { prepareCroppedPhotoFile, setPlacePhoto, uploadPlacePhoto } from '../lib/db'
 import {
-  PLACE_PHOTO_SIZE_PX,
+  PLACE_PHOTO_SIZE,
   clearPlacePhotoPatch,
   fetchPlacePhotoFile,
   placePhotoPatch,
@@ -83,19 +83,22 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
   /**
    * THE ONE SAVE PATH for a framed photo. Both ways in end here: the crop
    * dialog hands back the decoded bitmap and the frame the moderator chose,
-   * this encodes it at `PLACE_PHOTO_SIZE_PX` as a square JPEG, uploads it to
-   * `place-photos`, and points the row at OUR url — with the provenance columns
-   * cleared in the same patch.
+   * this encodes it at `PLACE_PHOTO_SIZE` — a 1400×700 JPEG, the same 2:1
+   * rectangle the hero renders — uploads it to `place-photos`, and points the
+   * row at OUR url with the provenance columns cleared in the same patch.
    *
-   * `shape: 'frame'` is passed to the crop step: a place photo is a rectangle,
-   * so no circle is drawn (the stored crop is still square — spec §1).
+   * `shape: 'frame'` and `PLACE_PHOTO_SIZE` are passed to the crop step: a place
+   * photo is a rectangle, so no circle is drawn, and the window the moderator
+   * frames in is the shape the place page shows (slice 3). The SAME constant is
+   * the encoder's output size, so there is one rectangle in the app rather than
+   * a window and a stored size that can drift apart.
    */
   const crop = useCropStep(
     async (source, rect) => {
       setError(null)
       setDone(false)
       try {
-        const blob = await prepareSquarePhotoFile(source, rect, PLACE_PHOTO_SIZE_PX)
+        const blob = await prepareCroppedPhotoFile(source, rect, PLACE_PHOTO_SIZE)
         const file = new File([blob], 'place-photo.jpg', { type: 'image/jpeg' })
         const photoUrl = await uploadPlacePhoto(place.id, file, Date.now())
         await setPlacePhoto(
@@ -110,6 +113,7 @@ export function PlacePhotoAdmin({ place, onSaved }: { place: Place; onSaved: () 
     },
     validatePlacePhotoCropFile,
     'frame',
+    PLACE_PHOTO_SIZE,
   )
 
   /**
