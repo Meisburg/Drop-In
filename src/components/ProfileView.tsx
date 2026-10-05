@@ -318,6 +318,13 @@ export function ProfileView({
   useEffect(() => {
     if (posts === null) return
     let cancelled = false
+    // Reset BEFORE the read (found by `ocr` on the V29 range, 2026-10-04): this
+    // view is reused across `profileId` changes, and `posts` here can switch from
+    // one host's array to another's. A map describing the PREVIOUS host's posts
+    // must never be read as "loaded" for the new one, because `goingPingsLoaded`
+    // at the render site is `map !== null` — the stale map would assert "No one's
+    // going yet" for pings that were never read. FeedPage sets the precedent.
+    setGoingPingsByPostId(null)
     listPingsForPosts(posts.map((post) => post.id))
       .then((rows) => {
         if (!cancelled) setGoingPingsByPostId(goingPingsByPost(rows))

@@ -267,12 +267,6 @@ export function PlaceDetailsPage() {
         setPosts(sortPlaceUpcoming(rows))
         const ages = await kidAgesByPostForPosts(rows.map((r) => r.id))
         if (!cancelled) setKidAgesByPostId(ages)
-        // V29 v29-2: the going line's input, one more batched read next to the
-        // ages one. Same rule as the place page: only a SETTLED read may let a
-        // card say "No one's going yet", so a failure leaves it null (the catch
-        // below never writes a {} that would read as "loaded, nobody going").
-        const pings = await listPingsForPosts(rows.map((r) => r.id))
-        if (!cancelled) setGoingPingsByPostId(goingPingsByPost(pings))
       } catch {
         if (!cancelled) setPosts([])
       }
@@ -281,6 +275,39 @@ export function PlaceDetailsPage() {
       cancelled = true
     }
   }, [id, session, profile])
+
+  /**
+   * V29 v29-2: the going line's input for this place's posts — the same batched
+   * read the place page does, and it belongs in its OWN effect for the same
+   * reason.
+   *
+   * ⚠️ It used to sit inside the posts effect's `try`, whose shared `catch`
+   * calls `setPosts([])`. So a failed *pings* read rendered "Nothing planned
+   * yet." for a place whose drop-ins had loaded fine — a decorative read
+   * emptying the primary content, which is the exact lie-class v29-2 exists to
+   * remove. Found by the `ocr` lane over the V29 range on 2026-10-04; this is
+   * the shape `PlacePage.tsx` already uses. A failure lands here as `null` and
+   * the card says nothing.
+   */
+  useEffect(() => {
+    if (posts === null) return
+    let cancelled = false
+    // Reset BEFORE the read: a map that describes the PREVIOUS posts set must
+    // never be read as "loaded" for this one, because `goingPingsLoaded` at the
+    // render site is literally `goingPingsByPostId !== null`. FeedPage.tsx's
+    // pings effect is the precedent.
+    setGoingPingsByPostId(null)
+    listPingsForPosts(posts.map((post) => post.id))
+      .then((rows) => {
+        if (!cancelled) setGoingPingsByPostId(goingPingsByPost(rows))
+      })
+      .catch(() => {
+        if (!cancelled) setGoingPingsByPostId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [posts])
 
   useEffect(() => {
     let cancelled = false

@@ -242,6 +242,11 @@ export function PlacePage() {
   useEffect(() => {
     if (posts === null) return
     let cancelled = false
+    // Reset BEFORE the read (found by `ocr` on the V29 range, 2026-10-04): a map
+    // describing the PREVIOUS posts set must never be read as "loaded" for this
+    // one, because `goingPingsLoaded` at the render site is `map !== null`. FeedPage
+    // sets this precedent.
+    setGoingPingsByPostId(null)
     listPingsForPosts(posts.map((post) => post.id))
       .then((rows) => {
         if (!cancelled) setGoingPingsByPostId(goingPingsByPost(rows))
