@@ -98,15 +98,23 @@ async function openDirectoryAt(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('places-list')).toBeVisible()
 }
 
+/** The donor photo: another seeded row's own image (known to load, already public). */
+function readDonorUrl(): string {
+  const donor = readSql<{ photo_url: string | null }>(
+    `select photo_url from public.places where name = ${lit(DONOR_PLACE)};`,
+  )[0]
+  if (donor?.photo_url === null || donor?.photo_url === undefined) {
+    throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
+  }
+  return donor.photo_url
+}
+
 test('a moderator replaces a place photo from its card, and the card updates (v30-8)', async ({
   page,
 }) => {
   const { userId } = readMarkerSession()
   const snapshot = readTarget()
-  const donor = readSql<{ photo_url: string | null }>(
-    `select photo_url from public.places where name = ${lit(DONOR_PLACE)};`,
-  )[0]
-  expect(donor.photo_url, 'the donor row must carry a seeded photo').not.toBeNull()
+  const donorUrl = readDonorUrl()
 
   const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
 
@@ -131,7 +139,7 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
     // It opens the SHIPPED editor (the same component /mod mounts).
     const editor = page.getByTestId('place-photo-editor')
     await expect(editor).toBeVisible()
-    await editor.getByTestId('photo-url-input').fill(donor.photo_url ?? '')
+    await editor.getByTestId('photo-url-input').fill(donorUrl)
     await editor.getByTestId('photo-save-btn').click()
     await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
 
@@ -156,5 +164,67 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
   expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
 
   // The restore is real, and the directory is back to its seeded state.
+  expect(readTarget().photo_url).toBe(snapshot.photo_url)
+})
+
+/**
+ * v30-9 — THE SAME EDITOR, FROM THE PLACE PAGE.
+ *
+ * The founder notices a wrong or missing picture *on the place*, so the door
+ * belongs there too. This test is deliberately an EXTENSION of the one above,
+ * not a second behavioural spec: the same editor, the same ModalShell, the same
+ * assertions about the confirmation and the re-read. What is new is only the
+ * entry point and the surface it updates — the hero.
+ */
+test('a moderator replaces a place photo from the place page (v30-9)', async ({ page }) => {
+  const { userId } = readMarkerSession()
+  const snapshot = readTarget()
+  const donorUrl = readDonorUrl()
+
+  const control = page.getByTestId('place-edit-photo')
+
+  // --- HALF 1 — a parent sees the picture slot, and no way to change it. ---
+  await page.goto(`/place/${snapshot.id}`)
+  await expect(page.getByTestId('place-page-photo-slot')).toBeVisible()
+  await expect(control).toHaveCount(0)
+
+  let restoreEnvelope: { ok: boolean; output: string } | null = null
+  let unmoderateEnvelope: { ok: boolean; output: string } | null = null
+  try {
+    const elevate = runSql(
+      `update public.profiles set moderators = true where id = ${lit(userId)};`,
+    )
+    expect(elevate.ok, `the elevate SQL must land: ${elevate.output}`).toBe(true)
+
+    await page.reload()
+    await expect(control).toBeVisible()
+    await control.click()
+
+    const editor = page.getByTestId('place-photo-editor')
+    await expect(editor).toBeVisible()
+    await editor.getByTestId('photo-url-input').fill(donorUrl)
+    await editor.getByTestId('photo-save-btn').click()
+    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+
+    await editor.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+
+    // The page re-read its own row, so the HERO shows the picture — still above
+    // the name, which is the placement this batch pinned in v30-6.
+    const hero = page.getByTestId('place-page-photo')
+    await expect(hero).toBeVisible({ timeout: 15_000 })
+    const heroBox = await hero.boundingBox()
+    const headingBox = await page.getByRole('heading', { name: PLACE_NAME, exact: true }).boundingBox()
+    expect(heroBox).not.toBeNull()
+    expect(headingBox).not.toBeNull()
+    expect(heroBox!.y, 'the picture must still sit above the name').toBeLessThan(headingBox!.y)
+  } finally {
+    restoreEnvelope = runSql(restoreSql(snapshot))
+    unmoderateEnvelope = runSql(
+      `update public.profiles set moderators = false where id = ${lit(userId)};`,
+    )
+  }
+  expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
+  expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
   expect(readTarget().photo_url).toBe(snapshot.photo_url)
 })

@@ -4,6 +4,8 @@ import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { PlaceMap } from '../components/PlaceMapLazy'
 import { PlaceKindArt } from '../components/PlaceKindArt'
+import { ModalShell } from '../components/ModalShell'
+import { PlacePhotoAdmin } from '../components/PlacePhotoAdmin'
 import { useSessionContext } from '../components/SessionProvider'
 import { NAV_ICONS } from '../components/icons'
 import {
@@ -20,6 +22,8 @@ import {
 import { cardAgeRangeLabel, formatDistanceLabel, goingPingsByPost } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
+// v30-9: the ONE moderator predicate the /mod route guard also reads.
+import { canModerate } from '../lib/moderation'
 import {
   hasPlacePhoto,
   photoCreditLine,
@@ -129,6 +133,18 @@ export function PlacePage() {
    */
   const [photoFailed, setPhotoFailed] = useState(false)
   /**
+   * v30-9 — the moderator's photo editor, the SAME one /mod and the directory
+   * card mount. It lives here so the fix can start from the place the moderator
+   * is looking at, which is the founder's complaint verbatim.
+   */
+  const [photoEditorOpen, setPhotoEditorOpen] = useState(false)
+  /**
+   * v30-9 — bumping this re-reads the place, so the hero shows the photo that
+   * was just written. The page's row is its own read; a locally patched URL
+   * would be a second source of truth for `places.photo_url`.
+   */
+  const [placeReloadTick, setPlaceReloadTick] = useState(0)
+  /**
    * V29 v29-2: this place's posts' going pings, in ONE batched read (never one
    * per card). null = NOT READ — and that is the distinction the card needs:
    * only a settled read may say "No one's going yet". A failed read stays null.
@@ -154,7 +170,11 @@ export function PlacePage() {
   useEffect(() => {
     if (id === undefined) return
     let cancelled = false
-    setPlace(null)
+    // v30-9: a re-read of the SAME place (a moderator just replaced its photo)
+    // keeps the row on screen — blanking it would unmount the editor dialog and
+    // throw away the "Photo updated." confirmation the moderator is owed.
+    // Navigating to a DIFFERENT place still clears, exactly as before.
+    setPlace((current) => (current !== null && current.id === id ? current : null))
     setMissing(false)
     setLoadError(null)
     // v30-6: the hero's fallback is per-place state — a failed image on one
@@ -176,7 +196,7 @@ export function PlacePage() {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, placeReloadTick])
 
   // The gazetteer, for the "N mi from you" line. A failed load degrades to no
   // distance line at all — never to a guess (the pure seam returns null and the
@@ -472,6 +492,21 @@ export function PlacePage() {
             >
               {placePhotoCredit}
             </span>
+          ) : null}
+          {/* v30-9 — the moderator's way in, on the surface where the wrong or
+              missing picture is actually seen. It sits on the picture's
+              top-right, the corner the credit chip does not use, and renders
+              ONLY for a moderator: the same canModerate the /mod guard reads. */}
+          {canModerate(profile) ? (
+            <button
+              type="button"
+              data-testid="place-edit-photo"
+              aria-label={`Edit the photo for ${place.name}`}
+              onClick={() => setPhotoEditorOpen(true)}
+              className="absolute right-2 top-2 inline-flex min-h-11 items-center rounded-full border border-slate-300 bg-white/95 px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition-colors motion-reduce:transition-none hover:bg-white focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              Edit photo
+            </button>
           ) : null}
         </div>
 
@@ -769,6 +804,24 @@ export function PlacePage() {
           </div>
         )}
       </section>
+
+      {/* v30-9 — the SHARED editor, opened from this page's picture. Same
+          ModalShell and same PlacePhotoAdmin the directory card and /mod mount:
+          one editor, three doors, never a second copy. The re-read is the
+          page's own load, so the hero shows what was written. */}
+      {photoEditorOpen ? (
+        <ModalShell
+          title="Fix a place photo"
+          testId="place-photo-editor"
+          onDismiss={() => setPhotoEditorOpen(false)}
+          dismissLabel="Close"
+        >
+          <PlacePhotoAdmin
+            place={place}
+            onSaved={() => setPlaceReloadTick((tick) => tick + 1)}
+          />
+        </ModalShell>
+      ) : null}
     </div>
   )
 }
