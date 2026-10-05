@@ -5548,15 +5548,25 @@ export function reactionButtonClasses(mine: boolean): string {
 }
 
 /**
- * The reaction button's own box — the 44px floor, without a drawn edge.
+ * The reaction button's own box — the 44px floor, without a drawn edge and
+ * WITHOUT MOVING ANYTHING.
  *
  * It pairs with `reactionButtonClasses()`: the button is 44px tall and centres
  * the 28px pill it contains, so a finger gets the floor and the eye gets the
- * quiet row. `h-11` here is the whole point of the pair; a test pins both halves
- * so a later "tidy-up" cannot collapse them back into one.
+ * quiet row.
+ *
+ * ⚠️ `-my-2` IS LOAD-BEARING, and the spec that caught it is
+ * `e2e/inbox-thread-geometry.e2e.ts`. A plain `h-11` makes the button 44px TALL
+ * IN LAYOUT, which adds 16px to every message row — and at 844×390 the thread's
+ * scroll region is only ~103px tall, so the concrete consequence was measured
+ * immediately: "the newest message, in the thread scroll region at 844×390 must
+ * be fully inside" failed, with the bubble 9px above the region's top edge. The
+ * negative margin cancels the extra height (44 − 8 − 8 = 28px of layout, the
+ * pill's own height), so the row is IDENTICAL to before while the hit area is
+ * 44px — the target grows, the layout does not.
  */
 export function reactionHitAreaClasses(): string {
-  return 'flex h-11 items-center'
+  return 'flex h-11 -my-2 items-center'
 }
 
 /**

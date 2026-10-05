@@ -671,7 +671,10 @@ describe('reactionButtonClasses (V16 ticket 02 — rest must not read as selecte
     // DESIGN.md sets and ocr's tap-target rule enforces. The two numbers are now
     // split: the BUTTON is 44px, the pill it contains stays 28px drawn. Both
     // halves are pinned here so a later tidy-up cannot collapse them.
+    // `-my-2` is what keeps the 44px box from becoming 44px of LAYOUT: without
+    // it every message row grows 16px and the landscape geometry spec fails.
     expect(reactionHitAreaClasses()).toContain('h-11')
+    expect(reactionHitAreaClasses()).toContain('-my-2')
     for (const mine of [false, true]) {
       expect(reactionButtonClasses(mine)).toContain('h-7')
       expect(reactionButtonClasses(mine)).not.toContain('h-11')
