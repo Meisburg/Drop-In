@@ -1750,10 +1750,32 @@ test('a place page renders the seeded data with the existing Maps link', async (
   // the wider-web door now. Mirroring the `/browse` panel assertion is what
   // keeps the two panels from drifting apart the way they did when slice 4
   // landed: the follow-up fixed the `/browse` instance and missed this one.
-  await expect(
-    panel.getByTestId('learn-more'),
-    'the map-search fallback must not be on this panel either',
-  ).toHaveCount(0)
+  //
+  // ⚠️ V32 (2026-10-05) — THE MISS WAS STILL THERE, AND THIS IS ITS OTHER HALF.
+  // This assertion still said `learn-more` count 0; its `/browse` twin was
+  // corrected in V28 r4 for exactly this reason and this one was left behind.
+  // The correction is the same one, word for word: the 2026-10-03 website
+  // backfill verified 168 operator pages including 139 playgrounds, so the
+  // marker place NOW HAS a real operator site and this panel correctly shows it.
+  // Count-0 became wrong while the product stayed right — a test pinned to the
+  // CONTENT of the world rather than to the RULE about it.
+  //
+  // The rule is `PlaceMap`'s own and it is enforced in code, not here:
+  // `PlaceMap.tsx:1189` keeps a link only when `kind === 'website'`, so the
+  // derived OSM map search can never reach this panel. So the spec tests THAT —
+  // whatever appears must be a stored operator website, never the map search.
+  // It holds for every place in the directory, whether or not it has a site.
+  const pagePanelLearnMore = panel.getByTestId('learn-more')
+  if ((await pagePanelLearnMore.count()) > 0) {
+    expect(
+      await pagePanelLearnMore.getAttribute('data-link-kind'),
+      'only a real operator site may appear on this panel',
+    ).toBe('website')
+    expect(
+      (await pagePanelLearnMore.getAttribute('href')) ?? '',
+      'a panel link must not be the derived map search',
+    ).not.toContain('google.com/maps')
+  }
 
   // Tapping the pin must not navigate away from the page it is on.
   await expect(page).toHaveURL(/\/place\//)
