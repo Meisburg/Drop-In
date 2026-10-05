@@ -24,7 +24,11 @@
 #                `git config --get` does not always report it (on git 2.55.0
 #                it resolves core.hooksPath to a lower layer), so a foreign
 #                env-layer value is refused by name, not by accident of which
-#                git version happens to surface it.
+#                git version happens to surface it. The count is audited up
+#                to a cap (4096 entries): the env layer is the hostile surface
+#                this guard polices, so an oversized count is refused as an
+#                unverifiable layer — it fails closed, it does not hang or
+#                silently disable the audit.
 #                A differing effective value is ACCEPTED only for a disposable
 #                copy another tool created and owns: a linked worktree whose
 #                common git dir is outside the checkout, whose worktree config
@@ -138,28 +142,50 @@ EFFECTIVE="$(git config --get core.hooksPath 2>/dev/null || true)"
 # way, so it must be read from the environment, git version for git version.
 ENV_HOOKS=""
 ENV_LAYER=0
+# Cap on the number of env-layer entries the audit is willing to process.
+# The env layer is exactly the surface this guard polices: a hostile agent
+# can set it. An oversized GIT_CONFIG_COUNT must not hang the audit loop
+# (which would hang `npm run verify` and the pre-push chain behind it), and
+# it must not be treated as "layer absent" — an entry past the cap would
+# otherwise silently disable the hooks. Fail closed: the sentinel below
+# fires the foreign-value check, which refuses.
+ENV_COUNT_CAP=4096
 if [ -n "${GIT_CONFIG_COUNT:-}" ]; then
   case "${GIT_CONFIG_COUNT}" in
     *[!0-9]*) ;;  # not a count git would honour — the layer is absent
     *)
-      i=0
-      while [ "$i" -lt "${GIT_CONFIG_COUNT}" ]; do
-        # ${!var:-} (indirect, with default) — the plain ${NAME_$i:-}
-        # form is a bad substitution in bash.
-        keyvar="GIT_CONFIG_KEY_$i"
-        key="${!keyvar:-}"
-        if [ -n "$key" ]; then
-          valuevar="GIT_CONFIG_VALUE_$i"
-          value="${!valuevar:-}"
-          # git lowercases env-layer variable names before honouring them,
-          # so compare against the lowercased canonical name
-          if [ "${key,,}" = "core.hookspath" ]; then
-            ENV_HOOKS="$value"
-            ENV_LAYER=1
+      # The digit-length test runs first: test(1) rejects counts beyond
+      # 64 bits with "integer expression expected" and reports false, so a
+      # bare -gt comparison alone would let a 20-digit count fall through
+      # to the loop branch. Any count of five digits is already over the
+      # cap (>= 10000 > 4096), so the length test is exact.
+      if [ "${#GIT_CONFIG_COUNT}" -gt 4 ] || [ "${GIT_CONFIG_COUNT}" -gt "$ENV_COUNT_CAP" ]; then
+        ENV_LAYER=1
+        ENV_HOOKS="<unverifiable: GIT_CONFIG_COUNT=${GIT_CONFIG_COUNT}>"
+      else
+        i=0
+        while [ "$i" -lt "${GIT_CONFIG_COUNT}" ]; do
+          # ${!var:-} (indirect, with default) — the plain ${NAME_$i:-}
+          # form is a bad substitution in bash.
+          keyvar="GIT_CONFIG_KEY_$i"
+          key="${!keyvar:-}"
+          if [ -n "$key" ]; then
+            valuevar="GIT_CONFIG_VALUE_$i"
+            value="${!valuevar:-}"
+            # git lowercases env-layer variable names before honouring them,
+            # so compare against the lowercased canonical name. Lowercase
+            # via tr rather than ${key,,}: the expansion form needs
+            # bash >= 4 and is a fatal bad substitution on stock macOS
+            # /bin/bash (3.2), which would abort the guard mid-script.
+            lc_key="$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')"
+            if [ "$lc_key" = "core.hookspath" ]; then
+              ENV_HOOKS="$value"
+              ENV_LAYER=1
+            fi
           fi
-        fi
-        i=$((i + 1))
-      done
+          i=$((i + 1))
+        done
+      fi
       ;;
   esac
 fi
