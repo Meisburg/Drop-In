@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
+import { PRIVACY_PATH, TERMS_PATH } from '../lib/legal'
 import {
   getProfile,
   listKids,
@@ -144,6 +146,23 @@ export function PrivacySection({ userId }: { userId: string }) {
           })}
         />
       )}
+
+      {/* Release checklist 1.6: the model above is stated in prose for THIS
+          parent's data. Below it sits the stable public URL Google requires on
+          the listing and in the app — the same pages a signed-out visitor can
+          read, reachable from the one screen where a parent goes looking for
+          the privacy promise. */}
+      <p className="text-sm text-slate-600" data-testid="legal-links">
+        The full{' '}
+        <Link to={PRIVACY_PATH} className="text-indigo-600 underline underline-offset-2">
+          privacy policy
+        </Link>{' '}
+        and{' '}
+        <Link to={TERMS_PATH} className="text-indigo-600 underline underline-offset-2">
+          terms of use
+        </Link>{' '}
+        are always available, signed in or not.
+      </p>
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-semibold text-slate-700">Families you&apos;ve blocked</h3>

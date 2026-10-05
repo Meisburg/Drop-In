@@ -29,6 +29,8 @@ import {
 import { EditPlaydatePage } from './pages/EditPlaydatePage'
 import { FeedPage } from './pages/FeedPage'
 import { InboxPage } from './pages/InboxPage'
+import { LegalPage } from './pages/LegalPage'
+import { PRIVACY_POLICY, PRIVACY_PATH, TERMS_OF_USE, TERMS_PATH } from './lib/legal'
 import { LoginPage } from './pages/LoginPage'
 import { ModPage } from './pages/ModPage'
 import { NewPlaydatePage } from './pages/NewPlaydatePage'
@@ -830,6 +832,14 @@ export default function App() {
               token lands in the URL fragment and supabase-js needs a moment to
               turn it into a session; the shell's gate would bounce that window. */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* Release checklist 1.6: the two legal documents are PUBLIC, outside
+              the shell. Google wants the privacy-policy URL to work for anyone
+              (including a reviewer with no account), and a parent deciding
+              whether to sign up should be able to read it before handing over an
+              email address. The paths come from lib/legal so the URL cannot
+              drift from the copy. */}
+          <Route path={PRIVACY_PATH} element={<LegalPage doc={PRIVACY_POLICY} />} />
+          <Route path={TERMS_PATH} element={<LegalPage doc={TERMS_OF_USE} />} />
           <Route element={<ProtectedShell />}>
             <Route path="/" element={<FeedPage />} />
             {/* V14 ticket 01: the inbox — conversation list + inline thread

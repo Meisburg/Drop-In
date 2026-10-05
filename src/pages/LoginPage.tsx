@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { DropInMark } from '../components/DropInMark'
+import { LegalFooter } from '../components/LegalFooter'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH, resolveAuthRedirect } from '../lib/auth'
 import { ONBOARDING_PATH } from '../lib/onboarding'
@@ -390,6 +391,9 @@ export function LoginPage() {
             Sign out
           </button>
         ) : null}
+        {/* Release checklist 1.6: a person deciding whether to sign up is the
+            one most likely to look for the privacy policy and the terms. */}
+        <LegalFooter />
       </div>
     </div>
   )

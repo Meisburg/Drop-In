@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { LegalFooter } from '../components/LegalFooter'
 import { DropInMark } from '../components/DropInMark'
 import { useSessionContext } from '../components/SessionProvider'
 import { LOGIN_PATH } from '../lib/auth'
@@ -147,6 +148,9 @@ export function ResetPasswordPage() {
           </form>
         </section>
       )}
+      {/* Release checklist 1.6: this is a public screen, so the legal links are
+          reachable here too. */}
+      <LegalFooter />
     </div>
   )
 }
