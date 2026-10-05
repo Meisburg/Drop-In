@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { readMarkerSession, runSqlHeadless, sqlLiteral } from './fixtures'
+import { readMarkerSession, setModerator, type AdminResult } from './fixtures'
 
 /**
  * v30-7 (founder annotation 5) — THE MODERATOR DOOR IN SETTINGS.
@@ -22,16 +22,13 @@ import { readMarkerSession, runSqlHeadless, sqlLiteral } from './fixtures'
  *      re-thrown, so a failed restore can never be silent — it would change the
  *      behaviour of every spec that runs after this one.
  *
- * WHY THE SQL IS HEADLESS (`runSqlHeadless`): `runLiveSql` shells out to
- * `apply-migration.mjs`, which needs a CDP Chrome on :9222 — a human's desktop
- * session on this machine, and absent in a plain run.
+ * WHY THE FLAG IS WRITTEN OVER POSTGREST (`setModerator`): `runLiveSql` shells
+ * out to `apply-migration.mjs`, which needs a CDP Chrome on :9222 — a human's
+ * desktop session on this machine, and absent in a plain run. v31-5 replaced the
+ * management-API path (`SUPABASE_ACCESS_TOKEN`, ACCOUNT-level and absent in CI)
+ * with the PROJECT-scoped service-role key, which is read from the repo `.env`
+ * exactly as the suite's other values are and never reaches the client bundle.
  */
-function markModerator(userId: string, enabled: boolean): { ok: boolean; output: string } {
-  return runSqlHeadless(
-    `update public.profiles set moderators = ${enabled} where id = ${sqlLiteral(userId)};`,
-  )
-}
-
 test('the moderator door is there for a moderator and never for a parent (v30-7)', async ({
   page,
 }) => {
@@ -39,7 +36,7 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
   const door = page.getByTestId('moderator-tools-link')
 
   // --- SELF-HEAL: start from a known state, whatever a killed run left. ---
-  const preReset = markModerator(userId, false)
+  const preReset = await setModerator(userId, false)
   expect(preReset.ok, `the pre-flight reset must land: ${preReset.output}`).toBe(true)
 
   // --- HALF 1 — an ordinary parent sees no moderator control at all. ---
@@ -48,11 +45,11 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
   await expect(door).toHaveCount(0)
 
   let originalFailure: unknown = null
-  let restore: { ok: boolean; output: string } | null = null
+  let restore: AdminResult | null = null
   try {
     // --- HALF 2 — elevate, reload, and the door appears. ---
-    const elevate = markModerator(userId, true)
-    expect(elevate.ok, `the elevate SQL must land: ${elevate.output}`).toBe(true)
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
 
     await page.reload()
     await expect(door).toBeVisible()
@@ -65,12 +62,12 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
   } catch (error) {
     originalFailure = error
   } finally {
-    restore = markModerator(userId, false)
+    restore = await setModerator(userId, false)
   }
 
   // The restore is verified FIRST: it is the one failure that would leak into
   // every later spec, so it may not hide behind the original one.
-  expect(restore.ok, `the restore SQL MUST land: ${restore.output}`).toBe(true)
+  expect(restore.ok, `the restore call MUST land: ${restore.output}`).toBe(true)
   if (originalFailure !== null) throw originalFailure
 
   // --- The restore is REAL: on a fresh load, the door is gone again. ---

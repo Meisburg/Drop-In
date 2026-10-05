@@ -33,7 +33,8 @@
 # and it never blocks a merge. `npm run verify` still does not include e2e.
 #
 # ---------------------------------------------------------------------------
-# THE SECRETS QUESTION — SAME ANSWER AS `verify.yml`
+# THE SECRETS QUESTION — `verify.yml`'s ANSWER FOR THE THREE PUBLIC VALUES,
+# PLUS ONE CREDENTIAL THAT **IS** A SECRET (v31-5)
 # ---------------------------------------------------------------------------
 # `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_VAPID_PUBLIC_KEY` come
 # from repository VARIABLES (`vars.*`), never secrets: the anon key and the
@@ -50,6 +51,18 @@
 # off" — indistinguishable from a flake or a live-data problem, and it was read
 # as one for two days (V31 v31-2, 2026-10-05). A keyless build cannot subscribe;
 # the app refuses honestly (`pushClient.ts`) and the spec's stub refuses too.
+#
+# v31-5 ADDED A FOURTH VALUE, AND THIS ONE **IS** A SECRET:
+# `SUPABASE_SERVICE_ROLE_KEY` (`secrets.*`). It is NOT a `VITE_` variable and
+# must never become one — it bypasses RLS entirely, so it is the one credential
+# here whose leak is the whole database. It is PROJECT-scoped, which is exactly
+# why it replaced the ACCOUNT-level `SUPABASE_ACCESS_TOKEN` in the three
+# moderator/place-photo specs (v31-5): that management token can run arbitrary
+# SQL against every project on the account, and it is deliberately NOT given to
+# CI, which is how the nightly failed on 2026-10-05
+# (`scripts/db-sql.sh:34: SUPABASE_ACCESS_TOKEN: FATAL: not set in .env`). Those
+# specs now write through PostgREST with this key. `scripts/db-sql.sh` keeps its
+# own management token and stays a migration tool; CI never runs it.
 #
 # ---------------------------------------------------------------------------
 # WHAT RUNS WHERE, AND HOW THE RUN CLEANS UP
@@ -119,39 +132,48 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # THREE variables, and the third one is not optional. V28 r3-2 hardened
-      # the push spec's stub to REFUSE a keyless subscribe (the app refuses it
-      # too — `pushClient.ts` will not call `subscribe()` without an
+      # FOUR values, and the fourth one is a SECRET (it bypasses RLS). V28 r3-2
+      # hardened the push spec's stub to REFUSE a keyless subscribe (the app
+      # refuses it too — `pushClient.ts` will not call `subscribe()` without an
       # `applicationServerKey`), so a keyless CI build fails exactly one spec
       # with "Notifications are off" and looks like a flake or a live-data
       # problem. It did: 2026-10-05's V31 v31-2 spent a diagnosis on it. A
-      # missing key now SKIPS the lane loudly instead of failing it confusingly.
+      # missing key now SKIPS the lane loudly instead of failing it confusingly,
+      # and the notice NAMES the missing one.
       - name: Check the Supabase variables are configured
         id: env
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "${VITE_SUPABASE_URL}" ] || [ -z "${VITE_SUPABASE_ANON_KEY}" ] || [ -z "${VITE_VAPID_PUBLIC_KEY}" ]; then
-            echo "::notice title=Live lane skipped::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / VITE_VAPID_PUBLIC_KEY are not all set as repository variables. This lane signs up real accounts against the live project, and its push spec REQUIRES the VAPID public key in the build (a keyless build fails it). See .github/workflows/e2e-scheduled.yml for why they are needed and why none of them is a secret (Settings -> Secrets and variables -> Actions -> Variables)."
+          missing=""
+          [ -n "${VITE_SUPABASE_URL}" ] || missing="${missing} VITE_SUPABASE_URL"
+          [ -n "${VITE_SUPABASE_ANON_KEY}" ] || missing="${missing} VITE_SUPABASE_ANON_KEY"
+          [ -n "${VITE_VAPID_PUBLIC_KEY}" ] || missing="${missing} VITE_VAPID_PUBLIC_KEY"
+          [ -n "${SUPABASE_SERVICE_ROLE_KEY}" ] || missing="${missing} SUPABASE_SERVICE_ROLE_KEY"
+          if [ -n "${missing}" ]; then
+            echo "::notice title=Live lane skipped::these are not set:${missing}. The first three are repository VARIABLES (Settings -> Secrets and variables -> Actions -> Variables) and the lane's push spec REQUIRES the VAPID public key in the build (a keyless build fails exactly one spec). SUPABASE_SERVICE_ROLE_KEY is a repository SECRET (the Secrets tab): it is the PROJECT-scoped service-role key that the moderator/place-photo specs write through PostgREST with, and it is a secret because it bypasses RLS — it is NOT a VITE_ variable and must never be compiled into the bundle. The account-level SUPABASE_ACCESS_TOKEN is deliberately NOT used by this lane. See .github/workflows/e2e-scheduled.yml."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
       # The e2e specs read the repo `.env` file directly (`e2e/fixtures.ts`),
-      # not the process environment — so the same three variables the build
-      # reads are written to the gitignored file the specs read. Never echoed.
+      # not the process environment — so the same four values the suite uses are
+      # written to the gitignored file the specs read. Never echoed, and the
+      # secret is written with `printf` into a gitignored path only.
       - name: Write the repo .env from the repository variables
         if: steps.env.outputs.configured == 'true'
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\nVITE_VAPID_PUBLIC_KEY=%s\n' \
-            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" "$VITE_VAPID_PUBLIC_KEY" > .env
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\nVITE_VAPID_PUBLIC_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' \
+            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" "$VITE_VAPID_PUBLIC_KEY" "$SUPABASE_SERVICE_ROLE_KEY" > .env
 
       - name: Install the Playwright chromium browser
         if: steps.env.outputs.configured == 'true'
@@ -166,6 +188,10 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+          # Not read from here by the specs (they read `.env`), but kept beside
+          # the other three so no reader has to guess which credential this lane
+          # actually holds.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npm run test:e2e
 
       # A browser + a preview server over the suite's own freshly-built dist.
@@ -177,6 +203,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           npm run preview -- --strictPort > preview.log 2>&1 &
           PREVIEW_PID=$!

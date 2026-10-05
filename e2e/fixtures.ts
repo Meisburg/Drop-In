@@ -3,6 +3,10 @@
  *
  * - readEnvFile(): reads VITE_* vars straight from the repo .env with
  *   `node:fs` — no dotenv dependency (the file is plain KEY=VALUE).
+ * - setModerator / readPlaceByName / setPlacePhotos (v31-5): typed PostgREST
+ *   calls authenticated with the PROJECT-scoped service-role key, read from that
+ *   same .env file at call time (never a VITE_ variable, never in the bundle) —
+ *   the path the moderator and place-photo specs write the live database with.
  * - The marker's signed-in browser state (storageState) is written by
  *   e2e/auth.setup.ts into e2e/.auth/ (gitignored, never committed) and
  *   reused by the specs via the chromium project's storageState in
@@ -344,38 +348,222 @@ export function runLiveSql(sql: string): { ok: boolean; output: string } {
 }
 
 /**
- * v30-10 — the HEADLESS SQL path, for specs that need to write as a moderator.
+ * v31-5 — THE PROJECT-SCOPED POSTGREST PATH, for specs that must write as a
+ * moderator or adjust a place row.
  *
- * WHY IT EXISTS BESIDE `runLiveSql`: that helper shells out to
- * `apply-migration.mjs`, which harvests its token from a **CDP-attached Chrome
- * on :9222** — a human's own desktop session on this machine, and simply absent
- * in a plain run (`connectOverCDP ECONNREFUSED 127.0.0.1:9222`, which is how the
- * first draft of the moderator-door spec failed). `scripts/db-sql.sh` talks to
- * the management API with `SUPABASE_ACCESS_TOKEN` and needs no browser at all.
+ * WHY IT EXISTS BESIDE `runLiveSql`: that helper (still used, by `polish.e2e.ts`)
+ * shells out to `apply-migration.mjs`, which harvests its token from a
+ * **CDP-attached Chrome on :9222** — a human's own desktop session on this
+ * machine, and simply absent in a plain run (`connectOverCDP ECONNREFUSED
+ * 127.0.0.1:9222`, which is how the first draft of the moderator-door spec
+ * failed).
  *
- * The timeout sits BELOW the Playwright test timeout on purpose: `spawnSync`
- * blocks the event loop, so the runner's own timer cannot fire while it runs —
- * a hung call would burn the whole test budget. `result.error` is folded into
- * the output, because a spawn failure/kill leaves `status === null` and would
- * otherwise report an empty reason.
+ * WHY NOT `SUPABASE_ACCESS_TOKEN`: v30 routed these specs through
+ * `scripts/db-sql.sh` → the Supabase **Management API**, whose token is
+ * ACCOUNT-level (`sbp_…`) and can run arbitrary SQL against every project. That
+ * token is deliberately not given to CI, so three specs failed in the nightly
+ * (`37321138731`) with `SUPABASE_ACCESS_TOKEN: FATAL: not set`. The transport is
+ * now the narrowest privilege that still covers them: PostgREST over HTTPS,
+ * authenticated with the PROJECT-scoped **service-role** key, whose blast radius
+ * is this one project. `scripts/db-sql.sh` is untouched — it stays the
+ * migration/read tool and keeps its own management token.
+ *
+ * THE KEY IS READ FROM THE REPO `.env` FILE, like every other value the suite
+ * uses, and it is NOT a `VITE_` variable: it must never be compiled into the
+ * client bundle. MEASURED (v31-5, `npm run build` then grep `dist/assets/*.js`):
+ * the FULL key, its 24-character SIGNATURE tail, and the literal `service_role`
+ * each have **zero** hits, while the same probes for the public anon key each
+ * hit (the instrument works). The key's first 24 characters DO hit once — a
+ * legacy Supabase anon JWT and a legacy service-role JWT share those 24
+ * characters, because they are the base64url of the JWT header
+ * `{"alg":"HS256","typ":"JWT"}`; the prefix is therefore not distinguishing, and
+ * it is the anon key's own copy in the bundle that matches. See `docs/agents/ci.md`.
+ *
+ * A MISSING KEY FAILS BY NAME. The check runs BEFORE any request, so an
+ * unconfigured lane reports `SUPABASE_SERVICE_ROLE_KEY missing from …/.env`
+ * rather than the opaque `fetch failed` an `undefined` header produces.
  */
-export function runSqlHeadless(sql: string): { ok: boolean; output: string } {
-  const result = spawnSync('bash', ['scripts/db-sql.sh', sql], {
-    cwd: CWD,
-    encoding: 'utf8',
-    timeout: 60_000,
-  })
-  const error = result.error === undefined ? '' : ` ${String(result.error)}`
-  return {
-    ok: result.status === 0,
-    output: `${result.stdout ?? ''}${result.stderr ?? ''}${error}`.trim(),
-  }
+export interface AdminResult {
+  /** `false` means the REQUEST or its read-back failed; `output` carries the raw reason. */
+  ok: boolean
+  output: string
 }
 
-/** A SQL literal: `null`, or a quoted string with its single quotes doubled. */
-export function sqlLiteral(value: string | null): string {
-  if (value === null) return 'null'
-  return `'${value.replace(/'/g, "''")}'`
+/** Kept under Playwright's 120s test timeout, so a hung request reports itself. */
+const POSTGREST_TIMEOUT_MS = 30_000
+
+/** PostgREST base URL + the service-role key, both out of the repo `.env`. */
+function postgrestCredentials(): { restUrl: string; key: string } {
+  const env = readEnvFile()
+  const url = env.VITE_SUPABASE_URL
+  if (url === undefined || url === '') {
+    throw new Error(`VITE_SUPABASE_URL missing from ${ENV_PATH} — the PostgREST helper needs it`)
+  }
+  const key = env.SUPABASE_SERVICE_ROLE_KEY
+  if (key === undefined || key === '') {
+    throw new Error(
+      `SUPABASE_SERVICE_ROLE_KEY missing from ${ENV_PATH} — the moderator/place-photo specs ` +
+        `write through PostgREST with the PROJECT-scoped service-role key (it bypasses RLS, so ` +
+        `it is a SECRET and is not committed). Add it to the repo .env, or to the scheduled ` +
+        `lane's repository secrets for CI.`,
+    )
+  }
+  return { restUrl: `${url.replace(/\/+$/, '')}/rest/v1`, key }
+}
+
+/**
+ * One PostgREST call. `output` is built from the LABEL, the status line and the
+ * response body — never from the request headers, so the key cannot reach a
+ * test's failure message. A write asks for `return=representation`, which is
+ * what lets a caller read its own write back in the same round-trip.
+ */
+async function postgrest<T>(
+  label: string,
+  method: 'GET' | 'PATCH',
+  path: string,
+  options: { body?: unknown } = {},
+): Promise<{ result: AdminResult; rows: T[] }> {
+  const { restUrl, key } = postgrestCredentials()
+  const headers: Record<string, string> = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    Accept: 'application/json',
+  }
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    // Ask for the written row back: a PATCH that matched nothing is a silent
+    // no-op in the database, and the read-back is what makes it loud.
+    headers.Prefer = 'return=representation'
+  }
+  let status: number
+  let statusText: string
+  let text: string
+  try {
+    const response = await fetch(`${restUrl}/${path}`, {
+      method,
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: AbortSignal.timeout(POSTGREST_TIMEOUT_MS),
+    })
+    status = response.status
+    statusText = response.statusText
+    text = await response.text()
+  } catch (error) {
+    return { result: { ok: false, output: `${label}: ${String(error)}` }, rows: [] }
+  }
+  const head = `${label}: HTTP ${status} ${statusText}`
+  if (!responseOk(status)) {
+    return { result: { ok: false, output: `${head} ${text}`.trim() }, rows: [] }
+  }
+  let rows: T[] = []
+  if (text !== '') {
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (Array.isArray(parsed)) rows = parsed as T[]
+      else return { result: { ok: false, output: `${head} (expected a JSON array, got ${text})` }, rows: [] }
+    } catch {
+      return { result: { ok: false, output: `${head} (unparseable JSON: ${text})` }, rows: [] }
+    }
+  }
+  return { result: { ok: true, output: head }, rows }
+}
+
+function responseOk(status: number): boolean {
+  return status >= 200 && status < 300
+}
+
+/**
+ * Set a profile's `moderators` flag and READ IT BACK from the PATCH's own
+ * representation. The read-back is the point: with the flag unset the door is
+ * absent for a moderator too, so a request that landed on zero rows (a stale id)
+ * would otherwise look exactly like a successful elevation.
+ */
+export async function setModerator(userId: string, enabled: boolean): Promise<AdminResult> {
+  const { result, rows } = await postgrest<{ id: string; moderators: boolean }>(
+    `set profiles.moderators=${enabled} on ${userId}`,
+    'PATCH',
+    `profiles?id=eq.${encodeURIComponent(userId)}&select=id,moderators`,
+    { body: { moderators: enabled } },
+  )
+  if (!result.ok) return result
+  if (rows.length !== 1 || rows[0].moderators !== enabled) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back returned ${rows.length} row(s) ${JSON.stringify(rows)} — wanted exactly one with moderators=${enabled}`,
+    }
+  }
+  return result
+}
+
+/** The place columns the photo specs snapshot and restore (null = no photo). */
+export interface PlacePhotoRow {
+  id: string
+  photo_url: string | null
+  photo_source_url: string | null
+  photo_license: string | null
+  photo_author: string | null
+  photo_attribution: string | null
+}
+
+const PLACE_PHOTO_FIELDS = [
+  'photo_url',
+  'photo_source_url',
+  'photo_license',
+  'photo_author',
+  'photo_attribution',
+] as const
+const PLACE_PHOTO_COLUMNS = ['id', ...PLACE_PHOTO_FIELDS].join(',')
+
+/**
+ * Read ONE place by its exact display name. Throws rather than returning a
+ * result: the call sites are snapshot reads that cannot proceed without a row,
+ * and a thrown message names the name and the count it got (the same failure
+ * the raw-SQL reader reported).
+ */
+export async function readPlaceByName(name: string): Promise<PlacePhotoRow> {
+  const { result, rows } = await postgrest<PlacePhotoRow>(
+    `read places where name=${name}`,
+    'GET',
+    `places?name=eq.${encodeURIComponent(name)}&select=${PLACE_PHOTO_COLUMNS}`,
+  )
+  if (!result.ok) throw new Error(`reading the place failed: ${result.output}`)
+  if (rows.length !== 1) {
+    throw new Error(`expected exactly one place named ${name}, got ${rows.length}`)
+  }
+  return rows[0]
+}
+
+/**
+ * Write the five photo columns of one row back (null clears) and read them back
+ * in the same round-trip. The read-back compares EVERY snapshot column, not just
+ * `photo_url`: the restore's whole job is to leave the live row exactly as it was
+ * found, and v30 recorded what a half-restore costs.
+ */
+export async function setPlacePhotos(row: PlacePhotoRow): Promise<AdminResult> {
+  const body: Record<string, string | null> = {}
+  for (const field of PLACE_PHOTO_FIELDS) body[field] = row[field]
+  const { result, rows } = await postgrest<PlacePhotoRow>(
+    `write place photos on ${row.id}`,
+    'PATCH',
+    `places?id=eq.${encodeURIComponent(row.id)}&select=${PLACE_PHOTO_COLUMNS}`,
+    { body },
+  )
+  if (!result.ok) return result
+  if (rows.length !== 1) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back returned ${rows.length} row(s) — wanted exactly one for id ${row.id}`,
+    }
+  }
+  const written = rows[0]
+  const mismatched = PLACE_PHOTO_FIELDS.filter((field) => written[field] !== row[field])
+  if (mismatched.length > 0) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back differs from the snapshot on ${mismatched.join(', ')}`,
+    }
+  }
+  return result
 }
 
 

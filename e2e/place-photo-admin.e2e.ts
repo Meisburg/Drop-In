@@ -1,18 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { readMarkerSession, runSqlHeadless, sqlLiteral } from './fixtures'
-
-/**
- * A read through the headless SQL path: the management API prints its JSON
- * array, so the rows are sliced out of that envelope.
- */
-function readSql<T>(query: string): T[] {
-  const result = runSqlHeadless(query)
-  if (!result.ok) throw new Error(`SQL read failed: ${result.output}`)
-  const start = result.output.indexOf('[')
-  const end = result.output.lastIndexOf(']')
-  if (start === -1 || end === -1) throw new Error(`no JSON in SQL output: ${result.output}`)
-  return JSON.parse(result.output.slice(start, end + 1)) as T[]
-}
+import {
+  readMarkerSession,
+  readPlaceByName,
+  setModerator,
+  setPlacePhotos,
+  type AdminResult,
+  type PlacePhotoRow,
+} from './fixtures'
 
 /**
  * v30-8 / v30-9 — THE PLACE-PHOTO EDITOR, REACHED FROM WHERE THE PROBLEM IS.
@@ -35,43 +29,21 @@ function readSql<T>(query: string): T[] {
  * row's own photo (known to load, and already public), so the assertion does not
  * depend on an external host the suite has never fetched.
  *
- * WHY THE SQL IS HEADLESS: `runLiveSql` shells out to `apply-migration.mjs`,
- * which needs a CDP Chrome on :9222 — a human's desktop session on this machine,
- * and absent in a plain run. `scripts/db-sql.sh` goes to the management API with
- * `SUPABASE_ACCESS_TOKEN` and needs no browser.
+ * WHY THE ROW IS READ AND WRITTEN OVER POSTGREST (`readPlaceByName` /
+ * `setPlacePhotos`): `runLiveSql` shells out to `apply-migration.mjs`, which needs
+ * a CDP Chrome on :9222 — a human's desktop session on this machine, and absent
+ * in a plain run. v31-5 replaced the management-API path
+ * (`SUPABASE_ACCESS_TOKEN`, ACCOUNT-level and deliberately absent in CI) with the
+ * PROJECT-scoped service-role key, read from the repo `.env` and never compiled
+ * into the client bundle.
  */
-
-interface PlacePhotoRow {
-  id: string
-  photo_url: string | null
-  photo_source_url: string | null
-  photo_license: string | null
-  photo_author: string | null
-  photo_attribution: string | null
-}
 
 const PLACE_NAME = 'Green Lake Park'
 const DONOR_PLACE = 'Green Lake Park (East)'
 
 /** The seeded row this spec edits (it currently carries NO photo). */
-function readTarget(): PlacePhotoRow {
-  const rows = readSql<PlacePhotoRow>(
-    `select id, photo_url, photo_source_url, photo_license, photo_author, photo_attribution from public.places where name = ${sqlLiteral(PLACE_NAME)};`,
-  )
-  if (rows.length !== 1) throw new Error(`expected exactly one ${PLACE_NAME}, got ${rows.length}`)
-  return rows[0]
-}
-
-/** The one restoration statement, built from the snapshot. */
-function restoreSql(snapshot: PlacePhotoRow): string {
-  return (
-    `update public.places set photo_url = ${sqlLiteral(snapshot.photo_url)},` +
-    ` photo_source_url = ${sqlLiteral(snapshot.photo_source_url)},` +
-    ` photo_license = ${sqlLiteral(snapshot.photo_license)},` +
-    ` photo_author = ${sqlLiteral(snapshot.photo_author)},` +
-    ` photo_attribution = ${sqlLiteral(snapshot.photo_attribution)}` +
-    ` where id = ${sqlLiteral(snapshot.id)};`
-  )
+async function readTarget(): Promise<PlacePhotoRow> {
+  return readPlaceByName(PLACE_NAME)
 }
 
 /** Land on /browse with no distance ceiling and the target row on screen. */
@@ -85,11 +57,9 @@ async function openDirectoryAt(page: import('@playwright/test').Page) {
 }
 
 /** The donor photo: another seeded row's own image (known to load, already public). */
-function readDonorUrl(): string {
-  const donor = readSql<{ photo_url: string | null }>(
-    `select photo_url from public.places where name = ${sqlLiteral(DONOR_PLACE)};`,
-  )[0]
-  if (donor?.photo_url === null || donor?.photo_url === undefined) {
+async function readDonorUrl(): Promise<string> {
+  const donor = await readPlaceByName(DONOR_PLACE)
+  if (donor.photo_url === null) {
     throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
   }
   return donor.photo_url
@@ -99,8 +69,8 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
   page,
 }) => {
   const { userId } = readMarkerSession()
-  const snapshot = readTarget()
-  const donorUrl = readDonorUrl()
+  const snapshot = await readTarget()
+  const donorUrl = await readDonorUrl()
 
   const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
 
@@ -108,11 +78,9 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
   // `finally`, so the marker could still be elevated and the row could still
   // carry the donor photo. Both are reset idempotently BEFORE the absence is
   // asserted, so HALF 1 fails only for a reason that belongs to this run. ---
-  const preReset = runSqlHeadless(restoreSql(snapshot))
+  const preReset = await setPlacePhotos(snapshot)
   expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
-  const preUnmoderate = runSqlHeadless(
-    `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
-  )
+  const preUnmoderate = await setModerator(userId, false)
   expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(true)
 
   // --- HALF 1 — an ordinary parent sees NO control on any card. ---
@@ -120,14 +88,12 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   await expect(editControl).toHaveCount(0)
 
-  let restoreEnvelope: { ok: boolean; output: string } | null = null
-  let unmoderateEnvelope: { ok: boolean; output: string } | null = null
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
   try {
     // --- HALF 2 — elevate the marker, and the control appears. ---
-    const elevate = runSqlHeadless(
-      `update public.profiles set moderators = true where id = ${sqlLiteral(userId)};`,
-    )
-    expect(elevate.ok, `the elevate SQL must land: ${elevate.output}`).toBe(true)
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
     await page.reload()
     await openDirectoryAt(page)
     await expect(editControl).toBeVisible()
@@ -152,16 +118,14 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
     // elevates and does not put it back changes the behaviour of every spec
     // that runs after it (and leaves a stray moderator in the live database,
     // which is exactly what the first draft of this file did).
-    restoreEnvelope = runSqlHeadless(restoreSql(snapshot))
-    unmoderateEnvelope = runSqlHeadless(
-      `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
-    )
+    restoreEnvelope = await setPlacePhotos(snapshot)
+    unmoderateEnvelope = await setModerator(userId, false)
   }
   expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
   expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
 
   // The restore is real, and the directory is back to its seeded state.
-  expect(readTarget().photo_url).toBe(snapshot.photo_url)
+  expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
 })
 
 /**
@@ -175,18 +139,16 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
  */
 test('a moderator replaces a place photo from the place page (v30-9)', async ({ page }) => {
   const { userId } = readMarkerSession()
-  const snapshot = readTarget()
-  const donorUrl = readDonorUrl()
+  const snapshot = await readTarget()
+  const donorUrl = await readDonorUrl()
 
   const control = page.getByTestId('place-edit-photo')
 
   // --- SELF-HEAL, same reason as the card test above: a killed run skips its
   // `finally`, so both the row and the flag are reset before HALF 1. ---
-  const preReset = runSqlHeadless(restoreSql(snapshot))
+  const preReset = await setPlacePhotos(snapshot)
   expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
-  const preUnmoderate = runSqlHeadless(
-    `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
-  )
+  const preUnmoderate = await setModerator(userId, false)
   expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(true)
 
   // --- HALF 1 — a parent sees the picture slot, and no way to change it. ---
@@ -194,13 +156,11 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
   await expect(page.getByTestId('place-page-photo-slot')).toBeVisible()
   await expect(control).toHaveCount(0)
 
-  let restoreEnvelope: { ok: boolean; output: string } | null = null
-  let unmoderateEnvelope: { ok: boolean; output: string } | null = null
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
   try {
-    const elevate = runSqlHeadless(
-      `update public.profiles set moderators = true where id = ${sqlLiteral(userId)};`,
-    )
-    expect(elevate.ok, `the elevate SQL must land: ${elevate.output}`).toBe(true)
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
 
     await page.reload()
     await expect(control).toBeVisible()
@@ -225,12 +185,10 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
     expect(headingBox).not.toBeNull()
     expect(heroBox!.y, 'the picture must still sit above the name').toBeLessThan(headingBox!.y)
   } finally {
-    restoreEnvelope = runSqlHeadless(restoreSql(snapshot))
-    unmoderateEnvelope = runSqlHeadless(
-      `update public.profiles set moderators = false where id = ${sqlLiteral(userId)};`,
-    )
+    restoreEnvelope = await setPlacePhotos(snapshot)
+    unmoderateEnvelope = await setModerator(userId, false)
   }
   expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
   expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
-  expect(readTarget().photo_url).toBe(snapshot.photo_url)
+  expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
 })

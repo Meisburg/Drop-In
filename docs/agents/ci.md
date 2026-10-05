@@ -27,32 +27,63 @@ outside the checkout and whose worktree config layer supplies a path inside
 that common dir — and it prints every such acceptance. See
 `docs/agents/borrowed-guards.md`.
 
-## Turning it on (three repository variables, no secrets)
+## Turning it on (three repository variables + one repository secret)
 
 The build needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`: `src/lib/db.ts`
 throws at module load without them, so `npm run build` and `npm test` both fail
 (measured by moving `.env` aside, not assumed). The **scheduled live lane** needs
-a third one, `VITE_VAPID_PUBLIC_KEY` — see below; the PR gate does not.
+a third variable, `VITE_VAPID_PUBLIC_KEY` — see below; the PR gate does not. It
+also needs one **secret**, `SUPABASE_SERVICE_ROLE_KEY`, which neither the PR gate
+nor the build ever sees.
 
-Add them at **Settings → Secrets and variables → Actions → Variables** (the
-**Variables** tab, not Secrets):
+Add the three variables at **Settings → Secrets and variables → Actions →
+Variables** (the **Variables** tab, not Secrets), and the key on the **Secrets**
+tab (`gh secret set SUPABASE_SERVICE_ROLE_KEY`):
 
-| Variable | Where to get it | Needed by |
-|---|---|---|
-| `VITE_SUPABASE_URL` | the same value as `VITE_SUPABASE_URL` in your local `.env` | gate + live lane |
-| `VITE_SUPABASE_ANON_KEY` | the same value as `VITE_SUPABASE_ANON_KEY` in your local `.env` | gate + live lane |
-| `VITE_VAPID_PUBLIC_KEY` | the same value as `VITE_VAPID_PUBLIC_KEY` in your local `.env` | **live lane only** |
+| Value | Kind | Where to get it | Needed by |
+|---|---|---|---|
+| `VITE_SUPABASE_URL` | variable | the same value as `VITE_SUPABASE_URL` in your local `.env` | gate + live lane |
+| `VITE_SUPABASE_ANON_KEY` | variable | the same value as `VITE_SUPABASE_ANON_KEY` in your local `.env` | gate + live lane |
+| `VITE_VAPID_PUBLIC_KEY` | variable | the same value as `VITE_VAPID_PUBLIC_KEY` in your local `.env` | **live lane only** |
+| `SUPABASE_SERVICE_ROLE_KEY` | **SECRET** | the same value as `SUPABASE_SERVICE_ROLE_KEY` in your local `.env` (Supabase dashboard → Project Settings → API → `service_role`) | **live lane only** |
 
-**They are variables rather than secrets because they are not confidential.**
-The anon key is compiled into the shipped bundle (`dist/assets/index-*.js`) — any
-browser that loads the site already has it. What protects the data is RLS, and it
-does: probed with the anon key, `profiles`, `messages`, `place_comments` and
-`parent_cards` each return **zero rows**, while `places` returns the public
-directory. Calling it a secret would imply a confidentiality it does not have,
-and a future reader would then treat it as sensitive and be confused when it
-appears in a bundle. The VAPID **public** key is the same kind of value by design:
-it is the browser's own subscription key, and only its private half is server
-side.
+**The first three are variables rather than secrets because they are not
+confidential.** The anon key is compiled into the shipped bundle
+(`dist/assets/index-*.js`) — any browser that loads the site already has it. What
+protects the data is RLS, and it does: probed with the anon key, `profiles`,
+`messages`, `place_comments` and `parent_cards` each return **zero rows**, while
+`places` returns the public directory. Calling it a secret would imply a
+confidentiality it does not have, and a future reader would then treat it as
+sensitive and be confused when it appears in a bundle. The VAPID **public** key
+is the same kind of value by design: it is the browser's own subscription key,
+and only its private half is server side.
+
+**The fourth IS a secret, and the distinction is the point** (v31-5): the
+service-role key **bypasses RLS entirely**, so a `profiles` read that returns
+zero rows with the anon key returns rows with it (v31-5 read the marker's own
+row back that way). It is **project-scoped** — it can do anything inside
+this one project and nothing outside it — which is exactly why the three
+moderator/place-photo specs (`e2e/moderator-door.e2e.ts`,
+`e2e/place-photo-admin.e2e.ts`) now write through PostgREST with it. The
+alternative they used until v31-5 was the Supabase **Management API**, whose
+`SUPABASE_ACCESS_TOKEN` (`sbp_…`) is **ACCOUNT-level** and can run arbitrary SQL
+against every project on the account; that token stays **out of CI on purpose**,
+and `scripts/db-sql.sh` keeps its own copy in the developer's `.env` for
+migrations. Two consequences are wired in rather than left to discipline:
+
+- **It is read from the repo `.env` FILE** the specs already read
+  (`e2e/fixtures.ts`), never from the process environment, and the helper fails
+  **by name** when it is absent (`SUPABASE_SERVICE_ROLE_KEY missing from
+  …/.env`) — never as the opaque `fetch failed` an `undefined` header produces.
+- **It must never get a `VITE_` prefix.** `dist/assets/*.js` is public. v31-5
+  measured it after `npm run build`: the **full** service-role key, its
+  24-character **signature tail** and the literal `service_role` each have
+  **zero** hits in the bundle (the same three probes each hit for the public anon
+  key, so the instrument works). ⚠️ The key's **first 24 characters do hit once**
+  — a legacy Supabase anon JWT and a legacy service-role JWT share them, because
+  those characters are the base64url of the JWT header `{"alg":"HS256","typ":"JWT"}`.
+  That prefix is shared, not secret; the match is the anon key's own copy in the
+  bundle. Judge this key by its payload or its signature, never by its header.
 
 ### `VITE_VAPID_PUBLIC_KEY`, and the two days it was missing (2026-10-05)
 
@@ -73,7 +104,10 @@ live-database state, which is how it was read for two days.
 
 Both the workflow and this doc now carry the third variable, and the lane
 **skips with a notice** rather than failing red when any of the three is absent —
-the same rule as the other two, for the same reason.
+the same rule as the other two, for the same reason. Since v31-5 the same gate
+also covers `SUPABASE_SERVICE_ROLE_KEY`, and its notice names the missing value
+(and which tab it lives on) — an unconfigured secret is a setup step too, and the
+alternative is three specs failing with a fetch error that says nothing.
 
 **If the variables are missing, the workflow SKIPS the gate with a notice instead
 of failing.** A red X for "you have not configured this yet" teaches people to
@@ -117,11 +151,13 @@ is not re-litigated every time someone notices e2e is absent from a PR.**
   the setup spec writes the signed-in marker session to the gitignored marker
   storage-state file under `e2e/.auth/`, the check seeds and restores the bio +
   family photo it needs, and it needs only a browser and a server.
-- **Variables and the skip.** It uses the same repository variables
-  (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, never secrets) and the same
-  skip-with-notice behaviour as `verify.yml`. It also writes them into the
-  gitignored `.env`, because the e2e specs read that file directly rather than
-  the process environment.
+- **Variables, one secret, and the skip.** It uses the same repository variables
+  (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_VAPID_PUBLIC_KEY`) **plus
+  the `SUPABASE_SERVICE_ROLE_KEY` secret** (project-scoped, bypasses RLS — see
+  "Turning it on" above; the account-level management token stays out of CI), and
+  the same skip-with-notice behaviour as `verify.yml`. It also writes them all
+  into the gitignored `.env`, because the e2e specs read that file directly
+  rather than the process environment.
 - **Clean-up.** The suite's OWN marker cleanup (`afterEach` / `afterAll` REST
   deletes) removes the rows each spec creates, on the failure path too. The
   marker AUTH USERS persist by design and are removed by the manual
