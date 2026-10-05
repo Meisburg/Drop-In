@@ -35,6 +35,7 @@
 import { expect, test } from '@playwright/test'
 import type { Locator } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   finishSignup,
   readEnvFile,
   readMarkerMeta,
@@ -58,10 +59,9 @@ interface Box {
   height: number
 }
 
-/** The playwright config's own baseURL, so this spec follows a private-port run. */
+/** The shared base URL, so this spec's own contexts follow a private-port run. */
 function projectBaseURL(): string {
-  const use = test.info().project.use as { baseURL?: string }
-  return use.baseURL ?? 'http://localhost:4173'
+  return E2E_BASE_URL
 }
 
 /**

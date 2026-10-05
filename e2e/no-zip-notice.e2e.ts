@@ -62,7 +62,7 @@ test('a no-zip parent sees the location notice on the feed AND on browse, never 
   // different person — it has a zip by construction, which is the state this
   // spec must NOT have).
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

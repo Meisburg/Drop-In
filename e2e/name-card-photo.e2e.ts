@@ -104,7 +104,7 @@ function makePng(width: number, height: number, r: number, g: number, b: number)
 
 async function freshViewer(browser: Browser) {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   return context

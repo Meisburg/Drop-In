@@ -20,6 +20,21 @@ import { defineConfig } from '@playwright/test'
  */
 const markerState = path.join(process.cwd(), 'e2e', '.auth', 'marker-state.json')
 
+/**
+ * THE ONE BASE URL, read from the environment so a run can be pointed at a
+ * private port. `e2e/fixtures.ts` exports the same constant with the same
+ * default, and the specs' own `browser.newContext` calls use it — because until
+ * 2026-10-05 most of them hardcoded `http://localhost:4173` for their OWN
+ * contexts, so a config-level override covered only the specs that used this
+ * `baseURL`. With `reuseExistingServer: true` (below) and another checkout
+ * holding `:4173`, that made a local green measure the wrong app.
+ *
+ *   npx vite preview --port 4180 --strictPort &
+ *   E2E_BASE_URL=http://localhost:4180 npx playwright test e2e/that-spec.e2e.ts
+ */
+const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4173'
+const PREVIEW_PORT = Number(new URL(BASE_URL).port || 80)
+
 export default defineConfig({
   testDir: './e2e',
   // The specs drive the live Supabase project through the app's UI;
@@ -32,7 +47,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: BASE_URL,
     browserName: 'chromium',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
@@ -63,8 +78,13 @@ export default defineConfig({
     // src/, which is exactly the "gate turned green by not running the real
     // code" failure this repo's config-guard exists to prevent. Building first
     // makes reuse safe: the server restarts on the fresh output.
-    command: 'npm run build && npm run preview',
-    port: 4173,
+    //
+    // `--strictPort` (added 2026-10-05): without it `vite preview` silently
+    // moves to the next free port when the one asked for is taken, and
+    // Playwright then waits on the port nobody is serving. It only ever runs
+    // when nothing is listening — `reuseExistingServer` short-circuits first.
+    command: `npm run build && npm run preview -- --port ${PREVIEW_PORT} --strictPort`,
+    port: PREVIEW_PORT,
     timeout: 180_000,
     reuseExistingServer: true,
   },

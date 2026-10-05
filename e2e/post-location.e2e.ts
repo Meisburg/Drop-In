@@ -52,13 +52,7 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import {
-  cardWhenLabel,
-  computeEndIso,
-  computeStartIso,
-  formatTimeWindow,
-  mapsHref,
-} from '../src/lib/feed'
+import { cardWhenLabel, computeEndIso, computeStartIso, formatTimeWindow, mapsHref } from '../src/lib/feed'
 import {
   BROWSE_PLACES_LABEL,
   PLACE_BROWSE_LIMIT,
@@ -480,7 +474,7 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // block is a PERMANENT REGRESSION GUARD, not a probe: re-adding `join` instead
   // of `left join` to 0035's function makes the two assertions below fail.
   const anonContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const anonPage = await anonContext.newPage()
@@ -578,7 +572,7 @@ test('"Somewhere else" still posts free text — and its address is still the Ma
   // logged-out visitor got "not found" for a post that exists — and this is
   // also where the public view's Maps link (0021's field) still has to work.
   const anonContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const anonPage = await anonContext.newPage()

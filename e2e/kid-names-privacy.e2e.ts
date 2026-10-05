@@ -96,6 +96,7 @@ import path from 'node:path'
 import { buildIcs } from '../src/lib/ics'
 import { NOTIFICATION_KINDS, buildNotificationPayload } from '../src/lib/push'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -141,7 +142,7 @@ async function signUpAndOnboard(
   },
 ): Promise<Viewer> {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()

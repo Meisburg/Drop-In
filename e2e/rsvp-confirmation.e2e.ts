@@ -51,6 +51,7 @@ import { expect, test } from '@playwright/test'
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { cardWhenLabel } from '../src/lib/feed'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -106,7 +107,7 @@ async function openViewerOnDetail(
   radiusMiles: number,
 ): Promise<{ context: BrowserContext; page: Page }> {
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
@@ -410,7 +411,7 @@ test('the host never sees the confirmation, and the feed card’s toggle does no
   // post (`db.togglePing`'s client guard), so the card's write would silently
   // no-op and the assertion below would be measuring the wrong account.
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewer = await viewerContext.newPage()
@@ -488,7 +489,7 @@ test('the confirmation names the drop-in’s real day and time window', async ({
 
   // A fresh viewer pings it; the event line must carry that exact window.
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewer = await viewerContext.newPage()

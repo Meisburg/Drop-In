@@ -32,6 +32,7 @@
  * and this spec is about the screen a SIGNED-OUT visitor gets.
  */
 import { expect, test } from '@playwright/test'
+import { E2E_BASE_URL } from './fixtures'
 
 const TAGLINE = 'Playdates with other families — just show up.'
 
@@ -39,7 +40,7 @@ test('the signed-out first screen says what Drop In is, and fits a portrait phon
   browser,
 }) => {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
     viewport: { width: 390, height: 664 },
     isMobile: true,

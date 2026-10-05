@@ -23,6 +23,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle,
   localDatePlusDays,
   readMarkerMeta,
@@ -79,7 +80,7 @@ test('a signed-out visitor sees the public surface + the sign-up prompt', async 
   // overrides the project's merged marker state, so the visitor starts
   // signed-out).
   const anonContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const anonPage = await anonContext.newPage()

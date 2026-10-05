@@ -22,6 +22,7 @@
  */
 import { expect, test } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -88,7 +89,7 @@ test('a host marker\'s drop-in reaches a viewer\'s radius feed with an "N mi" la
   // storageState overrides the project's merged marker state so the viewer
   // starts signed-out.
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

@@ -26,6 +26,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   finishSignup,
   readEnvFile,
   readMarkerMeta,
@@ -42,10 +43,9 @@ interface RestEnv {
   serviceKey: string | undefined
 }
 
-/** The playwright config's own baseURL, so this spec follows a private-port run. */
+/** The shared base URL, so this spec's own contexts follow a private-port run. */
 function projectBaseURL(): string {
-  const use = test.info().project.use as { baseURL?: string }
-  return use.baseURL ?? 'http://localhost:4173'
+  return E2E_BASE_URL
 }
 
 /** Insert ONE free-form message, as `senderToken`'s owner, at a chosen instant. */

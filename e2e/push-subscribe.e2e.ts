@@ -58,6 +58,7 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   dismissRsvpConfirmationIfOpen,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
@@ -431,7 +432,7 @@ test('finishing signup earns no notification ask — the first surface behind se
   const viewerPassword = `e2e-s-pw-${epoch}` // in-memory only — never written, never committed
 
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewer = await viewerContext.newPage()
@@ -652,7 +653,7 @@ test('a saved ping arms the prompt, and denying it surfaces the inbox note', asy
   // --- 2. A SECOND account, signed in with the push stub installed, is the one
   // whose ping must arm the prompt: the arm sites are on the pinger's device. ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewer = await viewerContext.newPage()
@@ -758,7 +759,7 @@ test('a ping from a drop-in detail page defers the notification prompt off the R
 
   // --- 2. The viewer, on the DETAIL page. ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewer = await viewerContext.newPage()

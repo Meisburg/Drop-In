@@ -115,7 +115,7 @@ const ADDRESS = '1200 1st Ave S, Seattle'
 
 async function signedOutPage(browser: Browser): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   return { page: await context.newPage(), close: () => context.close() }

@@ -45,6 +45,7 @@
  */
 import { expect, test } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -95,7 +96,7 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // home zip as the host (the post sits at the host's zip — distance 0,
   // inside any radius), so the post is in the viewer's radius feed. ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

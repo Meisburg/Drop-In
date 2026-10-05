@@ -25,6 +25,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   dismissRsvpConfirmationIfOpen,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
@@ -76,7 +77,7 @@ async function createPingingViewerWithThread(
   radiusMiles: number,
 ): Promise<{ context: import('@playwright/test').BrowserContext; page: Page }> {
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
@@ -277,7 +278,7 @@ test('reactions update live: the host sees the pinger\'s 👍 without a reload',
     fs.readFileSync(path.join(process.cwd(), 'e2e', '.auth', 'marker-state.json'), 'utf8'),
   )
   const hostContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: markerState as { cookies: unknown[]; origins: unknown[] },
   })
   const hostPage = await hostContext.newPage()

@@ -29,6 +29,7 @@
 import { expect, test } from '@playwright/test'
 import { WIDEN_RADIUS_MILES, emptyRadiusCopy, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../src/lib/feed'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSessionFromBrowserPage, readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer,
@@ -311,7 +312,7 @@ test('the empty state says what is further out, from the same read', async ({ br
 
   // A SECOND parent, far enough away to be outside that radius.
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewer = await viewerContext.newPage()
@@ -434,7 +435,7 @@ test('the detail page\'s failed reads are honest states, and Retry recovers', as
 
   // --- The viewer: a fresh signed-out context, signed up + onboarded. ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

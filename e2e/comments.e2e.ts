@@ -24,6 +24,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerSession, readSupabaseEnv,
   settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -93,7 +94,7 @@ test('a comment is visible to a second viewer, then the author’s delete remove
   const viewerEmail = `e2e-v-${epoch}@gmail.com` // gmail.com: the project rejects example.com
   const viewerPassword = `e2e-v-pw-${epoch}` // in-memory only — never written
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

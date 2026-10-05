@@ -29,7 +29,7 @@ test('sign out is in Settings, not the header, and still lands on /login', async
   const epoch = Math.floor(Date.now() / 1000)
 
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()

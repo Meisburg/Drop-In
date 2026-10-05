@@ -44,12 +44,13 @@
  */
 import { expect, test, type Browser } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   readSessionFromBrowserPage,
   readSupabaseEnv,
   signUpViewer,
 } from './fixtures'
 
-const BASE_URL = 'http://localhost:4173'
+const BASE_URL = E2E_BASE_URL
 
 /** A fresh, signed-out viewer context (the zip-radius pattern). */
 async function freshViewer(browser: Browser) {

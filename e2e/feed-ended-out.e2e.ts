@@ -118,6 +118,7 @@ import { expect, test, type Page } from '@playwright/test'
 // only import is `import type`).
 import { localDayKey, PAST_DROP_INS_LABEL } from '../src/lib/feed'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, openProfileEditor, readMarkerMeta,
   readMarkerSession, readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer,
@@ -512,7 +513,7 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   const viewerEmail = `${viewerName}@gmail.com` // gmail.com: the project rejects example.com
   const viewerPassword = `e2e-v-pw-${epoch}` // in-memory only — never written, never committed
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

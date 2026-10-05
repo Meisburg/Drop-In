@@ -32,6 +32,7 @@ import type { Page } from '@playwright/test'
 // the app's OWN seams (the house lesson: import the rule, never restate it).
 import { formatStartDayLabel, mapsHref } from '../src/lib/feed'
 import {
+  E2E_BASE_URL,
   editTitle,
   localDatePlusDays,
   readMarkerMeta,
@@ -156,7 +157,7 @@ test('a post with an address shows a tappable Maps link (host view + the signed-
   // (address, migration 0021's 11 -> 12 pin change) crosses to anon via
   // get_public_playdate, so the link renders there too.
   const anonContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const anonPage = await anonContext.newPage()

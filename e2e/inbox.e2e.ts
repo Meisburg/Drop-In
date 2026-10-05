@@ -32,6 +32,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   dismissRsvpConfirmationIfOpen,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
@@ -92,7 +93,7 @@ async function createPingingViewer(
   radiusMiles: number,
 ): Promise<{ context: import('@playwright/test').BrowserContext; page: Page }> {
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
@@ -377,7 +378,7 @@ test('RLS isolation: a stranger cannot read or write messages', async ({
   // --- The stranger: navigate to /inbox → no conversation row for this
   // playdate (RLS blocks the SELECT). ---
   const strangerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const strangerPage = await strangerContext.newPage()
@@ -546,7 +547,7 @@ test('real-time delivery: a message sent by the host appears in the pinger\'s op
   const markerStatePath = path.join(process.cwd(), 'e2e', '.auth', 'marker-state.json')
   const markerState = JSON.parse(fs.readFileSync(markerStatePath, 'utf8'))
   const hostContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: markerState as { cookies: unknown[]; origins: unknown[] },
   })
   const hostPage = await hostContext.newPage()

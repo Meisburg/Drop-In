@@ -120,15 +120,7 @@ import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { deflateSync } from 'node:zlib'
 import os from 'node:os'
 import path from 'node:path'
-import {
-  PHOTO_BUCKET,
-  familyPhotoPath,
-  familyPhotoVisibility,
-  isKidPhotoPath,
-  kidPhotoPath,
-  kidPhotoStoredRef,
-  kidPhotoVisibility,
-} from '../src/lib/photoStorage'
+import { PHOTO_BUCKET, familyPhotoPath, familyPhotoVisibility, isKidPhotoPath, kidPhotoPath, kidPhotoStoredRef, kidPhotoVisibility } from '../src/lib/photoStorage'
 import {
   openProfileEditor, readMarkerMeta, readMarkerSession, readSupabaseEnv,
   settleOnRoute, finishSignup,
@@ -288,7 +280,7 @@ async function signUpOtherParent(browser: Browser, e: Env, name: string): Promis
   // kid-names-privacy pattern).
   const marker = readMarkerMeta()
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()

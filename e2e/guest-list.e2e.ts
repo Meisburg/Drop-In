@@ -43,6 +43,7 @@
  */
 import { expect, test } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -128,7 +129,7 @@ test('the host sees the named guest list on a post with 2 pings', async ({
   for (let i = 0; i < viewers.length; i++) {
     const viewer = viewers[i]
     const viewerContext = await browser.newContext({
-      baseURL: 'http://localhost:4173',
+      baseURL: E2E_BASE_URL,
       storageState: { cookies: [], origins: [] },
     })
     const viewerPage = await viewerContext.newPage()

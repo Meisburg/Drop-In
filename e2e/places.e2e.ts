@@ -83,6 +83,7 @@
 import { expect, test } from '@playwright/test'
 import type { BrowserContext, Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle,
   localDatePlusDays,
   readMarkerMeta,
@@ -2324,7 +2325,7 @@ test('a signed-in parent hearts a place — the existing follow row, filled from
   // status: the follows table is owner-only, so an anon read is a 2xx with zero
   // rows and would look like a success.
   const anonContext: BrowserContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const anonPage = await anonContext.newPage()

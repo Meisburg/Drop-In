@@ -53,6 +53,7 @@
 import { expect, test } from '@playwright/test'
 import type { Browser, Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -111,7 +112,7 @@ async function createOnboardedViewer(
   zip: string,
 ): Promise<Page> {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const page = await context.newPage()

@@ -23,6 +23,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   readMarkerMeta, readMarkerSession, readSupabaseEnv, settleOnRoute,
   finishSignup,
   signUpViewer,
@@ -40,7 +41,7 @@ test('new message: search a parent, open DM thread, send a message', async ({
 
   // --- Create a fresh viewer account (the one we'll DM). ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
@@ -164,7 +165,7 @@ test('the Message button on a family page opens the DM thread (and is absent on 
 
   // --- Create the family whose page we will visit. ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
@@ -228,7 +229,7 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
 
   // --- Create the viewer (DM target). ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()
@@ -275,7 +276,7 @@ test('RLS isolation: a stranger cannot read a free-form DM', async ({
 
   // --- The stranger: create an account, then try to read the DM via REST. ---
   const strangerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const strangerPage = await strangerContext.newPage()

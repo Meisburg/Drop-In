@@ -42,6 +42,7 @@
  */
 import { expect, test } from '@playwright/test'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
   readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, stepStartTimeOnce,
@@ -87,7 +88,7 @@ test('the host retention loop: banner + "Hosted 1 drop-in" line (red by design p
   // radius feed. The viewer pings it via the card's "going" check
   // toggle (the active state = the write round-tripped). ---
   const viewerContext = await browser.newContext({
-    baseURL: 'http://localhost:4173',
+    baseURL: E2E_BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
   const viewerPage = await viewerContext.newPage()

@@ -34,6 +34,27 @@ const CWD = process.cwd()
  *  literal lives in `src/lib/geocode.ts` (`NOMINATIM_URL`, not exported) and a
  *  divergence from it is LOUD rather than silent: `finishSignup`'s stub asserts
  *  that it fired, so a pattern that stops matching fails the walk in ~5s. */
+/**
+ * THE ONE BASE URL every spec's own browser context must use.
+ *
+ * WHY THIS EXISTS, measured 2026-10-05: `playwright.config.ts` sets
+ * `reuseExistingServer: true`, so when another checkout already owns `:4173` a
+ * local run silently measures THAT app. The specs made it worse — most of them
+ * hardcoded `http://localhost:4173` for their OWN `browser.newContext`, so even
+ * a config-level override covered only the specs that used the config's baseURL.
+ * The recipe in `.scratch/place-photo-crop/spec.md` worked around it with a
+ * second config file; this constant is the durable fix.
+ *
+ * READ BY BOTH SIDES: `playwright.config.ts` sets `use.baseURL` from the same
+ * environment variable with the same default, so the marker signup, every
+ * spec's own context, and the server Playwright waits for cannot disagree.
+ *
+ * PRIVATE-PORT RUN:
+ *   npx vite preview --port 4180 --strictPort &
+ *   E2E_BASE_URL=http://localhost:4180 npx playwright test e2e/that-spec.e2e.ts
+ */
+export const E2E_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4173'
+
 export const NOMINATIM_ROUTE = /https:\/\/nominatim\.openstreetmap\.org\/search\?/
 /**
  * The address `finishSignup` types into the area card. A REAL street, because

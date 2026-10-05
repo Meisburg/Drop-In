@@ -32,7 +32,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 // data, never a restated literal — adding or removing a line must not silently
 // under-test this leg (it used to stop one step early in that case).
 import { TOOLTIPS_STEPS } from '../src/lib/firstRunTooltips'
-import { finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
+import { E2E_BASE_URL, finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
 
 /** The tour's overlay root (the veil + ring + card all live under it). */
 const tourOf = (page: Page) => page.getByTestId('first-run-tooltips')
@@ -44,7 +44,7 @@ const tourOf = (page: Page) => page.getByTestId('first-run-tooltips')
  * Defaults to the config's 4173; point it at a private preview port when the
  * human's lane owns 4173.
  */
-const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:4173'
+const BASE_URL = E2E_BASE_URL
 
 /** Sign up a fresh viewer and finish the run: lands on the feed, tour up. */
 async function signUpAndFinishRun(browser: Browser, tag: string) {

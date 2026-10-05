@@ -58,6 +58,7 @@ import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { nextOccurrencePlan, placeFollowerLine } from '../src/lib/follows'
 import { weekdayFromDateIso } from '../src/lib/series'
 import {
+  E2E_BASE_URL,
   editTitle, localDatePlusDays, parseTimeLabel, readMarkerMeta,
   readMarkerSession, readSupabaseEnv, settleOnRoute, finishSignup,
   signUpViewer, dismissRsvpConfirmationIfOpen,
@@ -75,7 +76,7 @@ const PLACE = 'E2E loop lot'
  * NOT inherit the config's `use.baseURL`; this is the one place the spec's
  * origin lives.
  */
-const E2E_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4173'
+
 
 /** A playdates row as PostgREST returns it. */
 interface MarkerPostRow {
