@@ -345,3 +345,38 @@ the app when installed. Both files are served from the web app.
   are **EIGHT**, not five, and the email fallback is not merely "proven" — it has
   delivered **60 `sent:email` rows** in production. The plan is written against
   `5be6bc5`.
+- 2026-10-05 — **SLICE 0 COMPLETE; SLICE 1'S BUILD IS PROVEN, ITS DEVICE RUN IS
+  NOT.** Grounding landed at
+  `research/native-apps/2026-10-05-capacitor-grounding.md` (284 lines, 42
+  primary-source URLs) and the header above records the three things it
+  invalidated. Slice 1 landed as `9420465`: Capacitor 8.5.2 core/cli/android
+  installed, `capacitor.config.ts` with `webDir: 'dist'` and **no `server.url`**,
+  `npx cap add android` clean, and **`./gradlew assembleDebug` → BUILD SUCCESSFUL
+  (4.8 MB `app-debug.apk`)**. The anti-4.2 property is proven from the ARTIFACT,
+  not the config: the APK contains `assets/public/assets/index-BK94g1Am.js`
+  (796 KB — the real app) and its packaged `capacitor.config.json` has no
+  `server.url`.
+  **THE JDK WAS THE ONE REAL BLOCKER, and the predicted failure mode was wrong:**
+  `./gradlew --version` SUCCEEDS on this box's only JVM (Java 26) — the launcher
+  is fine — while the build dies in 1s with `Unsupported class file major version
+  70` (class-file 70 IS Java 26). `mise.toml` now pins java 21 and carries the
+  reasoning. **So "gradle starts" is not the test; the build is.**
+  **⚠️ THE DEVICE RUN IS THE OPEN ITEM, and it is stated precisely rather than
+  rounded up.** On the `Pixel_9_Pro` AVD (headless, swiftshader): install
+  `Success`; `am start` starts `app.dropin.playdate/.MainActivity`; at **t+5s and
+  t+15s the process is alive (pid 3266) and MainActivity is the resumed
+  activity**, and logcat shows Capacitor `Handling local request:
+  https://localhost/assets/index-BK94g1Am.js` — i.e. the BUNDLED web layer really
+  loads inside the shell. **At ~t+45s the process is GONE and the launcher is
+  resumed, with no fatal exception logged for our package.** The same logcat is
+  full of `libc: Fatal signal 6 (SIGABRT) … (android.hardwar)` every 5 seconds —
+  the emulator's own hardware daemon crash-looping under `-no-window` +
+  swiftshader — so the environment is a suspect, and **which side is at fault is
+  NOT established**. A screenshot of the running shell is at
+  `.scratch/native-shell-emulator.png` (1.77 MB). **The next step is the real
+  device the checklist asks for anyway**, not a third emulator run: if the app
+  stays up there, the emulator was the problem; if it dies there too, it is ours.
+  **SLICE 1'S OTHER OPEN ITEM IS UNTOUCHED: the four browser-origin hazards**
+  (OAuth `redirectTo`, password reset, share URLs, email base URL) — inside the
+  shell the web layer's origin is `https://localhost`, so each needs a canonical
+  public URL, which is a decision per site rather than a mechanical edit.
