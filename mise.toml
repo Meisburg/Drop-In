@@ -1,0 +1,21 @@
+# Why this repo pins a JDK (2026-10-05, native shell slice 1)
+#
+# The only JVM on this box is Java 26 (`/usr/lib/jvm/java-26-openjdk`), and the
+# Capacitor 8 Android project (AGP 8.13.0 / Gradle 8.14.3) cannot use it:
+# `./gradlew assembleDebug` dies with
+#
+#   BUG! exception in phase 'semantic analysis' in source unit '_BuildScript_'
+#   Unsupported class file major version 70
+#
+# Class-file major 70 IS Java 26. Note that `./gradlew --version` SUCCEEDS on
+# Java 26 — the launcher is fine and only the build-script compilation refuses —
+# so "gradle starts" is not the test; the build is.
+#
+# Java 21 is the supported LTS for these AGP/Gradle versions. Nothing in the web
+# app needs it; it exists so the `android/` project builds. If you are only
+# running `npm run verify`, the JDK is irrelevant to you.
+#
+# If mise is not installed, set JAVA_HOME to any JDK 21 for the Android build:
+#   JAVA_HOME=/path/to/jdk-21 ./gradlew assembleDebug
+[tools]
+java = "21"
