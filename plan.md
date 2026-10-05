@@ -673,6 +673,11 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       of its own 14 behavior checks red), and `e2e-target-guard` reads the `.env`
       FILE while the workflow only set process env. **A gate whose failure is
       indistinguishable from its baseline is not a gate.**
-      **Remaining, human-owned:** the
-      destructive marker sweep (**279 accounts / 563 rows**), the V24 read-surface
-      privacy decision, and the 5-parent first-open test.
+      **MARKER SWEEP — DECIDED, DEFERRED TO LAUNCH PREP** (founder, 2026-10-04):
+      284 accounts / 573 rows, `founder_overlap: 0`, every content table at zero,
+      so nothing is visible to a family — and the count grows with every e2e run
+      (264 → 284 in a day), so one sweep at launch prep beats two. Recorded as a
+      dated deferral, not a dropped item.
+      **Remaining, human-owned:** the V24 read-surface
+      privacy decision, the 55-vs-52 config reconciliation, and the 5-parent
+      first-open test.
