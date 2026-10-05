@@ -380,3 +380,26 @@ the app when installed. Both files are served from the web app.
   (OAuth `redirectTo`, password reset, share URLs, email base URL) — inside the
   shell the web layer's origin is `https://localhost`, so each needs a canonical
   public URL, which is a decision per site rather than a mechanical edit.
+- 2026-10-05 (later) — **THE FOUR BROWSER-ORIGIN HAZARDS ARE DONE** (slice 1's
+  remaining code). They were never four fixes: two of the four sites already
+  consulted `VITE_PUBLIC_BASE_URL`, the other two did not, and none agreed on what
+  to do when it was absent. `src/lib/publicUrl.ts` now holds the ONE rule —
+  configured value wins → a browser tab answers with its own origin → **the native
+  shell falls back to the app's public home, never `https://localhost`** — and the
+  four call sites ask it: OAuth `redirectTo` (`db.ts`), the password-reset
+  `redirectTo` (`db.ts`), `getShareUrl` (`db.ts`) and `clientBaseUrl`
+  (`email.ts`). The shell fallback is the email layer's existing
+  `FALLBACK_BASE_URL`, reused rather than re-declared so the two addresses cannot
+  drift.
+  **TWO THINGS FIXED WHILE THERE, both pinned by tests:** an EMPTY
+  `VITE_PUBLIC_BASE_URL` (which is what `.env` ships) used to be kept by `??` and
+  handed downstream as an empty base; it is now treated as absent. And a native
+  build with nothing configured **says so out loud** on `console.warn` instead of
+  silently producing wrong links — a build defect that looks like nothing until a
+  parent cannot sign in.
+  **⚠️ STILL NOT FIXED, and this module does not pretend otherwise: OAuth inside
+  the shell needs slice 3's deep-link return.** The address is no longer broken;
+  the round trip still is.
+  The two remaining `location.origin` reads are in `src/sw.ts` and are CORRECT
+  there — a service worker resolving against its own clients (and the SW does not
+  run in the shell at all; native push is slice 2's FCM path).

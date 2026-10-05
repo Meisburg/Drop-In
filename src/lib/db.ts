@@ -99,6 +99,7 @@ import { issueModeratorUpdate, isProfileBanned } from './moderation'
 // live beside their sibling test; db.ts only moves bytes and rows.
 import { placePhotoObjectPath, type PlacePhotoType } from './placePhotoAdmin'
 import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
+import { currentPublicOrigin } from './publicUrl'
 // V8 ticket 08: the notification kind guard + the fallback list's page size.
 // The push RULES themselves (payload copy, dedupe key, iOS detection, the
 // permission memory) live in ./push and are not duplicated here — db.ts only
@@ -322,7 +323,10 @@ export async function signInWithOAuthProvider(provider: OAuthProvider): Promise<
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
-      redirectTo: oauthRedirectTo(window.location.origin),
+      // `currentPublicOrigin()` — NOT `window.location.origin`. In the native
+      // shell the origin is https://localhost, which no provider can return to;
+      // see lib/publicUrl.ts. The deep-link RETURN is still slice 3's job.
+      redirectTo: oauthRedirectTo(currentPublicOrigin()),
       // Take the URL instead of being navigated to it: a provider that is not
       // enabled would otherwise drop the user on Supabase's raw JSON error
       // page (see probeOAuthProvider).
@@ -1382,15 +1386,17 @@ export function normalizePublicPlaydate(
 }
 
 /**
- * The share URL for a drop-in (V2 slice 5, ticket 05):
- * VITE_PUBLIC_BASE_URL when set (deployment, DECISION 3), otherwise the
- * window origin — placeholder-safe before deployment. The pure buildShareUrl
- * decides the fallback (unit-tested in trust.test.ts); this is the
- * Supabase/env-facing wrapper (the same injected-value seam the RPC above
- * uses for its id).
+ * The share URL for a drop-in (V2 slice 5, ticket 05).
+ *
+ * The ORDER now lives in `lib/publicUrl.ts` and is one copy for all four
+ * outbound-link sites: the configured `VITE_PUBLIC_BASE_URL` wins, a browser
+ * tab falls back to its own origin, and the native shell falls back to the
+ * app's public home rather than to `https://localhost` — which is what this
+ * used to hand a friend. The pure `buildShareUrl` still decides the path
+ * (unit-tested in trust.test.ts); this is the env-facing wrapper.
  */
 export function getShareUrl(playdateId: string): string {
-  return buildShareUrl(playdateId, import.meta.env.VITE_PUBLIC_BASE_URL ?? '', window.location.origin)
+  return buildShareUrl(playdateId, '', currentPublicOrigin())
 }
 
 /**
@@ -1403,7 +1409,9 @@ export function getShareUrl(playdateId: string): string {
  */
 export async function sendPasswordReset(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: resetRedirectTo(window.location.origin),
+    // See lib/publicUrl.ts: the shell's own origin is not reachable from an
+    // inbox, so the reset link must name the public web app.
+    redirectTo: resetRedirectTo(currentPublicOrigin()),
   })
   if (error) throw error
 }

@@ -356,8 +356,35 @@ describe('the browser seam', () => {
   it('clientBaseUrl prefers VITE_PUBLIC_BASE_URL and otherwise uses the live origin', () => {
     vi.stubGlobal('window', { location: { origin: 'https://stub.example' } })
 
+    // ⚠️ AN EMPTY VALUE IS NOT A CONFIGURED ONE, and this expectation changed
+    // with the rule (lib/publicUrl.ts). It used to be `configured ?? origin`,
+    // which KEPT the '' — `.env` ships `VITE_PUBLIC_BASE_URL=` — and handed an
+    // empty base downstream, where a second fallback caught it. The rule now
+    // treats a blank value as absent, so the live origin wins, which is what the
+    // docblock above always claimed ("the live origin is correct by
+    // construction").
     const configured = import.meta.env.VITE_PUBLIC_BASE_URL as string | undefined
-    expect(clientBaseUrl()).toBe(configured ?? 'https://stub.example')
+    const expected =
+      configured !== undefined && configured.trim() !== ''
+        ? configured.trim().replace(/\/+$/, '')
+        : 'https://stub.example'
+    expect(clientBaseUrl()).toBe(expected)
+  })
+
+  it('a NATIVE SHELL never builds a localhost link', () => {
+    // Native plan slice 1's hazard, pinned at the seam that feeds every email
+    // link. The shell rule itself is pinned purely in publicUrl.test.ts; what
+    // this adds is that the INTEGRATION cannot leak the shell's own origin.
+    vi.stubGlobal('window', { location: { origin: 'https://localhost' } })
+
+    const configured = import.meta.env.VITE_PUBLIC_BASE_URL as string | undefined
+    if (configured !== undefined && configured.trim() !== '') {
+      // A configured deployment wins in the shell too — that is the point of it.
+      expect(clientBaseUrl()).toBe(configured.trim().replace(/\/+$/, ''))
+    } else {
+      expect(clientBaseUrl()).toBe(FALLBACK_BASE_URL)
+      expect(clientBaseUrl()).not.toContain('localhost')
+    }
   })
 
   it('clientEmailEnv carries the client base with no reply-to, exercising /settings', () => {

@@ -11,6 +11,7 @@
  */
 // The local binding is needed for `clientEmailEnv`'s return type: a re-export
 // (`export … from`) does not put a name in this module's scope.
+import { currentPublicOrigin } from './publicUrl'
 import type { EmailEnv } from '../../supabase/functions/_shared/emailCopy.ts'
 
 export {
@@ -31,13 +32,16 @@ export type {
 } from '../../supabase/functions/_shared/emailCopy.ts'
 
 /**
- * The base the browser hands to `buildEmailPayload`. An explicit
- * `VITE_PUBLIC_BASE_URL` wins, so a preview/staging build can point its links at
- * the deployment rather than at whatever host served the page; otherwise the
- * live origin is correct by construction.
+ * The base the browser hands to `buildEmailPayload`.
+ *
+ * THE ORDER LIVES IN `lib/publicUrl.ts`, one copy for every outbound-link site:
+ * an explicit `VITE_PUBLIC_BASE_URL` wins, a browser tab falls back to its own
+ * origin — which is correct by construction — and the NATIVE SHELL falls back to
+ * the app's public home, because an email built inside the shell would otherwise
+ * link the recipient to `https://localhost`.
  */
 export function clientBaseUrl(): string {
-  return import.meta.env.VITE_PUBLIC_BASE_URL ?? window.location.origin
+  return currentPublicOrigin()
 }
 
 /**
