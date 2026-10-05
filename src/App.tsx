@@ -17,6 +17,7 @@ import { FIRST_RUN_NUDGE_COPY } from './lib/firstRunCopy'
 import { canModerate } from './lib/moderation'
 import { markFirstRunDismissed, readFirstRunDismissed } from './lib/firstRunTooltips'
 import { armedPushTrigger, setInstallCaptureEnabled, startPushSubscriptionRepair, subscribePushArmed } from './lib/pushClient'
+import { inboxThreadOpen, keyboardInset } from './lib/threadGeometry'
 import type { Profile } from './lib/types'
 import {
   HOME_PATH,
@@ -227,6 +228,42 @@ function FirstRunNudge({
 }
 
 /**
+ * The keyboard inset as state (inbox-messenger slice A).
+ *
+ * The DECISION — how many pixels an open keyboard covers — is the pure
+ * `keyboardInset` in `lib/threadGeometry.ts`, tested there. This hook is only
+ * the subscription: `window.visualViewport` is the one place a browser reports
+ * the visible band, and it is reported by event, so the number has to live in
+ * state. Inactive routes never subscribe (and never re-render): the effect
+ * returns before it touches `visualViewport`.
+ */
+function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    if (!active) return
+    const viewport = window.visualViewport
+    // A browser without visualViewport (or a sandbox that hides it) degrades to
+    // "no keyboard", which is today's behaviour — never a crash.
+    if (viewport === null || viewport === undefined) return
+    const update = () => {
+      setInset(keyboardInset(window.innerHeight, viewport.height, viewport.offsetTop))
+    }
+    update()
+    viewport.addEventListener('resize', update)
+    viewport.addEventListener('scroll', update)
+    return () => {
+      viewport.removeEventListener('resize', update)
+      viewport.removeEventListener('scroll', update)
+    }
+  }, [active])
+  // Standing down REPORTS zero rather than writing it: the parent can leave the
+  // thread with the keyboard up, and the last measured inset must not survive
+  // onto the next route. Returning 0 keeps the effect free of a setState that
+  // would only feed another render.
+  return active ? inset : 0
+}
+
+/**
  * All app routes (including /onboarding) require a session; there is NO
  * location bounce (V28 slice 2b — the home-zip requirement moved off the
  * shell and onto the write paths, see
@@ -257,7 +294,28 @@ function ProtectedShell() {
     useSessionContext()
   // V27 slice 3: the Inbox tab's unread marker (see InboxUnreadProvider).
   const { unreadCount } = useInboxUnread()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
+
+  // inbox-messenger slice A: the ONE location that owns its own height is an
+  // open conversation (/inbox?thread=… or ?dm=…). Both this shell and
+  // InboxPage ask the SAME predicate (lib/threadGeometry.ts), each handing it
+  // the params it already has, so the two can never disagree about which
+  // location is a thread — a disagreement would render the thread into a
+  // column with no height and look like a CSS bug rather than a drifted
+  // condition.
+  //
+  // Every other route keeps the document scroll it has today; the classes
+  // below are ADDED only when this is true.
+  const searchParams = new URLSearchParams(search)
+  const threadOwnsHeight = inboxThreadOpen({
+    thread: searchParams.get('thread'),
+    dm: searchParams.get('dm'),
+  })
+
+  // …and the phone half of the same geometry: the band an open software
+  // keyboard covers. Zero at rest, and zero on every route that is not a
+  // thread (the effect is not even subscribed there).
+  const keyboardLift = useKeyboardInset(threadOwnsHeight)
 
   // The onboarding-gate decision (ticket 06, pure + unit-tested in
   // lib/onboarding.ts): 'loading' while the session/profile loads are in
@@ -403,7 +461,16 @@ function ProtectedShell() {
   if (redirect !== null) return <Navigate to={redirect} replace />
 
   return (
-    <div className="min-h-dvh bg-page text-slate-900">
+    // inbox-messenger slice A: `h-dvh overflow-hidden` ONLY while a thread is
+    // open — that is what turns "the document is the scroller" into "the thread
+    // column is". With no thread open the class list is byte-for-byte what it
+    // has always been (`min-h-dvh`), so every other route's scroll model is
+    // untouched.
+    <div
+      className={`${
+        threadOwnsHeight ? 'flex h-dvh flex-col overflow-hidden' : 'min-h-dvh'
+      } bg-page text-slate-900`}
+    >
       {/* V22 slice 9: the shell is a single column below md (the phone layout,
           pixel-equivalent to before) and a two-column grid at md+ — a left nav
           rail beside the content. The header spans both columns; the rail is
@@ -424,6 +491,19 @@ function ProtectedShell() {
       <div
         className={`flex flex-col md:items-start ${
           navRenders ? 'md:grid md:grid-cols-[4.5rem_minmax(0,1fr)]' : 'md:grid'
+        }${
+          // inbox-messenger slice A, the OTHER half of the route's height: the
+          // shell column becomes the flex parent of <main> so main can be the
+          // thing that fills it (`min-h-0 flex-1`). At md the grid rows are made
+          // explicit — `[auto_minmax(0,1fr)]` — because with the default
+          // `align-content: stretch` two IMPLICIT auto rows would split the free
+          // space equally and stretch the sticky header into a band; and
+          // `items-stretch` replaces the base `items-start` so <main> takes the
+          // whole 1fr row (the rail beside it keeps its own explicit
+          // `md:h-[calc(100dvh-4rem)]`, so its geometry does not move).
+          threadOwnsHeight
+            ? ' min-h-0 flex-1 md:grid-rows-[auto_minmax(0,1fr)] md:items-stretch'
+            : ''
         }`}
       >
         {/* V28 slice 3a (decision 16): the first run renders bare — no header. */}
@@ -510,7 +590,27 @@ function ProtectedShell() {
             navRenders
               ? 'pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(2rem+env(safe-area-inset-bottom))]'
               : 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+          }${
+            // inbox-messenger slice A: while a thread is open, <main> stops
+            // being a tall block in a scrolling document and becomes the flex
+            // column that CONTAINS the conversation's height — the route's
+            // owning half. `overflow-clip` (not `overflow-hidden`) is the load-
+            // bearing choice: hidden would leave main a scroll container that
+            // the thread's own `scrollIntoView` could scroll from underneath the
+            // pinned header, while `clip` cannot be scrolled programmatically at
+            // all. The page's scroll region is then the only scroller on screen.
+            threadOwnsHeight ? ' flex min-h-0 flex-1 flex-col overflow-clip' : ''
           }`}
+          // inbox-messenger slice A: an OPEN software keyboard covers the bottom
+          // of the layout viewport, which `dvh` cannot see on iOS (only the
+          // VISUAL viewport shrinks). When one is up, the composer clears it
+          // instead of the bottom nav — which is behind that keyboard anyway —
+          // and keeps a half-rem's gap plus the home-indicator inset.
+          style={
+            keyboardLift > 0
+              ? { paddingBottom: `calc(${keyboardLift}px + 0.5rem + env(safe-area-inset-bottom))` }
+              : undefined
+          }
         >
           {/* V8 ticket 08: the notification opt-in, mounted once for the whole
               authed shell. It renders nothing unless a meaningful action was
@@ -527,7 +627,16 @@ function ProtectedShell() {
           {navRenders ? (
             <FirstRunNudge session={session} profile={profile} homeZipSet={homeZipSet} />
           ) : null}
-          <div className="mx-auto max-w-md md:max-w-3xl">
+          <div
+            className={`mx-auto max-w-md md:max-w-3xl${
+              // inbox-messenger slice A: the last link in the chain — the
+              // route's own column fills this, so the header can pin, the
+              // message list can be the only scroller, and the composer can sit
+              // at the bottom of the viewport instead of the bottom of the
+              // thread.
+              threadOwnsHeight ? ' flex min-h-0 w-full flex-1 flex-col' : ''
+            }`}
+          >
             <Outlet />
           </div>
         </main>

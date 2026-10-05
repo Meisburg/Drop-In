@@ -55,6 +55,7 @@ import type {
   MergedConversation,
 } from '../lib/inbox'
 import { localDayKey } from '../lib/feed'
+import { inboxThreadOpen } from '../lib/threadGeometry'
 
 /**
  * /inbox — parent↔parent messaging (V14 ticket 01, migration 0042).
@@ -384,6 +385,11 @@ export function InboxPage() {
   const { session, profile } = useSessionContext()
   const threadId = searchParams.get('thread')
   const dmTargetId = searchParams.get('dm')
+  // inbox-messenger slice A: whether this render is a CONVERSATION, and so owns
+  // its own height. The shell asks the same predicate with the same two params
+  // (lib/threadGeometry.ts) — one definition, two readers, so the page can never
+  // render a thread into a column the shell sized as a document.
+  const threadOpen = inboxThreadOpen({ thread: threadId, dm: dmTargetId })
 
   // --- Conversation list state -------------------------------------------
   const [list, setList] = useState<ListState>({ status: 'loading' })
@@ -422,7 +428,11 @@ export function InboxPage() {
   // (never filtered out) and its id lives here so the bubble can wear the
   // `Not sent · Retry` control; the id is cleared when a retry succeeds.
   const [failedIds, setFailedIds] = useState<string[]>([])
-  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  // inbox-messenger slice A: the thread's scroll region. It is the ONLY scroller
+  // while a thread is open — the shell clips its ancestors (`overflow-clip` on
+  // <main>), which is what keeps the pinned header and composer from being
+  // dragged off screen by a scroll that belonged to the messages.
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   // V27 slice 5: a quick-reply chip fills the draft AND puts the caret back in
   // the textarea so the parent can amend before Send (a chip never sends).
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
@@ -871,8 +881,19 @@ export function InboxPage() {
   }, [])
 
   // Keep the newest message in view as the thread grows.
+  //
+  // inbox-messenger slice A: this sets the REGION's own scroll position rather
+  // than calling `scrollIntoView` on a sentinel. Two reasons, both measured:
+  // `scrollIntoView({ block: 'end' })` aligns the sentinel's bottom with the
+  // scrollport's bottom, which leaves the region's own 16px bottom padding
+  // unscrolled (the thread opened ~15px short of its end); and it may scroll ANY
+  // scrollable ancestor to reach its target, which is a hazard once the ancestor
+  // holds the pinned header. `scrollTop = scrollHeight` clamps to the real
+  // maximum, and touches nothing but this element.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+    const region = messagesScrollRef.current
+    if (region === null) return
+    region.scrollTop = region.scrollHeight
   }, [thread?.status === 'ready' ? thread.messages.length : 0])
 
   const userId = session?.user.id ?? null
@@ -1137,8 +1158,13 @@ export function InboxPage() {
   const nowIso = new Date().toISOString()
 
   return (
-    <div className="mx-auto max-w-md">
-      {threadId === null && dmTargetId === null ? (
+    // inbox-messenger slice A: an open thread fills the column the shell sized
+    // for it (main → the max-w wrapper → here), so its header can stay put, its
+    // message list can be the only scroller, and its composer can sit at the
+    // bottom of the viewport. The conversation LIST keeps the plain block it has
+    // always been — it is a page, and a page is allowed to scroll.
+    <div className={`mx-auto max-w-md${threadOpen ? ' flex min-h-0 w-full flex-1 flex-col' : ''}`}>
+      {!threadOpen ? (
         <>
           <SectionHeader icon={NAV_ICONS.inbox} title="Inbox" />
           {/* "New message" button (free-form DMs, V15 T01). */}
@@ -1273,7 +1299,7 @@ export function InboxPage() {
               `div.min-w-0` is kept so the e2e header selector
               (`div.min-w-0 > p`) still resolves. A DM thread has no playdate to
               link to, so it keeps the plain block. */}
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <BackControl onClick={closeThread} testId="inbox-back-to-conversations" />
             {threadId !== null ? (
               <Link
@@ -1324,8 +1350,24 @@ export function InboxPage() {
               <p className="text-sm text-red-700">{thread.message}</p>
             </div>
           ) : thread?.status === 'ready' ? (
-            <div className="mt-4">
-              <div className="flex min-h-40 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            // inbox-messenger slice A: `min-h-0 flex-1` — the region between the
+            // pinned header and the pinned composer takes every pixel left over,
+            // and `min-h-0` is what lets it SHRINK below its content (a flex
+            // item's automatic minimum size would otherwise push the composer
+            // off the bottom of the viewport and scroll away with the messages).
+            <div className="mt-4 flex min-h-0 flex-1 flex-col">
+              {/* The thread's ONE scroller. `min-h-40` (which this carried as a
+                  block in a scrolling document) is gone: the region is now
+                  sized by the layout, and a minimum height would fight the
+                  `min-h-0` that makes it scrollable rather than growing.
+                  `data-testid` is the handle e2e/inbox-thread-geometry.e2e.ts
+                  measures the pinned claims against — the composer must not
+                  move when THIS element scrolls. */}
+              <div
+                ref={messagesScrollRef}
+                data-testid="thread-messages"
+                className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4"
+              >
                 {thread.messages.length === 0 ? (
                   <p className="text-sm text-slate-600">
                     No messages yet — say hi below.
@@ -1373,7 +1415,6 @@ export function InboxPage() {
                     )
                   })
                 )}
-                <div ref={messagesEndRef} />
               </div>
 
               {/* V27 s5: one-tap meetup replies, ABOVE the composer. A chip
@@ -1388,7 +1429,7 @@ export function InboxPage() {
                   floating as a third box. The button keeps its accessible
                   name via aria-label, so `getByRole('button', { name: 'Send' })`
                   and every existing spec still resolve. */}
-              <div className="mt-3 flex flex-col gap-2">
+              <div className="mt-3 flex shrink-0 flex-col gap-2">
                 {!sending ? (
                   <div
                     data-testid="quick-replies"
@@ -1407,7 +1448,7 @@ export function InboxPage() {
                     ))}
                   </div>
                 ) : null}
-                <div className="rounded-2xl border border-slate-200 bg-white p-1.5 pl-3">
+                <div data-testid="composer" className="rounded-2xl border border-slate-200 bg-white p-1.5 pl-3">
                   <div className="flex items-end gap-1">
                     <textarea
                       ref={composerRef}
