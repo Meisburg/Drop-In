@@ -18,6 +18,7 @@ import {
   queryDirectMessages,
   queryMessagesForPlaydate,
   reactionButtonClasses,
+  reactionHitAreaClasses,
   reactionCountLabel,
   reactionStatesForMessages,
   searchProfiles,
@@ -350,7 +351,9 @@ function MessageBubble({
               {timeLabel}
             </span>
           ) : null}
-          {/* The summary pill: the viewer's icon + count; opens the picker. */}
+          {/* The summary pill: the viewer's icon + count; opens the picker.
+              THE BUTTON IS 44px AND THE PILL INSIDE IT IS 28px — see
+              `reactionHitAreaClasses` for why those two numbers differ. */}
           <button
             type="button"
             data-testid={`react-${message.id}`}
@@ -359,12 +362,14 @@ function MessageBubble({
               reaction.mine ? `Your reaction: ${reaction.myKind ?? 'like'}. Open reactions` : 'Add a reaction'
             }
             onClick={() => setPickerOpen((o) => !o)}
-            className={reactionButtonClasses(reaction.mine)}
+            className={reactionHitAreaClasses()}
           >
-            <ReactionIcon kind={myKind} className="h-4 w-4" />
-            {countLabel !== null ? (
-              <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
-            ) : null}
+            <span className={reactionButtonClasses(reaction.mine)}>
+              <ReactionIcon kind={myKind} className="h-4 w-4" />
+              {countLabel !== null ? (
+                <span data-testid={`react-count-${message.id}`}>{countLabel}</span>
+              ) : null}
+            </span>
           </button>
           {/* V27 s5: a failed send KEEPS its bubble and offers this control
               instead of vanishing. The 44px floor is on the control itself

@@ -2226,12 +2226,22 @@ export function PlaydateDetailPage() {
               Hosted by @{detail.host.display_name}
             </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          {/* The three quiet actions. THEY ARE `inline-flex min-h-11 px-2` ON
+              PURPOSE, and it is the one thing about this row that is not
+              obvious: the text is meant to read as a text affordance, but the
+              TARGET must still clear the 44px floor `DESIGN.md` sets for every
+              control (`ocr`'s tap-target rule enforces the same number). The
+              public view's twins wear the bordered `px-3 py-3` shape; measured
+              2026-10-05 before this change, these three rendered 45x26, 119x26
+              and 51x26 — the smallest controls on a page whose whole job is
+              getting a parent to a park. Widening the box does not change how
+              the row reads, because nothing about it is drawn. */}
+          <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               onClick={() => void handleShare()}
               disabled={shareBusy}
-              className="text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:text-slate-900 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:text-slate-900 disabled:opacity-50"
             >
               {shareCopied ? 'Copied' : 'Share'}
             </button>
@@ -2242,14 +2252,14 @@ export function PlaydateDetailPage() {
             <button
               type="button"
               onClick={handleDownloadIcs}
-              className="text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:text-slate-900"
+              className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-slate-600 transition-colors motion-reduce:transition-none hover:text-slate-900"
             >
               Add to calendar
             </button>
             <button
               type="button"
               onClick={() => setReporting(true)}
-              className="text-sm text-slate-500 transition-colors motion-reduce:transition-none hover:text-slate-600"
+              className="inline-flex min-h-11 items-center px-2 text-sm text-slate-500 transition-colors motion-reduce:transition-none hover:text-slate-600"
             >
               Report
             </button>

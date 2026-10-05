@@ -12,6 +12,7 @@ import {
   queryDirectMessagesWithClient,
   queryMessagesForPlaydateWithClient,
   reactionButtonClasses,
+  reactionHitAreaClasses,
   reactionCountLabel,
   reactionStatesForMessagesWithClient,
   reconcileOptimisticMessage,
@@ -662,6 +663,18 @@ describe('reactionButtonClasses (V16 ticket 02 — rest must not read as selecte
     for (const mine of [false, true]) {
       expect(reactionButtonClasses(mine)).toContain('h-7')
       expect(reactionButtonClasses(mine)).toContain('rounded-full')
+    }
+  })
+
+  it('extends the TAP TARGET to the 44px floor without drawing a bigger pill', () => {
+    // Measured 2026-10-05: the pill rendered 28px tall — under the 44px floor
+    // DESIGN.md sets and ocr's tap-target rule enforces. The two numbers are now
+    // split: the BUTTON is 44px, the pill it contains stays 28px drawn. Both
+    // halves are pinned here so a later tidy-up cannot collapse them.
+    expect(reactionHitAreaClasses()).toContain('h-11')
+    for (const mine of [false, true]) {
+      expect(reactionButtonClasses(mine)).toContain('h-7')
+      expect(reactionButtonClasses(mine)).not.toContain('h-11')
     }
   })
 })

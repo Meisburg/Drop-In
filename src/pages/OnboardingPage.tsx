@@ -2091,7 +2091,11 @@ export function OnboardingPage() {
         <label className="flex flex-col gap-1">
           <span className="text-slate-700">Radius</span>
           <select
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+            /* `min-h-11` is the house input shape (`DESIGN.md`, Inputs) and this
+               select was the one that had lost it: measured 358x41 at 390px on
+               2026-10-05, 3px under the 44px floor every other control on this
+               card clears. */
+            className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
             value={radiusMiles}
             onChange={(e) => setRadiusMiles(Number(e.target.value))}
           >

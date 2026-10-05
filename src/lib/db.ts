@@ -5532,11 +5532,31 @@ export function applyReactionToggle(
  * allowed to look like" is the rule under test, not a layout choice.
  */
 export function reactionButtonClasses(mine: boolean): string {
+  // ⚠️ THIS IS THE DRAWN PILL — 28px tall. The TAP TARGET is its parent button,
+  // sized by `reactionHitAreaClasses()` below. The two numbers are deliberately
+  // different: measured 2026-10-05 this pill rendered 28px, under the 44px floor
+  // `DESIGN.md` sets and `ocr`'s tap-target rule enforces, and growing the pill
+  // itself would turn every reaction into a chunky capsule under each bubble.
+  // So the BUTTON is 44px and the drawing inside it stays 28px — which also
+  // keeps the floor measurable, unlike a pseudo-element hit area, which no
+  // `getBoundingClientRect` lane in this repo can see.
   const base =
     'flex h-7 items-center gap-1 rounded-full border px-2 text-xs transition-colors motion-reduce:transition-none '
   return mine
     ? `${base} border-indigo-600 bg-indigo-600 text-white`
     : `${base} border-slate-300 bg-white text-slate-500 hover:border-slate-400`
+}
+
+/**
+ * The reaction button's own box — the 44px floor, without a drawn edge.
+ *
+ * It pairs with `reactionButtonClasses()`: the button is 44px tall and centres
+ * the 28px pill it contains, so a finger gets the floor and the eye gets the
+ * quiet row. `h-11` here is the whole point of the pair; a test pins both halves
+ * so a later "tidy-up" cannot collapse them back into one.
+ */
+export function reactionHitAreaClasses(): string {
+  return 'flex h-11 items-center'
 }
 
 /**
