@@ -3,7 +3,7 @@
 **Start here. Work top to bottom. Do not skip ahead.**
 
 > Built **2026-10-03** from the store-readiness audit
-> ([2026-10-03-store-readiness.md](2026-10-03-store-readiness.md)), which measured
+> ([2026-10-03-store-readiness.md](audits/2026-10-03-store-readiness.md)), which measured
 > the live database, the live Supabase config, and the repo at `758ec8f`.
 > Google Play requirements below were read from **Google's own documentation**,
 > not recalled — links inline. Where I could not verify a policy, it says so.
@@ -70,6 +70,12 @@ you do them.
   **This is the single most embarrassing thing a first parent can see.** Live
   measurement on 2026-10-03: **709 marker rows, 352 fake accounts**, and the only
   future-dated drop-in in the entire database is a marker at "1234 E2E Ave NE."
+  **Re-measured 2026-10-04: 279 marker accounts / 563 marker rows, with every
+  content table at ZERO** (playdates, going_pings, comments, memberships,
+  follows, push_subscriptions — only `kids` is non-zero, at 5). The accounts
+  accumulate by design, one per signup spec per run, so this count is a *dated
+  reading and not a stable fact*: 264/533 at the previous run, 279/563 now. Read
+  it again rather than trusting either figure.
   The safety gate reads `founder_overlap: 0`, so it is safe to run.
 
   ```bash
@@ -295,9 +301,11 @@ day added to the end.
 
 ## What this checklist deliberately does NOT include
 
-- **A React Native rewrite.** The repo has 1,953 unit tests and a 161-spec
-  Playwright suite; a rewrite discards all of it for no user-visible gain.
-  Capacitor wraps what exists. Do not relitigate this.
+- **A React Native rewrite.** The repo has **2,191 unit tests in 75 files** and
+  **191 Playwright test cases across 63 specs** — both re-measured 2026-10-04
+  (`npm run test` exit 0; a count over `e2e/*.e2e.ts`). The previous figures here,
+  1,953 and 161, had rotted. A rewrite discards all of it for no user-visible
+  gain. Capacitor wraps what exists. Do not relitigate this.
 - **Removing the web app.** It is the link landing pad and the install funnel.
   Removing it would force deep links to be rebuilt *first*. It also *helps*
   Apple review.

@@ -14,10 +14,11 @@ policy rather than a measurement, it says so.
 `policies.cost = "local-preferred"`, `cost_tier` ascending (local 0, tailnet 1,
 cloud 2), and a documented cloud fallback. The policy is not missing.
 
-**It is unenforceable**, and the router proves it. `factory route <kind>` on the
-day this was written:
+**It WAS unenforceable on 2026-10-02**, and the router proved it then. Both
+causes below have since been fixed and the table has moved. The historical
+snapshot is kept because it is what the fixes were measured against:
 
-| task kind | routed to | why |
+| task kind (2026-10-02) | routed to | why then |
 |---|---|---|
 | builder | cloud | local rejected: no model clears the floor |
 | reviewer | cloud | `strata-max` reasoning 2 < 3 |
@@ -27,27 +28,62 @@ day this was written:
 | **explorer** | **fr-1/glm-4.7-flash** | the only local route that survives |
 | gate | no model | deterministic; correctly needs none |
 
-Two independent causes, and they need different fixes:
+**RE-MEASURED 2026-10-04** (`node scripts/factory/factory.mjs route <kind>`) —
+**local-first now holds for six of the seven kinds.** Do not use the old table to
+predict a route:
 
-1. **ADMISSIBILITY.** `strata` and `ninfer` have `footprint_source:
-   "unmeasured"`, and this registry refuses an unmeasured footprint. `strata-max`
-   is declared `resident` and is **not running**. A model that cannot be admitted
-   cannot be preferred, however cheap it is.
-2. **CAPABILITY.** The remaining local models carry hand-declared capability
-   levels below the task floors — `strata` reasoning **1**, `ninfer` tool_use
-   **2**, `strata-max` reasoning **2** against a reviewer floor of 3.
+| task kind | routed to | why |
+|---|---|---|
+| builder | `ninfer/qwen3.8-27b` | capability floors met, admissible, cost_tier 0 (local-preferred) |
+| reviewer | `ninfer/qwen3.8-27b` | same |
+| verifier | `ninfer/qwen3.8-27b` | same |
+| **ocr** | `ninfer/qwen3.8-27b` | same |
+| **explorer** | `ninfer/qwen3.8-27b` | same |
+| researcher | `ollama-cloud/deepseek-v4.1-flash:cloud` | preferred tier unavailable — falls back to cost_tier 2 |
+| gate | no model | deterministic; correctly needs none |
 
-**Cause 2 is the uncomfortable one.** Those levels are declared policy, not
-benchmarks (see `_capability_source`), so the cloud default is the arithmetic of
-numbers nobody measured. **The dishonest fix is to raise them until the router
-prefers local. That fabricates a capability.** The honest fixes are to measure
-them, or to accept the cloud route and say so.
+Two independent causes, **both now fixed** (each verified 2026-10-04):
+
+1. ~~**ADMISSIBILITY.**~~ **FIXED.** `strata` and `ninfer` now carry
+   `footprint_source: "measured"` in `factory/config.json` (ninfer 3 GB RAM /
+   24 GB VRAM; strata 48 GB / 13 GB), each with a `MEASURED 2026-10-02` evidence
+   string. Change 1 below is what fixed it. ⚠️ **One number is still
+   unreconciled, and it is a known open item rather than a fixed one:**
+   `strata-max` declares `ram_gb: 55` while **its own `footprint_evidence` says
+   52 is the measured figure and 55 was the unit banner's estimate**. The router
+   uses the declared **55**, and `scripts/factory/scheduler.test.mjs:299` pins it
+   (`/RAM: needs 62 GB/` = 55 + task 3 + reserve 4) — lowering the config to the
+   measured 52 fails 4 tests in that file. Reconciling them means moving the
+   config and that assertion **together**, in its own slice. It is recorded here
+   rather than done silently.
+2. ~~**CAPABILITY.**~~ **FIXED for `ninfer`.** Its `tool_use` is **3**, not 2 —
+   `_tool_use_source` records the empirical verification, verbatim: *"Was
+   declared tool_use: 2, which failed the builder/reviewer/verifier floor of 3
+   and sent every lane to cloud."* `strata` (reasoning 1) and `strata-max`
+   (reasoning 2) remain below the reviewer floor and are still correctly not
+   preferred.
+
+**Cause 2 was the uncomfortable one, and the fix honoured the principle.** Those
+levels are declared policy, not benchmarks (see `_capability_source`), so the old
+cloud default was the arithmetic of numbers nobody measured. **The dishonest fix
+was to raise them until the router prefers local — that fabricates a
+capability.** What happened instead: `ninfer`'s `tool_use` was **measured** (one
+round trip to `POST /v1/chat/completions` with a tool schema returned
+`finish_reason=tool_calls`), and `strata`'s and `strata-max`'s declared levels
+were left alone.
 
 ## What is actually available
 
-### This machine — `omarchy`, `100.120.87.29`, **the 5090**
+### This machine — tailnet node `omarchy-2`, local hostname `omarchy`, `100.120.87.29`, **the 5090**
 
-RTX 5090, 32 GB VRAM (`nvidia-smi --query-gpu=memory.total`), 62 GB RAM.
+> **Name note (re-measured 2026-10-04).** The tailnet node for `100.120.87.29`
+> is **`omarchy-2`**. The bare name `omarchy` is a *different* machine
+> (`100.97.204.54`, offline 26 d). The local hostname on this box really is
+> `omarchy`, which is why the doc and `tailscale status` disagreed. Both names
+> are given above so neither has to be guessed.
+
+RTX 5090, 32 GB VRAM (`nvidia-smi --query-gpu=memory.total` → `32607 MiB`),
+62 GB RAM (`free -g` → 62 total, 37 available). Both re-verified 2026-10-04.
 
 Three local inference servers. **They are mutually exclusive** — the units
 declare `Conflicts=` and the scheduler gives all three the same `exclusive`
@@ -55,13 +91,29 @@ resource, so **the 5090 serves exactly one local model at a time.** This is the
 single most important constraint in this document: it means the 5090 cannot run
 a builder and a reviewer concurrently.
 
-| unit | model | endpoint | state | footprint |
-|---|---|---|---|---|
-| `strata-serve` | qwen3.8-flash-next-coder-iq1_m | `:8080` | active | **47.5 GB RAM peak, 12.7 GB VRAM** (measured `systemctl show MemoryPeak` = 50957361152; `nvidia-smi` per-process) |
-| `strata-max` | qwen3.8-flash-next-iq3_s | `:8081` | **inactive/dead** | 55 GB RAM, 30 GB VRAM (measured, from the unit banner and a prior `nvidia-smi`) |
-| `ninfer-serve` | qwen3.8-27b | `:18080` | **activating/auto-restart — crash-looping** | 24 GB VRAM; RAM unmeasured |
+**⚠️ THE STATE COLUMN WAS ROTATED — corrected 2026-10-04.** The 2026-10-02
+snapshot had assigned each unit the state of another one, and the roles have
+since swapped: the description this doc gave `ninfer-serve` is the description
+that belongs to `strata-max`.
 
-### Why `ninfer` cannot start — and it is not broken
+| unit | model | endpoint | state (measured 2026-10-04) | footprint |
+|---|---|---|---|---|
+| `strata-serve` | qwen3.8-flash-next-coder-iq1_m | `:8080` | **inactive (dead)** — `:8080` refuses on the host itself | **47.5 GB RAM peak, 12.7 GB VRAM** (measured `systemctl show MemoryPeak` = 50957361152; `nvidia-smi` per-process) |
+| `strata-max` | qwen3.8-flash-next-iq3_s | `:8081` | **activating (auto-restart) — crash-looping** — `status=1/FAILURE`, **NRestarts 3544**, Mem peak 855 MB; `:8081` refuses | **52 GB RAM measured** — the unit banner's 55 is still what `config.json` declares (cause 1 above), 30 GB VRAM |
+| `ninfer-serve` | qwen3.8-27b | `:18080` | **active (running)** — **NRestarts 0**, holds 25340 MiB, `/v1/models` → 200 serving `qwen3.8-27b` | 24 GB VRAM; **3 GB RAM** (measured: `MemoryPeak` 2.3 GB after loading and answering) |
+
+**Why the rotation happened — and it is this document's own thesis working in
+reverse.** `ninfer` now holds the card (25.3 of 32.6 GB), and both strata units
+`Conflicts=` against it. So the two units the old table called *running* are the
+two that **cannot** run, and the unit it called *crash-looping* is the one
+carrying every lane.
+
+### Why `ninfer` used to be locked out — the lock has since moved (2026-10-04)
+
+**This section is history: it describes 2026-10-02, when `strata-serve` held the
+card. Today `ninfer` holds it and serves every lane, and `strata-max` is the one
+crash-looping.** The mechanism it documents is still the governing rule, so it is
+kept:
 
 **The crash loop is the `exclusive` rule working, and its message is exact:**
 
@@ -70,19 +122,23 @@ ninfer-serve: model weights require 18015238912 bytes of device memory,
               but only 17931894784 bytes are free before loading weights
 ```
 
-18.0 GB needed, 17.9 GB free — **83 MB short, because `strata-serve` is holding
-12.7 GB of the 32 GB card at that moment.** `ninfer` is not defective; it is
-**locked out**, and it will keep restarting forever while `strata` runs.
+18.0 GB needed, 17.9 GB free — **83 MB short, because `strata-serve` was holding
+12.7 GB of the 32 GB card at that moment.** `ninfer` was not defective; it was
+**locked out**, and it would keep restarting forever while `strata` ran. The same
+lock now runs the other way: `strata-max` needs 30 GB of a card that `ninfer` is
+holding 25.3 GB of, which is why **its** `NRestarts` is 3544.
 
 `libcudart.so.13` is **present** (`ldconfig -p` → `/opt/cuda/lib64`, CUDA 13.3,
 driver 610.57.04). The `cannot open shared object file` lines in its journal are
 from **Sep 08** and are stale. The binary is fine.
 
-**Consequence for the whole policy:** the strongest local model that can clear
-the builder floor is `strata-max` (reasoning 2, coding 3, tool_use 3, ctx
-131072). It needs 55 GB RAM and 30 GB VRAM. **Freeing the 5090 is therefore the
-single highest-leverage action available**, and it is a resource decision, not a
-configuration one — which is why this document does not take it.
+**Consequence for the whole policy (re-measured 2026-10-04).** The strongest
+local model that *could* clear the builder floor is `strata-max` (reasoning 2,
+coding 3, tool_use 3, ctx 131072) at **52 GB RAM** and 30 GB VRAM — but it cannot
+take the card from `ninfer`, and the router does not prefer it. **The lanes route
+to `ninfer` today, and that is working** (see the routing table above). Freeing
+the 5090 for `strata-max` is still a resource decision rather than a
+configuration one, which is why this document does not take it.
 
 **Never start or stop an inference server on an agent's own judgement** (D-001,
 D-004). Report the trade; the human decides.
@@ -118,8 +174,12 @@ work that needs to run commands there.**
 
 ### Offline, and therefore not to be planned against
 
-`DESKTOP-JMR591K` (Windows, 38 d), `omarchy-5` (4 d), `jon-1` (24 d), `omarchy`
-`100.97.204.54` (24 d).
+`DESKTOP-JMR591K` (Windows, 40 d), `jon-1` (26 d), `omarchy` `100.97.204.54`
+(26 d).
+
+> **Corrected 2026-10-04:** `omarchy-5` was on this list and is **`active`**
+> (relay "sea"). It is not offline and should be planned against accordingly.
+> The ages above are drift from the 2026-10-02 snapshot (+2 d), not errors.
 
 ## The routing policy
 
@@ -222,14 +282,14 @@ this physical, not just procedural.
 | 4 | Register `fr-1`'s `qwen3.5:35b-a3b` | the strongest available local model, invisible to the router | yes — **capability level needs a decision, see below** |
 | 5 | Re-probe `fr-1` | its registry entry says UNREACHABLE; it answers | yes |
 | 6 | Suspend the near-ceiling cloud route | the credit budget rule above | yes |
-| 7 | Point DSH's own model at local (`dsh-model local`) | `dsh-model show` currently reports the cloud DeepSeek — the same meter | yes |
+| 7 | Point DSH's own model at local (`dsh-model local`) | ~~`dsh-model show` reports the cloud DeepSeek~~ — **DONE, it reports local now** | yes |
 
-**Change 7 needs a caveat that matters.** `dsh-model local` was run, and it sets
-DSH to `qwen-local/qwen3.8-27b` — **which is `ninfer`.** As § above shows,
-`ninfer` cannot load while `strata` holds the card, so DSH's local mode is
-currently a target that will not start. The switch is correct as *intent* and
-non-functional as *state*, and the fix is the same resource decision.
-`dsh-model cloud` reverts it.
+**✅ Change 7 is DONE and functional (re-measured 2026-10-04).** `dsh-model show`
+→ `{'provider': 'qwen-local', 'model': 'qwen3.8-27b'}` — **which is `ninfer`** —
+and `ninfer` is `active (running)`, holding the card and answering on `:18080`.
+The caveat this section used to carry ("DSH's local mode is currently a target
+that will not start") is **stale: the target starts.** `dsh-model cloud` reverts
+it.
 
 **Change 4 needs a human decision and this document will not make it for you.**
 Declaring a capability level is either a **measurement** or a **fabrication**.
