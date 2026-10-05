@@ -1,0 +1,976 @@
+{
+  "vibe_annotations_export": true,
+  "version": "1.0",
+  "exported_at": "2026-10-05T03:49:03.699Z",
+  "source": {
+    "origin": "https://drop-in-mu.vercel.app",
+    "hostname": "drop-in-mu.vercel.app",
+    "port": ""
+  },
+  "scope": "project",
+  "annotations": [
+    {
+      "badge_offset": {
+        "x": 13.684898376464844,
+        "y": 24.11676025390625
+      },
+      "comment": "After a user clicks out of photo and adds their image here, it should show their image with their ability to like edit it or Delete it, you know what I mean? Like they should you they might want to You know Zoom in on a certain part To like crop it To like make it the perfect like profile photo for them But it shouldn't just say photo added like you should see The ability to like zoom in or like pan it to like make it How you want it around like a circle and then you can like Hit okay, or you could also remove it and start over you know what I mean just like typical photo stuff",
+      "context_hints": [
+        "UI section: main-content",
+        "CSS-in-JS styling detected"
+      ],
+      "created_at": "2026-10-05T03:42:13.055Z",
+      "element_context": {
+        "classes": [
+          "inline-flex",
+          "min-h-11",
+          "cursor-pointer",
+          "items-center",
+          "self-start",
+          "rounded-xl",
+          "border",
+          "border-slate-300",
+          "bg-white",
+          "px-3",
+          "text-base",
+          "font-medium",
+          "text-slate-700"
+        ],
+        "id": null,
+        "path": "div[class=\"flex flex-col gap-4\"] > div[class=\"flex flex-col gap-3\"] > div[class=\"flex flex-col gap-1 text-sm\"] > label[class=\"inline-flex min-h-11 cursor-pointer items-center\"]",
+        "position": {
+          "height": 43.999568939208984,
+          "width": 122.40669250488281,
+          "x": 89.88715362548828,
+          "y": 297.31988525390625
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "center",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "borderColor": "rgb(221, 206, 197)",
+          "borderRadius": "12px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0.694444px",
+          "color": "rgb(74, 87, 94)",
+          "columnGap": "normal",
+          "display": "flex",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "fontSize": "18px",
+          "fontWeight": "500",
+          "gap": "normal",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "43.9996px",
+          "justifyContent": "normal",
+          "lineHeight": "28px",
+          "margin": "0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "0px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "44px",
+          "minWidth": "auto",
+          "padding": "0px 12px",
+          "paddingBottom": "0px",
+          "paddingLeft": "12px",
+          "paddingRight": "12px",
+          "paddingTop": "0px",
+          "position": "static",
+          "rowGap": "normal",
+          "textAlign": "start",
+          "width": "122.407px"
+        },
+        "tag": "label",
+        "text": "Add a photo"
+      },
+      "id": "vibe_1791171733055_mnyilcq6k",
+      "parent_chain": [
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-1",
+            "text-sm"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Add a photo"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-3"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "First nameLast nameAdd a photo"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "2 of 4What should we call you?This is how other pa"
+        },
+        {
+          "classes": [
+            "mx-auto",
+            "max-w-md",
+            "md:max-w-3xl"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "2 of 4What should we call you?This is how other pa"
+        }
+      ],
+      "project_area": "onboarding",
+      "selector": "label.inline-flex.min-h-11.cursor-pointer.items-center",
+      "selector_preview": "<label class=\"inline-flex min-h-11 cursor-pointer items-center self-start rounded-xl\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:42:13.055Z",
+      "url": "https://drop-in-mu.vercel.app/onboarding",
+      "url_path": "/onboarding",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    },
+    {
+      "badge_offset": {
+        "x": 20.7921142578125,
+        "y": 27.14410400390625
+      },
+      "comment": "I love the onboarding annotations that you were doing where you lightbox and are pointing out the different pages, drop in inbox places, profile in the plus button to post one. I think when a box is drawn around a particular page icon, there shouldn't be like black transparency overlaying that area to make it more obvious of like what the box is around.",
+      "context_hints": [
+        "UI section: navigation",
+        "React test ID: nav-tab-inbox"
+      ],
+      "created_at": "2026-10-05T03:44:03.723Z",
+      "element_context": {
+        "classes": [
+          "flex",
+          "min-h-14",
+          "flex-1",
+          "flex-col",
+          "items-center",
+          "justify-center",
+          "gap-0.5",
+          "whitespace-nowrap",
+          "px-1",
+          "py-1.5",
+          "text-xs",
+          "motion-reduce:transition-none",
+          "font-medium",
+          "text-slate-600"
+        ],
+        "id": null,
+        "path": "div[class=\"flex flex-col md:items-start md:grid\"] > nav[class=\"pb-safe fixed inset-x-0 bottom-0\"] > div[class=\"mx-auto flex max-w-md flex-row\"] > a[class=\"flex min-h-14 flex-1 flex-col\"]",
+        "position": {
+          "height": 57.964412689208984,
+          "width": 98.00347900390625,
+          "x": 187.87977600097656,
+          "y": 521.2022705078125
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "center",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(90, 103, 110)",
+          "borderRadius": "0px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0px",
+          "color": "rgb(90, 103, 110)",
+          "columnGap": "2px",
+          "display": "flex",
+          "flexDirection": "column",
+          "flexWrap": "nowrap",
+          "fontSize": "14px",
+          "fontWeight": "500",
+          "gap": "2px",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "57.9644px",
+          "justifyContent": "center",
+          "lineHeight": "20px",
+          "margin": "0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "0px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "56px",
+          "minWidth": "auto",
+          "padding": "6px 4px",
+          "paddingBottom": "6px",
+          "paddingLeft": "4px",
+          "paddingRight": "4px",
+          "paddingTop": "6px",
+          "position": "static",
+          "rowGap": "2px",
+          "textAlign": "start",
+          "width": "98.0035px"
+        },
+        "tag": "a",
+        "text": "Inbox"
+      },
+      "id": "vibe_1791171843723_wii5j3pac",
+      "parent_chain": [
+        {
+          "classes": [
+            "mx-auto",
+            "flex",
+            "max-w-md",
+            "flex-row",
+            "md:flex-col"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Drop InsInbox+PlacesProfile"
+        },
+        {
+          "classes": [
+            "pb-safe",
+            "fixed",
+            "inset-x-0",
+            "bottom-0",
+            "z-10",
+            "border-t",
+            "border-slate-200",
+            "bg-white",
+            "md:sticky",
+            "md:top-16",
+            "md:z-0",
+            "md:border-r",
+            "md:border-slate-200",
+            "md:border-t-0"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "nav",
+          "text_sample": "Drop InsInbox+PlacesProfile"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "md:items-start",
+            "md:grid"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Drop InDrop InsInbox+PlacesProfileNear youDrop-ins"
+        },
+        {
+          "classes": [
+            "min-h-dvh",
+            "bg-page",
+            "text-slate-900"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Drop InDrop InsInbox+PlacesProfileNear youDrop-ins"
+        }
+      ],
+      "project_area": "home",
+      "selector": "a[data-testid=\"nav-tab-inbox\"]",
+      "selector_preview": "<a class=\"flex min-h-14 flex-1 flex-col items-center justify-center\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:44:03.723Z",
+      "url": "https://drop-in-mu.vercel.app/",
+      "url_path": "/",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    },
+    {
+      "badge_offset": {
+        "x": 2.2612838745117188,
+        "y": -0.4036407470703125
+      },
+      "comment": "We don't need this at all because you put in the time under the date below already.",
+      "context_hints": [
+        "UI section: main-content",
+        "React test ID: time-presets"
+      ],
+      "created_at": "2026-10-05T03:44:47.937Z",
+      "element_context": {
+        "classes": [
+          "flex",
+          "flex-wrap",
+          "gap-2"
+        ],
+        "id": null,
+        "path": "div[class=\"flex flex-col gap-4 pb-24\"] > form#new-playdate-form > div[class=\"flex flex-col gap-1\"] > div[class=\"flex flex-wrap gap-2\"]",
+        "position": {
+          "height": 95.99610137939453,
+          "width": 414.61590576171875,
+          "x": 98.24219512939453,
+          "y": 904.7309265136719
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "normal",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(47, 72, 88)",
+          "borderRadius": "0px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0px",
+          "color": "rgb(47, 72, 88)",
+          "columnGap": "8px",
+          "display": "flex",
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "fontSize": "16px",
+          "fontWeight": "400",
+          "gap": "8px",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "95.9961px",
+          "justifyContent": "normal",
+          "lineHeight": "24px",
+          "margin": "0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "0px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "auto",
+          "minWidth": "auto",
+          "padding": "0px",
+          "paddingBottom": "0px",
+          "paddingLeft": "0px",
+          "paddingRight": "0px",
+          "paddingTop": "0px",
+          "position": "static",
+          "rowGap": "8px",
+          "textAlign": "start",
+          "width": "414.616px"
+        },
+        "tag": "div",
+        "text": "NowIn an hourTomorrow 10amSat 10am"
+      },
+      "id": "vibe_1791171887937_piubd3ei1",
+      "parent_chain": [
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-1"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "WhenNowIn an hourTomorrow 10amSat 10amStart−9:00 P"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4",
+            "rounded-xl",
+            "border",
+            "border-slate-200",
+            "bg-white",
+            "p-4",
+            "shadow-sm"
+          ],
+          "id": "new-playdate-form",
+          "role": null,
+          "tag": "form",
+          "text_sample": "Drop-inDrop-inTap the title to change it.Where? —"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4",
+            "pb-24",
+            "md:pb-10"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Post a drop-inWhere, when, and who’s comingDrop-in"
+        },
+        {
+          "classes": [
+            "mx-auto",
+            "max-w-md",
+            "md:max-w-3xl"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Post a drop-inWhere, when, and who’s comingDrop-in"
+        }
+      ],
+      "project_area": "new",
+      "selector": "div[data-testid=\"time-presets\"]",
+      "selector_preview": "<div class=\"flex flex-wrap gap-2\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:44:47.937Z",
+      "url": "https://drop-in-mu.vercel.app/new",
+      "url_path": "/new",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    },
+    {
+      "badge_offset": {
+        "x": 4.260047912597656,
+        "y": 5.0086822509765625
+      },
+      "comment": "On my phone you can't see what these three drop downs really say the first one says Any SETT...the second drop down says within three... and The third drop down it says any day so you can see that but for the first two drop downs It's kind of problematic I mean like if I was a user I wouldn't even know what these drop bonds do drop downs to do so I think all three drop downs should probably say like a Word that represents what the drop down is I guess so that you know What it's about but I Don't know I mean I I guess I understand like you're trying to like fit inside of it Like what the user has selected and what it's set to but it needs to be done in such a way where you can see Enough of the text that you understand what it is right So how do we fix this?",
+      "context_hints": [
+        "UI section: main-content"
+      ],
+      "created_at": "2026-10-05T03:46:36.528Z",
+      "element_context": {
+        "classes": [
+          "flex",
+          "items-center",
+          "gap-2"
+        ],
+        "id": null,
+        "path": "div[class=\"flex flex-col gap-4\"] > div[class=\"flex flex-col gap-4\"] > div[class=\"flex flex-col gap-3 rounded-2xl\"] > div[class=\"flex items-center gap-2\"]",
+        "position": {
+          "height": 43.999568939208984,
+          "width": 422.62371826171875,
+          "x": 94.23828887939453,
+          "y": 138.7369842529297
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "center",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(47, 72, 88)",
+          "borderRadius": "0px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0px",
+          "color": "rgb(47, 72, 88)",
+          "columnGap": "8px",
+          "display": "flex",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "fontSize": "16px",
+          "fontWeight": "400",
+          "gap": "8px",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "43.9996px",
+          "justifyContent": "normal",
+          "lineHeight": "24px",
+          "margin": "0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "0px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "auto",
+          "minWidth": "auto",
+          "padding": "0px",
+          "paddingBottom": "0px",
+          "paddingLeft": "0px",
+          "paddingRight": "0px",
+          "paddingTop": "0px",
+          "position": "static",
+          "rowGap": "8px",
+          "textAlign": "start",
+          "width": "422.624px"
+        },
+        "tag": "div",
+        "text": "Any settingWithin 5 miAny day"
+      },
+      "id": "vibe_1791171996528_tkaurxfh6",
+      "parent_chain": [
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-3",
+            "rounded-2xl",
+            "border",
+            "border-slate-200",
+            "bg-white",
+            "p-3",
+            "shadow-sm"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Any settingWithin 5 miAny day●Open now★Top ratedPl"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Any settingWithin 5 miAny day●Open now★Top ratedPl"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "PlacesAny settingWithin 5 miAny day●Open now★Top r"
+        },
+        {
+          "classes": [
+            "mx-auto",
+            "max-w-md",
+            "md:max-w-3xl"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "PlacesAny settingWithin 5 miAny day●Open now★Top r"
+        }
+      ],
+      "project_area": "browse",
+      "selector": "div[data-text-content=\"Any\\ settingWithin\\ 5\\ miAny\\ day\"]",
+      "selector_preview": "<div class=\"flex items-center gap-2\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:46:36.528Z",
+      "url": "https://drop-in-mu.vercel.app/browse",
+      "url_path": "/browse",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    },
+    {
+      "badge_offset": {
+        "x": 16.25006866455078,
+        "y": 25.464431762695312
+      },
+      "comment": "I still don't see an option for me to click upload or edit a Fitto on each place when like, there's no photo there or there's a photo there that I feel like is like inaccurate needs to be updated. So I don't know what your plan was for that, but like you can see there's tons of photos on these places where there's like either no photo there or it's the wrong photo. I need a way to update them easily in the UI, especially as the administrator.",
+      "context_hints": [
+        "UI section: main-content"
+      ],
+      "created_at": "2026-10-05T03:47:38.389Z",
+      "element_context": {
+        "classes": [
+          "flex",
+          "h-full",
+          "w-full",
+          "items-center",
+          "justify-center",
+          "bg-slate-50"
+        ],
+        "id": null,
+        "path": "div[class=\"overflow-hidden rounded-2xl border border-slate-200\"] > a[class=\"flex flex-col\"] > div[class=\"h-36 w-full bg-slate-100\"] > div[class=\"flex h-full w-full items-center\"]",
+        "position": {
+          "height": 143.99957275390625,
+          "width": 446.603759765625,
+          "x": 82.2482681274414,
+          "y": 344.74827575683594
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "center",
+          "backgroundColor": "rgb(251, 247, 244)",
+          "borderColor": "rgb(47, 72, 88)",
+          "borderRadius": "0px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0px",
+          "color": "rgb(47, 72, 88)",
+          "columnGap": "normal",
+          "display": "flex",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "fontSize": "16px",
+          "fontWeight": "400",
+          "gap": "normal",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "144px",
+          "justifyContent": "center",
+          "lineHeight": "24px",
+          "margin": "0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "0px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "0px",
+          "minWidth": "0px",
+          "padding": "0px",
+          "paddingBottom": "0px",
+          "paddingLeft": "0px",
+          "paddingRight": "0px",
+          "paddingTop": "0px",
+          "position": "static",
+          "rowGap": "normal",
+          "textAlign": "start",
+          "width": "446.604px"
+        },
+        "tag": "div",
+        "text": ""
+      },
+      "id": "vibe_1791172058389_4ne1or8ul",
+      "parent_chain": [
+        {
+          "classes": [
+            "h-36",
+            "w-full",
+            "bg-slate-100"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": ""
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "a",
+          "text_sample": "12th West / West Howe ParkNo reviews yet●Open now"
+        },
+        {
+          "classes": [
+            "overflow-hidden",
+            "rounded-2xl",
+            "border",
+            "border-slate-200",
+            "bg-white",
+            "shadow-sm",
+            "motion-reduce:transition-none"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "12th West / West Howe ParkNo reviews yet●Open now"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-2"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "12th West / West Howe ParkNo reviews yet●Open now"
+        }
+      ],
+      "project_area": "browse",
+      "selector": "div.overflow-hidden.rounded-2xl > a.flex.flex-col > div.h-36.w-full > div.flex.h-full",
+      "selector_preview": "<div class=\"flex h-full w-full items-center justify-center bg-slate-50\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:47:38.389Z",
+      "url": "https://drop-in-mu.vercel.app/browse",
+      "url_path": "/browse",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    },
+    {
+      "badge_offset": {
+        "x": 111.8923568725586,
+        "y": 14.142807006835938
+      },
+      "comment": "I would love to see a photo of the place above the heading tax for every place. I think that's the first thing you should see.",
+      "context_hints": [
+        "UI section: main-content"
+      ],
+      "created_at": "2026-10-05T03:48:12.127Z",
+      "element_context": {
+        "classes": [
+          "mt-2",
+          "text-xl",
+          "font-semibold",
+          "text-slate-900"
+        ],
+        "id": null,
+        "path": "div[class=\"mx-auto max-w-md md:max-w-3xl\"] > div[class=\"flex flex-col gap-4\"] > div:nth-of-type(1) > h1[class=\"mt-2 text-xl font-semibold text-slate-900\"]",
+        "position": {
+          "height": 31.998699188232422,
+          "width": 447.9926452636719,
+          "x": 81.55382537841797,
+          "y": 120.67057800292969
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "normal",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "borderColor": "rgb(47, 72, 88)",
+          "borderRadius": "0px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0px",
+          "color": "rgb(47, 72, 88)",
+          "columnGap": "normal",
+          "display": "block",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "fontSize": "26px",
+          "fontWeight": "600",
+          "gap": "normal",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "31.9987px",
+          "justifyContent": "normal",
+          "lineHeight": "32px",
+          "margin": "8px 0px 0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "8px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "0px",
+          "minWidth": "0px",
+          "padding": "0px",
+          "paddingBottom": "0px",
+          "paddingLeft": "0px",
+          "paddingRight": "0px",
+          "paddingTop": "0px",
+          "position": "static",
+          "rowGap": "normal",
+          "textAlign": "start",
+          "width": "447.993px"
+        },
+        "tag": "h1",
+        "text": "12th West / West Howe Park"
+      },
+      "id": "vibe_1791172092127_ixtokx1f3",
+      "parent_chain": [
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "12th West / West Howe ParkPlayground · Outdoor · 4"
+        },
+        {
+          "classes": [
+            "mx-auto",
+            "max-w-md",
+            "md:max-w-3xl"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "12th West / West Howe ParkPlayground · Outdoor · 4"
+        },
+        {
+          "classes": [
+            "w-full",
+            "px-4",
+            "py-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "main",
+          "text_sample": "Setup reminder dismissed.12th West / West Howe Par"
+        }
+      ],
+      "project_area": "place",
+      "selector": "h1.mt-2.text-xl.font-semibold.text-slate-900",
+      "selector_preview": "<h1 class=\"mt-2 text-xl font-semibold text-slate-900\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:48:12.127Z",
+      "url": "https://drop-in-mu.vercel.app/place/722a6c5c-0d25-4329-bb9a-7becafe39b62",
+      "url_path": "/place/722a6c5c-0d25-4329-bb9a-7becafe39b62",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    },
+    {
+      "badge_offset": {
+        "x": 35.26475524902344,
+        "y": 11.4757080078125
+      },
+      "comment": "remove we don't need here",
+      "context_hints": [
+        "UI section: main-content",
+        "React test ID: profile-settings-link",
+        "CSS-in-JS styling detected"
+      ],
+      "created_at": "2026-10-05T03:48:26.003Z",
+      "element_context": {
+        "classes": [
+          "inline-flex",
+          "min-h-11",
+          "items-center",
+          "rounded-full",
+          "border",
+          "border-slate-300",
+          "bg-white",
+          "px-4",
+          "text-sm",
+          "font-medium",
+          "text-slate-700"
+        ],
+        "id": null,
+        "path": "div[class=\"flex flex-col gap-4\"] > div[class=\"flex flex-col gap-4\"] > div[class=\"flex flex-wrap items-center gap-2\"] > a[class=\"inline-flex min-h-11 items-center rounded-full\"]",
+        "position": {
+          "height": 43.999568939208984,
+          "width": 94.78082275390625,
+          "x": 210.15626525878906,
+          "y": 146.65798950195312
+        },
+        "role": null,
+        "styles": {
+          "alignItems": "center",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "borderColor": "rgb(221, 206, 197)",
+          "borderRadius": "2.33017e+07px",
+          "borderStyle": "solid",
+          "borderTopWidth": "0.694444px",
+          "color": "rgb(74, 87, 94)",
+          "columnGap": "normal",
+          "display": "flex",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "fontSize": "17px",
+          "fontWeight": "500",
+          "gap": "normal",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "height": "43.9996px",
+          "justifyContent": "normal",
+          "lineHeight": "26px",
+          "margin": "0px",
+          "marginBottom": "0px",
+          "marginLeft": "0px",
+          "marginRight": "0px",
+          "marginTop": "0px",
+          "maxHeight": "none",
+          "maxWidth": "none",
+          "minHeight": "44px",
+          "minWidth": "auto",
+          "padding": "0px 16px",
+          "paddingBottom": "0px",
+          "paddingLeft": "16px",
+          "paddingRight": "16px",
+          "paddingTop": "0px",
+          "position": "static",
+          "rowGap": "normal",
+          "textAlign": "start",
+          "width": "94.7808px"
+        },
+        "tag": "a",
+        "text": "Settings"
+      },
+      "id": "vibe_1791172106003_fzqx66xhc",
+      "parent_chain": [
+        {
+          "classes": [
+            "flex",
+            "flex-wrap",
+            "items-center",
+            "gap-2"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Edit profileSettings"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "Edit profileSettingsF@fdkfdk kjdkdjHere since Octo"
+        },
+        {
+          "classes": [
+            "flex",
+            "flex-col",
+            "gap-4"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "ProfileThis is what other families see.Edit profil"
+        },
+        {
+          "classes": [
+            "mx-auto",
+            "max-w-md",
+            "md:max-w-3xl"
+          ],
+          "id": null,
+          "role": null,
+          "tag": "div",
+          "text_sample": "ProfileThis is what other families see.Edit profil"
+        }
+      ],
+      "project_area": "users",
+      "selector": "a[data-testid=\"profile-settings-link\"]",
+      "selector_preview": "<a class=\"inline-flex min-h-11 items-center rounded-full border border-slate-300\">",
+      "source_file_path": null,
+      "source_line_range": null,
+      "source_map_available": false,
+      "status": "pending",
+      "updated_at": "2026-10-05T03:48:26.003Z",
+      "url": "https://drop-in-mu.vercel.app/profile",
+      "url_path": "/profile",
+      "viewport": {
+        "height": 579,
+        "width": 628
+      }
+    }
+  ]
+}
