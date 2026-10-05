@@ -652,7 +652,13 @@ r3-7 + r3-8 into this batch as v29-12/v29-13 — they are already specified.
       no longer exists and was never tracked, and `.env`/`.env.local` are
       gitignored — that item is **closed, with no rotation needed**. The `ocr`
       lane was re-run over `580eb82..241c5c3` after v29-11 skipped it on a false
-      "not installed" premise (it is `v1.12.11`). **🔴 THE FORGE GATE WAS RED ON
+      "not installed" premise (it is `v1.12.11`), and it **landed 17 findings**
+      (1 high) — adjudicated at `docs/audits/audit-v29-ocr-2026-10-04.md`, two
+      refuted. **The high one was a v29-2 regression, now fixed:** a failed
+      *decorative* pings read on `PlaceDetailsPage` ran the posts `catch` and
+      emptied the feed ("Nothing planned yet." for a place with drop-ins), and
+      the same stale-map class is fixed on all three card surfaces. **🔴 THE
+      FORGE GATE WAS RED ON
       16 CONSECUTIVE MASTER PUSHES OVER 29.9 HOURS (2026-10-03T20:54Z →
       2026-10-05T02:48Z) AND NOBODY HAD RECORDED IT** — master had been green
       before the streak; the streak starts when the guard reached master
