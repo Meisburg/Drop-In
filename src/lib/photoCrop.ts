@@ -1,7 +1,7 @@
 /**
  * Photo framing — the pure half of the crop step (photo-crop ticket 01).
  *
- * The upload pipeline used to decide the crop by itself: `prepareAvatarFile`
+ * The upload pipeline used to decide the crop by itself: `prepareSquarePhotoFile`
  * scaled the photo to cover a square and kept the middle of it, which is why a
  * portrait photo of a kid came back as a circle of shoulder (see
  * `.scratch/photo-crop/spec.md`). This module replaces that silent decision with
@@ -196,7 +196,7 @@ export function drawTransformFor(
 }
 
 /**
- * Whether a rectangle is safe to hand a canvas. `prepareAvatarFile` draws whatever
+ * Whether a rectangle is safe to hand a canvas. `prepareSquarePhotoFile` draws whatever
  * it is given, and a zero or non-finite source rect produces a blank image with no
  * error at all — a silent failure in the one function whose output is what the user
  * actually gets. Unreachable from the app today (only `cropRectFor` output reaches

@@ -284,7 +284,7 @@ describe('zoomToPoint', () => {
 })
 
 describe('isDrawableRect — the encoder refuses a frame it cannot draw', () => {
-  // `prepareAvatarFile` draws whatever rect it is handed, and a zero or non-finite
+  // `prepareSquarePhotoFile` draws whatever rect it is handed, and a zero or non-finite
   // source rect makes drawImage produce a blank square with NO error — a silently
   // grey avatar. Unreachable from the app today, which is exactly why it is pinned
   // here rather than left to the assumption that it stays unreachable.

@@ -2611,7 +2611,7 @@ export function validateKid(firstName: string, age: number): string | null {
  * The pixel size of a canvas source, whatever kind it is. `CanvasImageSource` is a
  * union (ImageBitmap, HTMLImageElement, HTMLCanvasElement, ImageData, VideoFrame…)
  * and they do not agree on where the size lives, so the guard in
- * `prepareAvatarFile` needs one place that knows.
+ * `prepareSquarePhotoFile` needs one place that knows.
  */
 function sourceSize(source: CanvasImageSource): { width: number; height: number } {
   if (source instanceof HTMLImageElement) {
@@ -2622,8 +2622,9 @@ function sourceSize(source: CanvasImageSource): { width: number; height: number 
 }
 
 /**
- * Client-side encode of the user's CHOSEN crop as a square JPEG (V2 ticket 02;
- * reframed by photo-crop ticket 03).
+ * Client-side encode of the caller's CHOSEN crop as a square JPEG (V2 ticket 02;
+ * reframed by photo-crop ticket 03; RENAMED from `prepareAvatarFile` by
+ * place-photo-crop 2026-10-05, because only the old name claimed avatars).
  *
  * It NO LONGER DECIDES THE CROP. This function used to scale the photo to cover a
  * square and keep the middle of it, which is why a portrait photo of a kid
@@ -2633,14 +2634,17 @@ function sourceSize(source: CanvasImageSource): { width: number; height: number 
  *
  * Size and format are still decided HERE, and that is the division of labour:
  * framing belongs to the crop step, "how big and in what format" belongs to the
- * encoder, and there is exactly one of each. Runs in the browser (canvas), so the
- * network only ever sees the small result and never the original.
+ * encoder, and there is exactly one of each. It is SQUARE because that is the
+ * one stored shape (spec §1): an avatar passes no `size` and gets
+ * `AVATAR_SIZE_PX`, a place photo passes `PLACE_PHOTO_SIZE_PX`. Runs in the
+ * browser (canvas), so the network only ever sees the small result and never the
+ * original.
  *
  * The source is NOT closed here — the caller owns it, because the same decoded
  * bitmap is what the crop dialog drew (`useCropStep` closes it when the flow
  * ends). Closing it here would blank the preview.
  */
-export async function prepareAvatarFile(
+export async function prepareSquarePhotoFile(
   source: CanvasImageSource,
   rect: CropRect,
   size: number = AVATAR_SIZE_PX,
@@ -2652,7 +2656,7 @@ export async function prepareAvatarFile(
   if (ctx === null) throw new Error('Could not resize the photo (canvas unavailable).')
   // Refuse an undrawable frame LOUDLY. A zero or non-finite source rect makes
   // drawImage produce a blank square with no error at all, so the failure would
-  // arrive as a successfully-uploaded grey avatar. Unreachable from the app (only
+  // arrive as a successfully-uploaded grey photo. Unreachable from the app (only
   // cropRectFor output reaches here) — which is the point: this is the one line
   // whose output is what the user actually ends up looking at.
   if (!isDrawableRect(rect, sourceSize(source))) {
@@ -2665,7 +2669,10 @@ export async function prepareAvatarFile(
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
-        if (blob === null) reject(new Error('Could not encode the avatar image.'))
+        // "The photo image", not "the avatar image": this encoder serves the
+        // place-photo editor as well as the avatar pipeline, and the moderator
+        // reading this sentence is not uploading an avatar.
+        if (blob === null) reject(new Error('Could not encode the photo image.'))
         else resolve(blob)
       },
       'image/jpeg',
@@ -2678,7 +2685,7 @@ export async function prepareAvatarFile(
  * The shared avatars-bucket upload core (V2 ticket 02; V3 slice 6, ticket 09
  * generalized it for kid photos — WITHDRAWN by V9 ticket 11; photo-crop ticket
  * 03 reframed it): encode the CHOSEN crop of an already-decoded source as a
- * square JPEG (prepareAvatarFile — the network only ever sees the small
+ * square JPEG (prepareSquarePhotoFile — the network only ever sees the small
  * result), upload to the PUBLIC 'avatars' bucket at `objectPath`, and return the
  * public URL.
  *
@@ -2708,7 +2715,7 @@ async function uploadAvatarObject(
   source: CanvasImageSource,
   rect: CropRect,
 ): Promise<string> {
-  const blob = await prepareAvatarFile(source, rect)
+  const blob = await prepareSquarePhotoFile(source, rect)
   const { error } = await client.storage
     .from('avatars')
     .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })
@@ -2793,7 +2800,7 @@ async function uploadPrivatePhotoObject(
   source: CanvasImageSource,
   rect: CropRect,
 ): Promise<string> {
-  const blob = await prepareAvatarFile(source, rect)
+  const blob = await prepareSquarePhotoFile(source, rect)
   const { error } = await client.storage
     .from(PHOTO_BUCKET)
     .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: true })

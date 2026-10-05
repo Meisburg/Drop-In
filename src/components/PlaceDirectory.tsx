@@ -230,9 +230,13 @@ export function PlaceDirectory({
   /** The viewer's stored home zip (the distance seam measures from it; null = none). */
   homeZip: string | null
   /**
-   * V27: the place-name shown on the search pill and the location row.
-   * Defaults to the app's city so /new's picker sheet (which does not pass one)
-   * still renders the reference's "Places · Seattle, WA" shape.
+   * V27: the place-name on the location row. Defaults to the app's city so
+   * /new's picker sheet (which does not pass one) still names where it searches.
+   *
+   * V30 (2026-10-05): this label used to live inside the search placeholder
+   * ("Places · Seattle, WA"), which left the pin beside it a bare glyph. The
+   * clarify pass moved it onto the pin button, where one word names the control
+   * AND states its value, and the placeholder went back to being a hint.
    */
   locationLabel?: string
   /** When true, taps select into the host instead of navigating away. */
@@ -773,17 +777,10 @@ export function PlaceDirectory({
             itself the on-screen keyboard opens natively. The pin button changes
             the location; the sliders button opens Filter & sort. */}
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200">
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              className="h-5 w-5 shrink-0 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+          {/* Says it in place: the pin carries the location's own value and
+              the sliders carry a word, so neither is a bare glyph. */}
+          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 pl-3 pr-1 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d={NAV_ICONS.search} />
             </svg>
             <input
@@ -793,52 +790,33 @@ export function PlaceDirectory({
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
-              placeholder={`Places · ${locationLabelText}`}
+              placeholder="Search places"
               autoComplete="off"
               className="min-h-11 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
             />
-            {/* The location door, inline in the field's own frame (the founder:
-                "embed a clear, low-profile map icon or 'Change Location' … on
-                the far right"). It opens the SAME shared Set-location dialog. */}
             <button
               type="button"
               data-testid="set-location-btn"
               onClick={openLocationModal}
               aria-label="Change location"
-              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-500 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-2 text-sm font-medium text-slate-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d={NAV_ICONS.nearby} />
               </svg>
+              {locationLabelText}
             </button>
             <button
               type="button"
               data-testid="filter-sort-btn"
               onClick={openFilterModal}
               aria-label="Filter and sort"
-              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-500 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-2 text-sm font-medium text-slate-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d={NAV_ICONS.sliders} />
               </svg>
+              Filters
             </button>
           </div>
 
@@ -873,7 +851,23 @@ export function PlaceDirectory({
             filtered, which is the whole defect. The row therefore WRAPS
             (`flex-wrap`) with a real `basis` on each trigger, so a fourth
             control moves to a second line instead of squeezing the captions out
-            of the first. Without the Saved gate the three still share one line. */}
+            of the first. Without the Saved gate the three still share one line.
+
+            V30 (2026-10-05, accepted over impeccable live on /browse): the gate
+            itself was the next thing the founder could not read — a 44px
+            icon-only circle whose only word was its `aria-label`, and his note
+            was "as a user, I would have no idea what this does". It is now a
+            named pill (bookmark + "Saved"), which is the whole change: the row
+            geometry is untouched because the gate never shared a line with the
+            three captions, and the three remain un-ellipsized at 390px. */}
+        {/* DISTILL (V30, 2026-10-05, over impeccable live on /browse): the
+            card spent TWO rows on one job — a row of filter pills, then a row
+            of quick gates, with a gap and a heading-shaped comment between
+            them. They are the same kind of control answering the same
+            question ("narrow what I am looking at"), so they are now one
+            wrapping row and the card is a row shorter. Nothing was dropped:
+            every control, test id, pressed state and colour rule is verbatim.
+            The gates stay last, where the eye arrives after the filters. */}
         <div className="flex flex-wrap items-center gap-2">
           <DropdownTrigger
             testId="places-type-filter"
@@ -906,7 +900,7 @@ export function PlaceDirectory({
                 setSavedOnly((prev) => !prev)
               }}
               className={
-                'flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full border outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                'flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
                 (savedOnly
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
@@ -915,7 +909,7 @@ export function PlaceDirectory({
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
-                className="h-5 w-5 shrink-0"
+                className="h-4 w-4 shrink-0"
                 fill={savedOnly ? 'currentColor' : 'none'}
                 stroke="currentColor"
                 strokeWidth="1.8"
@@ -924,16 +918,9 @@ export function PlaceDirectory({
               >
                 <path d={NAV_ICONS.bookmark} />
               </svg>
+              Saved
             </button>
           ) : null}
-        </div>
-
-        {/* V27 — TWO QUICK GATES the founder named: is it open, and is it
-            well-reviewed. "Open now" narrows to places whose hours say open
-            (unknown hours are excluded — never assumed open). "Top rated" flips
-            the sort to the review average; unrated places sort last, so the gate
-            never pretends a place with no reviews is the best. */}
-        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-testid="places-open-now-filter"
@@ -946,7 +933,10 @@ export function PlaceDirectory({
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
             }
           >
-            <span aria-hidden="true" className={openNowOnly ? 'text-white' : 'text-emerald-500'}>
+            <span
+              aria-hidden="true"
+              className={openNowOnly ? 'text-white' : 'text-emerald-500'}
+            >
               ●
             </span>
             Open now
@@ -955,7 +945,9 @@ export function PlaceDirectory({
             type="button"
             data-testid="places-top-rated-sort"
             aria-pressed={sortMode === 'top-rated'}
-            onClick={() => setSortMode((prev) => (prev === 'top-rated' ? 'alpha' : 'top-rated'))}
+            onClick={() =>
+              setSortMode((prev) => (prev === 'top-rated' ? 'alpha' : 'top-rated'))
+            }
             className={
               'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
               (sortMode === 'top-rated'
@@ -1586,12 +1578,17 @@ function DirectoryRow({
    * Wikimedia `photo_url`; the rest draw the per-kind illustration, and a URL
    * that fails (the founder's original reason for pulling photos) falls back on
    * `onError` too, so a card is never a broken image.
+   *
+   * V30 batch close (2026-10-05): the failure is keyed to the URL that failed,
+   * not to the component — the same fix, and the same reason, as the place
+   * page's hero: a moderator's replacement has to be able to render over a
+   * picture that had already failed on this mount.
    */
-  const [photoFailed, setPhotoFailed] = useState(false)
+  const [photoFailedUrl, setPhotoFailedUrl] = useState<string | null>(null)
   const photoUrl = row.place.photo_url
   // v30-6: the DATA half of "show a photo" is the shared pure predicate (the
   // place page asks the same question); the failed-load half stays local state.
-  const showPhoto = hasPlacePhoto(row.place) && !photoFailed
+  const showPhoto = hasPlacePhoto(row.place) && photoFailedUrl !== photoUrl
   const photoCredit = photoCreditLine(row.place)
   const ageFit = placeAgeFitLabel(row.place)
   /**
@@ -1696,7 +1693,7 @@ function DirectoryRow({
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
-            onError={() => setPhotoFailed(true)}
+            onError={() => setPhotoFailedUrl(photoUrl)}
             data-testid={`place-photo-${row.place.id}`}
             className="h-full w-full object-cover"
           />

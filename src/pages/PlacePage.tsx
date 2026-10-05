@@ -131,8 +131,15 @@ export function PlacePage() {
    * v30-6 — did this place's picture fail to load? Component state, like the
    * directory card's: the shared predicate answers the DATA half ("is there a
    * URL"), and a URL that errors falls back to the per-kind illustration here.
+   *
+   * V30 batch close (2026-10-05): the failure is keyed to the URL THAT FAILED,
+   * not to the component. A boolean pinned it to the mount, so after a moderator
+   * replaced a dead picture the hero kept drawing the illustration — the save
+   * looked like it had not worked (found by v30-9 against the live row whose
+   * seattle.gov URL 404s). Derived state, no effect: a new URL is simply not the
+   * one that failed.
    */
-  const [photoFailed, setPhotoFailed] = useState(false)
+  const [photoFailedUrl, setPhotoFailedUrl] = useState<string | null>(null)
   /**
    * v30-9 — the moderator's photo editor, the SAME one /mod and the directory
    * card mount. It lives here so the fix can start from the place the moderator
@@ -188,8 +195,10 @@ export function PlacePage() {
     setMissing(false)
     setLoadError(null)
     // v30-6: the hero's fallback is per-place state — a failed image on one
-    // place must not follow the parent to the next one in the same mount.
-    setPhotoFailed(false)
+    // place must not follow the parent to the next one in the same mount. Two
+    // places CAN share one URL (a duplicated seeded photo), so the URL key alone
+    // would carry the failure across; this clears it on the id change too.
+    setPhotoFailedUrl(null)
     getPlaceById(id)
       .then((row) => {
         if (cancelled) return
@@ -449,7 +458,7 @@ export function PlacePage() {
   // (the directory card asks the same question); the failed-load half is this
   // page's own state. The credit comes from the one existing formatter.
   const placePhotoUrl = place.photo_url
-  const showPlacePhoto = hasPlacePhoto(place) && !photoFailed
+  const showPlacePhoto = hasPlacePhoto(place) && photoFailedUrl !== placePhotoUrl
   const placePhotoCredit = photoCreditLine(place)
 
   return (
@@ -489,7 +498,7 @@ export function PlacePage() {
               alt=""
               loading="lazy"
               referrerPolicy="no-referrer"
-              onError={() => setPhotoFailed(true)}
+              onError={() => setPhotoFailedUrl(placePhotoUrl)}
               className="h-full w-full object-cover"
             />
           ) : (

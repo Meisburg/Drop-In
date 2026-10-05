@@ -11,15 +11,19 @@
  * Those two get the adversarial cases, not the happy path.
  */
 import { describe, expect, it } from 'vitest'
+import { AVATAR_SIZE_PX } from './db'
 import {
   PLACE_PHOTO_MAX_BYTES,
+  PLACE_PHOTO_SIZE_PX,
   PLACE_PHOTO_TYPES,
   clearPlacePhotoPatch,
+  fetchPlacePhotoFile,
   formatMegabytes,
   placePhotoObjectPath,
   placePhotoPatch,
   validatePhotoFile,
   validatePhotoUrl,
+  validatePlacePhotoCropFile,
 } from './placePhotoAdmin'
 
 describe('validatePhotoUrl (the security boundary)', () => {
@@ -107,6 +111,54 @@ describe('validatePhotoFile (type before size, deliberately)', () => {
   it('rejects an empty file', () => {
     const result = validatePhotoFile({ type: 'image/png', size: 0 })
     expect(result.ok).toBe(false)
+  })
+})
+
+/**
+ * The crop step's gate (place-photo-crop 2026-10-05). `useCropStep` takes it as
+ * a dependency and wants the message-or-null shape, so the interesting property
+ * is the DELEGATION: the message a moderator sees must be `validatePhotoFile`'s
+ * own, not a second copy that drifts from it.
+ */
+describe('validatePlacePhotoCropFile (the crop step gate)', () => {
+  it('returns null for every supported type inside the cap', () => {
+    for (const type of PLACE_PHOTO_TYPES) {
+      expect(validatePlacePhotoCropFile({ type, size: 1024 } as File)).toBeNull()
+    }
+  })
+
+  it('returns the SAME message validatePhotoFile gives for an unsupported type', () => {
+    const file = { type: 'image/gif', size: 1024 } as File
+    const checked = validatePhotoFile(file)
+    expect(checked.ok).toBe(false)
+    if (!checked.ok) expect(validatePlacePhotoCropFile(file)).toBe(checked.error)
+  })
+
+  it('returns the size message, naming both sizes, for an oversize file', () => {
+    const message = validatePlacePhotoCropFile({
+      type: 'image/png',
+      size: PLACE_PHOTO_MAX_BYTES + 1,
+    } as File)
+    expect(message).toContain(formatMegabytes(PLACE_PHOTO_MAX_BYTES))
+    expect(message).toContain(formatMegabytes(PLACE_PHOTO_MAX_BYTES + 1))
+  })
+
+  it('rejects an empty file, and accepts one exactly at the cap', () => {
+    expect(validatePlacePhotoCropFile({ type: 'image/png', size: 0 } as File)).not.toBeNull()
+    expect(
+      validatePlacePhotoCropFile({ type: 'image/png', size: PLACE_PHOTO_MAX_BYTES } as File),
+    ).toBeNull()
+  })
+})
+
+describe('PLACE_PHOTO_SIZE_PX (the stored size, spec §1)', () => {
+  it('is the pinned 1200px square', () => {
+    expect(PLACE_PHOTO_SIZE_PX).toBe(1200)
+  })
+
+  it('is larger than an avatar, because it feeds a full-width banner', () => {
+    // 448 CSS px wide at 3x is ~1344 device px; the avatar's 512 would be mush.
+    expect(PLACE_PHOTO_SIZE_PX).toBeGreaterThan(AVATAR_SIZE_PX)
   })
 })
 
@@ -199,5 +251,173 @@ describe('clearPlacePhotoPatch', () => {
     const patch = clearPlacePhotoPatch()
     expect(Object.values(patch).every((value) => value === null)).toBe(true)
     expect(Object.keys(patch)).toHaveLength(5)
+  })
+})
+
+/**
+ * The copy (place-photo-crop slice 2, amended 2026-10-05): a pasted link stays a
+ * link unless the moderator frames it, and framing is the only thing that fetches.
+ *
+ * EVERY BRANCH GETS A CASE. The injected `fetchImpl` is the point: the refusals
+ * are what a moderator actually meets (a host that blocks CORS, a page instead of
+ * an image, a 40 MB original), and they must be provable with no network at all.
+ * The failure sentences are the product here — "it didn't work" is not an answer
+ * a person at a keyboard can act on, so each one is asserted, not just the ok
+ * flag.
+ */
+describe('fetchPlacePhotoFile (the copy only the crop path asks for)', () => {
+  /** A fetch that always answers with `response`. */
+  function answerWith(response: Response): typeof fetch {
+    return async () => response
+  }
+
+  /**
+   * The shape the function actually reads. A real `Response` cannot carry a
+   * `content-length` that disagrees with its body, and cannot have a body that
+   * dies — and both are branches worth pinning.
+   */
+  function fakeResponse(init: {
+    status?: number
+    headers?: Record<string, string>
+    body?: Blob
+    blobThrows?: boolean
+  }): Response {
+    const status = init.status ?? 200
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: (name: string) => init.headers?.[name.toLowerCase()] ?? null },
+      blob: async () => {
+        if (init.blobThrows === true) throw new Error('the body died mid-transfer')
+        return init.body ?? new Blob([])
+      },
+    } as unknown as Response
+  }
+
+  it('copies a real image response into a File typed from the header', async () => {
+    const result = await fetchPlacePhotoFile('https://example.org/park.jpg', {
+      fetchImpl: answerWith(
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'content-type': 'image/webp' },
+        }),
+      ),
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.file.type).toBe('image/webp')
+      expect(result.file.size).toBe(3)
+    }
+  })
+
+  it('reads the BARE media type, so a charset parameter does not reject a JPEG', async () => {
+    const result = await fetchPlacePhotoFile('https://example.org/park.jpg', {
+      fetchImpl: answerWith(
+        new Response(new Uint8Array([1]), {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg; charset=binary' },
+        }),
+      ),
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.file.type).toBe('image/jpeg')
+  })
+
+  it('accepts a body exactly at the cap (the boundary is inclusive)', async () => {
+    const result = await fetchPlacePhotoFile('https://example.org/park.png', {
+      fetchImpl: answerWith(
+        fakeResponse({
+          headers: { 'content-type': 'image/png' },
+          body: new Blob([new Uint8Array(PLACE_PHOTO_MAX_BYTES)]),
+        }),
+      ),
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('refuses a response that is not ok, naming the status', async () => {
+    const result = await fetchPlacePhotoFile('https://example.org/gone.jpg', {
+      fetchImpl: answerWith(fakeResponse({ status: 404 })),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('404')
+      expect(result.error).toMatch(/upload a file/i)
+    }
+  })
+
+  it('refuses a response that is not one of our image types', async () => {
+    const result = await fetchPlacePhotoFile('https://example.org/page.html', {
+      fetchImpl: answerWith(
+        fakeResponse({
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+          body: new Blob(['<html></html>']),
+        }),
+      ),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toMatch(/not an image/i)
+      expect(result.error).toMatch(/jpeg, png, or webp/i)
+    }
+  })
+
+  it('refuses a DECLARED length over the cap BEFORE reading the body', async () => {
+    // The body would throw if it were read, so the size sentence proves the
+    // order: a 40 MB original is refused without downloading it.
+    const result = await fetchPlacePhotoFile('https://example.org/huge.jpg', {
+      fetchImpl: answerWith(
+        fakeResponse({
+          headers: {
+            'content-type': 'image/jpeg',
+            'content-length': String(PLACE_PHOTO_MAX_BYTES + 1),
+          },
+          blobThrows: true,
+        }),
+      ),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain(formatMegabytes(PLACE_PHOTO_MAX_BYTES + 1))
+      expect(result.error).toContain(formatMegabytes(PLACE_PHOTO_MAX_BYTES))
+    }
+  })
+
+  it('refuses a body over the cap when the length was never declared', async () => {
+    // `content-length` is absent under chunked encoding, and a host may simply
+    // lie: the measured size is the one that decides.
+    const result = await fetchPlacePhotoFile('https://example.org/huge.jpg', {
+      fetchImpl: answerWith(
+        fakeResponse({
+          headers: { 'content-type': 'image/jpeg' },
+          body: new Blob([new Uint8Array(PLACE_PHOTO_MAX_BYTES + 1)]),
+        }),
+      ),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain(formatMegabytes(PLACE_PHOTO_MAX_BYTES))
+  })
+
+  it('names the way out when the fetch itself throws — the CORS case', async () => {
+    const result = await fetchPlacePhotoFile('https://gmaps.example/photo.jpg', {
+      fetchImpl: async () => {
+        throw new TypeError('Failed to fetch')
+      },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toMatch(/wouldn't let us copy the photo/i)
+      expect(result.error).toMatch(/upload a file/i)
+    }
+  })
+
+  it('gives the same way out when the body dies mid-transfer', async () => {
+    const result = await fetchPlacePhotoFile('https://example.org/flaky.jpg', {
+      fetchImpl: answerWith(
+        fakeResponse({ headers: { 'content-type': 'image/jpeg' }, blobThrows: true }),
+      ),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/wouldn't let us copy the photo/i)
   })
 })

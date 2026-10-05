@@ -192,3 +192,287 @@ test('a moderator replaces a place photo from the place page (v30-9)', async ({ 
   expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
   expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
 })
+
+/**
+ * place-photo-crop (2026-10-05) — UPLOAD A FILE, FRAME IT, SAVE IT.
+ *
+ * The founder's other half: *"either upload a file manually … and then be able
+ * to like pan it or crop it to make it look right for our app."* This drives the
+ * upload door end to end — pick a committed PNG, accept the crop step's default
+ * frame, and prove the ROW ends up pointing at OUR `place-photos` object rather
+ * than at anything the moderator typed.
+ *
+ * WHY THE CARD DOOR AND NOT /mod: the card is where the founder notices the
+ * wrong picture, and it is the door that nests the crop step inside the editor's
+ * `ModalShell` — the stacking case (`lib/stacking.ts`,
+ * `OVERLAY_INSIDE_MODAL_Z_CLASS`) that a /mod-only run would never exercise.
+ *
+ * THE FILE IS COMMITTED AND SAME-ORIGIN (`public/pwa-192x192.png`, a real 192×192
+ * PNG): no external host, no network dependency, nothing to flake on. It is not
+ * uploaded to the app under test by any other spec.
+ */
+test('a moderator uploads a file, frames it, and the card shows our stored copy (place-photo-crop)', async ({
+  page,
+}) => {
+  const { userId } = readMarkerSession()
+  const snapshot = await readTarget()
+
+  const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
+
+  // --- SELF-HEAL, same reason as the two tests above: a killed run skips its
+  // `finally`, so the row and the marker are reset before anything is asserted. ---
+  const preReset = await setPlacePhotos(snapshot)
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = await setModerator(userId, false)
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(
+    true,
+  )
+
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
+  try {
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
+    await page.reload()
+    await openDirectoryAt(page)
+    await expect(editControl).toBeVisible()
+    await editControl.click()
+
+    const editor = page.getByTestId('place-photo-editor')
+    await expect(editor).toBeVisible()
+    await editor.getByTestId('photo-mode-upload').click()
+
+    // --- CANCEL FIRST (criterion 2): the dialog opens, the moderator backs out,
+    // and the row is left exactly as it was — no upload, no URL, no error. ---
+    await editor.getByTestId('photo-file-input').setInputFiles('public/pwa-192x192.png')
+    const cancelled = page.getByTestId('crop-photo-dialog')
+    await expect(cancelled).toBeVisible()
+    await cancelled.getByTestId('crop-cancel').click()
+    await expect(cancelled).toHaveCount(0)
+    expect(await readTarget(), 'a cancelled crop must leave all five columns alone').toEqual(
+      snapshot,
+    )
+    await expect(editor.getByTestId('photo-admin-done')).toHaveCount(0)
+    await expect(editor.getByTestId('photo-admin-error')).toHaveCount(0)
+
+    // --- AND THEN COMMIT ONE. ---
+    await editor.getByTestId('photo-file-input').setInputFiles('public/pwa-192x192.png')
+
+    // The crop step opens on the decoded file. It is the RECTANGLE variant: a
+    // place photo draws no avatar circle, and the dialog says so.
+    const cropDialog = page.getByTestId('crop-photo-dialog')
+    await expect(cropDialog).toBeVisible()
+    await expect(cropDialog).toContainText('The square is what everyone will see.')
+    await expect(cropDialog.locator('div[style*="9999px"]')).toHaveCount(0)
+
+    // The dialog's confirm IS the save — there is no separate upload step.
+    await cropDialog.getByTestId('crop-confirm').click()
+    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+    await expect(cropDialog).toHaveCount(0)
+
+    await editor.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+    await expect(page.getByTestId(`place-photo-${snapshot.id}`)).toBeVisible({ timeout: 15_000 })
+
+    // THE ROW POINTS AT OUR OWN OBJECT — never a third-party URL (slice 1 AC5),
+    // and never at the raw file the moderator picked.
+    const after = await readTarget()
+    expect(after.photo_url, 'the upload must leave a stored url on the row').not.toBeNull()
+    expect(after.photo_url!).toContain('/storage/v1/object/public/place-photos/')
+    expect(after.photo_source_url).toBeNull()
+    expect(after.photo_license).toBeNull()
+    expect(after.photo_author).toBeNull()
+
+    // AND THE STORED OBJECT IS WHAT WE CLAIM: a 1200px square JPEG, decoded from
+    // the bytes the row points at rather than inferred from the encoder's
+    // source. The bucket serves `access-control-allow-origin: *`, so this read
+    // is a real fetch of the public object.
+    const stored = await page.evaluate(async (url: string) => {
+      const response = await fetch(url)
+      const bitmap = await createImageBitmap(await response.blob())
+      return {
+        contentType: response.headers.get('content-type'),
+        width: bitmap.width,
+        height: bitmap.height,
+      }
+    }, after.photo_url!)
+    expect(stored.contentType).toBe('image/jpeg')
+    expect(stored.width).toBe(1200)
+    expect(stored.height).toBe(1200)
+  } finally {
+    restoreEnvelope = await setPlacePhotos(snapshot)
+    unmoderateEnvelope = await setModerator(userId, false)
+  }
+  expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
+  expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
+  expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
+})
+
+/**
+ * place-photo-crop slice 2 (amended 2026-10-05) — A PASTED LINK STAYS A LINK
+ * UNLESS THE MODERATOR FRAMES IT.
+ *
+ * The founder's cost ruling: *"we should prefer hosting using whoever has
+ * already got the image hosted on their link if possible, but then you have the
+ * option to — if you need to crop or pan the image — then it gets copied to our
+ * database, because otherwise we're going to be paying to serve up every image
+ * for everyone."*
+ *
+ * So this walks BOTH exits of URL mode in one run:
+ *   1. Save stores the remote URL verbatim — no fetch, no upload, no new object;
+ *   2. Crop or adjust copies the bytes and stores OUR `place-photos` URL.
+ *
+ * THE DONOR: another seeded row's own `photo_url`. In the live directory that is
+ * a `thumb.wikimedia.org` URL, which answers with `image/jpeg` and
+ * `access-control-allow-origin: *` — so the copy is same-run, cross-host and
+ * CORS-clean, with no host we do not already depend on.
+ */
+test('a pasted link saves as the remote URL; Crop or adjust stores our own copy (place-photo-crop)', async ({
+  page,
+}) => {
+  const { userId } = readMarkerSession()
+  const snapshot = await readTarget()
+  const donorUrl = await readDonorUrl()
+
+  const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
+
+  // --- SELF-HEAL, the file's discipline: a killed run skips its `finally`. ---
+  const preReset = await setPlacePhotos(snapshot)
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = await setModerator(userId, false)
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(
+    true,
+  )
+
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
+  try {
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
+    await page.reload()
+    await openDirectoryAt(page)
+    await expect(editControl).toBeVisible()
+    await editControl.click()
+
+    const editor = page.getByTestId('place-photo-editor')
+    await expect(editor).toBeVisible()
+
+    // --- EXIT 1: SAVE KEEPS THE LINK. The row must carry the remote URL
+    // byte-for-byte, which is the cost rule (and criterion 1). ---
+    await editor.getByTestId('photo-url-input').fill(donorUrl)
+    await expect(editor.getByTestId('photo-url-preview')).toBeVisible()
+    await editor.getByTestId('photo-save-btn').click()
+    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+    const savedAsLink = await readTarget()
+    expect(savedAsLink.photo_url, 'Save must store the remote URL verbatim').toBe(donorUrl)
+
+    // --- EXIT 2: CROP OR ADJUST COPIES IT, and the row stops pointing at the
+    // remote URL (criterion 2). ---
+    await editor.getByTestId('photo-url-input').fill(donorUrl)
+    await editor.getByTestId('photo-crop-btn').click()
+
+    const cropDialog = page.getByTestId('crop-photo-dialog')
+    await expect(cropDialog).toBeVisible()
+    await expect(cropDialog).toContainText('The square is what everyone will see.')
+    await cropDialog.getByTestId('crop-confirm').click()
+    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+
+    const savedAsCopy = await readTarget()
+    expect(savedAsCopy.photo_url, 'the crop must not leave the remote URL on the row').not.toBe(
+      donorUrl,
+    )
+    expect(savedAsCopy.photo_url!).toContain('/storage/v1/object/public/place-photos/')
+    // The pasted URL is never written to the provenance column either.
+    expect(savedAsCopy.photo_source_url).toBeNull()
+  } finally {
+    restoreEnvelope = await setPlacePhotos(snapshot)
+    unmoderateEnvelope = await setModerator(userId, false)
+  }
+  expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
+  expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
+  expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
+})
+
+/**
+ * place-photo-crop slice 2 — THE REFUSAL BLOCKS THE CROP AND NOTHING ELSE.
+ *
+ * The link here is the preview server's OWN `/` — a committed, same-origin
+ * resource that answers `text/html`, which the crop path must refuse as a
+ * non-image. No external host, no network flake, and a real content-type rather
+ * than a mocked one.
+ *
+ * The second half is the point of the amendment: **Save on the same link still
+ * succeeds**, because Save never fetches. A refusal costs the moderator the
+ * crop, never the save.
+ *
+ * TWO KINDS OF REFUSAL, because they arrive as different sentences: a host the
+ * browser cannot reach at all (`.invalid` is reserved by RFC 2606 and never
+ * resolves, so `fetch` REJECTS — the CORS/offline branch, whose message has to
+ * name the way out), and a host that answers with something that is not an image.
+ */
+test('a refused fetch is reported and blocks only the crop; Save on the same link still works (place-photo-crop)', async ({
+  page,
+}) => {
+  const { userId } = readMarkerSession()
+  const snapshot = await readTarget()
+
+  const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
+
+  const preReset = await setPlacePhotos(snapshot)
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = await setModerator(userId, false)
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(
+    true,
+  )
+
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
+  try {
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
+    await page.reload()
+    await openDirectoryAt(page)
+    await expect(editControl).toBeVisible()
+    await editControl.click()
+
+    const editor = page.getByTestId('place-photo-editor')
+    await expect(editor).toBeVisible()
+
+    // --- REFUSAL 1: the host cannot be reached, so `fetch` throws. The message
+    // must name the way out. ---
+    await editor.getByTestId('photo-url-input').fill('https://example.invalid/park.jpg')
+    await editor.getByTestId('photo-crop-btn').click()
+    await expect(editor.getByTestId('photo-admin-error')).toContainText(
+      "That site wouldn't let us copy the photo",
+    )
+    await expect(editor.getByTestId('photo-admin-error')).toContainText('Upload a file')
+    await expect(page.getByTestId('crop-photo-dialog')).toHaveCount(0)
+    expect((await readTarget()).photo_url, 'a refused crop must store nothing').toBe(
+      snapshot.photo_url,
+    )
+
+    // --- REFUSAL 2: the host answers, with something that is not an image. The
+    // link here is the preview server's OWN `/` — committed and same-origin, so
+    // the content-type is real rather than mocked. Derived from the page's
+    // origin, so this spec does not care which port the private recipe used. ---
+    const notAnImage = new URL('/', page.url()).toString()
+    await editor.getByTestId('photo-url-input').fill(notAnImage)
+    await editor.getByTestId('photo-crop-btn').click()
+    await expect(editor.getByTestId('photo-admin-error')).toContainText('not an image')
+    await expect(page.getByTestId('crop-photo-dialog')).toHaveCount(0)
+    expect((await readTarget()).photo_url, 'a refused crop must store nothing').toBe(
+      snapshot.photo_url,
+    )
+
+    // --- AND SAVE ON THE SAME LINK STILL WORKS. ---
+    await editor.getByTestId('photo-save-btn').click()
+    await expect(editor.getByTestId('photo-admin-done')).toContainText('Photo updated.')
+    expect((await readTarget()).photo_url).toBe(notAnImage)
+  } finally {
+    restoreEnvelope = await setPlacePhotos(snapshot)
+    unmoderateEnvelope = await setModerator(userId, false)
+  }
+  expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
+  expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
+  expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
+})

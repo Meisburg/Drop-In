@@ -48,18 +48,44 @@
  *
  *     Leaflet panes/controls  <= 1000
  *     a modal over a map         1100
+ *     an overlay inside a modal  1150   (the crop step)
  *     the image lightbox         1200   (always the topmost overlay)
  *
  * Lowering Leaflet's index globally was rejected: that is a shared-component
  * change for a modal-local bug, and it would weaken every map.
  *
  * NOTE FOR FUTURE CALL SITES: the other fixed overlays in this repo
- * (ConfirmDialog, CropPhotoDialog, DeletePlaydateDialog, ReportDialog,
- * SplashScreen) still use `z-50`. None of them renders on a map page today, so
- * none is broken — but if one is ever shown over a Leaflet map, it inherits
- * this exact defect and must use this token instead.
+ * (ConfirmDialog, DeletePlaydateDialog, ReportDialog, SplashScreen) still use
+ * `z-50`. None of them renders on a map page today, so none is broken — but if
+ * one is ever shown over a Leaflet map, it inherits this exact defect and must
+ * use this token instead. (`CropPhotoDialog` used to be on that list; it is now
+ * the one overlay a modal opens, so it wears
+ * `OVERLAY_INSIDE_MODAL_Z_CLASS` — see below.)
  */
 export const MODAL_OVER_LEAFLET_Z_CLASS = 'z-[1100]'
+
+/**
+ * The z-index an overlay wears when it opens ON TOP OF a modal.
+ *
+ * THE DEFECT IT EXISTS FOR: the moderator's place-photo editor is a `ModalShell`
+ * (at `MODAL_OVER_LEAFLET_Z_CLASS` on the two map pages), and the crop step that
+ * frames the chosen photo is a SECOND portal to `document.body`. At
+ * `CropPhotoDialog`'s old `z-50` the crop step painted BEHIND the editor's
+ * backdrop — invisible and unclickable — because two overlays are compared by
+ * z-index, not by which mounted last.
+ *
+ * WHY 1150 AND NOT A TIE AT 1100: a tie would leave the winner to DOM order,
+ * and the lightbox's own rule below ("it can never be the thing that loses the
+ * comparison") fixes the ceiling at 1200. 1150 is the only band left — above
+ * every modal, below the lightbox. `CropPhotoDialog` is the one consumer,
+ * because it is the one overlay a modal opens that is itself an overlay.
+ *
+ * THE OTHER HALF OF NESTING IS NOT A NUMBER, and is handled in the dialog
+ * itself: its Escape listener claims the key in the CAPTURE phase, because the
+ * shell behind it also listens on `window` and registered first — without that,
+ * one Escape cancelled the crop AND dismissed the editor under it.
+ */
+export const OVERLAY_INSIDE_MODAL_Z_CLASS = 'z-[1150]'
 
 /**
  * The z-index the app-wide image lightbox wears.

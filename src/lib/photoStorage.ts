@@ -200,7 +200,7 @@ export function kidPhotoVisibility(
 
 /**
  * The extension an object name ends in, normalised to the alphabet an object
- * key may contain. The encoder always produces JPEG (`prepareAvatarFile`), so
+ * key may contain. The encoder always produces JPEG (`prepareSquarePhotoFile`), so
  * 'jpg' is both the default and the value every real call passes; the parameter
  * exists so the seam is testable against a hostile value ('.JPG?x=1') instead
  * of silently interpolating whatever a caller hands it into a storage key.

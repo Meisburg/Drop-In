@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { OVERLAY_INSIDE_MODAL_Z_CLASS } from '../lib/stacking'
 import {
   MAX_ZOOM,
   MIN_ZOOM,
@@ -19,7 +20,7 @@ import {
  * The crop step (photo-crop ticket 02).
  *
  * Why this exists: every uploaded photo used to be center-cropped by
- * `prepareAvatarFile` with no say from the user, so a portrait photo of a kid
+ * `prepareSquarePhotoFile` with no say from the user, so a portrait photo of a kid
  * came back as a circle of shoulder (see `.scratch/photo-crop/spec.md`). This is
  * the replacement: the user pans and zooms, and what gets saved is the frame
  * they chose.
@@ -32,14 +33,19 @@ import {
  * own math makes that disagreement impossible rather than merely unlikely. It is
  * a canvas rather than an <img> with object-fit for exactly that reason.
  *
- * The circular mask is not decoration. Avatars render as circles, so the visible
- * window is the circle INSCRIBED in this square; without showing it, someone
- * could frame a face out to the square's edges and still lose the top of a head
- * in the feed.
+ * The mask is not decoration, and it is the SHAPE the caller names. Avatars
+ * render as circles, so for a circle the visible window is the circle INSCRIBED
+ * in this square; without showing it, someone could frame a face out to the
+ * square's edges and still lose the top of a head in the feed. A place photo is
+ * a RECTANGLE (spec §1: the stored crop stays square), so `shape: 'frame'`
+ * renders no circle — the square window IS the frame — and says so in its own
+ * words. The default is `'circle'` because the five avatar-family call sites
+ * must behave byte-identically; `useCropStep` passes it through.
  */
 export function CropPhotoDialog({
   image,
   busy = false,
+  shape = 'circle',
   onCancel,
   onConfirm,
 }: {
@@ -47,6 +53,12 @@ export function CropPhotoDialog({
   image: ImageBitmap
   /** True while the caller is uploading — the controls lock. */
   busy?: boolean
+  /**
+   * What the frame is FOR. `'circle'` (the default) masks the square to the
+   * circle an avatar renders as; `'frame'` shows the whole square — a place
+   * photo is a rectangle.
+   */
+  shape?: 'circle' | 'frame'
   onCancel: () => void
   /** The chosen frame, in source pixels. */
   onConfirm: (rect: CropRect) => void
@@ -83,13 +95,22 @@ export function CropPhotoDialog({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      // ESCAPE BELONGS TO THE TOP OVERLAY, and this dialog can be open INSIDE a
+      // `ModalShell` (the place-photo editor is one). Both listen on `window`
+      // and the shell registered first, so a plain bubble listener let one
+      // Escape cancel the crop AND dismiss the editor behind it. Claiming the
+      // event in the CAPTURE phase — which runs at `window` before any
+      // bubble-phase listener there — stops that, whether or not an upload is
+      // in flight (a busy write must not lose its host either).
+      event.stopImmediatePropagation()
       // Gated on `busy` exactly like the backdrop click below. Without the gate,
       // Escape during an upload hid the dialog while the upload carried on, which
       // reads to the user as "cancelled" when nothing was cancelled.
-      if (event.key === 'Escape' && !busy) onCancel()
+      if (!busy) onCancel()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [busy, onCancel])
 
   // The geometry is expressed in window pixels, so the window is MEASURED rather
@@ -239,7 +260,7 @@ export function CropPhotoDialog({
 
   return createPortal(
     <div
-      className="pt-safe pb-safe fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+      className={`pt-safe pb-safe fixed inset-0 ${OVERLAY_INSIDE_MODAL_Z_CLASS} flex items-center justify-center bg-slate-900/60 p-4`}
       role="presentation"
       onClick={(event) => {
         if (event.target === event.currentTarget && !busy) onCancel()
@@ -249,6 +270,7 @@ export function CropPhotoDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="crop-dialog-title"
+        data-testid="crop-photo-dialog"
         className="flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg"
       >
         <div>
@@ -256,13 +278,15 @@ export function CropPhotoDialog({
             Adjust the photo
           </h2>
           <p className="text-xs text-slate-500">
-            Drag to move. Pinch, or use the slider, to zoom. The circle is what other parents
-            will see.
+            {shape === 'circle'
+              ? 'Drag to move. Pinch, or use the slider, to zoom. The circle is what other parents will see.'
+              : 'Drag to move. Pinch, or use the slider, to zoom. The square is what everyone will see.'}
           </p>
         </div>
 
-        {/* The crop window is a square, because a square is what gets stored. The
-            circle inside it is what an avatar actually shows. */}
+        {/* The crop window is a square, because a square is what gets stored. For
+            a circle the inscribed circle is what an avatar actually shows; for a
+            frame the square itself is the whole of what is kept. */}
         <div
           ref={windowRef}
           className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-900"
@@ -281,12 +305,14 @@ export function CropPhotoDialog({
             // what stops a dead entry from wedging the gesture layer.
             onLostPointerCapture={handlePointerUp}
           />
-          <div className="pointer-events-none absolute inset-0">
-            <div
-              className="absolute inset-0 rounded-full ring-2 ring-white/70"
-              style={{ boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.62)' }}
-            />
-          </div>
+          {shape === 'circle' ? (
+            <div className="pointer-events-none absolute inset-0">
+              <div
+                className="absolute inset-0 rounded-full ring-2 ring-white/70"
+                style={{ boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.62)' }}
+              />
+            </div>
+          ) : null}
         </div>
 
         <label className="flex flex-col gap-1">
@@ -314,6 +340,7 @@ export function CropPhotoDialog({
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"
+            data-testid="crop-cancel"
             onClick={onCancel}
             disabled={busy}
             className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-600 disabled:opacity-50"
@@ -323,6 +350,7 @@ export function CropPhotoDialog({
           <button
             ref={confirmRef}
             type="button"
+            data-testid="crop-confirm"
             disabled={busy}
             onClick={() => onConfirm(cropRectFor(imageSize, stateRef.current))}
             className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-50"

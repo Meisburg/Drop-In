@@ -10,25 +10,43 @@
  * browser, a network, or a storage bucket. The page renders; this module decides
  * (the build law).
  *
- * WHY THE ATTRIBUTION COLUMNS MATTER AND ARE NOT OPTIONAL. `places` carries
- * `photo_source_url`, `photo_license`, `photo_author` and `photo_attribution`
- * (migration 0046 added all four). 0046's own header gives the reason: CC BY and
- * CC BY-SA REQUIRE attribution, and the existing 121 photos all arrived from
- * Wikimedia Commons with that metadata populated. A replacement written by this
- * tool must not silently blank those columns — a photo whose licence we no
- * longer record is a photo we cannot legally justify later, and the credit line
- * is already rendered under the image (`photoCreditLine`). So the patch builder
- * below takes the source and licence as REQUIRED inputs rather than defaulting
- * them away.
+ * PROVENANCE IS NO LONGER ASKED FOR — A RECORDED REVERSAL (2026-10-05). This
+ * module used to require the source, licence and author from the editor, on the
+ * argument below (kept as the record of what was reversed, not deleted): the
+ * four columns exist because migration 0046 sourced 121 Wikimedia Commons photos
+ * where CC BY / CC BY-SA REQUIRE attribution, and a replacement that blanked
+ * them would attribute the NEW picture to the OLD photographer. The founder was
+ * shown that trade and ruled: *"we don't need to put who took it, license, or
+ * where it came from."* So the editor no longer asks for any of the three, and
+ * `placePhotoPatch` is called with all three null. Existing rows KEEP whatever
+ * is already stored and the credit line keeps rendering (`photoCreditLine`). The
+ * rule that survives, and the one that made the reversal safe, is unchanged:
+ * all five columns are written TOGETHER, so provenance is cleared with the photo
+ * it described and a new picture can never wear the old credit. `placePhotoPatch`
+ * keeps taking all three as inputs — the editor passes null — so "never
+ * `photo_url` alone" has one home and a caller that does know the provenance can
+ * still supply it.
  *
- * ⚠️ WHAT THIS MODULE DOES NOT DO, DELIBERATELY: it never fetches, downloads, or
- * re-hosts a third-party image. Google's Maps Platform Terms 3.2.4(a)(i) forbid
- * *"pre-fetch, index, store, reshare, or rehost Google Maps Content"*, and the
- * research at `research/place-photos/2026-10-03-strategies.md` found the same
- * shape at TripAdvisor and Foursquare. A moderator pasting a URL from a source
- * they have the right to use is a human judgement about licensing that this code
- * cannot make for them — which is why the UI asks for the source and the licence
- * rather than guessing one.
+ * ⚠️ AND IT COPIES ONE ONLY WHEN THE MODERATOR FRAMES IT — A RECORDED REVERSAL
+ * (2026-10-05). This module used to state, categorically, that it never fetched
+ * or re-hosted a third-party image: Google's Maps Platform Terms 3.2.4(a)(i)
+ * forbid *"pre-fetch, index, store, reshare, or rehost Google Maps Content"*,
+ * and the research at `research/place-photos/2026-10-03-strategies.md` found the
+ * same shape at TripAdvisor and Foursquare. The founder was shown that trade and
+ * ruled twice. First, that a pasted link may be copied so it can be framed —
+ * necessary, because a cross-origin image taints a canvas and cannot be encoded.
+ * Then, on cost: *"I think we should prefer hosting using whoever has already
+ * got the image hosted on their link if possible, but then you have the option
+ * to — if you need to crop or pan the image — then it gets copied to our
+ * database, because otherwise we're going to be paying to serve up every image
+ * for everyone."*
+ *
+ * So there are two exits and this module owns both of them: `Save` stores the
+ * plain remote URL (`validatePhotoUrl` — nothing is fetched), and `Crop or
+ * adjust` is the ONLY caller of `fetchPlacePhotoFile`. The accepted risks —
+ * re-hosting a third party's image against its terms, and a hotlinked image that
+ * can rot or be blocked later — are recorded, not argued, in
+ * `docs/adr/0003-place-photos-are-copied-and-cropped.md`.
  */
 
 /** The image types a place photo may be. Deliberately narrow. */
@@ -42,6 +60,21 @@ export type PlacePhotoType = (typeof PLACE_PHOTO_TYPES)[number]
  * data for every parent who loads the browse list.
  */
 export const PLACE_PHOTO_MAX_BYTES = 8 * 1024 * 1024
+
+/**
+ * The stored size of a place photo: a 1200px square JPEG (quality 0.85 — the
+ * encoder's one setting, in `prepareSquarePhotoFile`).
+ *
+ * WHY 1200, AND WHY SQUARE. The stored shape is SQUARE by decision (spec §1):
+ * the photo feeds the place-page banner (`h-48 w-full`) and the directory card
+ * thumb (`h-16 w-20`), both `object-cover`, and one square is the least-lossy
+ * single shape for the pair. The banner is at most 448 CSS px wide (`max-w-md`),
+ * i.e. ~1344 device px at 3× — 1200 is the smallest size that keeps a phone on
+ * the good side of that. Avatars stay at `AVATAR_SIZE_PX` (512), and this is
+ * deliberately NOT the original resolution, for the same reason the avatar
+ * pipeline is not: the network only ever sees the small result.
+ */
+export const PLACE_PHOTO_SIZE_PX = 1200
 
 /**
  * Validate a moderator-typed image URL.
@@ -92,10 +125,7 @@ export function validatePhotoFile(file: {
     }
   }
   if (file.size > PLACE_PHOTO_MAX_BYTES) {
-    return {
-      ok: false,
-      error: `That image is too large (${formatMegabytes(file.size)}). The limit is ${formatMegabytes(PLACE_PHOTO_MAX_BYTES)}.`,
-    }
+    return { ok: false, error: tooLargeMessage(file.size) }
   }
   if (file.size === 0) {
     return { ok: false, error: 'That file is empty.' }
@@ -103,9 +133,123 @@ export function validatePhotoFile(file: {
   return { ok: true }
 }
 
+/**
+ * The crop step's pre-decode gate for a place photo: the error message, or null.
+ *
+ * A MODULE-LEVEL function rather than an inline arrow, because `useCropStep`
+ * takes it as a dependency and rebuilds `beginCrop` when its identity changes —
+ * an inline closure would be a new one every render (the hook's own parameter
+ * note says so). It DELEGATES to `validatePhotoFile` rather than restating the
+ * checks, so the type-then-size ordering and every message keep one home; the
+ * only difference is the shape the hook wants (message-or-null).
+ */
+export function validatePlacePhotoCropFile(file: File): string | null {
+  const checked = validatePhotoFile(file)
+  return checked.ok ? null : checked.error
+}
+
 /** One decimal place, e.g. "8.0 MB" — enough for a human to act on. */
 export function formatMegabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** The one "too large" sentence, shared by the file gate and the fetch. */
+function tooLargeMessage(bytes: number): string {
+  return `That image is too large (${formatMegabytes(bytes)}). The limit is ${formatMegabytes(PLACE_PHOTO_MAX_BYTES)}.`
+}
+
+/**
+ * "We could not read that image", with the way out. One sentence, one home: the
+ * CORS case and the offline case are indistinguishable to `fetch`, and the
+ * workaround is the same for both.
+ */
+function cannotCopyMessage(): string {
+  return "That site wouldn't let us copy the photo. Save it to your device and use Upload a file."
+}
+
+/** The bare media type from a Content-Type header: parameters dropped, lowercased. */
+function normalizeContentType(raw: string | null): string {
+  return (raw ?? '').split(';')[0].trim().toLowerCase()
+}
+
+/**
+ * Copy a moderator-pasted image so the crop step can frame it.
+ *
+ * WHY THIS EXISTS AT ALL, AND WHY ONLY THE CROP PATH CALLS IT. A remote URL
+ * cannot be framed: a cross-origin image taints the canvas, so `drawImage`
+ * cannot read it and `cropRectFor`'s output would encode as a blank square. The
+ * founder asked for the framing, so the bytes are copied into our own bucket
+ * exactly when the moderator chooses to frame them — while plain `Save` keeps
+ * the link and costs us no hosting (the 2026-10-05 cost ruling; see the module
+ * header and the ADR).
+ *
+ * THE `fetchImpl` SEAM IS THE BUILD LAW, not decoration: `lib/` takes its
+ * dependency as a parameter, so every refusal below is testable without a
+ * network. This is also the app's ONLY fetch whose response becomes a stored
+ * place photo — the two other call sites (`geocode.ts`, the Open-Meteo lookup in
+ * `db.ts`) read text they do not keep.
+ *
+ * Rejections are REFUSALS, never guesses, and each answers with a plain sentence
+ * because the moderator is a person at a keyboard: a non-ok response, a
+ * `content-type` outside `PLACE_PHOTO_TYPES`, a declared OR measured length over
+ * `PLACE_PHOTO_MAX_BYTES`, and a thrown fetch (the CORS case — the one that must
+ * name the way out, because no client-side work can fix it).
+ */
+export async function fetchPlacePhotoFile(
+  url: string,
+  deps: { fetchImpl?: typeof fetch } = {},
+): Promise<{ ok: true; file: File } | { ok: false; error: string }> {
+  const fetchImpl = deps.fetchImpl ?? fetch
+  let response: Response
+  try {
+    response = await fetchImpl(url)
+  } catch {
+    // The CORS case, and the offline case: `fetch` REJECTS rather than
+    // answering. Nothing about the image is knowable, so the message names the
+    // workaround instead of pretending to diagnose a cause it cannot see.
+    return { ok: false, error: cannotCopyMessage() }
+  }
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: `That link answered with ${response.status}. Check the link, or save the photo to your device and use Upload a file.`,
+    }
+  }
+  // TYPE BEFORE SIZE, the same order `validatePhotoFile` uses and for the same
+  // reason: a 40 MB web PAGE is a type error, and telling the moderator to "pick
+  // a smaller file" sends them to fix the wrong thing.
+  const contentType = normalizeContentType(response.headers.get('content-type'))
+  if (!(PLACE_PHOTO_TYPES as readonly string[]).includes(contentType)) {
+    return {
+      ok: false,
+      error:
+        'That link is not an image we can use. Use a JPEG, PNG, or WebP image, or upload the file instead.',
+    }
+  }
+  // A DECLARED length over the cap is refused before the body is read: the point
+  // of the cap is not to download 40 MB and then complain about it.
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > PLACE_PHOTO_MAX_BYTES) {
+    return { ok: false, error: tooLargeMessage(declared) }
+  }
+  let blob: Blob
+  try {
+    blob = await response.blob()
+  } catch {
+    // A body that dies mid-transfer lands here, and it is the same situation as
+    // a refused fetch from the moderator's point of view.
+    return { ok: false, error: cannotCopyMessage() }
+  }
+  // AND THE LENGTH THE SERVER DID NOT DECLARE. `content-length` is absent under
+  // chunked encoding and a host may simply be wrong, so the measured size is the
+  // one that actually decides.
+  if (blob.size > PLACE_PHOTO_MAX_BYTES) {
+    return { ok: false, error: tooLargeMessage(blob.size) }
+  }
+  // The NAME is fixed and the TYPE comes from the header: nothing downstream
+  // reads the name, and the type is what the *next* gate (`validatePhotoFile`,
+  // inside `beginCrop`) checks before the decode.
+  return { ok: true, file: new File([blob], 'place-photo', { type: contentType }) }
 }
 
 /**
@@ -136,13 +280,15 @@ export function placePhotoObjectPath(
 /**
  * The `places` patch for a moderator's replacement photo.
  *
- * ⚠️ WHY THE ATTRIBUTION FIELDS ARE PARAMETERS AND NOT BLANKED. Rewriting
- * `photo_url` without also writing its provenance would leave the row claiming a
- * licence and author that belong to the OLD image — which is worse than no
- * metadata at all, because the credit line would attribute the new picture to
- * the wrong person. Every replacement therefore carries its own source, licence
- * and author (all four columns together, the same discipline
- * `apply-place-photos.mjs` already follows: "never `photo_url` alone").
+ * ⚠️ WHY ALL FIVE COLUMNS ARE STILL WRITTEN TOGETHER. Rewriting `photo_url`
+ * without also writing the four provenance columns would leave the row claiming
+ * a licence and author that belong to the OLD image — worse than no metadata at
+ * all, because the credit line would attribute the new picture to the wrong
+ * person. Every replacement therefore carries its own provenance (all four
+ * columns together, the same discipline `apply-place-photos.mjs` already
+ * follows: "never `photo_url` alone"). Since the 2026-10-05 reversal the editor
+ * passes all three as `null`, which CLEARS them with the photo — that is the
+ * point, not an oversight: the new picture must not wear the old credit.
  *
  * A whitespace-only value is normalised to `null` rather than stored as `''`, so
  * `photoCreditLine`'s existing "empty means absent" checks keep working without

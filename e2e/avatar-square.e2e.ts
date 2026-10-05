@@ -80,6 +80,14 @@ test('the /profile avatar renders as a square (width == height ±1px)', async ({
     mimeType: 'image/png',
     buffer: png,
   })
+  // place-photo-crop (2026-10-05) — THE AVATAR DIALOG IS UNCHANGED. The crop
+  // step gained a `shape` prop whose default is 'circle' and whose test ids are
+  // new; this is the assertion that a defaulted call site really does get the
+  // circle: the avatar copy AND the inscribed-circle mask are both still here.
+  const cropDialog = page.getByTestId('crop-photo-dialog')
+  await expect(cropDialog).toBeVisible()
+  await expect(cropDialog).toContainText('The circle is what other parents will see.')
+  await expect(cropDialog.locator('div[style*="9999px"]')).toHaveCount(1)
   await page.getByRole('button', { name: 'Use this photo' }).click()
   await expect(page.getByTestId('avatar-photo')).toBeVisible()
 

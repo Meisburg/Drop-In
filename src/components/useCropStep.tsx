@@ -36,6 +36,14 @@ export function useCropStep(
    * arrow): it is a dependency of `beginCrop`.
    */
   validateFile: (file: File) => string | null = validateAvatarFile,
+  /**
+   * What the frame is for, passed straight to the dialog. Defaults to
+   * `'circle'` — the shape every avatar-family site (parent avatar, kid photo,
+   * family photo) has always had — so adding this parameter changes none of
+   * them. A place photo passes `'frame'` (place-photo-crop 2026-10-05): it is a
+   * rectangle, so the dialog draws no circle.
+   */
+  shape: 'circle' | 'frame' = 'circle',
 ): {
   /** Decode and open the crop step. Returns a message to show, or null. */
   beginCrop: (file: File) => Promise<string | null>
@@ -163,6 +171,7 @@ export function useCropStep(
         <CropPhotoDialog
           image={pending}
           busy={busy}
+          shape={shape}
           onCancel={cancel}
           onConfirm={(rect) => void confirm(rect)}
         />

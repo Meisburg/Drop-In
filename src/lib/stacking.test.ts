@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { IMAGE_LIGHTBOX_Z_CLASS, MODAL_OVER_LEAFLET_Z_CLASS } from './stacking'
+import {
+  IMAGE_LIGHTBOX_Z_CLASS,
+  MODAL_OVER_LEAFLET_Z_CLASS,
+  OVERLAY_INSIDE_MODAL_Z_CLASS,
+} from './stacking'
 
 /**
  * V16 ticket 07 item 1: the "Set location" dialog opened BEHIND the map's
@@ -66,6 +70,24 @@ describe('the stacking band: Leaflet < modal < lightbox (V16 t07 item 1)', () =>
   it('are single tokens so a call site can append them to its own layout classes', () => {
     expect(MODAL_OVER_LEAFLET_Z_CLASS.split(' ')).toHaveLength(1)
     expect(IMAGE_LIGHTBOX_Z_CLASS.split(' ')).toHaveLength(1)
+  })
+
+  /**
+   * place-photo-crop 2026-10-05: the crop step is a second portal opened from
+   * inside the place-photo editor's `ModalShell`, so its index is a THIRD row in
+   * the same band. At its old `z-50` it painted behind the editor's backdrop —
+   * invisible and unclickable, because two overlays are compared by number, not
+   * by which mounted last. A tie at 1100 would have left the winner to DOM
+   * order, which is why this is its own token rather than the modal's.
+   */
+  it('puts an overlay opened from inside a modal above that modal', () => {
+    expect(zOf(OVERLAY_INSIDE_MODAL_Z_CLASS)).toBeGreaterThan(zOf(MODAL_OVER_LEAFLET_Z_CLASS))
+  })
+
+  it('still keeps the image lightbox the topmost overlay, so the crop step cannot cover it', () => {
+    expect(zOf(IMAGE_LIGHTBOX_Z_CLASS)).toBeGreaterThan(zOf(OVERLAY_INSIDE_MODAL_Z_CLASS))
+    expect(OVERLAY_INSIDE_MODAL_Z_CLASS).not.toBe('z-50')
+    expect(OVERLAY_INSIDE_MODAL_Z_CLASS.split(' ')).toHaveLength(1)
   })
 })
 
