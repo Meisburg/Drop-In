@@ -75,6 +75,17 @@ const USER_AGENT =
 const OPENVERSE_API = 'https://api.openverse.org/v1/images/'
 const COMMONS_API = 'https://commons.wikimedia.org/w/api.php'
 
+/**
+ * The city this directory covers, handed to the gate as a PLACE SIGNAL.
+ *
+ * The app is single-city (every seeded address is Seattle; `places` has no city
+ * column and `neighborhood_id` is NULL on all 239 rows, so there is no finer
+ * data to hand over). It matters because tier 1 now needs the place's name AND a
+ * place signal — "Wunderkind" alone is not enough to go live on a kids' play
+ * space, but "Wunderkind, Seattle" is.
+ */
+const DIRECTORY_CITY = 'Seattle'
+
 /** The spec's page size for Openverse. */
 const OPENVERSE_PAGE_SIZE = 8
 /** How many Commons name-search hits to consider per place. */
@@ -236,9 +247,10 @@ async function fetchCommons(place) {
     gsrsearch: place.name,
     gsrnamespace: '6',
     gsrlimit: String(COMMONS_LIMIT),
-    prop: 'imageinfo',
+    prop: 'imageinfo|categories',
     iiprop: 'url|extmetadata',
     iiurlwidth: '800',
+    cllimit: '20',
     format: 'json',
     origin: '*',
   })
@@ -264,6 +276,14 @@ async function fetchCommons(place) {
     const ext = info.extmetadata !== null && typeof info.extmetadata === 'object' ? info.extmetadata : {}
     const license = stripHtml(ext.LicenseShortName?.value ?? '')
     const author = stripHtml(ext.Artist?.value ?? '')
+    // The file's own categories — a place signal the gate can trust when the
+    // file name is unhelpful ("P-Patch at Kirke Park…" in "Category:Community
+    // gardens in Seattle"). Commons returns them as `{ title: 'Category:…' }`.
+    const categories = Array.isArray(page.categories)
+      ? page.categories
+          .map((category) => (category && typeof category.title === 'string' ? category.title : ''))
+          .filter((category) => category !== '')
+      : []
     candidates.push({
       title,
       description: null,
@@ -272,6 +292,7 @@ async function fetchCommons(place) {
       sourceUrl: title === '' ? null : `https://commons.wikimedia.org/wiki/${title.replace(/\s+/g, '_')}`,
       license: license === '' ? null : license,
       author: author === '' ? null : author,
+      categories,
     })
   }
   return { candidates, failure: null }
@@ -416,7 +437,7 @@ function printTable(rows, dryRun) {
   for (const row of rows) {
     const detail =
       row.outcome === 'applied'
-        ? `${row.source} · ${row.license ?? 'no licence stated'} · ${row.url}`
+        ? `${row.source} · "${row.title ?? 'unknown title'}" · ${row.license ?? 'no licence stated'} · ${row.url}`
         : `${row.reason ?? 'unknown'}${row.url ? ` · ${row.url}` : ''}`
     console.log(`${row.placeName.slice(0, 37).padEnd(38)} ${row.outcome.padEnd(14)} ${(row.tier ?? '—').padEnd(6)} ${detail}`)
   }
@@ -476,7 +497,7 @@ async function main() {
       continue
     }
 
-    const ranked = rankCandidates(place.name, candidates)
+    const ranked = rankCandidates(place.name, candidates, { city: DIRECTORY_CITY })
     if (ranked.accepted.length === 0) {
       rows.push({
         placeId: place.id,
@@ -517,6 +538,7 @@ async function main() {
       kind: place.kind,
       outcome: 'applied',
       tier: chosen.tier,
+      title: chosen.candidate.title,
       url: chosen.candidate.url,
       source: chosen.candidate.source,
       sourceUrl: chosen.candidate.sourceUrl ?? null,
