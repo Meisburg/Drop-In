@@ -1382,48 +1382,67 @@ export function InboxPage() {
                   Every chip is a 44px (`min-h-11`) control at the 14px floor,
                   and the row scrolls horizontally rather than wrapping at
                   390px. */}
-              {!sending ? (
-                <div
-                  data-testid="quick-replies"
-                  className="mt-3 flex gap-2 overflow-x-auto pb-1"
-                >
-                  {QUICK_REPLIES.map((reply, index) => (
-                    <button
-                      key={reply.label}
-                      type="button"
-                      data-testid={`quick-reply-${index}`}
-                      onClick={() => applyQuickReply(reply.body)}
-                      className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-                    >
-                      {reply.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Composer: auto-grow textarea (max ~4 lines) + Send (disabled
-                  when empty). Enter sends on desktop; Shift+Enter breaks. */}
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-                <textarea
-                  ref={composerRef}
-                  value={draft}
-                  onChange={handleComposerChange}
-                  onKeyDown={handleComposerKeyDown}
-                  rows={1}
-                  placeholder="Write a message…"
-                  className="w-full resize-none rounded-lg border-0 bg-transparent p-1 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
-                />
-                {sendError !== null ? <p className="mt-1 text-xs text-red-600">{sendError}</p> : null}
-                <div className="mt-2 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={draft.trim().length === 0 || sending}
-                    onClick={() => void handleSend()}
-                    className="inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white disabled:opacity-50"
+              {/* MESSENGER ANATOMY: the field and the send are ONE rounded
+                  surface with the button inline at its right edge, and the
+                  quick replies hang off that surface as a strip rather than
+                  floating as a third box. The button keeps its accessible
+                  name via aria-label, so `getByRole('button', { name: 'Send' })`
+                  and every existing spec still resolve. */}
+              <div className="mt-3 flex flex-col gap-2">
+                {!sending ? (
+                  <div
+                    data-testid="quick-replies"
+                    className="flex gap-2 overflow-x-auto pb-1"
                   >
-                    {sending ? 'Sending…' : 'Send'}
-                  </button>
+                    {QUICK_REPLIES.map((reply, index) => (
+                      <button
+                        key={reply.label}
+                        type="button"
+                        data-testid={`quick-reply-${index}`}
+                        onClick={() => applyQuickReply(reply.body)}
+                        className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+                      >
+                        {reply.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="rounded-2xl border border-slate-200 bg-white p-1.5 pl-3">
+                  <div className="flex items-end gap-1">
+                    <textarea
+                      ref={composerRef}
+                      value={draft}
+                      onChange={handleComposerChange}
+                      onKeyDown={handleComposerKeyDown}
+                      rows={1}
+                      placeholder="Write a message…"
+                      className="min-h-11 w-full resize-none rounded-lg border-0 bg-transparent py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Send"
+                      disabled={draft.trim().length === 0 || sending}
+                      onClick={() => void handleSend()}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12h13M12 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
+                {sendError !== null ? (
+                  <p className="text-xs text-red-600">{sendError}</p>
+                ) : null}
               </div>
             </div>
           ) : null}
