@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
 import { NAV_ICONS } from '../components/icons'
 import { SectionHeader } from '../components/SectionHeader'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -1135,15 +1134,6 @@ export function ProfilePage() {
               >
                 Edit profile
               </button>
-              {/* V27: the one obvious door the other way. Notifications,
-                  privacy, appearance and the saved lists live on /settings. */}
-              <Link
-                to="/settings"
-                data-testid="profile-settings-link"
-                className="inline-flex min-h-11 items-center rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700"
-              >
-                Settings
-              </Link>
             </div>
           }
         />
@@ -1172,15 +1162,6 @@ export function ProfilePage() {
       >
         Done
       </button>
-
-      {/* V27: settings stay one tap away while editing, too. */}
-      <Link
-        to="/settings"
-        data-testid="profile-edit-settings-link"
-        className="inline-flex min-h-11 self-start items-center rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700"
-      >
-        Settings
-      </Link>
 
       {/* V16 t04: THE IDENTITY CARD AND THE "Your photo" CARD ARE ONE. The
           separate identity block that used to sit above this card is GONE — the
