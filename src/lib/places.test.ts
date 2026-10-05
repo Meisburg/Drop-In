@@ -11,6 +11,7 @@ import {
   feedMapPinEvent,
   filterPlacesByRadius,
   filterTriggerLabels,
+  hasPlacePhoto,
   feedMapPins,
   pinMoreDropInsLabel,
   soonestFeedPinEvent,
@@ -2793,8 +2794,7 @@ describe('savedPlacesEmptyCopy (V25 t08, the two honest empty messages)', () => 
   })
 })
 
-describe('filterTriggerLabels (v30-3, the three /browse filter pills)', () => {
-  const base = { indoorFilter: null, distanceChoice: 'profile' as const, viewerRadius: 5, dateWindow: 'upcoming' as const }
+describe('filterTriggerLabels (v30-3, the three /browse filter pills)', () => {  const base = { indoorFilter: null, distanceChoice: 'profile' as const, viewerRadius: 5, dateWindow: 'upcoming' as const }
 
   it('captions every trigger, so no pill is a bare value', () => {
     const t = filterTriggerLabels(base)
@@ -2839,5 +2839,24 @@ describe('filterTriggerLabels (v30-3, the three /browse filter pills)', () => {
         }
       }
     }
+  })
+})
+
+describe('hasPlacePhoto (v30-6, the ONE rule the card and the place page share)', () => {
+  const place = (photo_url: string | null) => ({ photo_url }) as never
+
+  it('is true only for a non-blank URL', () => {
+    expect(hasPlacePhoto(place('https://example.test/a.jpg'))).toBe(true)
+    expect(hasPlacePhoto(place(null))).toBe(false)
+    expect(hasPlacePhoto(place(''))).toBe(false)
+  })
+
+  it('agrees with photoCreditLine about which rows HAVE a picture', () => {
+    // The two are computed from the same predicate on purpose: a credit line on
+    // a slot that took the illustration branch is the bug this pins away.
+    const withPhoto = place('https://example.test/a.jpg')
+    const without = place(null)
+    expect(hasPlacePhoto(withPhoto)).toBe(true)
+    expect(hasPlacePhoto(without)).toBe(false)
   })
 })

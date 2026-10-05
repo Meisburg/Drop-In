@@ -22,6 +22,7 @@ import {
   DATE_WINDOWS,
   dateWindowEmptyCopy,
   filterTriggerLabels,
+  hasPlacePhoto,
   kindEmptyCopy,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
@@ -45,25 +46,7 @@ import { dropInProofLine, reviewQuoteLine } from '../lib/placeSocial'
 import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 import type { Place, PlacePrefill } from '../lib/types'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
-
-/**
- * V27 — per-kind accent for the kind icon INSIDE each intent pill and on the
- * placeholder card banner. The founder's reference screenshot used colourful
- * pictograms, so each kind gets a distinct hue rather than one monochrome
- * stroke. Decorative only: the word is the control and `aria-pressed` carries
- * the state, so colour is never the sole channel (the active pill also flips to
- * a solid indigo fill with white text/icon).
- */
-const KIND_ACCENTS: Record<string, string> = {
-  playground: 'text-emerald-500',
-  indoor_play: 'text-violet-500',
-  museum: 'text-amber-600',
-  pool: 'text-sky-500',
-  splash_pad: 'text-cyan-500',
-  library: 'text-rose-500',
-  beach: 'text-orange-500',
-  other: 'text-slate-500',
-}
+import { KIND_ACCENTS, PlaceKindArt } from './PlaceKindArt'
 
 /**
  * V27 — one of the three prominent dropdown triggers. A shared presentational
@@ -1527,7 +1510,9 @@ function DirectoryRow({
    */
   const [photoFailed, setPhotoFailed] = useState(false)
   const photoUrl = row.place.photo_url
-  const showPhoto = photoUrl !== null && photoUrl !== '' && !photoFailed
+  // v30-6: the DATA half of "show a photo" is the shared pure predicate (the
+  // place page asks the same question); the failed-load half stays local state.
+  const showPhoto = hasPlacePhoto(row.place) && !photoFailed
   const photoCredit = photoCreditLine(row.place)
   const ageFit = placeAgeFitLabel(row.place)
   /**
@@ -1628,7 +1613,7 @@ function DirectoryRow({
       <div className="relative h-36 w-full bg-slate-100">
         {showPhoto ? (
           <img
-            src={photoUrl}
+            src={photoUrl ?? ''}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -1637,22 +1622,7 @@ function DirectoryRow({
             className="h-full w-full object-cover"
           />
         ) : (
-          <div
-            aria-hidden="true"
-            className="flex h-full w-full items-center justify-center bg-slate-50"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className={`h-14 w-14 ${KIND_ACCENTS[row.place.kind] ?? 'text-slate-400'}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d={PLACE_KIND_ICONS[row.place.kind]} />
-            </svg>
-          </div>
+          <PlaceKindArt kind={row.place.kind} />
         )}
         {/* Commons attribution travels with the card that shows the image, not
             only with the place page. */}

@@ -1757,17 +1757,20 @@ test('a place page renders the seeded data with the existing Maps link', async (
   // Tapping the pin must not navigate away from the page it is on.
   await expect(page).toHaveURL(/\/place\//)
 
-  // V20 t01: the page's photo is GONE and the "Learn more" link replaced it.
+  // v30-6 (founder annotation 6): THE PICTURE IS BACK ON THIS PAGE.
   //
-  // The photo block (V18 t04) rendered an <img> plus its licence credit here.
-  // The founder's ruling retires it — "I can't police this and fix all the
-  // broken images" — so the page must now carry NO place photograph and no
-  // credit line, and must instead offer the one honest outbound link.
+  // V20 t01 retired the photo block because the founder could not maintain 239
+  // images; the moderator's place-photo tool (V28 r4, migration 0062) is what
+  // changed that, and the reversal is recorded in
+  // docs/adr/0002-place-photos-return.md.
+  //
+  // THE TWO HALVES OF THE RULE, on the two places this suite already names:
+  // Green Lake Park carries NO photo, so the slot draws the shared per-kind
+  // illustration and shows no credit — an honest stand-in, not a grey frame.
+  // The next test asserts the other half on a place that HAS one.
+  await expect(page.getByTestId('place-page-photo-slot')).toBeVisible()
+  await expect(page.getByTestId('place-page-photo')).toHaveCount(0)
   await expect(page.getByTestId('place-photo-credit')).toHaveCount(0)
-  await expect(
-    page.locator('figure img'),
-    'no place photograph is rendered on the detail page',
-  ).toHaveCount(0)
 
   // The link itself: a real external target in a new tab, and its DESTINATION
   // still declares which kind of link it is. Green Lake Park is a city park,
@@ -1805,24 +1808,57 @@ test('a place page renders the seeded data with the existing Maps link', async (
 })
 
 /**
+ * v30-6 — THE OTHER HALF OF THE PICTURE RULE: a place that HAS a photo shows it,
+ * above the name, with its credit.
+ *
+ * Green Lake Park (East) is a seeded row carrying a Wikimedia photo AND its
+ * attribution (measured, not assumed: 121 of the 239 rows do, and this is one of
+ * them — the sibling test above covers a row that does not).
+ */
+test('a place with a photo shows it above the name, credit included (v30-6)', async ({ page }) => {
+  await openPlacesTab(page)
+  await useAnyDistance(page)
+  const name = 'Green Lake Park (East)'
+  await page.getByTestId('places-search').fill(name)
+  await exactPlaceName(page, name).click()
+  await page.waitForURL(/\/place\//)
+
+  const heading = page.getByRole('heading', { name, exact: true })
+  const photo = page.getByTestId('place-page-photo')
+  await expect(photo).toBeVisible()
+  // The attribution travels with the picture — a Commons photo without its
+  // credit is the licence problem, not a styling detail.
+  await expect(page.getByTestId('place-photo-credit')).toHaveCount(1)
+
+  const photoBox = await photo.boundingBox()
+  const headingBox = await heading.boundingBox()
+  expect(photoBox, 'the picture must have a box').not.toBeNull()
+  expect(headingBox, 'the heading must have a box').not.toBeNull()
+  expect(photoBox!.y, 'the picture must sit above the name').toBeLessThan(headingBox!.y)
+})
+
+/**
  * V25 t04 — THE PLACE PAGE'S ORDER, AND ITS TWO ACTIONS.
  *
- * The founder's sequence for a place: name → picture → description → two
- * buttons → map → "Start a drop-in" → the rating → the comments. This page owns
- * all of that except the picture (V20 t01 removed it on purpose and the specs
- * above assert its ABSENCE — no planned ticket restores one: ticket 16 is
- * RESEARCH-only) and the rating/comments (they live on the research page).
+ * The founder's sequence for a place: picture → name → description → two
+ * buttons → map → "Start a drop-in" → the rating → the comments. v30-6 restored
+ * the picture (V20 t01 had removed it; the moderator photo tool is what made the
+ * reversal coherent — docs/adr/0002-place-photos-return.md), so this spec now
+ * measures the slot in the sequence too; the rating/comments stay on the
+ * research page.
  *
  * TWO THINGS ARE PINNED HERE, and neither existed on the OLD page:
- *   1. THE ORDER, on rendered geometry: name above description above the action
- *      row above the map. Before this ticket the page had NO `place-description`
- *      and NO `place-actions` element at all (the notes were a bare `<p>` BELOW
- *      the map and the only outbound control sat under it), so a run of this
- *      spec against the pre-t04 build fails at the `toBeVisible()` calls below
- *      — the absent testids — and never reaches the y comparisons. The y
- *      comparisons are what pin the new order from here on (they are what would
- *      catch a later regression that moved the blocks while keeping the ids),
- *      and they are what a reordering of the present markup fails.
+ *   1. THE ORDER, on rendered geometry: the picture above the name, the name
+ *      above the description, the description above the action row, the action
+ *      row above the map. Before this ticket the
+ *      page had NO `place-description` and NO `place-actions` element at all
+ *      (the notes were a bare `<p>` BELOW the map and the only outbound control
+ *      sat under it), so a run of this spec against the pre-t04 build fails at
+ *      the `toBeVisible()` calls below — the absent testids — and never reaches
+ *      the y comparisons. The y comparisons are what pin the new order from here
+ *      on (they are what would catch a later regression that moved the blocks
+ *      while keeping the ids), and they are what a reordering of the present
+ *      markup fails.
  *   2. THE ROW: at a desktop width the two controls share one line, and at
  *      320px they stay at or above the 44px tap floor with no horizontal
  *      overflow (the ticket's "wrap, never shrink" rule).
@@ -1847,6 +1883,7 @@ test('the place page reads name → description → the two actions → the map 
   await page.waitForURL(/\/place\//)
 
   const heading = page.getByRole('heading', { name: PLACE_NAME, exact: true })
+  const photoSlot = page.getByTestId('place-page-photo-slot')
   const description = page.getByTestId('place-description')
   const actions = page.getByTestId('place-actions')
   const map = page.getByTestId('place-map')
@@ -1856,6 +1893,7 @@ test('the place page reads name → description → the two actions → the map 
   // READ, not assumed: the order assertion below needs a place that carries
   // notes, and Green Lake Park's seeded row does ("Accessible (ADA).").
   await expect(heading).toBeVisible()
+  await expect(photoSlot).toBeVisible()
   await expect(description).toBeVisible()
   await expect(actions).toBeVisible()
   await expect(map).toBeVisible()
@@ -1880,10 +1918,15 @@ test('the place page reads name → description → the two actions → the map 
     return measured
   }
   const headingBox = await box(heading)
+  const photoSlotBox = await box(photoSlot)
   const descriptionBox = await box(description)
   const actionsBox = await box(actions)
   const mapBox = await box(map)
   const startBox = await box(startHere)
+  expect(
+    photoSlotBox.y,
+    'the picture must sit ABOVE the name (his sequence: the picture is the first thing you see)',
+  ).toBeLessThan(headingBox.y)
   expect(
     descriptionBox.y,
     'the description must sit below the name',

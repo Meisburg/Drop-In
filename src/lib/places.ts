@@ -1089,10 +1089,27 @@ export function radiusPreviewCircle(input: {
  * unit test rather than by hope.
  */
 export function photoCreditLine(place: Place): string | null {
-  const hasPhoto = place.photo_url !== null && place.photo_url !== ''
+  const hasPhoto = hasPlacePhoto(place)
   if (!hasPhoto) return null
   const credit = (place.photo_attribution ?? '').trim()
   return credit === '' ? null : credit
+}
+
+/**
+ * Does this row have a picture to show?
+ *
+ * v30-6 (founder annotation 6): the browse card and the place page both decide
+ * this, and they must decide it the SAME way — ONE rule, two callers, which is
+ * why it is here rather than inline in either render. It was already the rule
+ * inside `photoCreditLine`; extracting it is what makes the credit line and the
+ * image slot structurally unable to disagree.
+ *
+ * The boundary is deliberate: this covers the DATA half only (a URL that is
+ * present and non-blank). A URL that FAILS to load is component state — each
+ * surface owns its own `onError` fallback, as the directory card always has.
+ */
+export function hasPlacePhoto(place: Pick<Place, 'photo_url'>): boolean {
+  return place.photo_url !== null && place.photo_url !== ''
 }
 
 /**

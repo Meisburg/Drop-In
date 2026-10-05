@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { PlaceMap } from '../components/PlaceMapLazy'
+import { PlaceKindArt } from '../components/PlaceKindArt'
 import { useSessionContext } from '../components/SessionProvider'
 import { NAV_ICONS } from '../components/icons'
 import {
@@ -20,6 +21,8 @@ import { cardAgeRangeLabel, formatDistanceLabel, goingPingsByPost } from '../lib
 import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import {
+  hasPlacePhoto,
+  photoCreditLine,
   placeAgeFitLabel,
   placeDistanceMiles,
   placeIndoorLabel,
@@ -120,6 +123,12 @@ export function PlacePage() {
    */
   const [kidAgesByPostId, setKidAgesByPostId] = useState<Record<string, number[]>>({})
   /**
+   * v30-6 — did this place's picture fail to load? Component state, like the
+   * directory card's: the shared predicate answers the DATA half ("is there a
+   * URL"), and a URL that errors falls back to the per-kind illustration here.
+   */
+  const [photoFailed, setPhotoFailed] = useState(false)
+  /**
    * V29 v29-2: this place's posts' going pings, in ONE batched read (never one
    * per card). null = NOT READ — and that is the distinction the card needs:
    * only a settled read may say "No one's going yet". A failed read stays null.
@@ -148,6 +157,9 @@ export function PlacePage() {
     setPlace(null)
     setMissing(false)
     setLoadError(null)
+    // v30-6: the hero's fallback is per-place state — a failed image on one
+    // place must not follow the parent to the next one in the same mount.
+    setPhotoFailed(false)
     getPlaceById(id)
       .then((row) => {
         if (cancelled) return
@@ -403,46 +415,72 @@ export function PlacePage() {
     navigate('/new', { state: { place: prefill } })
   }
 
+  // v30-6 — the hero's two facts. The DATA half is the shared pure predicate
+  // (the directory card asks the same question); the failed-load half is this
+  // page's own state. The credit comes from the one existing formatter.
+  const placePhotoUrl = place.photo_url
+  const showPlacePhoto = hasPlacePhoto(place) && !photoFailed
+  const placePhotoCredit = photoCreditLine(place)
+
   return (
     <div className="flex flex-col gap-4">
       <div>
         {/* V24 slice 02: the shared back control (the ad-hoc "← Places" link became
             BackControl); the destination lives in the h1 below. */}
         <BackControl to="/browse" />
+
+        {/* v30-6 (founder annotation 6): THE PICTURE RETURNS, ABOVE THE NAME —
+            *"a photo of the place above the heading text for every place. I
+            think that's the first thing you should see."* Only the back control
+            sits above it, because that is navigation, not the page's subject.
+
+            V20 t01 removed this block because he could not maintain 239 images:
+            *"I can't police this and fix all the broken images."* What changed is
+            that he now CAN — the moderator's place-photo tool (V28 r4, migration
+            0062) replaces a picture by link or upload from the place itself. The
+            reversal is recorded in docs/adr/0002-place-photos-return.md, because
+            a reader who remembers V20 is otherwise right to call this a
+            regression; the applied migration that recorded the removal is not
+            edited.
+
+            The fallback is the SAME per-kind illustration the directory card
+            draws (components/PlaceKindArt) — never a grey frame, and never a
+            broken image: a URL that fails falls back on `onError` exactly as the
+            card does. The credit travels with the picture, because a Commons
+            photo's attribution has to. */}
+        <div
+          data-testid="place-page-photo-slot"
+          className="relative mt-2 h-48 w-full overflow-hidden rounded-2xl bg-slate-100"
+        >
+          {showPlacePhoto ? (
+            <img
+              data-testid="place-page-photo"
+              src={placePhotoUrl ?? ''}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setPhotoFailed(true)}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <PlaceKindArt kind={place.kind} className="h-16 w-16" />
+          )}
+          {showPlacePhoto && placePhotoCredit !== null ? (
+            <span
+              data-testid="place-photo-credit"
+              className="absolute bottom-1 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90"
+            >
+              {placePhotoCredit}
+            </span>
+          ) : null}
+        </div>
+
         <h1 className="mt-2 text-xl font-semibold text-slate-900">{place.name}</h1>
         <p className="mt-1 text-sm text-slate-600">
           {placeKindLabel(place.kind)} · {placeIndoorLabel(place)}
           {distance !== null ? ` · ${formatDistanceLabel(distance)} from your zip` : ''}
         </p>
       </div>
-
-      {/* V20 t01: THE PHOTO IS GONE FROM THIS PAGE.
-          V18 put a Wikimedia Commons photo here with its licence credit, and
-          the machinery that produced it (0046, `buildAttribution`, the
-          `photoCreditLine` seam, the backfill script) is untouched — the data
-          and its attribution stay in the table for whatever future surface
-          wants them. What changed is the product decision above them, in the
-          founder's words: *"maybe we have to get rid of the image part of this
-          because I can't police this and fix all the broken images."*
-          239 hand-maintained images is a commitment nobody signed up for, and
-          a half-broken gallery reads worse than none. The affordance that
-          replaces it is the "Learn more" action in the row below — one link per
-          place, and `data-link-kind` on the anchor still says whether it is the
-          operator's own site or a map search.
-
-          V25 t04 — THE FOUNDER'S SEQUENCE NAMES A PICTURE HERE, AND THIS SLICE
-          DELIBERATELY DOES NOT ADD ONE. His list is name → picture →
-          description; the picture is not this ticket's to restore, and NO
-          planned ticket restores one either: ticket 16 ("place-photos-research")
-          is research-only — "No product code, no migration, no schema change, no
-          DB write" — so a photo's return is currently UNOWNED, not merely
-          deferred to it. This slice keeps its diff free of photo code so no
-          future ruling has to unpick it. The order below therefore reads
-          correctly with NO photo — name, then the description, then the two
-          actions — and nothing placeholder-shaped (no empty frame, no grey box,
-          no kind illustration) stands in the slot V20 t01 emptied. The specs
-          assert that absence (`e2e/places.e2e.ts`: `place-photo-credit` count 0
-          and `figure img` count 0). */}
 
       {/* V25 t04 — THE DESCRIPTION, directly under the name.
           `places.notes` used to render BELOW the map, after the age line. The
