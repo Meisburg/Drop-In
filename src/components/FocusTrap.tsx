@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
-import { nextTrapTarget, shouldInterceptTab } from '../lib/focusTrap'
+import { nextTrapTarget, shouldInterceptTab, shouldYieldToNestedDialog } from '../lib/focusTrap'
 
 /**
  * Traps Tab/Shift+Tab inside `ref.current` while `active`: focus is moved into
@@ -75,6 +75,20 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
       const current = document.activeElement as HTMLElement | null
       const currentIndex = focusable.indexOf(current as HTMLElement)
       const indexInside = current !== null && root.contains(current) ? currentIndex : -1
+
+      // THE TOPMOST DIALOG TRAPS. A nested dialog is portalled to <body>, so it
+      // is outside `root` — and without this the trap would drag focus straight
+      // back out of it (the measured crop-dialog defect; see the pure rule).
+      // Standing down leaves the browser's own tab order inside that dialog.
+      if (
+        shouldYieldToNestedDialog(
+          current !== null && root.contains(current),
+          current !== null && current.closest('[role="dialog"]') !== null,
+        )
+      ) {
+        return
+      }
+
       const targetIndex = nextTrapTarget(focusable.length, indexInside, event.shiftKey)
 
       if (targetIndex === null) {

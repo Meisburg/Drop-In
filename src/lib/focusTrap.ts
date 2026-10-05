@@ -86,3 +86,36 @@ export function shouldInterceptTab(count: number, currentIndex: number): boolean
   // here; a single-control dialog is both edges at once and always wraps.
   return currentIndex === 0 || currentIndex === count - 1
 }
+
+/**
+ * Should this trap stand down because ANOTHER dialog currently owns focus?
+ *
+ * THE DEFECT THIS FIXES, measured 2026-10-05: `Tab` was trapped inside the
+ * place-photo editor while its crop dialog was open. The crop step is rendered
+ * through `createPortal` to `<body>` (`CropPhotoDialog.tsx:291`) and carries
+ * `role="dialog"`, so it is NOT inside the `ModalShell` that hosts the editor —
+ * and that shell's `useFocusTrap(dialogRef, true)` is unconditional
+ * (`ModalShell.tsx`). Focus therefore sat outside the shell's root, `indexInside`
+ * came back -1, and `shouldInterceptTab` did exactly what it was written to do:
+ * it pulled focus back into the editor. The crop dialog's own buttons could
+ * never be reached with the keyboard at all.
+ *
+ * THE RULE IS "THE TOPMOST DIALOG TRAPS", and it is expressed as the two facts
+ * the caller can measure without knowing any component's name:
+ *
+ *   - `activeInsideRoot` — focus is already in THIS trap's dialog (the normal
+ *     case, where nothing changes);
+ *   - `activeInsideAnotherDialog` — the focused element is inside an element
+ *     with `role="dialog"`.
+ *
+ * Yield only when focus is in a dialog that is not ours. A non-dialog element
+ * behind the modal still gets pulled back, which is the behaviour the trap
+ * exists for.
+ */
+export function shouldYieldToNestedDialog(
+  activeInsideRoot: boolean,
+  activeInsideAnotherDialog: boolean,
+): boolean {
+  if (activeInsideRoot) return false
+  return activeInsideAnotherDialog
+}

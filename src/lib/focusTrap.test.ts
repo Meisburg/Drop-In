@@ -18,7 +18,7 @@
  * extracted into `lib/` (pure) and pinned here.
  */
 import { describe, expect, it } from 'vitest'
-import { nextTrapTarget, shouldInterceptTab } from './focusTrap'
+import { nextTrapTarget, shouldInterceptTab, shouldYieldToNestedDialog } from './focusTrap'
 
 describe('nextTrapTarget', () => {
   it('advances normally in the middle of the dialog', () => {
@@ -102,5 +102,32 @@ describe('shouldInterceptTab', () => {
 
   it('treats a single-control dialog as both edges at once, so Tab wraps onto itself', () => {
     expect(shouldInterceptTab(1, 0)).toBe(true)
+  })
+})
+
+/**
+ * THE TOPMOST DIALOG TRAPS (measured 2026-10-05).
+ *
+ * `Tab` was trapped inside the place-photo editor while its crop dialog was
+ * open, because the crop step is portalled to `<body>` and therefore sits
+ * outside the `ModalShell` whose trap was still running. These pin the rule the
+ * shell now follows, in the four cases the caller can actually measure.
+ */
+describe('shouldYieldToNestedDialog', () => {
+  it('does NOT yield while focus is inside its own dialog', () => {
+    expect(shouldYieldToNestedDialog(true, false)).toBe(false)
+    // …even when the element is inside its own role="dialog", which is the
+    // ordinary case for every ModalShell: `activeInsideRoot` wins.
+    expect(shouldYieldToNestedDialog(true, true)).toBe(false)
+  })
+
+  it('yields when focus is inside a DIFFERENT dialog — the crop-step defect', () => {
+    expect(shouldYieldToNestedDialog(false, true)).toBe(true)
+  })
+
+  it('still claims focus that sits on a NON-dialog element behind the modal', () => {
+    // The trap exists for this case: a stray click or a focusout must not leave
+    // focus on the page behind an aria-modal.
+    expect(shouldYieldToNestedDialog(false, false)).toBe(false)
   })
 })

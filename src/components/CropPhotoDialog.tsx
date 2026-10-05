@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { OVERLAY_INSIDE_MODAL_Z_CLASS } from '../lib/stacking'
+import { useFocusTrap } from './FocusTrap'
 import {
   MAX_ZOOM,
   MIN_ZOOM,
@@ -89,6 +90,7 @@ export function CropPhotoDialog({
   // scaled into a distortion. `{ width: 0, height: 0 }` until the observer runs.
   const [windowBox, setWindowBox] = useState({ width: 0, height: 0 })
   const windowRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   // Live gesture bookkeeping, in refs rather than state: it must not trigger
@@ -109,6 +111,22 @@ export function CropPhotoDialog({
   useEffect(() => {
     confirmRef.current?.focus()
   }, [])
+
+  // ⚠️ THE CROP DIALOG TRAPS TOO, and it did not until 2026-10-05.
+  //
+  // Measured defect, end to end: this dialog is portalled to <body>, so it is
+  // OUTSIDE the `ModalShell` that hosts the place-photo editor. That shell's
+  // trap pulled Tab straight back into the editor — and once the shell was
+  // taught to yield to a nested dialog (the other half of this fix), Tab simply
+  // ESCAPED instead: focus went `crop-confirm` → `BODY` → the editor's dismiss
+  // button → its mode buttons. The dialog had no trap of its own, so the
+  // keyboard could not stay in it either way. Two halves, one behaviour: the
+  // TOPMOST dialog traps.
+  //
+  // The restore is meaningful here: `previouslyFocused` is the editor's file
+  // input, which stays mounted while this dialog is open, so closing the crop
+  // step hands focus back to the control that opened it.
+  useFocusTrap(panelRef, true)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -300,6 +318,7 @@ export function CropPhotoDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="crop-dialog-title"
+        ref={panelRef}
         data-testid="crop-photo-dialog"
         className="flex w-full max-w-sm flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg"
       >
