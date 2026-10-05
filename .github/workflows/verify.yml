@@ -116,6 +116,35 @@ jobs:
       - name: Install the tracked git hooks
         run: bash scripts/install-git-hooks.sh
 
+      # `e2e-target-guard` resolves the live Supabase ref by reading the `.env`
+      # FILE, not the process environment — so passing the values as `env:` is
+      # not enough. Without this file the guard reports "Cannot read .env" and
+      # the whole gate goes red even though every real check passes. Gitignored
+      # and rebuilt here from the same two variables the build reads. Same step
+      # as in `e2e-scheduled.yml`, for the same reason (the e2e specs read the
+      # file directly too).
+      - name: Write the repo .env from the repository variables
+        if: steps.env.outputs.configured == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n' \
+            "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" > .env
+
+      # `check-acceptance-greps` evaluates the tagged grep claims in the
+      # planning docs by shelling out to ripgrep, and the ubuntu runner does NOT
+      # ship `rg`. Without it the guard correctly reports "the claim's grep could
+      # not run (rg exit ?): spawnSync rg ENOENT" for every claim and fails —
+      # which is what made EVERY push red from 2026-10-03 to 2026-10-04, with
+      # the guard doing exactly the right thing and the environment doing the
+      # wrong one. Installing `rg` is the fix; silencing the guard is not.
+      - name: Install ripgrep (a guard shells out to rg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ripgrep
+          rg --version
+
       - name: Run the gate
         if: steps.env.outputs.configured == 'true'
         env:
