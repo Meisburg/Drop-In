@@ -20,6 +20,7 @@ import {
 } from '../lib/places'
 import type { Kid, Neighborhood, Place } from '../lib/types'
 import { errorId, fieldA11y } from '../lib/a11y'
+import { summaryLineDisplays, summaryTitleLine } from '../lib/postSummary'
 
 /**
  * The drop-in form's FIELD SET (V8 ticket 05), extracted from /new so there
@@ -723,19 +724,29 @@ line. No kids yet → the designed empty state + the /settings link (the
   // READ-BACK BUTTON until it is tapped, so the form's first input — and its
   // first tab stop — is still the PLACE PICKER (V9 ticket 01's AC), while the
   // title stays editable in place on the summary (V9 ticket 03's AC).
+  //
+  // The title's WORDS come from the pure seam (postSummary.summaryTitleLine /
+  // summaryLineDisplays), never from this file: a title the parent has not
+  // written is the "Title" prompt, and the prompt renders in the quieter
+  // slate-500 tone so it does not read as a value. This component decides
+  // nothing — it renders what the seam returned, for the card's line AND the
+  // read-back button, so the two can never disagree.
+  const titleDisplay = summaryTitleLine(values.title)
+  const summaryDisplays =
+    summaryLines === undefined ? [] : summaryLineDisplays(summaryLines, values.title)
   const summaryBlock =
     summaryLines === undefined ? null : (
       <div
         data-testid="post-summary"
         className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3"
       >
-        {summaryLines.map((line, index) => (
+        {summaryDisplays.map((line, index) => (
           <p
             key={index}
             data-testid="post-summary-line"
-            className="text-sm font-medium text-slate-700"
+            className={`text-sm font-medium ${line.isPlaceholder ? 'text-slate-500' : 'text-slate-700'}`}
           >
-            {line}
+            {line.text}
           </p>
         ))}
         <div className="mt-1 flex flex-col gap-1">
@@ -748,10 +759,12 @@ line. No kids yet → the designed empty state + the /settings link (the
                 data-testid={TITLE_LINE_TESTID}
                 onClick={onEditTitle}
                 className={touch(
-                  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-left text-base font-medium text-slate-900 transition-colors motion-reduce:transition-none ',
+                  `w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-left text-base font-medium transition-colors motion-reduce:transition-none ${
+                    titleDisplay.isPlaceholder ? 'text-slate-500' : 'text-slate-900'
+                  } `,
                 )}
               >
-                {values.title}
+                {titleDisplay.text}
               </button>
               <p className="text-xs text-slate-500">{TITLE_LINE_HINT}</p>
             </>

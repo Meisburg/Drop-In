@@ -41,7 +41,11 @@
  *     <place>" — V23 renamed the prefix from "Playdate at …"), shown as a read-back line on the summary that a tap turns into
  *     the input in place (review cycle 1, F2 — so the place picker stays /new's
  *     FIRST field, ticket 01's AC), follows the place until the parent writes
- *     their own, comes back from empty, and never comes back blank.
+ *     their own, comes back from empty, and never comes back blank. Until there
+ *     are words to read back the line is the "Title" PROMPT in the quieter
+ *     placeholder tone (postSummary.summaryTitleLine) — the GENERATED default
+ *     ("Drop-in") is what the form HOLDS and what the submit writes, never what
+ *     an empty form displays.
  *  4. THE DISCLOSURE IS GONE (V13 ticket 02). There is no "More options" door
  *     to open, so nothing that changes what will be posted can hide behind one:
  *     the address, the details, "Kids you're bringing" and — V12 t02 — the
@@ -85,7 +89,7 @@ import {
 import type { PlaydateFormValues } from '../src/lib/feed'
 import { MORE_OPTIONS_FIELDS } from '../src/lib/feed'
 import { BROWSE_PLACES_LABEL, PLACE_PICKER_LABEL } from '../src/lib/places'
-import { GENERATED_TITLE_FALLBACK, generatedTitle } from '../src/lib/postSummary'
+import { generatedTitle, SUMMARY_TITLE_PLACEHOLDER } from '../src/lib/postSummary'
 import {
   readMarkerSession,
   readSupabaseEnv,
@@ -368,15 +372,22 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   await installInteractionRecorder(page)
 
   // (a) The page opens on the SUMMARY — and V13 ticket 02 made that card
-  //     TITLE ONLY, so it reads back the generated title and NOTHING else. The
+  //     TITLE ONLY, so it reads back the title and NOTHING else. The
   //     day and the slot it opened with are NOT summary lines any more: they are
   //     asserted on the controls that really show them, below.
-  await expectTitleOnlySummary(page, [generatedTitle(''), generatedTitle('')])
-  // The generated title is READ BACK as text on the summary — and there is no
-  // title INPUT in the form at all (review cycle 1, F2): the summary's title line
-  // becomes the input when it is tapped, which is what keeps the place picker
-  // /new's first field (ticket 01's AC) and makes the title not a question.
-  await expect(page.getByTestId('title-line')).toHaveText(GENERATED_TITLE_FALLBACK)
+  //
+  //     The line's WORDS are the new display rule (postSummary.summaryTitleLine):
+  //     a title the parent has not written is the "Title" PROMPT, not the
+  //     generated default ("Drop-in") the form holds — an empty form must not
+  //     look as though it already has a title. The form VALUE is unchanged (see
+  //     the new-form-draft spec, which still pins it); only this line's text is.
+  await expectTitleOnlySummary(page, [SUMMARY_TITLE_PLACEHOLDER])
+  // The title read-back is a PROMPT, not a value, until the parent writes one —
+  // and there is no title INPUT in the form at all (review cycle 1, F2): the
+  // summary's title line becomes the input when it is tapped, which is what keeps
+  // the place picker /new's first field (ticket 01's AC) and makes the title not
+  // a question.
+  await expect(page.getByTestId('title-line')).toHaveText(SUMMARY_TITLE_PLACEHOLDER)
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveCount(0)
 
   // (b) The decisions are visible: the place picker and Post — and the duration
@@ -594,9 +605,11 @@ test('the title is generated, read back, editable in place — the extras are be
   const titleInput = page.getByPlaceholder(TITLE_PLACEHOLDER)
   const titleLine = page.getByTestId('title-line')
 
-  // (1) THE READ-BACK (review cycle 1, F2): the generated title is shown as
-  //     TEXT, and the form has no title input until the line is tapped.
-  await expect(titleLine).toHaveText(GENERATED_TITLE_FALLBACK)
+  // (1) THE READ-BACK (review cycle 1, F2): the form has no title input until
+  //     the line is tapped — and with nothing written the line is the "Title"
+  //     PROMPT, not the generated default the form holds (the display rule in
+  //     postSummary.summaryTitleLine; the saved value is unchanged).
+  await expect(titleLine).toHaveText(SUMMARY_TITLE_PLACEHOLDER)
   await expect(titleInput).toHaveCount(0)
 
   // (2) It FOLLOWS the place — typed free text first, read back on the summary…

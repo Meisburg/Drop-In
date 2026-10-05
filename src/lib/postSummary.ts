@@ -11,7 +11,9 @@
  *
  * - `generatedTitle(place)`: the title is no longer a question. It is
  *   "Drop-in at <place>" — trimmed, capped at the form's own 80, and NEVER
- *   empty — and the summary shows it as an editable line. V8 ticket 01 already
+ *   empty — and the summary shows it as an editable line (the placeless default
+ *   reads there as the "Title" prompt until the parent writes one — see
+ *   `summaryTitleLine`). V8 ticket 01 already
  *   auto-filled a title when a place arrived; this ticket makes that the
  *   DEFAULT rather than a convenience.
  * - `postSummaryLines(values, options)`: the read-back, one string per line, in
@@ -27,6 +29,10 @@
  *   the parent typed is kept. Without it the address would be a hidden default
  *   (review cycle 1, F1) — the exact failure the sentence above promises not to
  *   have.
+ * - `summaryTitleLine(title)` / `summaryLineDisplays(lines, title)`: how the
+ *   summary's title line READS. A title the parent has not written is a prompt
+ *   ("Title"), not a value — see SUMMARY_TITLE_PLACEHOLDER. Display only: what
+ *   the submit writes is unchanged.
  *
  * WHY THIS IS ITS OWN MODULE and not part of feed.ts: the read-back needs three
  * things that live in three modules — feed's formatters (formatStartDayLabel,
@@ -65,8 +71,14 @@ export const GENERATED_TITLE_PREFIX = 'Drop-in at '
 
 /**
  * The generated title with no place to name — still a title ("never empty"
- * is the contract, and the field is required). A parent who picks nothing
- * sees this rather than a blank they have to fill in before they can post.
+ * is the contract, and the field is required): a parent who picks nothing gets
+ * this as the form VALUE rather than a blank the validator would refuse, and
+ * the submit WRITES it.
+ *
+ * WHAT THE PARENT SEES is the summary line, and since the title-line fix that
+ * line is a prompt while the form holds only this default — see
+ * `SUMMARY_TITLE_PLACEHOLDER` / `summaryTitleLine`. The value here is what is
+ * HELD and SAVED; it is not what an untouched form displays.
  *
  * Renamed with the prefix above so the two cannot disagree about the product's
  * own noun: a parent who picked a place and one who did not should not read two
@@ -95,6 +107,86 @@ export function generatedTitle(place: string): string {
   const name = stripPlaceAlias(place)
   if (name === '') return GENERATED_TITLE_FALLBACK
   return `${GENERATED_TITLE_PREFIX}${name}`.slice(0, TITLE_MAX_LENGTH)
+}
+
+/**
+ * What the summary's title line READS while the parent has not written a title:
+ * the word "Title", in the product's voice and sentence case.
+ *
+ * WHY THE LINE IS A PROMPT AND NOT THE GENERATED TITLE: the form's title is
+ * never empty — `generatedTitle('')` fills it with `GENERATED_TITLE_FALLBACK`
+ * ("Drop-in") before a parent has typed anything — so on a fresh /new the
+ * summary's one line read as though a title already existed. The founder, on a
+ * fresh /new: *"This looks like a mistake to me. I feel like it should say
+ * 'Title' and then when you type something in, it changes."*
+ *
+ * THIS IS A DISPLAY RULE, NOT A DATA RULE. What is SAVED does not move: the
+ * submit still writes the generated fallback (the page's `withGeneratedTitle` /
+ * `generatedTitle`), and the title INPUT the line becomes when tapped still
+ * holds it. Only the read-back line's words change.
+ */
+export const SUMMARY_TITLE_PLACEHOLDER = 'Title'
+
+/** One summary line as the card should READ it. */
+export interface SummaryLineDisplay {
+  /** The words to render: the parent's own, or the prompt. */
+  text: string
+  /**
+   * True while `text` is the prompt rather than a value. The card renders it in
+   * the quieter placeholder tone (slate-500), so it cannot be mistaken for a
+   * title the parent wrote.
+   */
+  isPlaceholder: boolean
+}
+
+/**
+ * The title line's display: the parent's words exactly as the form holds them,
+ * or — while the form holds only a GENERATED default — the "Title" prompt.
+ *
+ * Two states are "not the parent's words", and both read as the prompt: an
+ * empty/whitespace title (this module already treats `'   '` as empty — see
+ * `generatedTitle`), and the exact `GENERATED_TITLE_FALLBACK` the page's mount
+ * fills in. The fallback is compared against the constant, never re-spelled, so
+ * a wording change cannot leave this line behind.
+ *
+ * A PLACE-generated title ("Drop-in at Green Lake Park") is NOT the prompt: it
+ * names the place the parent just picked, and the summary's title read-back has
+ * always shown it. Only the generic, placeless default — the one no parent
+ * typed and no place produced — reads as a prompt.
+ *
+ * The non-prompt text is returned VERBATIM, not trimmed: the line shows the
+ * parent's words exactly as the input and the submit hold them.
+ *
+ * The one case this seam cannot see is a parent who literally types "Drop-in":
+ * the line reads as the prompt. `values.title` alone cannot say who wrote the
+ * word (the page's own `titleTouched` is not a value this module is given), and
+ * a prompt on an unlikely word is a smaller lie than a prompt missing on every
+ * fresh /new.
+ */
+export function summaryTitleLine(title: string): SummaryLineDisplay {
+  const trimmed = title.trim()
+  if (trimmed === '' || trimmed === GENERATED_TITLE_FALLBACK) {
+    return { text: SUMMARY_TITLE_PLACEHOLDER, isPlaceholder: true }
+  }
+  return { text: title, isPlaceholder: false }
+}
+
+/**
+ * The summary card's lines as displays, one per line. `line === title` is the
+ * SLOT, not a rule: the line carrying the form's title is the one the title
+ * seam above decides, and every other line is its own read-back, rendered
+ * verbatim.
+ *
+ * It lives here rather than in the component for the build law's reason — the
+ * card RENDERS this array and decides nothing — and so the "the generated
+ * default is a prompt, everywhere it appears" rule has exactly one home.
+ */
+export function summaryLineDisplays(
+  lines: readonly string[],
+  title: string,
+): SummaryLineDisplay[] {
+  const titleDisplay = summaryTitleLine(title)
+  return lines.map((line) => (line === title ? titleDisplay : { text: line, isPlaceholder: false }))
 }
 
 /** The read-back's words for an answer the parent has not given yet. */

@@ -20,10 +20,13 @@ import {
   privacyPreview,
   PRIVACY_PREVIEW_NOTE,
   stickyPostLine,
+  summaryLineDisplays,
+  summaryTitleLine,
   SUMMARY_NO_DAY,
   SUMMARY_NO_DURATION,
   SUMMARY_NO_PLACE,
   SUMMARY_REPEATS_SUFFIX,
+  SUMMARY_TITLE_PLACEHOLDER,
 } from './postSummary'
 
 /** The form's values with everything answered: Sat, Aug 29 2026, 3:30 PM, 1h. */
@@ -67,6 +70,78 @@ describe('generatedTitle (the title /new writes when the parent does not)', () =
     const long = generatedTitle('P'.repeat(200))
     expect(long.length).toBe(TITLE_MAX_LENGTH)
     expect(long.startsWith(GENERATED_TITLE_PREFIX)).toBe(true)
+  })
+})
+
+describe('summaryTitleLine (what the title line READS while it is not the parent’s)', () => {
+  it('reads "Title" as a prompt — never the generated fallback — on a fresh /new', () => {
+    // The founder's report: a fresh /new showed "Drop-in" on this line, which
+    // is the GENERATED default, so an empty form looked like it had a title.
+    expect(summaryTitleLine(generatedTitle(''))).toEqual({
+      text: SUMMARY_TITLE_PLACEHOLDER,
+      isPlaceholder: true,
+    })
+    expect(summaryTitleLine(GENERATED_TITLE_FALLBACK).text).not.toBe(GENERATED_TITLE_FALLBACK)
+    expect(SUMMARY_TITLE_PLACEHOLDER).not.toBe(GENERATED_TITLE_FALLBACK)
+  })
+
+  it('treats an empty or whitespace-only title as no title', () => {
+    for (const empty of ['', '   ', '\n\t']) {
+      expect(summaryTitleLine(empty)).toEqual({
+        text: SUMMARY_TITLE_PLACEHOLDER,
+        isPlaceholder: true,
+      })
+    }
+  })
+
+  it('shows the parent’s words VERBATIM the moment there are any', () => {
+    expect(summaryTitleLine('Our Saturday park plan')).toEqual({
+      text: 'Our Saturday park plan',
+      isPlaceholder: false,
+    })
+    // Only the ALL-whitespace state is "no title": spaces inside the parent's
+    // own words are theirs, and the line keeps them byte for byte.
+    expect(summaryTitleLine('  Park  plan  ')).toEqual({
+      text: '  Park  plan  ',
+      isPlaceholder: false,
+    })
+  })
+
+  it('leaves a PLACE-generated title as a value — it names the place just picked', () => {
+    expect(summaryTitleLine(generatedTitle('Green Lake Park'))).toEqual({
+      text: 'Drop-in at Green Lake Park',
+      isPlaceholder: false,
+    })
+  })
+
+  it('does NOT move what is saved: a place-less form still generates the fallback', () => {
+    // The display rule and the data rule are separate on purpose — this is the
+    // assertion that says so.
+    expect(generatedTitle('')).toBe(GENERATED_TITLE_FALLBACK)
+    expect(generatedTitle('')).not.toBe(SUMMARY_TITLE_PLACEHOLDER)
+  })
+})
+
+describe('summaryLineDisplays (the card’s lines, title slot included)', () => {
+  it('gives a fresh /new exactly one line, and it is the prompt', () => {
+    expect(summaryLineDisplays([generatedTitle('')], generatedTitle(''))).toEqual([
+      { text: SUMMARY_TITLE_PLACEHOLDER, isPlaceholder: true },
+    ])
+  })
+
+  it('swaps ONLY the title slot, and only while it holds a default', () => {
+    expect(summaryLineDisplays(['Our plan'], 'Our plan')).toEqual([
+      { text: 'Our plan', isPlaceholder: false },
+    ])
+  })
+
+  it('renders every non-title line verbatim', () => {
+    // The card is TITLE-ONLY today (V13 ticket 02), but the seam's contract is
+    // per line: a line that is not the title slot is its own read-back.
+    expect(summaryLineDisplays(['Sat, Aug 29 · 1h', 'Our plan'], 'Our plan')).toEqual([
+      { text: 'Sat, Aug 29 · 1h', isPlaceholder: false },
+      { text: 'Our plan', isPlaceholder: false },
+    ])
   })
 })
 
