@@ -12,12 +12,14 @@
  *
  * Usage: node scripts/layout-width-check.mjs [baseURL]
  *   Needs a running server on :4173 (`npm run build && npm run preview`).
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  * The signed-out shell is what is measurable without credentials; /login renders
  * inside the same <main>, so the measure and overflow properties are testable.
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const WIDTHS = [320, 375, 390, 430, 768, 1024, 1440]
 const MD = 768
 const failures = []
@@ -27,9 +29,12 @@ function check(label, ok, detail) {
   if (!ok) failures.push(label)
 }
 
-const browser = await chromium.launch()
-
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. A silent target is how a lane measures a sibling
+// checkout's build and reports it as a defect in this tree.
 console.log(`layout-width-check against ${BASE}\n`)
+
+const browser = await chromium.launch()
 
 for (const width of WIDTHS) {
   const context = await browser.newContext({

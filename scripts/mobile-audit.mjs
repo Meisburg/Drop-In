@@ -14,10 +14,12 @@
  * Usage: node scripts/mobile-audit.mjs [baseURL] [playdateId]
  *   (default :4173 preview; the deployed site works too —
  *    node scripts/mobile-audit.mjs https://drop-in-mu.vercel.app <id>)
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 // Portrait phones plus landscape (V4 slice 1 AC5: dvh + rotation must not
 // clip the layout or hide a control). V29 v29-4 adds 390×664: the same width as
 // 390×844 with the ~180px of browser chrome a real phone shows, which is the
@@ -57,6 +59,12 @@ const DETAIL_ID = process.argv[3] ?? '00000000-0000-0000-0000-000000000000'
 // throwaway script); the signed-in layout is measured by the places e2e specs
 // at 390 and by the mobile-audit assertions those specs carry.
 const ROUTES = ['/login', '/reset-password', `/playdate/${DETAIL_ID}`, '/browse']
+
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. Until now this lane printed no target at all, so
+// `E2E_BASE_URL=… node scripts/mobile-audit.mjs` silently measured wherever the
+// default pointed and the reader had no way to see it.
+console.log(`mobile-audit against ${BASE}\n`)
 
 const browser = await chromium.launch()
 let failures = 0
