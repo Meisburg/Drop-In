@@ -8,10 +8,16 @@
 > lightboxed compose modal on ModalShell; decide the fate of the `/place/:id/details`
 > route and check the V24 read-surface ruling before changing what is exposed."*
 
-⚠️ The verbatim founder report is NOT in this repo; the sentence above is the
-handover's paraphrase and the only source. It is enough to build against, because
-every clause is a measured fact about the current tree (§1, §3) rather than an
-inference about taste.
+⚠️ **NO FOUNDER REPORT EXISTS FOR THIS ITEM — and that is a measured fact, not a
+gap in the search.** The previous session's full transcript was read
+(`~/.dsh/sessions/--home-jmeisburg-Projects-playdate-app--/session-db9c0116-…`,
+120 user messages): the founder asked for the map fix, the distance-dropdown
+deletion, the profile past rework, the settings rework and the first-tooltip fix,
+and **never mentioned reviews**. So this item comes from the prior session's own
+backlog rather than from his words, and it is therefore the one item in the
+handover whose *motivation* is unverified. That does not make it wrong — a place
+page that shows what parents say is plainly in PRODUCT.md's spirit — but it is the
+half worth showing him before a lot of code exists.
 
 ---
 

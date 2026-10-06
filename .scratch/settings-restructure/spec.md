@@ -11,10 +11,28 @@ defect, not a builder problem).
 > existing nav rail. Notifications alone is a screen today (status, turn-on,
 > email toggle, eight kind toggles, quiet hours, 'Recent alerts')."*
 
-⚠️ **The verbatim founder report is NOT in this repo.** The wording above is the
-handover's paraphrase and the only source. Two decisions below therefore wait on
-the founder rather than being decided here (§7). Nothing else in this brief
-depends on them.
+✅ **AND HERE IS WHAT THE FOUNDER ACTUALLY SAID** — recovered from the previous
+session's transcript (user message seq **2809**, the message that also gave the
+map, distance and past-section feedback):
+
+> *"I also gave feedback that the settings page is like overwhelming. It just
+> seems like a hodgepodge of features. And it's not really well thought out and
+> like maybe it should be like a left hand pain that has the different settings
+> options. And you pick one and then it populates like what's there."*
+
+⚠️ **Two things follow, and the builder must not lose them.** (1) The DESKTOP
+pane is his idea; the PHONE drill-down index is the handover's extension of it —
+a reasonable one, and it is what makes the page finite on the device he actually
+uses, but it is an inference rather than a quote, so it is the half most worth
+confirming with him. (2) His complaint is **"overwhelming… a hodgepodge"**, which
+is a hierarchy complaint, not a request for more controls: the slice's job is
+that one category at a time is on screen, and it must not ADD settings while
+regrouping them.
+
+✅ **The verbatim founder report is now IN HAND** (quoted below, recovered from the
+previous session's transcript). The earlier note here said it was missing; it was,
+until the transcript was read. Two decisions still wait on the founder (§7), but
+they are narrower than they were.
 
 ---
 
