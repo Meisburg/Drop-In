@@ -194,3 +194,41 @@ describe('deleteDeviceTokensForProfileWithClient — the opt-out', () => {
     )
   })
 })
+
+/**
+ * FIX ROUND 1, finding 3 — THE WRAPPER'S CONTRACT WITH THE SEAM.
+ *
+ * `saveDeviceToken` is the function the /settings call site actually passes into
+ * `registerForNativePush`, so it is where the row the seam built becomes the row
+ * the database receives. Nothing above this pins that trip: a wrapper that
+ * rebuilt the row, re-timestamped it, or dropped the version would leave every
+ * other test here green while `app_version` silently went null on every install
+ * — the exact "null by lack of a caller" the reviewer flagged, one layer down.
+ * The call site today passes NO version (the app has no build-version env, and
+ * that is stated at the call site), so both halves of the contract are pinned:
+ * whatever it IS given goes through, and an absent one is null rather than
+ * invented.
+ */
+describe('saveDeviceToken — the wrapper passes the seam’s row through unchanged', () => {
+  it('writes exactly the row it was handed, version included', async () => {
+    const { client, calls, payloads } = makeDeviceTokensMockClient('device_tokens', {
+      data: [{ profile_id: 'prof-1' }],
+    })
+
+    await saveDeviceTokenWithClient(client, ROW)
+
+    expect(calls).toEqual(['from(device_tokens)', 'upsert', 'select(profile_id)'])
+    expect(payloads).toEqual([ROW])
+    expect((payloads[0] as DeviceTokenRow).app_version).toBe('2.0.0')
+  })
+
+  it('keeps a null version null — the documented state, not a default', async () => {
+    const { client, payloads } = makeDeviceTokensMockClient('device_tokens', {
+      data: [{ profile_id: 'prof-1' }],
+    })
+
+    await saveDeviceTokenWithClient(client, { ...ROW, app_version: null })
+
+    expect((payloads[0] as DeviceTokenRow).app_version).toBeNull()
+  })
+})

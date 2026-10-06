@@ -117,6 +117,17 @@ export const NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON =
 export const NATIVE_PUSH_EMPTY_TOKEN_REASON =
   'the notification plugin reported an empty registration token, so there is nothing to send to'
 
+/**
+ * The cause shown when the registration failed with nothing readable to quote —
+ * and the FALLBACK the caller's copy uses in place of a database-shaped reason.
+ * It lives here, next to the seam that produces the failure, so the half that
+ * knows the cause and the half that writes the sentence cannot drift apart.
+ */
+export const NATIVE_PUSH_REGISTRATION_FAILED_REASON = 'native push registration failed'
+
+/** The same, for the opt-out (see `disableNativePush`). */
+export const NATIVE_PUSH_OPT_OUT_FAILED_REASON = 'could not remove this device’s registration'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The decision (pure).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,11 +216,26 @@ export function deviceTokenRow(input: {
 // The registration (rules pure, dependencies injected).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * What a registration resolved to.
+ *
+ * ⚠️ THE ERROR SHAPE IS THE FIX-ROUND FINDING, and it is why `error` carries a
+ * `cause` rather than a `reason`. Every `blocked`/`unsupported` reason here is
+ * WRITTEN COPY (the `NATIVE_PUSH_*_REASON` consts) and the caller renders it as
+ * the sentence. An `error`, by contrast, is a developer string — a PostgREST
+ * message, an RLS `permission denied`, a plugin fault — and interpolating it
+ * into a parent-facing sentence is exactly the defect `src/lib/settingsError.ts`
+ * exists to prevent. So the two are different FIELDS with different contracts:
+ * `reason` is copy, `cause` must be classified before a parent sees it. It is an
+ * `Error` rather than a string because that classifier passes a human string
+ * through and rewrites a database-shaped one, and `rawErrorMessage` reads
+ * `error.message`.
+ */
 export type NativePushRegistrationOutcome =
   | { status: 'registered'; token: string }
   | { status: 'blocked'; reason: string }
   | { status: 'unsupported'; reason: string }
-  | { status: 'error'; reason: string }
+  | { status: 'error'; cause: unknown }
 
 export interface NativePushRegistrationDeps {
   plugin: NativePushPlugin
@@ -235,6 +261,23 @@ function describeError(error: unknown): string {
   } catch {
     return ''
   }
+}
+
+/**
+ * A failed SQL/transport reason as the sentence a retry SHOULD show — the copy
+ * for a user action that did not land.
+ *
+ * ⚠️ WHY A FAILURE REASON COMES BACK AS AN ERROR OBJECT RATHER THAN A STRING.
+ * The classifier in `src/lib/settingsError.ts` takes `unknown`, and
+ * `settingsErrorMessage` passes an already-human message through while replacing
+ * a DATABASE-shaped one with the fallback. Wrapping the raw detail in `Error` is
+ * what lets the caller reuse that classifier: a STRING passed through would NOT
+ * be classified — `rawErrorMessage` returns any non-empty string verbatim, so an
+ * RLS `permission denied` reading would render in a parent-facing sentence. This
+ * is the one shape that carries the detail AND survives the trip.
+ */
+function failureMessage(reason: string): Error {
+  return new Error(reason)
 }
 
 interface Deferred<T> {
@@ -280,7 +323,10 @@ export async function registerNativePushToken(
     const checked = await deps.plugin.checkPermissions()
     permission = typeof checked?.receive === 'string' ? checked.receive : ''
   } catch (error) {
-    return { status: 'error', reason: describeError(error) || 'could not read the notification permission' }
+    return {
+      status: 'error',
+      cause: failureMessage(describeError(error) || 'could not read the notification permission'),
+    }
   }
 
   let plan = planNativePushRegistration(permission)
@@ -291,7 +337,10 @@ export async function registerNativePushToken(
       // The SECOND reading is the one that decides — never the first.
       permission = typeof asked?.receive === 'string' ? asked.receive : ''
     } catch (error) {
-      return { status: 'error', reason: describeError(error) || 'could not ask for the notification permission' }
+      return {
+        status: 'error',
+        cause: failureMessage(describeError(error) || 'could not ask for the notification permission'),
+      }
     }
     plan = planNativePushRegistration(permission)
   }
@@ -335,7 +384,9 @@ export async function registerNativePushToken(
       const detail = (settled.error?.error ?? '').trim()
       return {
         status: 'error',
-        reason: detail === '' ? 'the notification plugin reported a registration error' : detail,
+        cause: failureMessage(
+          detail === '' ? 'the notification plugin reported a registration error' : detail,
+        ),
       }
     }
 
@@ -346,12 +397,17 @@ export async function registerNativePushToken(
       appVersion: deps.appVersion,
       now: deps.now?.(),
     })
-    if (row === null) return { status: 'error', reason: NATIVE_PUSH_EMPTY_TOKEN_REASON }
+    if (row === null) {
+      return { status: 'error', cause: failureMessage(NATIVE_PUSH_EMPTY_TOKEN_REASON) }
+    }
 
     await deps.saveToken(row)
     return { status: 'registered', token: row.token }
   } catch (error) {
-    return { status: 'error', reason: describeError(error) || 'native push registration failed' }
+    return {
+      status: 'error',
+      cause: failureMessage(describeError(error) || NATIVE_PUSH_REGISTRATION_FAILED_REASON),
+    }
   } finally {
     // Step 4. A removal failure must never change the outcome — by now the
     // token is saved (or the reason is decided), and a stuck teardown is not a
@@ -412,7 +468,7 @@ export async function registerForNativePush(
   } catch (error) {
     return {
       status: 'error',
-      reason: describeError(error) || 'the notification plugin could not be loaded',
+      cause: failureMessage(describeError(error) || 'the notification plugin could not be loaded'),
     }
   }
 }
@@ -442,7 +498,7 @@ export async function nativePushShellPlatform(): Promise<NativePushShellPlatform
 export type NativePushOptOutOutcome =
   | { status: 'removed' }
   | { status: 'unsupported'; reason: string }
-  | { status: 'error'; reason: string }
+  | { status: 'error'; cause: unknown }
 
 export interface DisableNativePushInput {
   /**
@@ -467,6 +523,12 @@ export interface DisableNativePushInput {
  *  * a failed delete is `error`, so the caller can say so instead of reporting
  *    "off" over a row that is still there.
  *
+ * An `error`'s `cause` is the RAW detail, wrapped (see `failureMessage`):
+ * turning it into parent-facing copy is the caller's job, because the caller is
+ * the one that knows the sentence its UI needs. The caller's FALLBACK copy is
+ * exported from here (`NATIVE_PUSH_OPT_OUT_FAILED_REASON`), so the half that
+ * produces the failure and the half that writes the sentence cannot drift.
+ *
  * It deletes EVERY `device_tokens` row of this profile (the caller's delete is
  * profile-scoped, the `deletePushSubscriptionsForProfile` shape) rather than
  * one scoped to a token: the token the plugin hands back today is not
@@ -484,7 +546,7 @@ export async function disableNativePush(
   } catch (error) {
     return {
       status: 'error',
-      reason: describeError(error) || 'could not remove this device’s registration',
+      cause: failureMessage(describeError(error) || NATIVE_PUSH_OPT_OUT_FAILED_REASON),
     }
   }
 }

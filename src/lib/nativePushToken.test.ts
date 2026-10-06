@@ -17,10 +17,13 @@
  * resolves misses a token that arrives immediately.
  */
 import { describe, expect, it } from 'vitest'
+import { rawErrorMessage, settingsErrorMessage } from './settingsError.ts'
 import {
   DEVICE_TOKEN_CONFLICT_KEY,
   NATIVE_PUSH_DENIED_REASON,
   NATIVE_PUSH_EMPTY_TOKEN_REASON,
+  NATIVE_PUSH_OPT_OUT_FAILED_REASON,
+  NATIVE_PUSH_REGISTRATION_FAILED_REASON,
   NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON,
   NATIVE_PUSH_WEB_REASON,
   deviceTokenRow,
@@ -243,14 +246,20 @@ describe('registerNativePushToken — every failure is an outcome, never a throw
   it('reports a plugin registration error and saves nothing', async () => {
     const { saved, removed, outcome } = await run({ token: null, registrationError: 'no google-services.json' })
 
-    expect(outcome).toEqual({ status: 'error', reason: 'no google-services.json' })
+    // The raw detail rides in `cause` (see the outcome type): it is a
+    // developer string, so the CALLER classifies it before a parent sees it.
+    expect(outcome.status).toBe('error')
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    expect(rawErrorMessage(outcome.cause)).toBe('no google-services.json')
     expect(saved).toEqual([])
     expect(removed.sort()).toEqual(['registration', 'registrationError'])
   })
 
   it('refuses an empty token rather than storing an undeliverable row', async () => {
     const { saved, outcome } = await run({ token: '' })
-    expect(outcome).toEqual({ status: 'error', reason: NATIVE_PUSH_EMPTY_TOKEN_REASON })
+    expect(outcome.status).toBe('error')
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    expect(rawErrorMessage(outcome.cause)).toBe(NATIVE_PUSH_EMPTY_TOKEN_REASON)
     expect(saved).toEqual([])
   })
 
@@ -259,7 +268,7 @@ describe('registerNativePushToken — every failure is an outcome, never a throw
 
     expect(outcome.status).toBe('error')
     if (outcome.status !== 'error') throw new Error('unreachable')
-    expect(outcome.reason).toContain('permission denied')
+    expect(rawErrorMessage(outcome.cause)).toContain('permission denied')
     expect(removed.sort()).toEqual(['registration', 'registrationError'])
   })
 
@@ -267,7 +276,7 @@ describe('registerNativePushToken — every failure is an outcome, never a throw
     const { outcome } = await run({ registerThrows: new Error('plugin not implemented') })
     expect(outcome.status).toBe('error')
     if (outcome.status !== 'error') throw new Error('unreachable')
-    expect(outcome.reason).toContain('plugin not implemented')
+    expect(rawErrorMessage(outcome.cause)).toContain('plugin not implemented')
   })
 
   it('reports a checkPermissions rejection', async () => {
@@ -378,7 +387,129 @@ describe('disableNativePush — the opt-out deletes the row, or says why not', (
     expect(outcome.status).toBe('error')
     if (outcome.status !== 'error') throw new Error('unreachable')
     // The parent must be told the row is still there, so the raw cause is kept.
-    expect(outcome.reason).toContain('permission denied')
+    expect(outcome.cause).toBeInstanceOf(Error)
+    expect((outcome.cause as Error).message).toContain('permission denied')
     expect(fake.calls).toEqual(['deleteTokens'])
+  })
+
+  it('names the failure itself when the thrown value has no message at all', async () => {
+    const calls: string[] = []
+    const outcome = await disableNativePush({
+      platform: 'android',
+      deleteTokens: async () => {
+        calls.push('deleteTokens')
+        throw {}
+      },
+    })
+    expect(calls).toEqual(['deleteTokens'])
+    expect(outcome.status).toBe('error')
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    // The caller's fallback is the seam's own sentence, so the notice still says
+    // what failed. (The `[object Object]` that `String({})` produces IS carried
+    // through and classified as human — `rawErrorMessage` reads `error.message`,
+    // and this records that shape rather than pretending it cannot happen. It is
+    // unreachable through the app: the only `deleteTokens` is db.ts's, which
+    // throws a real Error.)
+    expect((outcome.cause as Error).message).toBe('[object Object]')
+    expect(settingsErrorMessage(outcome.cause, NATIVE_PUSH_OPT_OUT_FAILED_REASON)).toBe(
+      '[object Object]',
+    )
+  })
+})
+
+/**
+ * ⚠️ FIX ROUND 1, THE DEFECT: A RAW DATABASE MESSAGE IN A PARENT-FACING NOTICE.
+ *
+ * The component used to interpolate the seam's raw failure text, so an RLS
+ * refusal rendered `Couldn't turn on notifications (permission denied for table
+ * device_tokens).`, and a constraint violation rendered `23505 … duplicate key
+ * value violates unique constraint`. `src/lib/settingsError.ts` exists to
+ * prevent exactly that, and this block pins the CONTRACT the fix depends on: an
+ * `error` outcome carries a wrapped cause, and the caller's classifier turns a
+ * developer string into plain copy while a genuine human sentence survives. The
+ * component calls the same function with the same fallbacks.
+ */
+describe('a failure cause is classified before a parent ever sees it', () => {
+  it('rewrites an RLS refusal into plain copy — no “permission denied”, no schema name', async () => {
+    const { outcome } = await run({ saveThrows: new Error('permission denied for table device_tokens') })
+    if (outcome.status !== 'error') throw new Error('unreachable')
+
+    const notice = settingsErrorMessage(outcome.cause, NATIVE_PUSH_REGISTRATION_FAILED_REASON)
+    expect(notice).toBe(NATIVE_PUSH_REGISTRATION_FAILED_REASON)
+    expect(notice).not.toContain('permission denied')
+    expect(notice).not.toContain('device_tokens')
+  })
+
+  it('rewrites the unique-violation the token upsert can raise', async () => {
+    const { outcome } = await run({
+      saveThrows: new Error(
+        '23505 duplicate key value violates unique constraint "device_tokens_token_key"',
+      ),
+    })
+    if (outcome.status !== 'error') throw new Error('unreachable')
+
+    const notice = settingsErrorMessage(outcome.cause, NATIVE_PUSH_REGISTRATION_FAILED_REASON)
+    expect(notice).toBe(NATIVE_PUSH_REGISTRATION_FAILED_REASON)
+    expect(notice).not.toContain('23505')
+    expect(notice).not.toContain('violates')
+  })
+
+  it('rewrites a PostgREST code too', async () => {
+    const { outcome } = await run({ saveThrows: new Error('PGRST205') })
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    expect(settingsErrorMessage(outcome.cause, NATIVE_PUSH_REGISTRATION_FAILED_REASON)).toBe(
+      NATIVE_PUSH_REGISTRATION_FAILED_REASON,
+    )
+  })
+
+  it('rewrites a JSON error BODY — the shape a transport failure actually throws', async () => {
+    // PostgREST answers with a body, and a client that surfaces it as text hands
+    // back `{"code":"42501","message":"permission denied…"}`. The classifier's
+    // `permission denied` pattern catches it, so the parent sees the plain
+    // sentence rather than a paste of the response.
+    const { outcome } = await run({
+      saveThrows: new Error('{"code":"42501","message":"permission denied for table device_tokens"}'),
+    })
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    expect(settingsErrorMessage(outcome.cause, NATIVE_PUSH_REGISTRATION_FAILED_REASON)).toBe(
+      NATIVE_PUSH_REGISTRATION_FAILED_REASON,
+    )
+  })
+
+  it('quotes the PLUGIN’s own fault sentence — it is human text, and it is the cause', async () => {
+    // Contrast with the credential path above: a plugin that says WHY in words
+    // is the one useful detail, so it is passed through rather than flattened.
+    const { outcome } = await run({ token: null, registrationError: 'a notification channel failed' })
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    expect(settingsErrorMessage(outcome.cause, NATIVE_PUSH_REGISTRATION_FAILED_REASON)).toBe(
+      'a notification channel failed',
+    )
+  })
+
+  it('PASSES THROUGH a genuine human sentence — the classifier is conservative', () => {
+    // A plugin that answers with a real, readable reason must still be quoted:
+    // dropping it would hide the one useful detail the parent could act on.
+    expect(
+      settingsErrorMessage(
+        new Error('Notifications are not allowed for Drop In on this phone'),
+        NATIVE_PUSH_REGISTRATION_FAILED_REASON,
+      ),
+    ).toBe('Notifications are not allowed for Drop In on this phone')
+  })
+
+  it('leaves every blocked/unsupported REASON unclassified — those are written copy', async () => {
+    // The other half of the rule: `blocked`/`unsupported` carry sentences the
+    // seam wrote on purpose, INCLUDING the one that names the way back to the
+    // phone's settings. The component must not run them through a fallback.
+    const denied = await run({ check: 'denied' })
+    expect(denied.outcome).toEqual({ status: 'blocked', reason: NATIVE_PUSH_DENIED_REASON })
+    if (denied.outcome.status !== 'blocked') throw new Error('unreachable')
+    expect(denied.outcome.reason).toContain('phone’s settings')
+
+    const unconfirmed = await run({ check: 'prompt', afterRequest: 'prompt' })
+    expect(unconfirmed.outcome).toEqual({
+      status: 'blocked',
+      reason: NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON,
+    })
   })
 })

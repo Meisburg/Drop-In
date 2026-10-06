@@ -15,6 +15,8 @@ import { useSessionContext } from './SessionProvider'
 import { decideEmailOptoutControl } from '../lib/emailOptout'
 import { settingsErrorMessage } from '../lib/settingsError'
 import {
+  NATIVE_PUSH_OPT_OUT_FAILED_REASON,
+  NATIVE_PUSH_REGISTRATION_FAILED_REASON,
   disableNativePush,
   nativePushShellPlatform,
   registerForNativePush,
@@ -334,7 +336,15 @@ export function NotificationsSection() {
         setNotice("You're signed out, so notifications can't be turned on.")
         return
       }
-      const outcome = await registerForNativePush({ profileId, saveToken: saveDeviceToken })
+      const outcome = await registerForNativePush({
+        profileId,
+        saveToken: saveDeviceToken,
+        // `app_version` stays NULL, and that is EXPECTED, not a bug: the build
+        // has no version env (`import.meta.env` carries none — see the deploy
+        // note in docs/push-setup.md), and the column is diagnostic only (0065
+        // pin e). Do not invent a version source here; if one ever exists, pass
+        // it through this field.
+      })
       setBusy(false)
       await reloadDeviceTokens()
       readDevice()
@@ -344,12 +354,17 @@ export function NotificationsSection() {
         return
       }
       // blocked / error / unsupported: an honest sentence, NEVER a success.
-      // `blocked` already carries a full sentence naming the way back; a raw
-      // plugin fault is wrapped so the notice reads as one too.
+      // `blocked`/`unsupported` carry WRITTEN COPY and are rendered as they are
+      // (the blocked one names the way back to the phone's settings). An error
+      // carries a RAW cause — a PostgREST message, an RLS `permission denied`, a
+      // plugin fault — so it goes through the settings classifier first: a
+      // database-shaped string becomes plain copy instead of appearing inside a
+      // sentence addressed to a parent (the defect src/lib/settingsError.ts
+      // exists to prevent).
       setTone(outcome.status === 'error' ? 'error' : 'info')
       setNotice(
         outcome.status === 'error'
-          ? `Couldn't turn on notifications (${outcome.reason}).`
+          ? settingsErrorMessage(outcome.cause, NATIVE_PUSH_REGISTRATION_FAILED_REASON)
           : outcome.reason,
       )
       return
@@ -389,7 +404,17 @@ export function NotificationsSection() {
         return
       }
       setTone('error')
-      setNotice(`Couldn't turn notifications off (${outcome.reason}).`)
+      // Same rule as the turn-on path: only an `error` carries a raw cause (an
+      // `unsupported` here means the platform was not a shell after all), and it
+      // goes through the classifier before a parent reads it.
+      setNotice(
+        outcome.status === 'error'
+          ? `Couldn't turn notifications off (${settingsErrorMessage(
+              outcome.cause,
+              NATIVE_PUSH_OPT_OUT_FAILED_REASON,
+            )}).`
+          : outcome.reason,
+      )
       return
     }
 
