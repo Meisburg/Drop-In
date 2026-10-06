@@ -14,8 +14,15 @@ import App from './App.tsx'
 // visitor on a share link would suppress the browser's own affordance and put
 // nothing in its place.
 import { captureInstallPrompt } from './lib/pushClient'
+// Slice 2e: the ONE place a service worker is registered — and the reason the
+// Android shell is not. A browser registers (web push rides on that worker); the
+// shell unregisters and drops the precache that used to serve the PREVIOUS
+// bundle on the first launch after an update. This replaces the build-injected
+// `/registerSW.js`, which registered unconditionally in both.
+import { startServiceWorkerPolicy } from './lib/serviceWorkerPolicy'
 
 captureInstallPrompt()
+startServiceWorkerPolicy()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

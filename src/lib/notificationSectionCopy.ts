@@ -81,13 +81,15 @@ export const NOTIFICATION_COPY_WEB: NotificationSectionCopy = {
  *
  * The record, so neither wrong account comes back — both were the same class of
  * claim this slice exists to end. The service worker does NOT "fail to run" in
- * the shell: the shell ships the same UNCONDITIONAL registration
+ * the shell: at the time, the shell shipped the same UNCONDITIONAL registration
  * (`android/app/src/main/assets/public/registerSW.js`, pulled in from
  * `dist/index.html`), and it is served from Capacitor's Android default
  * `https://localhost` — a secure context, and the config deliberately sets no
- * `server.url` — so the worker very likely registers and runs. And the prefs are
- * not "read by nothing": they are read to render the toggles. What is absent is
- * the `push` EVENT, not the worker.
+ * `server.url` — so the worker did register and run. (Slice 2e has since removed
+ * that registration for the stale bundle it caused, not for this; the conclusion
+ * here is unchanged, because an FCM alert runs none of this code either way.)
+ * And the prefs are not "read by nothing": they are read to render the toggles.
+ * What is absent is the `push` EVENT, not the worker.
  *
  * So the notes state each control's SCOPE ("where they are set separately")
  * without promising propagation, which also restores the true "saved on this

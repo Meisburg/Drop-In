@@ -53,6 +53,15 @@ export default defineConfig({
     stripDevInjector(),
     VitePWA({
       registerType: 'autoUpdate',
+      // ⚠️ NO INJECTED REGISTRATION SCRIPT (slice 2e). The default injects
+      // `<script src="/registerSW.js">` into EVERY build, and in the Android
+      // shell that tag registered a worker the shell gets nothing from (it
+      // delivers push over FCM, has no `PushManager`, so no `push` event) while
+      // its precache kept serving the PREVIOUS bundle on the first launch after
+      // an update — which, in a SPA that loads once, was the whole session.
+      // `src/lib/serviceWorkerPolicy.ts` is now the one place that decides:
+      // a browser registers, a shell unregisters.
+      injectRegister: false,
       // V8 ticket 08: injectManifest + a real src/sw.ts, because web push is
       // delivered to the SERVICE WORKER and generateSW has nowhere to put a
       // `push`/`notificationclick` handler. The generated worker's four
