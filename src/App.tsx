@@ -274,11 +274,17 @@ function useKeyboardInset(active: boolean): number {
  * state instead of a route. The gate decision itself lives in
  * lib/onboarding.ts (resolveOnboardingGate, unit-tested).
  *
- * V2 slice 5 (ticket 05): /playdate/:id is the ONE public route — a
- * signed-out visitor may open a drop-in's public surface (the page itself
- * renders it; resolveAuthRedirect allows the path). The signed-out "I'm
- * coming" flow stores a return target in session storage before the /login
- * hop; this shell applies it only once the gate has settled ('pass' —
+ * V2 slice 5 (ticket 05): /playdate/:id is public — a signed-out visitor may
+ * open a drop-in's public surface (the page itself renders it;
+ * resolveAuthRedirect allows the path). ⚠️ IT IS NO LONGER THE ONLY ONE, and
+ * this sentence said "the ONE public route" until 2026-10-05: V8 ticket 07
+ * added /place/:id (`isPublicPlacePath` in lib/auth.ts), and the public/private
+ * split is real at the TABLE level too — the live policies grant `anon` SELECT
+ * on `places` (`places_select_public`) and NOT on `reviews`, `place_comments` or
+ * `follows`, all of which are `{authenticated}`-only. So a signed-out place page
+ * renders the place and must gate every social read in the component. The
+ * signed-out "I'm coming" flow stores a return target in session storage before
+ * the /login hop; this shell applies it only once the gate has settled ('pass' —
  * never during the ticket-06 loading state).
  *
  * Two slice-5 gates sit on top: a banned user (profile.banned_at set) is
@@ -871,12 +877,20 @@ export default function App() {
                 </Suspense>
               }
             />
-            {/* V8 ticket 07: the place page. Inside the shell (so it keeps the
-                app chrome and the onboarding gate) — the SIGNED-OUT entry point
-                to it is the place line on /playdate/:id, which is the one public
-                route; a signed-out visitor tapping that link is sent to /login
-                like any other protected path, and the anon `places` SELECT is
-                what makes the place readable the moment they are in. */}
+            {/* V8 ticket 07: the place page. Inside the shell so it keeps the
+                app chrome — ⚠️ AND IT IS PUBLICLY REACHABLE, which this comment
+                denied until 2026-10-05: it used to say a signed-out visitor "is
+                sent to /login like any other protected path", and that is not
+                what the code does. `resolveAuthRedirect` allows the path signed
+                out (`isPublicPlacePath`, lib/auth.ts, V8 ticket 07) and the live
+                `places_select_public` policy serves the row to `anon`, so a
+                signed-out visitor reads the place. What they CANNOT read is the
+                social half: `reviews`, `place_comments` and `follows` are all
+                `{authenticated}`-only at the policy level. So every social read
+                on this page must be gated in the component (the reviews block
+                shows a sign-in prompt and issues no read), and the map/details
+                door is the same route either way. The real boundary is the
+                TABLE policy, not the shell. */}
             <Route path="/place/:id" element={<PlacePage />} />
             {/* V23 slice 5: the place's RESEARCH page — what parents have said,
                 who follows it, a web-search link, what is on there. A separate

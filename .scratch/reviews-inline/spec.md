@@ -76,13 +76,25 @@ Ruling, verbatim from `task-state.md:2301`:
 And the app's model, from the same entry: *"parents authenticate to see
 anything."* Consequences for this slice, stated so nobody re-derives them:
 
-1. **Both surfaces are already behind `ProtectedShell`.** Moving reviews from one
-   protected route to another protected route exposes nothing new to an anon
-   reader. `/place/:id` is *not* public — the comment at `App.tsx:874-879` says so
-   explicitly, and the only public drop-in route is `/playdate/:id`.
-2. **No migration is implied.** Any design that would have rendered reviews on a
-   SIGNED-OUT place page would need a policy decision; this one does not, and a
-   builder must not add a route outside `ProtectedShell` to achieve it.
+1. ⚠️ **THE ROUTE IS PUBLIC — THIS BRIEF SAID THE OPPOSITE AND WAS WRONG.** It
+   claimed "both surfaces are already behind `ProtectedShell`" and cited the
+   comment at `App.tsx:874-879`. Both were false, and the builder caught it:
+   `/place/:id` is a **public route** (`isPublicPlacePath`, `src/lib/auth.ts:31`,
+   V8 ticket 07, consumed by `resolveAuthRedirect` through
+   `lib/onboarding.ts:45`), and the live policy **`places_select_public` grants
+   `anon` SELECT on `places`**. The stale comment in `App.tsx` said a signed-out
+   visitor "is sent to /login like any other protected path"; it has been corrected.
+   **WHAT ACTUALLY PROTECTS THE REVIEWS IS THE TABLE POLICY, NOT THE SHELL** —
+   verified against live `pg_policies` on 2026-10-05: `reviews`, `place_comments`
+   and `follows` are all SELECT `{authenticated}`-only, while `places` is the one
+   table with `anon`. So rendering reviews on a public page exposes nothing to a
+   signed-out reader **provided the component issues no read without a session**,
+   which the slice does (a signed-out visitor gets "Reviews are for signed-in
+   parents." and a sign-in link, and the read is not attempted). **A builder
+   working from the old claim could have "fixed" a route that was never broken.**
+2. **No migration is implied** — and the reason is the policy above, not the
+   shell. Widening reviews to an anon read WOULD be a policy decision plus a
+   migration, and it is out of scope.
 3. **Review AUTHORS are already shown to signed-in strangers** on `/details`, so
    rendering the same rows inline is not a widening either. The ruling covers it.
 
