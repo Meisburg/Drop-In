@@ -16,6 +16,24 @@
  * and those checks failed 10 times out of 10 on every run. They are measured here
  * instead — on a page that has one.
  *
+ * ⚠️ THE ORIGIN TRAP, AND WHY THIS LANE MUST FAIL LOUDLY. A Playwright
+ * `storageState` restores `localStorage` **PER ORIGIN**. The stored marker state
+ * was minted at `http://localhost:4191`; pointed at any other port nothing is
+ * restored, the app renders SIGNED OUT, and this lane reports tap-target,
+ * overflow and shell numbers for the LOGIN PAGE as if they were audit results —
+ * its own `:4180` default already produced two `nav is a left rail` failures that
+ * do not exist in this tree, because a stale preview was listening there. So the
+ * file's origin is compared to `E2E_BASE_URL` BEFORE any browser launches, and
+ * the run then proves the SESSION in the browser instead of trusting the blob:
+ * `supabase-js` rotates an access token from the stored refresh token, so an
+ * `exp` in the past proves nothing and is deliberately NOT checked (a live
+ * refresh is allowed to work), but an app that comes up on `/login` is measured
+ * nothing. Every "cannot see" path exits 2 = NOT MEASURED (never a pass); exit 1
+ * stays reserved for "the app was measured and it is wrong".
+ *
+ * Remedy when the session is missing or was minted for another origin:
+ *   mint the marker on this port: E2E_BASE_URL=<base> npx playwright test e2e/auth.setup.ts e2e/zip-radius.e2e.ts
+ *
  * WHAT IT WRITES: nothing but screenshots and a report under
  * `.scratch/signed-in-audit/`. It never writes application data.
  *
@@ -24,18 +42,20 @@
  *   E2E_BASE_URL=http://localhost:4180 node scripts/signed-in-audit.mjs
  *
  * It needs a signed-in session at `e2e/.auth/marker-state.json` (written by the
- * e2e suite's `auth.setup`). WITHOUT one it does not pretend: it prints
- * `NOT MEASURED` and exits 2, because a lane that silently measures nothing is
- * the failure class this repo keeps paying for.
+ * e2e suite's `auth.setup`). WITHOUT one — or with one minted for another origin
+ * — it does not pretend: it prints `NOT MEASURED` and exits 2, because a lane
+ * that silently measures nothing is the failure class this repo keeps paying for.
  */
 import { chromium } from '@playwright/test'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4180'
+const BASE_ORIGIN = new URL(BASE).origin
 const STATE = 'e2e/.auth/marker-state.json'
 const OUT = '.scratch/signed-in-audit'
 const SHOTS = `${OUT}/screens`
 const MD = 768
+const REMEDY = `mint the marker on this port: E2E_BASE_URL=${BASE} npx playwright test e2e/auth.setup.ts e2e/zip-radius.e2e.ts`
 
 /** The surfaces a family launches into, and nothing that duplicates mobile-audit. */
 const SURFACES = [
@@ -52,7 +72,9 @@ const VIEWPORTS = [
 ]
 
 const failures = []
-const notMeasured = []
+/** Surfaces that had no shell to measure. Distinct from `notMeasured()`, which
+ * refuses the whole RUN when it has no signed-in app to look at. */
+const unmeasuredSurfaces = []
 function check(label, ok, detail) {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`)
   if (!ok) failures.push(label)
@@ -156,20 +178,126 @@ function measure() {
   }
 }
 
-if (!existsSync(STATE)) {
-  console.log(`signed-in-audit — NOT MEASURED: no session at ${STATE}.`)
-  console.log('  Run the e2e suite once (its auth.setup writes it), then re-run this lane.')
+/**
+ * NOT MEASURED, and deliberately not a SKIP. Thrown by every state in which this
+ * lane has no signed-in app to measure — the shape the trap lane proved in
+ * `9de0d47`. Thrown rather than exited so the browser is closed on the way out;
+ * the boundary below prints it and exits 2.
+ */
+class NotMeasured extends Error {}
+
+function notMeasured(reason, detailLines = []) {
+  throw new NotMeasured(`${reason}\n${detailLines.map((l) => `  ${l}`).join('\n')}`)
+}
+
+/** Print a NotMeasured the way every other "cannot see" path does, then exit 2. */
+async function exitNotMeasured(error, browser = null) {
+  if (!(error instanceof NotMeasured)) throw error
+  if (browser !== null) await browser.close().catch(() => {})
+  console.log(`\nNOT MEASURED — ${error.message}`)
+  console.log(`  ${REMEDY}`)
   console.log('  Exit 2, deliberately: this lane measured NOTHING, and that is not a pass.')
   process.exit(2)
 }
 
+/**
+ * The session FILE, checked for the one thing a file can prove: it was minted
+ * for the origin this run measures. A `storageState` restores `localStorage`
+ * PER ORIGIN, so a mismatch is not a smaller audience — it is a different app
+ * (SIGNED OUT, on `/login`), and every number below would be a login-page number
+ * reported as an audit result. See the docblock. Called BEFORE any browser
+ * launches, so a mismatch costs nothing.
+ *
+ * The `auth-token` blob is checked for PRESENCE only, never for freshness: an
+ * `exp` in the past proves nothing, because `supabase-js` rotates the token from
+ * the stored refresh token. The run proves the session itself, below.
+ */
+function loadMarkerState(baseOrigin) {
+  if (!existsSync(STATE)) {
+    notMeasured(`no marker session at ${STATE}.`, [
+      '⚠️  A Playwright storageState restores localStorage PER ORIGIN: the file must',
+      '    have been minted at the origin this run measures, or the app renders SIGNED OUT.',
+      '    Run the e2e suite once (its auth.setup writes it), then re-run this lane.',
+    ])
+  }
+  let saved
+  try {
+    saved = JSON.parse(readFileSync(STATE, 'utf8'))
+  } catch (error) {
+    notMeasured(`${STATE} is not readable JSON (${String(error).slice(0, 80)}).`)
+  }
+  const origins = (saved.origins ?? []).map((o) => o.origin)
+  if (!origins.includes(baseOrigin)) {
+    notMeasured(
+      `the stored session is scoped to ${JSON.stringify(origins)} but this run is against ${baseOrigin}.`,
+      [
+        '⚠️  Playwright restores localStorage PER ORIGIN, so nothing is restored here:',
+        '    the app renders SIGNED OUT and this lane would report tap-target, overflow',
+        '    and shell numbers for the LOGIN PAGE as if they were audit results. This is',
+        '    the origin trap, not a product defect.',
+        `    (the session file is ${STATE})`,
+      ],
+    )
+  }
+  const hasBlob = (saved.origins ?? []).some((o) =>
+    (o.localStorage ?? []).some((item) => item.name.includes('auth-token')),
+  )
+  if (!hasBlob) {
+    notMeasured(`no Supabase session found in ${STATE}.`, [
+      'The file exists and its origin matches, but it carries no auth-token blob.',
+    ])
+  }
+  return saved
+}
+
+// FIRST LINE, before anything is launched or measured: say which app this run is
+// about to measure. A silent target is how a lane measures a sibling checkout's
+// build and reports it as a defect in this tree.
+console.log(`signed-in-audit against ${BASE}\n`)
+
 mkdirSync(SHOTS, { recursive: true })
-const saved = JSON.parse(readFileSync(STATE, 'utf8'))
+let saved
+try {
+  saved = loadMarkerState(BASE_ORIGIN)
+} catch (error) {
+  await exitNotMeasured(error)
+}
 const browser = await chromium.launch({ headless: true, args: ['--headless=new'] })
 const rows = []
 const consoleErrors = []
 
-console.log(`signed-in-audit against ${BASE}\n`)
+// --- The SESSION, proven by the RUN rather than by the file. ----------------
+// Rendering is what this lane's numbers depend on, so the proof is rendering: at
+// this origin the app must come up SIGNED IN. A restored blob proves nothing
+// (`supabase-js` can hold a token PostgREST rejects), and an `exp` check on the
+// file is deliberately absent — a live refresh is allowed to work. What IS
+// refused is the outcome that would otherwise be measured silently: `/` landing
+// on `/login`, which is where `resolveAuthRedirect` sends a signed-out visitor
+// (`src/lib/auth.ts`). The 2500 ms settle is the same budget the loop below
+// allows each surface.
+try {
+  const probe = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    storageState: saved,
+  })
+  const probePage = await probe.newPage()
+  await probePage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+  await probePage.waitForTimeout(2500)
+  const session = await probePage.evaluate(() => ({
+    path: location.pathname,
+    hasToken: Object.keys(localStorage).some((k) => k.includes('auth-token')),
+  }))
+  await probe.close()
+  if (session.path.startsWith('/login') || !session.hasToken) {
+    notMeasured(`the marker session at ${STATE} did not sign this run in at ${BASE_ORIGIN}.`, [
+      `loading ${BASE}/ landed on ${session.path} (auth-token in localStorage: ${session.hasToken}).`,
+      'The stored access token lives 3600 s; if it can no longer be refreshed the',
+      'session is dropped, so this is an EXPIRED marker, not a product defect.',
+    ])
+  }
+} catch (error) {
+  await exitNotMeasured(error, browser)
+}
 
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
@@ -194,7 +322,7 @@ for (const vp of VIEWPORTS) {
 
     // The shell: present, named, and reachable by thumb, with the md switch.
     if (m.nav === null) {
-      notMeasured.push(`${label} shell (no nav on this surface)`)
+      unmeasuredSurfaces.push(`${label} shell (no nav on this surface)`)
     } else if (!m.nav.label) {
       check(`${label} nav has an accessible name`, false, String(m.nav.label))
     }
@@ -234,12 +362,12 @@ if (exempted.length > 0) {
 }
 console.log(
   `\n${failures.length === 0 ? 'PASS' : 'FAIL'} — ${rows.length} page/viewport measurements, ` +
-    `${failures.length} failure(s), ${notMeasured.length} not measured.`,
+    `${failures.length} failure(s), ${unmeasuredSurfaces.length} not measured.`,
 )
 if (consoleErrors.length > 0) {
   console.log(`⚠️ ${consoleErrors.length} console error(s):`)
   for (const e of consoleErrors.slice(0, 5)) console.log(`   ${e}`)
 }
-for (const n of notMeasured) console.log(`   NOT MEASURED: ${n}`)
+for (const n of unmeasuredSurfaces) console.log(`   NOT MEASURED: ${n}`)
 console.log(`   screenshots + results: ${OUT}/`)
 process.exit(failures.length === 0 ? 0 : 1)
