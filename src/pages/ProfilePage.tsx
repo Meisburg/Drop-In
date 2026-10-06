@@ -126,12 +126,15 @@ const AUTOSAVE_DEBOUNCE_MS = 400
  *    drives here is the owner's; V25 t14 widened who may mint, not who edits),
  *    and Remove; plus the add-a-kid row and the five-kid cap)
  *  - "Family photos" (always-present card: the signed-URL image when
- *    set, plus the Add/Change control either way). V23 s16 placed it HERE, in
- *    the parents region, matching the read view's sequence
- *    (it used to sit 2nd, before the kids — the drift this slice kills). The
- *    heading is "Family photos" on BOTH surfaces (V24: the founder asked for a
- *    dedicated section heading; the read view gained its own h2 in the same
- *    change so the cross-surface order guard sees the same block on each side).
+ *    set, plus the Add/Change control either way). V23 s16 placed it HERE,
+ *    inside the parents region (it used to sit 2nd, before the kids). This is
+ *    NOT the read view's position for the photo — that surface's photo is the
+ *    closer of its optional blocks — and this DOM order is hand-written JSX,
+ *    not the `profileBlurbOrder` seam's; see the corrected note above the kids
+ *    card below. The heading is "Family photos" on BOTH surfaces (V24: the
+ *    founder asked for a dedicated section heading; the read view gained its
+ *    own h2 in the same change so the order lane sees the same heading on each
+ *    side).
  *
  * V16 t04 REMOVED the "Hosted drop-ins" card (and with it this page's own-posts
  * load — see the removal note at its old position). Duplicating a past post
@@ -1290,15 +1293,37 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* V23 s16: THE FAMILY PHOTO MOVED HERE — into the parents region, AFTER
-          the bio card (see the card below "About the parents") — so the
-          editor's on-screen sequence matches the read view's (the read view
-          folds the family photo into its "About the parents" card as the
-          CLOSER; the single-sourced block order is the pure profileBlurbOrder
-          seam, src/lib/photoStorage.ts). It used to sit here, as the 2nd card
-          before the kids — the drift this slice kills. The card itself is
-          unchanged (still always present: Add/Change stays reachable and
-          obvious); only its position moved. */}
+      {/* V23 s16: THE FAMILY PHOTO USED TO SIT HERE, as the 2nd card before the
+          kids. It moved DOWN into the parents region (the "Family photos" card
+          below, ahead of "The parents"); the card itself is unchanged (still
+          always present: Add/Change stays reachable and obvious) and only its
+          position moved.
+
+          THE CLAIM THAT USED TO STAND HERE WAS FALSE IN BOTH HALVES (corrected
+          with the order-lane fix, 21aa302), and the record stays with the
+          correction: it said the move put the editor "into the parents region,
+          AFTER the bio card" so that "the editor's on-screen sequence matches
+          the read view's", "the single-sourced block order" being the pure
+          `profileBlurbOrder` seam (src/lib/photoStorage.ts). Neither half holds,
+          and both were checked at the source:
+
+            - This page NEVER IMPORTS `profileBlurbOrder`. The edit surface's
+              DOM order is the hand-written JSX here, and that is exactly why
+              the two surfaces can drift.
+            - The MEASURED edit DOM is user → kids → familyPhoto → parents
+              ("Your photo & name", "About the kids", "Family photos", "The
+              parents" — scripts/profile-order-check.mjs), while the read view
+              closes its OPTIONAL blocks with the photo (user → kids → about →
+              familyPhoto). The photo is not at the same place on the two
+              surfaces.
+            - The seam's array is consumed as MEMBERSHIP, not order
+              (`blurb.includes(...)`, src/components/ProfileView.tsx:513-514),
+              and its 'edit' branch has NO production caller, so reordering the
+              constant changes no rendered heading.
+
+          The order lane is what polices this DOM, because it measures the DOM
+          rather than the constant. Do not restate the old claim: making the
+          editor seam-driven is a change to the app, not to this comment. */}
 
       {/* V21 t08: THE KIDS CARD MOVED HERE — before the parents group — so the
           edit surface's section order matches the read view's pinned sequence
@@ -1517,17 +1542,19 @@ export function ProfilePage() {
           owner's row), but the editor no longer renders or edits it. */}
 
 
-      {/* "Family photos" — V23 s16 MOVED IT HERE, into the parents
-          region, so the editor's on-screen sequence
-          matches the read view's (the read view folds the family photo into its
-          "About the parents" card as the CLOSER). It used to sit as the 2nd
-          card, before the kids. The card is unchanged: always present (add OR
-          change), the signed URL arrives from the hook above, and without one
-          there is simply no image yet, but the control is always there.
+      {/* "Family photos" — V23 s16 MOVED IT HERE, inside the parents region,
+          ahead of "The parents" (it used to sit as the 2nd card, before the
+          kids). The measured edit DOM is user → kids → familyPhoto → parents;
+          that is NOT the read view's order, where the photo closes the optional
+          blocks (user → kids → about → familyPhoto). This DOM is hand-written
+          JSX, not the `profileBlurbOrder` seam's — see the corrected note above
+          the kids card. The card is unchanged: always present (add OR change),
+          the signed URL arrives from the hook above, and without one there is
+          simply no image yet, but the control is always there.
           V24: the heading is now "Family photos" on BOTH surfaces (the founder
           asked for a dedicated section heading); the read view gained its own
-          h2 in the same change, so the cross-surface order guard sees the same
-          block on each side. */}
+          h2 in the same change, so the order lane sees the same heading on each
+          side. */}
       <div className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold text-slate-900">Family photos</h2>
         <p className="mt-1 text-sm text-slate-600">

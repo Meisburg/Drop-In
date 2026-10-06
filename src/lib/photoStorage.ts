@@ -317,6 +317,10 @@ export type ProfileBlurbBlock =
  * still draws its bio card, so 'edit' is pushed by a non-empty bio. A read
  * profile with a bio and no parent cards therefore reports NO 'about' block —
  * the seam matches the DOM rather than naming a card that is no longer drawn.
+ * THE SECOND HALF OF THAT SENTENCE IS GONE TOO: the editor no longer draws a
+ * bio card either (src/pages/ProfilePage.tsx, the note where it stood), the
+ * function takes no bio argument, and `parentNamesVisible` is the single gate on
+ * BOTH surfaces.
  *
  * V16 t05 RE-PINNED THIS ORDER for the optional blocks. It used to be family
  * photo → about → kids; the founder's own reading of the page put the people
@@ -329,15 +333,11 @@ export type ProfileBlurbBlock =
  * page must still look finished (the ticket's AC — no placeholder, no empty
  * card, no "No family photo yet").
  *
- * V23 SLICE 16 EXTENDED THE SEAM TO NAME EVERY BLOCK BOTH SURFACES SHOW, so the
- * block order is single-sourced across the read view AND the edit surface. The
- * read view shows user → kids → about → familyPhoto (the family photo closes the
- * "About the parents" card); the edit surface shows the same sequence with its
- * always-present parent cards appended after it (their empty states are still
- * cards, so they are NOT gated on content). The family photo sits AFTER the bio
- * on both surfaces — that is the position this slice moves it to in the editor,
- * killing the drift where the read view closed with the photo while the editor
- * led with it.
+ * V23 SLICE 16 EXTENDED THE SEAM TO NAME EVERY BLOCK BOTH SURFACES SHOW. The
+ * docblock then added that this made "the block order single-sourced across the
+ * read view AND the edit surface" — THAT SENTENCE WAS FALSE for four versions,
+ * and the correction at the foot of this docblock (21aa302) is the authority on
+ * what this seam does and does not decide.
  *
  * V24 SLICE 11B: THE 'linkedParent' BLOCK IS GONE, AND 'about' IS NOW
  * NAME-AWARE.
@@ -350,11 +350,12 @@ export type ProfileBlurbBlock =
  *     the parents" card), where 11A put it. Nothing rendered on the read surface
  *     was ever gated on this key.
  *   - 'about' is pushed when the caller says the family's parent NAMES are
- *     visible, and on the edit surface ALSO when the bio is non-empty (V24 11B
- *     closed the gap where 11A's read view rendered its heading while this seam
- *     said the block did not exist — finding N1). V27 reverses the read half of
- *     that: the read view no longer draws the bio, so a bio alone pushes no
- *     'about' there, and `parentNamesVisible` is the read gate.
+ *     visible — on BOTH surfaces, and that is now the ONLY gate. V24 11B had
+ *     pushed it on the edit surface also for a non-empty bio, closing the gap
+ *     where 11A's read view rendered its heading while this seam said the block
+ *     did not exist (finding N1); V27 dropped the read half, and retiring the
+ *     bio dropped the edit half, so `parentNamesVisible` alone decides it and
+ *     `surface` does not enter this block's decision.
  *
  * `kidsVisible` is the CALLER's decision, passed in rather than computed,
  * because the rule behind it is not about the profile at all: the `kids` embed
@@ -367,9 +368,34 @@ export type ProfileBlurbBlock =
  * are decided. `parentNamesVisible` follows the same discipline for the same
  * reason: only the caller knows what its own card grid rendered.
  *
- * The ORDER here is the contract; the JSX at each site lays the blocks out in
- * the same order and says so. The "rest" of each page (the handle header, the
- * interests line, the posts) is not part of this seam.
+ * 21aa302 — WHAT THIS SEAM DOES AND DOES NOT DECIDE (the order-lane correction).
+ * The two sentences that used to close this docblock ("the block order is
+ * single-sourced across the read view and the editor", "the JSX at each site
+ * lays the blocks out in the same order and says so") were both false, and the
+ * drift they hid is the reason this is written out:
+ *
+ *   - ONLY THE READ SURFACE CALLS THIS FUNCTION, and it consumes the result as
+ *     MEMBERSHIP, not as an order: `blurb.includes('about')` and
+ *     `blurb.includes('kids')` at src/components/ProfileView.tsx:513-514. That
+ *     view's JSX does emit its blocks in the sequence below, but it does not
+ *     read the sequence from here.
+ *   - THE 'edit' BRANCH HAS NO PRODUCTION CALLER. src/pages/ProfilePage.tsx —
+ *     the edit surface — never imports this function; its DOM order is
+ *     hand-written JSX. Mutating the 'edit' branch changes NO rendered heading
+ *     (proved in 21aa302: the order lane still passed with a byte-identical
+ *     DOM). The branch stays because src/lib/photoStorage.test.ts pins it as the
+ *     INTENDED order and scripts/profile-order-check.mjs states its expectation
+ *     in these terms — deleting it would delete the intent, not fix the drift.
+ *   - WHAT POLICES THE EDIT DOM IS THE LANE, NOT THIS CONSTANT.
+ *     scripts/profile-order-check.mjs measures the RENDERED DOM on both
+ *     surfaces: the edit DOM is user → kids → familyPhoto → parents, while the
+ *     read surface closes its optional blocks with the photo. Those are not the
+ *     same sequence, and nothing here may claim they are.
+ *
+ * The array below is therefore the INTENDED block order, and the read view's
+ * JSX mirrors it; the edit surface's matches only by hand. The "rest" of each
+ * page (the handle header, the interests line, the posts) is not part of this
+ * seam.
  */
 export function profileBlurbOrder(
   profile: { family_photo_url?: string | null } | null,
