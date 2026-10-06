@@ -86,6 +86,16 @@ anything."* Consequences for this slice, stated so nobody re-derives them:
 3. **Review AUTHORS are already shown to signed-in strangers** on `/details`, so
    rendering the same rows inline is not a widening either. The ruling covers it.
 
+⚠️ **AND NO SPEC OWNS THIS SURFACE — measured 2026-10-05, and it changes the
+slice's cost.** `grep -rln 'place-more-details\|place-rating-line\|review-form\|place-comment' e2e/*.e2e.ts`
+returns **NOTHING**: the reviews wall, the review form and the place-comment
+thread have **no browser coverage at all** (`comments.e2e.ts` and
+`comment-replies.e2e.ts` are about a DROP-IN's comments, a different surface). So
+this slice cannot lean on an existing spec the way the profile-archive and tour
+slices could — it must **ADD one**, or the moved behaviour ships unpinned, which
+is how the reviews work reached this handover with the founder having to ask for
+it at all. Budget for the new spec, not for editing an old one.
+
 ## 3. The decision (build this; do not re-open it)
 
 - **A compact "What parents say" block goes ON `/place/:id`**, between the

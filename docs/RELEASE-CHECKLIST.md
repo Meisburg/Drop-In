@@ -22,6 +22,30 @@ which are the same action, plus five duplicate place rows found on the way
 (measured: every one has **zero** references, so nothing needs repointing).
 801 accounts / 1620 rows, `founder_overlap: 0`, dry run first, read-back after.
 
+> ⚠️ **RE-MEASURED 2026-10-05 22:30 — THE RESIDUE HAS GROWN TO 1210 ACCOUNTS /
+> 2447 ROWS.** Nothing about the decision changed; the number did, and it is the
+> number the sweep will act on. Per the tool's own query builders
+> (`scripts/lib/sweep-e2e.mjs`'s `countsQuery()` run through `scripts/db-sql.sh` —
+> no Chrome, no writes, so this is repeatable):
+>
+> | table | marker rows |
+> |---|---|
+> | profiles | 1210 |
+> | auth.users | 1210 |
+> | kids | 16 |
+> | follows | 8 |
+> | playdates | **3** |
+> | **TOTAL** | **2447** |
+>
+> **`founder_overlap` is still 0** — the sweep's own safety gate, re-run at the
+> same time, so the action is still safe to authorise. Two things this exposes:
+> **it grew 1620 → 2447 in a few hours** because every spec run signs up a fresh
+> marker (this item's own recorded mechanism, and the reason 1.2 — a scratch
+> Supabase project — is the durable fix), and **`messages` is not in the sweep's
+> table list at all**: 22 marker-owned messages sit there today and the sweep will
+> leave them (the DM spec's cleanup was fixed to stop GROWING that pile by
+> migration 0064, not to empty it).
+
 **THEN, RANKED BY WHAT UNBLOCKS THE MOST:**
 
 1. **An FCM Firebase project** (→ slices 2.5): drop `google-services.json` into
@@ -426,6 +450,15 @@ Assets below were read from Google's own
   2026-10-05 with `founder_overlap: 0`, and the sweep tool supports
   `select` / `delete` / `verify` with a dry run first. **It is the same single
   "sweep it" the founder owes 1.1** — not a second decision.
+  ⚠️ **RE-MEASURED 2026-10-05 22:30: 1210 accounts / 2447 rows, `founder_overlap: 0`
+  (the table and the method are at the top of this file).** ⚠️ **AND THE THREE
+  MARKER-OWNED `playdates` ROWS ARE NOT JUST RESIDUE — ONE OF THEM ALREADY BROKE A
+  SPEC.** `e2e/places.e2e.ts:2833` deletes its own placed post and asserts the feed
+  then draws ZERO pins; the leftover row `e2e e2e-1791256169 Marker places` (Green
+  Lake Park, hosted by the marker uid) kept a pin on the map, so the band correctly
+  rendered "1 place with drop-ins" and the assertion failed. It was classified as
+  what it is — a data-dependent spec defeated by e2e's own leftovers, not a code
+  defect — and it self-heals when this sweep runs.
   ~~Retire the 352 test accounts' residue.~~
 
 ---
