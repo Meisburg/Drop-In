@@ -98,7 +98,14 @@ import { issueModeratorUpdate, isProfileBanned } from './moderation'
 // V28 r4: the moderator's place-photo replacements. The pure path/patch builders
 // live beside their sibling test; db.ts only moves bytes and rows.
 import { placePhotoObjectPath, type PlacePhotoType } from './placePhotoAdmin'
-import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
+import {
+  nativeOAuthRedirectTo,
+  oauthRedirectTo,
+  oauthReturnErrorMessage,
+  parseOAuthReturn,
+  probeOAuthProvider,
+  type OAuthProvider,
+} from './oauth'
 import { currentPublicOrigin } from './publicUrl'
 // The reviews-inline slice: the place page's inline block and the details page's
 // wall read the SAME rows, so the row shape is the pure module's
@@ -112,7 +119,11 @@ import { RECENT_NOTIFICATIONS_LIMIT, isNotificationKind, type NotificationKind }
 // Slice 2b-ii: the native token's row shape and upsert key live in the seam
 // (./nativePushToken) so the write here and the row the seam builds cannot
 // drift — db.ts only moves the bytes.
-import { DEVICE_TOKEN_CONFLICT_KEY, type DeviceTokenRow } from './nativePushToken'
+import {
+  DEVICE_TOKEN_CONFLICT_KEY,
+  nativePushShellPlatform,
+  type DeviceTokenRow,
+} from './nativePushToken'
 import { resetRedirectTo } from './passwordReset'
 // V8 ticket 06: the weekly series' pure payload seams (the series row and the
 // playdates `series_id` key — omitted entirely for a standalone post, so
@@ -326,15 +337,32 @@ export async function signOutUser(): Promise<void> {
  * A first-time OAuth user comes back with a session but NO profiles row (the
  * email path creates it on /login) — the shell's onboarding gate sends them
  * to /onboarding, whose handle step collects the display name.
+ *
+ * SLICE 2c — IN THE SHELL THE PROVIDER OPENS OUTSIDE THE APP. A browser is
+ * unchanged, line for line: the redirect is the origin-based https URL and
+ * `window.location.assign` is the right call. In the Capacitor shell that same
+ * pair IS the defect — the shell's origin is `https://localhost` (no browser
+ * can return there, see lib/publicUrl.ts) and `assign` navigates the WebView
+ * itself, so the parent ends up reading Google's page inside the app with
+ * nothing to bring them back. The shell therefore redirects to the custom
+ * scheme and hands the URL to `Browser.open`; `completeNativeOAuthReturn`
+ * finishes the round trip when the OS hands it back.
  */
 export async function signInWithOAuthProvider(provider: OAuthProvider): Promise<void> {
+  // The app's ONE "which shell are we in" question (slice 2b-ii), asked rather
+  // than re-derived from a string. It never rejects: a browser — or a shell
+  // that somehow cannot load Capacitor — answers null and takes the web path.
+  const shell = await nativePushShellPlatform()
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
       // `currentPublicOrigin()` — NOT `window.location.origin`. In the native
       // shell the origin is https://localhost, which no provider can return to;
-      // see lib/publicUrl.ts. The deep-link RETURN is still slice 3's job.
-      redirectTo: oauthRedirectTo(currentPublicOrigin()),
+      // see lib/publicUrl.ts. The shell is told the scheme the OS can route
+      // back into the app instead.
+      redirectTo:
+        shell === null ? oauthRedirectTo(currentPublicOrigin()) : nativeOAuthRedirectTo(),
       // Take the URL instead of being navigated to it: a provider that is not
       // enabled would otherwise drop the user on Supabase's raw JSON error
       // page (see probeOAuthProvider).
@@ -345,7 +373,123 @@ export async function signInWithOAuthProvider(provider: OAuthProvider): Promise<
   if (!data?.url) throw new Error('Could not start sign-in. Try again.')
   const blocked = await probeOAuthProvider(data.url)
   if (blocked !== null) throw new Error(blocked)
-  window.location.assign(data.url)
+
+  if (shell === null) {
+    window.location.assign(data.url)
+    return
+  }
+
+  // An EXTERNAL browser, never `window.location.assign`: loading the provider
+  // page into the WebView is the defect this branch exists to remove.
+  const { Browser } = await import('@capacitor/browser')
+  await Browser.open({ url: data.url })
+}
+
+/** What completing a return URL did — for the caller, and for the tests. */
+export type NativeOAuthReturnOutcome =
+  | { status: 'signed-in' }
+  | { status: 'failed'; message: string }
+  | { status: 'ignored' }
+
+/**
+ * SLICE 2c — FINISH THE ROUND TRIP. The URL the OS hands back
+ * (`app.dropin.playdate://#access_token=…`) carries the session in its
+ * FRAGMENT, because this client is on supabase-js's default IMPLICIT flow (the
+ * evidence is in `parseOAuthReturn`'s docblock) — and nothing else will pick it
+ * up: the WebView's own address is still `https://localhost/`, so Supabase's
+ * `detectSessionInUrl` never sees the tokens.
+ *
+ * `setSession` is what turns them into a sign-in: it persists the session and
+ * emits SIGNED_IN, which is the event the app's auth state and every route gate
+ * already listen to — so success needs no further plumbing, and the parent
+ * lands on the feed because the gate moved, not because anything navigated.
+ *
+ * A failure is a SENTENCE (`oauthReturnErrorMessage`), never a raw error and
+ * never silence. `client` is injected so both outcomes are pinned without a
+ * network (the db-device-tokens `…WithClient` shape).
+ */
+export async function completeNativeOAuthReturn(
+  returnUrl: string,
+  client: SupabaseClient = supabase,
+): Promise<NativeOAuthReturnOutcome> {
+  const parsed = parseOAuthReturn(returnUrl)
+  if (parsed.status === 'error') {
+    return { status: 'failed', message: oauthReturnErrorMessage(parsed.message) }
+  }
+  if (parsed.status === 'none') return { status: 'ignored' }
+
+  const { error } = await client.auth.setSession({
+    access_token: parsed.accessToken,
+    refresh_token: parsed.refreshToken,
+  })
+  if (error) return { status: 'failed', message: oauthReturnErrorMessage(error.message) }
+  return { status: 'signed-in' }
+}
+
+/**
+ * SLICE 2c — WAIT FOR THE OS TO HAND THE APP A URL, and finish the sign-in the
+ * round trip was started for. Subscribed from /login's own mount (the screen
+ * that starts the round trip, and the screen the parent is on when it comes
+ * back); a browser silently no-ops, so `npm run dev` and the web app are
+ * untouched.
+ *
+ * ⚠️ WHY A SEPARATE SUBSCRIPTION AND NOT AN `await` IN THE CLICK HANDLER: a
+ * parent who abandons the browser without completing — Chrome swiped away, no
+ * redirect at all — produces no URL, so a promise awaiting one would never
+ * settle and the login screen would sit there with a permanently busy button.
+ * The listener instead waits for something that may never come, and the login
+ * screen stays exactly as usable as it was.
+ *
+ * ⚠️ THE COLD START WORKS BECAUSE CAPACITOR RETAINS THE EVENT: the launch
+ * intent is delivered to plugins before any JavaScript exists
+ * (`BridgeActivity.load` → `onNewIntent`), and `Plugin.notifyListeners(…,
+ * retainUntilConsumed=true)` — which is how `AppPlugin.handleOnNewIntent` fires
+ * `appUrlOpen` — hands it to the FIRST listener, however much later that is
+ * registered. So an Android kill during the round trip is still a sign-in: the
+ * URL waits for /login to mount.
+ *
+ * The returned function detaches. Calling it before the lazy import resolves is
+ * safe — the plugin is then never subscribed at all, which is also what keeps
+ * React's StrictMode double-mount from leaving two listeners behind.
+ */
+export function subscribeNativeOAuthReturn(onFailure: (sentence: string) => void): () => void {
+  let stopped = false
+  let detach: (() => void) | null = null
+
+  void (async () => {
+    try {
+      const { App } = await import('@capacitor/app')
+      if (stopped) return
+      const handle = await App.addListener('appUrlOpen', ({ url }) => {
+        void completeNativeOAuthReturn(url).then((outcome) => {
+          if (outcome.status === 'failed') onFailure(outcome.message)
+          else if (outcome.status === 'ignored') {
+            // A URL that carried no session and no error. The only reachable way
+            // here is a return shape this client's flow does not produce (a
+            // PKCE `?code=`), so it is said out loud rather than swallowed:
+            // "nothing happened" is the one outcome this slice must not ship.
+            console.warn(
+              `[oauth] native return carried no session and no error (${url}) — ` +
+                'this client is on the implicit flow; see parseOAuthReturn in lib/oauth.ts.',
+            )
+          }
+        })
+      })
+      if (stopped) {
+        void handle.remove()
+        return
+      }
+      detach = () => void handle.remove()
+    } catch {
+      // A browser has no App plugin. Nothing to subscribe to, and nothing to
+      // say: the web path never needed this.
+    }
+  })()
+
+  return () => {
+    stopped = true
+    detach?.()
+  }
 }
 
 /**

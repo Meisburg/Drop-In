@@ -67,6 +67,95 @@ export function oauthRedirectTo(origin: string): string {
 }
 
 /**
+ * The shell's own URL scheme (slice 2c). `capacitor.config.ts`'s `appId`,
+ * named once: the same string `AndroidManifest.xml` registers as an intent
+ * filter and the one the Supabase project's redirect allowlist must carry.
+ */
+export const NATIVE_OAUTH_SCHEME = 'app.dropin.playdate'
+
+/**
+ * Where the provider returns to INSIDE THE SHELL — the custom scheme, NOT an
+ * https origin.
+ *
+ * `oauthRedirectTo`'s origin is unreachable from the phone's own browser: in
+ * the shell that origin is `https://localhost`, which exists only inside the
+ * WebView (see `lib/publicUrl.ts`). The scheme is what the operating system can
+ * hand back to the app, and that hand-back IS the return this slice adds.
+ *
+ * No path, and therefore no host either: the session rides in the URL's
+ * fragment (see `parseOAuthReturn`), so nothing here needs to address a route —
+ * and the string the app emits stays identical to the allowlist entry.
+ *
+ * ⚠️ This is deliberately NOT slice 3's https App Links: those need
+ * `assetlinks.json` served from production and exist to open SHARED links. Do
+ * not merge the two.
+ */
+export function nativeOAuthRedirectTo(): string {
+  return `${NATIVE_OAUTH_SCHEME}://`
+}
+
+/**
+ * What a provider round trip handed back to the shell.
+ *
+ * ⚠️ THE SHAPE IS THE FLOW TYPE, NOT A GUESS. `createClient(url, anonKey)`
+ * (db.ts) passes no `flowType`, so supabase-js's default applies — and in
+ * @supabase/supabase-js 2.115.0 that default IS `'implicit'`
+ * (`@supabase/auth-js/dist/main/GoTrueClient.js:24`, bundled into
+ * `@supabase/supabase-js/dist/index.mjs:40`). An implicit return arrives with
+ * the tokens in the URL **fragment** (`#access_token=…`), which is the
+ * `session` arm below.
+ *
+ * A `?code=` (PKCE) return is deliberately NOT handled: it cannot happen while
+ * the flow above is in force, and a handler written for a flow nobody turned on
+ * is exactly the guess this type exists to avoid. If `flowType: 'pkce'` is ever
+ * set, the `none` arm below is what starts firing — and this is the one place
+ * that changes (exchangeCodeForSession).
+ */
+export type OAuthReturn =
+  | { status: 'session'; accessToken: string; refreshToken: string }
+  | { status: 'error'; message: string }
+  | { status: 'none' }
+
+/**
+ * Read a return URL.
+ *
+ * Deep-link URLs are opaque-ish (`app.dropin.playdate://#…`), and WHATWG `URL`
+ * parses a non-special scheme and its empty authority as an edge case, so the
+ * query and the fragment are read with `URLSearchParams` rather than by asking
+ * `URL` to make sense of the whole string. Success is in the fragment and a
+ * failure comes back in the query, which is why both are read and the fragment
+ * wins a key they share.
+ *
+ * An `error` beats tokens: a URL carrying both is a failed round trip, and
+ * "Sign-in was cancelled." is the answer the parent needs.
+ */
+export function parseOAuthReturn(returnUrl: string): OAuthReturn {
+  const hashAt = returnUrl.indexOf('#')
+  const fragment = hashAt === -1 ? '' : returnUrl.slice(hashAt + 1)
+  const beforeHash = hashAt === -1 ? returnUrl : returnUrl.slice(0, hashAt)
+  const queryAt = beforeHash.indexOf('?')
+  const query = queryAt === -1 ? '' : beforeHash.slice(queryAt + 1)
+
+  const params = new URLSearchParams(fragment)
+  for (const [key, value] of new URLSearchParams(query)) {
+    if (!params.has(key)) params.set(key, value)
+  }
+
+  const error = params.get('error')
+  if (error !== null) {
+    return { status: 'error', message: params.get('error_description') ?? error }
+  }
+
+  const accessToken = params.get('access_token')
+  const refreshToken = params.get('refresh_token')
+  if (accessToken && refreshToken) {
+    return { status: 'session', accessToken, refreshToken }
+  }
+
+  return { status: 'none' }
+}
+
+/**
  * A provider failure, said like a person would say it. The "not enabled" case
  * is the EXPECTED answer until the console setup is done, so it must never
  * read as a bug — and it must never be a silent no-op.
@@ -75,6 +164,19 @@ export function oauthErrorMessage(provider: OAuthProvider, message: string): str
   if (/not enabled|unsupported provider/i.test(message)) {
     return `${providerLabel(provider)} sign-in isn’t switched on yet — use your email and password for now.`
   }
+  return oauthReturnErrorMessage(message)
+}
+
+/**
+ * The same sentence, for a failure that came back ALONG THE RETURN PATH, where
+ * the URL names no provider. Exactly one arm of `oauthErrorMessage` can apply
+ * there: "not enabled" is impossible by construction, because a provider that
+ * is switched off answers the authorize endpoint with a 400 instead of a
+ * redirect (`probeOAuthProvider`), so the browser is never sent to it and
+ * nothing can come back. The mapping itself lives once, here, so the two
+ * entries cannot drift.
+ */
+export function oauthReturnErrorMessage(message: string): string {
   if (/cancel|closed|denied|access_denied/i.test(message)) {
     return 'Sign-in was cancelled.'
   }

@@ -22,6 +22,35 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+                Slice 2c — the OAuth RETURN. `app.dropin.playdate` is
+                `capacitor.config.ts`'s appId, used here as a custom URL scheme:
+                the provider round trip finishes in the phone's browser, and
+                this filter is what lets the browser hand
+                `app.dropin.playdate://#access_token=…` back to the app.
+
+                ACTION_VIEW is load-bearing, not convention: @capacitor/app's
+                AppPlugin.handleOnNewIntent ignores any intent whose action is
+                not ACTION_VIEW, so the `appUrlOpen` event the client listens
+                for would never fire. BROWSABLE is what makes a browser
+                redirect able to target it, and DEFAULT is required for an
+                implicit intent to match at all.
+
+                android:launchMode="singleTask" on the activity above is the
+                other half and is deliberately NOT re-added here: it makes the
+                return resume the RUNNING task with the WebView still alive
+                (through onNewIntent) instead of starting a second instance.
+
+                Deliberately NOT slice 3's https App Links: no android:autoVerify,
+                no host, no assetlinks.json — those are for SHARED links.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="app.dropin.playdate" />
+            </intent-filter>
+
         </activity>
 
         <provider

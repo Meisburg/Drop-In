@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  NATIVE_OAUTH_SCHEME,
+  nativeOAuthRedirectTo,
   oauthErrorMessage,
   oauthRedirectTo,
+  oauthReturnErrorMessage,
+  parseOAuthReturn,
   probeOAuthProvider,
   providerLabel,
   resolveOAuthProviders,
@@ -42,6 +46,101 @@ describe('oauthErrorMessage', () => {
 
   it('passes an unknown failure through untouched', () => {
     expect(oauthErrorMessage('google', 'network timeout')).toBe('network timeout')
+  })
+})
+
+/**
+ * Slice 2c — the native return. The redirect target is a custom URL scheme, and
+ * the shape of what comes back is decided by the auth FLOW TYPE (implicit:
+ * tokens in the fragment), not by preference — so both are pinned here rather
+ * than discovered on a phone.
+ */
+describe('the native redirect target (slice 2c)', () => {
+  it('is the appId, named once — the string the manifest also registers', () => {
+    expect(NATIVE_OAUTH_SCHEME).toBe('app.dropin.playdate')
+    expect(nativeOAuthRedirectTo()).toBe('app.dropin.playdate://')
+  })
+
+  it('is not an https origin, and leaves the web target alone', () => {
+    expect(nativeOAuthRedirectTo()).not.toContain('https:')
+    // The web half must stay byte-for-byte (the regression lane for this slice).
+    expect(oauthRedirectTo('https://dropin.example')).toBe('https://dropin.example/')
+    expect(oauthRedirectTo('http://localhost:5173///')).toBe('http://localhost:5173/')
+  })
+})
+
+describe('parseOAuthReturn (slice 2c: implicit flow, tokens in the FRAGMENT)', () => {
+  // The exact tail GoTrue appends for an implicit-flow success.
+  const fragment =
+    'access_token=at-123&expires_in=3600&refresh_token=rt-456&token_type=bearer&type=recovery'
+
+  it('reads the tokens out of the fragment', () => {
+    expect(parseOAuthReturn(`app.dropin.playdate://#${fragment}`)).toEqual({
+      status: 'session',
+      accessToken: 'at-123',
+      refreshToken: 'rt-456',
+    })
+  })
+
+  it('reads a cancellation out of the query, where the server puts errors', () => {
+    expect(
+      parseOAuthReturn('app.dropin.playdate://?error=access_denied&error_description=User+denied+access'),
+    ).toEqual({ status: 'error', message: 'User denied access' })
+  })
+
+  it('falls back to the error code when no description came with it', () => {
+    expect(parseOAuthReturn('app.dropin.playdate://?error=server_error')).toEqual({
+      status: 'error',
+      message: 'server_error',
+    })
+  })
+
+  it('lets a URL carrying both report the failure, not a half sign-in', () => {
+    expect(
+      parseOAuthReturn(`app.dropin.playdate://?error=access_denied#${fragment}`),
+    ).toEqual({ status: 'error', message: 'access_denied' })
+  })
+
+  it('refuses a half session rather than calling a partial return a sign-in', () => {
+    expect(parseOAuthReturn('app.dropin.playdate://#access_token=at-123')).toEqual({
+      status: 'none',
+    })
+    expect(parseOAuthReturn('app.dropin.playdate://#refresh_token=rt-456')).toEqual({
+      status: 'none',
+    })
+    expect(parseOAuthReturn('app.dropin.playdate://#access_token=&refresh_token=')).toEqual({
+      status: 'none',
+    })
+  })
+
+  it('is a no-op for anything else — including a PKCE ?code, which this client cannot produce', () => {
+    // PKCE would arrive as `?code=…` and needs exchangeCodeForSession. It is
+    // NOT handled, because `flowType` is 'implicit' (see parseOAuthReturn's
+    // docblock); this pin is what makes that a known shape instead of a silent
+    // surprise, and the caller warns rather than swallowing it.
+    expect(parseOAuthReturn('app.dropin.playdate://?code=abc')).toEqual({ status: 'none' })
+    expect(parseOAuthReturn('https://dropin.example/?code=abc')).toEqual({ status: 'none' })
+    expect(parseOAuthReturn('app.dropin.playdate://')).toEqual({ status: 'none' })
+    expect(parseOAuthReturn('')).toEqual({ status: 'none' })
+  })
+})
+
+describe('oauthReturnErrorMessage (slice 2c: failures said as sentences)', () => {
+  it('turns a provider cancellation into the sentence the email path shows', () => {
+    expect(oauthReturnErrorMessage('access_denied')).toBe('Sign-in was cancelled.')
+  })
+
+  it('is the SAME mapping oauthErrorMessage uses for its non-provider arm', () => {
+    expect(oauthErrorMessage('google', 'access_denied')).toBe(
+      oauthReturnErrorMessage('access_denied'),
+    )
+    expect(oauthErrorMessage('facebook', 'network timeout')).toBe(
+      oauthReturnErrorMessage('network timeout'),
+    )
+  })
+
+  it('passes an unknown failure through untouched', () => {
+    expect(oauthReturnErrorMessage('network timeout')).toBe('network timeout')
   })
 })
 

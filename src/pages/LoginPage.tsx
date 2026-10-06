@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { DropInMark } from '../components/DropInMark'
@@ -11,6 +11,7 @@ import {
   sendPasswordReset,
   signInWithOAuthProvider,
   signOutUser,
+  subscribeNativeOAuthReturn,
   supabase,
 } from '../lib/db'
 import {
@@ -62,6 +63,20 @@ export function LoginPage() {
    * default) instead of the first run at /onboarding.
    */
   const [justSignedUp, setJustSignedUp] = useState(false)
+
+  /**
+   * Slice 2c — the native round trip comes back as a URL the OS hands to the
+   * app (`app.dropin.playdate://#access_token=…`), not as a page load, so
+   * nothing in the WebView notices it. This screen started the round trip and
+   * is the screen the parent is on when it returns, so it owns the
+   * subscription. Success needs no code here — completing it emits SIGNED_IN
+   * and the shell's gate moves the parent to the feed; a failure is the same
+   * inline sentence the email path uses. In a browser this is a silent no-op.
+   *
+   * It must stay ABOVE the signed-in bounce below: that early return would skip
+   * this hook and break the rules of hooks the moment a session appears.
+   */
+  useEffect(() => subscribeNativeOAuthReturn((sentence) => setError(sentence)), [])
 
   // Signed-in users don't need the auth screen — unless THIS page just signed
   // them up (the bounce would steal the /onboarding navigation).

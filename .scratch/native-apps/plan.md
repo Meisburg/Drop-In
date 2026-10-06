@@ -235,6 +235,42 @@ the app when installed. Both files are served from the web app.
 >   way `smtpDeno_test.ts` proved nodemailer — a type-checked adapter is NOT a
 >   tested adapter.
 
+### Slice 2c: the native OAuth RETURN (so a Google-only parent can sign in)
+
+> **📄 COLD-START BRIEF: `.scratch/native-apps/slice-2c-brief.md`.** Read it before this
+> slice. It carries the measured evidence, the mechanism, the traps, and the
+> production config this needs.
+
+- **Objective:** a parent taps **Continue with Google** inside the native app,
+  completes the provider round trip in a browser, and lands back in the app
+  **signed in**.
+- **Why it exists (MEASURED 2026-10-06, a LAUNCH BLOCKER):** the founder could not
+  sign into the native app at all — their account is **Google-only**, so they have
+  no password, and "Continue with Google" cannot return to the shell because the
+  OAuth redirect is an **https** URL. Verified in the tree: `signInWithOAuthProvider`
+  redirects via `currentPublicOrigin()` then `window.location.assign` (which
+  navigates the WebView ITSELF); **no `@capacitor/app`, no `@capacitor/browser`**
+  are installed; `AndroidManifest.xml` has no custom scheme and no `autoVerify`.
+  **A large share of real parents sign up with Google**, so the native app is
+  unusable for them — independent of push, and independent of slice 4's review.
+- **Files in scope:** `package.json`, `android/app/src/main/AndroidManifest.xml`,
+  `src/lib/oauth.ts`, `src/lib/db.ts`, plus their tests.
+- **Approach:** register the `app.dropin.playdate://` **custom scheme** and use it
+  as the OAuth return target, opening the provider page in an **external browser**
+  in the shell only. **Deliberately NOT slice 3:** App Links need `assetlinks.json`
+  served from production, a deploy-coupled loop; slice 3 is still needed, but for
+  shared **https** links. Do not conflate them.
+- **Acceptance criteria:**
+  - in the native app, Continue with Google returns **signed in** (feed, not login);
+  - the **browser** Google flow is unchanged;
+  - the round trip is proven **on the connected device**, not inferred.
+- **Verification command:** `npm run verify` + the targeted auth e2e specs, then a
+  real-device run driven with `adb`/`uiautomator` (the method that proved the push
+  path).
+- **Depends on:** slice 1 (shell). **Needs:** the `app.dropin.playdate:///…`
+  redirect added to the Supabase project's **redirect allowlist** — a production
+  config step the orchestrator applies, recorded in the brief.
+
 ### Slice 3: deep links (shared links and email links open the app)
 
 - **Objective:** an `https://drop-in-mu.vercel.app/...` link opens the app when
