@@ -570,11 +570,12 @@ function entryFrameOffsets(page: Page): Promise<{
  * Assert the pane — and, with it, the focused pin — sit at the middle of the
  * SCREEN.
  *
- * `at` NAMES THE VIEWPORT IN EVERY MESSAGE, because the V31 spec measures this
- * claim at more than one viewport and a failure that does not say WHICH entry
- * frame it measured sends the reader to the wrong phone size. The offsets are
- * printed with it, so the failure carries the measurement rather than only the
- * verdict.
+ * `at` NAMES THE VIEWPORT IN EVERY MESSAGE, so a failure says which entry frame
+ * it measured. It is called at ONE viewport — 375x667, the only size where the
+ * claim is falsifiable, because at 390x844 the browser's own clamp lands the pane
+ * inside the tolerance with the app's centring call deleted (see the V31
+ * docblock). The offsets are printed with the message, so the failure carries the
+ * measurement rather than only the verdict.
  *
  * NOT a `expect.poll`: the caller has awaited `waitForEntryScrollToSettle`, so a
  * settled layout is already guaranteed, and this reads it in one pass.
@@ -996,45 +997,70 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
  *     the same 12px the pane assertion uses — the map container is centred, so
  *     this is layout rounding, not a fudge.
  *
- * WHY THIS SPEC MEASURES THE SCREEN-CENTRING CLAIM AT TWO VIEWPORTS, AND WHY
- * NEITHER OF THEM MAY BE "TIDIED" BACK TO ONE TALLER PHONE.
+ *     ⚠️ THIS CLAIM IS MEASURED AT 375x667 ONLY. It is deliberately NOT asserted
+ *     at 390x844, and it must not be re-added there — see below.
  *
- * At 390x844 — the founder's report size — the browser's own CLAMP happens to
- * agree with the centring call. The map view's own document is only ~147px taller
- * than the 844px viewport, so when the list unmounts the page scroll clamps to
- * that 147px and the pane lands 11.64px from the middle: INSIDE the 12px
- * tolerance, without the app doing anything. MEASURED on this build with the
- * entry effect's `node.scrollIntoView({ block: 'center', … })` DELETED:
+ * WHY THE SCREEN-CENTRING CLAIM LIVES AT 375x667 AND WAS DELETED AT 390x844.
  *
- *   390x844 → pane.dy 11.640625   (passes by 0.36px — the coincidence)
- *   390x844 → pane.dy 35.640625   (a LATER run of the SAME deletion, scrollY 171:
- *                                  fails — the coincidence is not stable)
- *   390x814 → pane.dy 20.34375    (fails, but only by 8px)
- *   375x667 → pane.dy 89.7734375  (isolated probe; fails by 78px)
- *   375x667 → pane.dy 65.7734375  (this spec's own failing run, scrollY 256)
+ * A SHORT DOCUMENT CANNOT CENTRE A PANE. At 390x844 the map view's own document
+ * is only a little taller than the viewport, so the browser's own scroll CLAMP —
+ * not the app's entry scroll — decides where the pane lands. MEASURED on this
+ * build (radius widest, search "park", the seeded marker):
  *
- * and with the app's centring call in place the same three read 0.359375,
- * 0.34375 and 0.2265625. THE MAP VIEW'S OWN DOCUMENT HEIGHT MOVES WITH THE DATA —
- * 1015px in the 35.64 run against 991px in the 11.64 one — so at 390x844 the
- * screen assertion is not merely toothless, it is FLAKY: whether the no-op clamp
- * lands inside the 12px tolerance depends on the seed, which is a verdict decided
- * by data rather than by the app. At 375x667 the same deletion read 65.77 and
- * 89.77 on two runs: never within a factor of five of the tolerance. (An earlier
- * probe of this same mechanism recorded 44px of overshoot at 390x814 where this
- * run read 20.34; that spread IS the data-dependence, and it is why the short
- * viewport is the one that carries the falsifiable measurement.)
+ *   390x844 → document 991px, viewport 844px, max scroll 147. The app's entry
+ *             scroll settles at scrollY 135 with pane.dy 0.359375; a no-op entry
+ *             (`window.scrollTo(0, 0)`) leaves pane.dy 135.359375; and the CLAMP
+ *             at the scroll limit lands pane.dy -11.640625 — INSIDE the 12px
+ *             tolerance, WITH THE APP'S CENTRING CALL DELETED.
+ *   375x667 → document 947px, viewport 667px, max scroll 280. The app settles at
+ *             scrollY 190 with pane.dy 0.2265625; a no-op entry leaves pane.dy
+ *             190.2265625; the clamp lands pane.dy -89.7734375 — 7.5x the
+ *             tolerance.
  *
- * 375x667 (iPhone SE) is a REAL phone and the shortest of the three: it gives the
- * page the most clamp to overshoot with. The 390x844 assertions are KEPT rather
- * than moved — that is the size the defect was reported and first measured at,
- * it is where claim (1) and the live-camera claim below were measured, and it
- * still catches a pane displaced FAR from the middle (a `window.scrollTo(0, 0)`
- * mutation of the same entry effect measured pane.dy 135.36 at this size). The
- * short viewport adds the tooth 390x844 does not have.
+ * THE MAP VIEW'S OWN DOCUMENT HEIGHT MOVES WITH LIVE DATA — 1015px in one run
+ * against 991px in another — so at 390x844 the claim had only ~10–36px of clamp
+ * headroom. THAT IS NOT HYPOTHETICAL: THE V31 TEST FAILED A FULL-SUITE RUN WITH
+ * THE APP ENTIRELY INTACT,
  *
- * DO NOT COLLAPSE THIS BACK TO A SINGLE TALLER VIEWPORT, and do not widen
- * `FOCUSED_PIN_TOLERANCE_PX` to make one viewport enough: either move gives the
- * defect (an entry effect that does nothing) a passing test again.
+ *   the map pane must sit at the middle of the screen at 390x844
+ *   (measured {"pane":{"dx":0,"dy":52.359375},"pin":{"dy":53.26},"scrollY":135})
+ *
+ * at scrollY 135 — the exact offset an orchestrator probe measured as perfectly
+ * centred (pane.dy 0.4) on another run. THE APP HAD SCROLLED CORRECTLY; the
+ * LAYOUT ABOVE THE PANE was ~52px taller that run. The same spec passed on the
+ * next run of the same build: a verdict decided by the seed is a flake, not a
+ * defect report. (The same data-dependence was already visible in the no-op
+ * readings at 390x844: pane.dy 11.640625 on one run — the coincidence above —
+ * and 35.640625 on a later run of the SAME deletion, scrollY 171, which fails.
+ * An earlier probe of this mechanism recorded 44px of overshoot at 390x814 where
+ * another run read 20.34375.)
+ *
+ * AND NO RELAXED FORM OF THE CLAIM CAN GO BACK TO 390x844. A disjunction such as
+ * "centred OR at the scroll limit" would be satisfied by the clamp EVEN WITH THE
+ * APP'S CENTRING CALL DELETED — the vacuous pass `d4dc257` exists to remove.
+ * DO NOT RE-ADD A SCREEN-CENTRING ASSERTION AT 390x844; A CLAMP SATISFIES ANY
+ * DISJUNCTION YOU CAN WRITE THERE. If the pane's centring on screen needs
+ * measuring, measure it at 375x667, where the claim is falsifiable.
+ *
+ * `FOCUSED_PIN_TOLERANCE_PX` STAYS 12 AT BOTH SIZES — nothing was loosened to
+ * make the short viewport work: there the nearest clamp sits 89.77px from the
+ * centred offset, so the assertion passes by ~7.5 tolerances and a no-op entry
+ * fails by the same margin, on a viewport ~324–348px shorter than the document.
+ * 375x667 (iPhone SE) is a REAL phone with room to overshoot in BOTH directions
+ * (a scroll of 0 leaves the pane 190.23px low; the far clamp leaves it 89.77px
+ * high), which is why the falsifiable claim goes there.
+ *
+ * WHAT 390x844 STILL ASSERTS: the founder reported the defect at this size, so
+ * claim (1) — the focused pin centred in the PANE, pane-relative geometry that
+ * the map camera controls and no scroll clamp can fake — and claim (3) — a live
+ * camera and `places-map-card-0`'s `aria-current` — are asserted there. Both are
+ * meaningful at any document height; only the screen-centring half needed a
+ * scroll range the taller viewport does not have.
+ *
+ * DO NOT COLLAPSE THE SURVIVING SCREEN ASSERTION BACK INTO 390x844, and do not
+ * widen `FOCUSED_PIN_TOLERANCE_PX` to make the taller viewport enough: either
+ * move hands the defect (an entry effect that does nothing) a passing test again,
+ * and the data-dependent layout hands it a flake on top.
  */
 test('entering the map view frames the focused place, in the middle of the pane and of the screen (V31)', async ({
   page,
@@ -1047,27 +1073,29 @@ test('entering the map view frames the focused place, in the middle of the pane 
   // (1) The focused card's own pin, at the centre of the map pane.
   await expectPinCentredOnMap(page)
 
-  // (2) The map pane, at the centre of the viewport — and the focused pin with
-  // it, since (1) puts it at the pane's centre.
-  //
-  // 2026-10-06: `openMapView` has already waited for the entry scroll to stop, so this
-  // reads the layout the app settled in rather than one frame of the animation
-  // that got it there. The tolerance is unchanged at 12px — the drift this
-  // spec exists to catch is what made the spacer come out.
-  await expectEntryFrameCentredOnScreen(page, '390x844')
+  // (2) NO SCREEN-CENTRING ASSERTION IS MADE AT THIS SIZE, and one must not be
+  // re-added — see the docblock. At 390x844 the map view's own document is only
+  // ~147px taller than the viewport, so the browser's CLAMP decides where the
+  // pane lands and the claim had only ~10–36px of headroom: it FAILED a
+  // full-suite run with the app entirely intact (pane.dy 52.359375 at scrollY
+  // 135 — the offset an orchestrator probe measured as perfectly centred) and
+  // passed the next run of the same build. The falsifiable version of the claim
+  // is measured at 375x667 in (4), which still runs the settle wait above.
 
   // (3) IT IS NOT THE EMPTY-STATE BRANCH, and not the home pin's frame: the map
   // reports a live camera and the focused place is the one it is on.
   expect(await mapCenter(page)).toMatch(/^-?\d+\.\d+,-?\d+\.\d+$/)
   await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
 
-  // (4) THE SAME ENTRY AT A SHORTER, REAL PHONE — the measurement that FAILS if
-  // the app's entry effect stops scrolling the pane into the middle. See the
-  // docblock: at 390x844 the browser's own clamp lands the pane 11.64px from the
-  // middle on its own (inside the 12px tolerance), so that reading alone cannot
-  // fail for the defect this spec exists to catch. At 375x667 the clamp
-  // overshoots and the same deletion is caught (measured 65.77px on the failing
-  // run, 89.77px in the isolated probe that chose the viewport).
+  // (4) THE SCREEN-CENTRING CLAIM LIVES HERE, AT A SHORTER REAL PHONE — the
+  // measurement that FAILS if the app's entry effect stops scrolling the pane
+  // into the middle. See the docblock: at 390x844 the browser's own clamp lands
+  // the pane ~11.64px from the middle on its own (inside the 12px tolerance), so
+  // that reading cannot fail for the defect this spec exists to catch — and with
+  // live data moving the document it is also flaky. At 375x667 the clamp
+  // overshoots and the same deletion is caught — the clamp limit itself lands the
+  // pane -89.7734375px off centre (re-measured on this build), and the spec's own
+  // failing run of the deletion read 65.7734375px at scrollY 256.
   //
   // A FULL RE-ENTRY — a fresh `/browse` load, the real scroll past the toggle
   // threshold, a real click — and NOT a resize of the open view: a resize
