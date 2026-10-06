@@ -183,6 +183,38 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
     })
     expect(setSession).not.toHaveBeenCalled()
   })
+
+  /**
+   * Slice 2c fix round 1 — the user-facing half of the blank-screen fix.
+   *
+   * /login renders this outcome's message as `{error ? <p>…</p> : null}`, so an
+   * EMPTY message is a failed sign-in the parent is never told about. The three
+   * shapes below all produced exactly that before the `??`→`||` change; this
+   * asserts on what the SCREEN would show, at the seam the screen reads.
+   */
+  it('never reports a failure the parent would not be told about', async () => {
+    const emptyShapes = [
+      'app.dropin.playdate://?error=access_denied&error_description=',
+      'app.dropin.playdate://?error=',
+      'app.dropin.playdate://#error=',
+      'app.dropin.playdate://#error=&error_description=',
+    ]
+
+    for (const url of emptyShapes) {
+      const outcome = await completeNativeOAuthReturn(url, fakeClient().client)
+      expect(outcome.status, `${url} must fail`).toBe('failed')
+      const message = outcome.status === 'failed' ? outcome.message : ''
+      expect(message.trim(), `${url} must produce a sentence [LoginPage renders nothing on '' ]`).not.toBe('')
+    }
+  })
+
+  it('turns a rejected session with an EMPTY provider message into a sentence too', async () => {
+    const { client } = fakeClient({ data: {}, error: { message: '' } })
+
+    const outcome = await completeNativeOAuthReturn(`app.dropin.playdate://${FRAGMENT}`, client)
+
+    expect(outcome).toEqual({ status: 'failed', message: 'Could not finish sign-in. Try again.' })
+  })
 })
 
 describe('subscribeNativeOAuthReturn (slice 2c)', () => {

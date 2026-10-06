@@ -1,4 +1,16 @@
 import { describe, expect, it } from 'vitest'
+// Slice 2c fix round 1 — the scheme's OTHER two homes, read as SOURCE.
+//
+// `?raw` is the repo's own pattern for this (see avatarUrl.test.ts): a
+// `node:fs` read would be a build error, because tsconfig.app.json's types are
+// ["vite/client"], not node.
+//
+// The comment stripper below matters as much as the imports: these files are
+// heavily commented, and the manifest comment NAMES `app.dropin.playdate`, so a
+// naive substring match would pass on the prose alone — an instrument that its
+// own documentation satisfies is not an instrument.
+import androidManifestSource from '../../android/app/src/main/AndroidManifest.xml?raw'
+import capacitorConfigSource from '../../capacitor.config.ts?raw'
 import {
   NATIVE_OAUTH_SCHEME,
   nativeOAuthRedirectTo,
@@ -125,6 +137,55 @@ describe('parseOAuthReturn (slice 2c: implicit flow, tokens in the FRAGMENT)', (
   })
 })
 
+/**
+ * Slice 2c fix round 1 — AN EMPTY `error_description` MUST NOT RENDER NOTHING.
+ *
+ * These pin the COMPOSED sentence, not the intermediate value: /login renders
+ * `{error ? <p>…</p> : null}`, so the only thing standing between a failed round
+ * trip and a blank screen is this function returning a non-empty string. A test
+ * asserting the parse result alone would have passed with the `??` this fix
+ * replaces.
+ */
+describe('the failure sentence can never be empty (slice 2c fix round 1)', () => {
+  /** The sentence a parent would actually read for this return URL. */
+  function sentenceFor(returnUrl: string): string {
+    const parsed = parseOAuthReturn(returnUrl)
+    return parsed.status === 'error' ? oauthReturnErrorMessage(parsed.message) : ''
+  }
+
+  it('falls through a PRESENT-BUT-EMPTY error_description to the code', () => {
+    // `?error_description=` is the shape that defeated `??`: the key EXISTS and
+    // is '', and `'' ?? error` is ''. Measured, not hypothesised.
+    expect(
+      parseOAuthReturn('app.dropin.playdate://?error=access_denied&error_description='),
+    ).toEqual({ status: 'error', message: 'access_denied' })
+    expect(sentenceFor('app.dropin.playdate://?error=access_denied&error_description=')).toBe(
+      'Sign-in was cancelled.',
+    )
+  })
+
+  it('says a sentence for a bare error with no code and no description at all', () => {
+    expect(sentenceFor('app.dropin.playdate://?error=')).toBe('Could not finish sign-in. Try again.')
+    expect(sentenceFor('app.dropin.playdate://#error=')).toBe('Could not finish sign-in. Try again.')
+    expect(sentenceFor('app.dropin.playdate://?error=&error_description=')).toBe(
+      'Could not finish sign-in. Try again.',
+    )
+  })
+
+  it('renders a sentence for EVERY error shape, which is the property that matters', () => {
+    for (const url of [
+      'app.dropin.playdate://?error=access_denied',
+      'app.dropin.playdate://?error=access_denied&error_description=',
+      'app.dropin.playdate://?error=access_denied&error_description=User+denied',
+      'app.dropin.playdate://?error=',
+      'app.dropin.playdate://#error=',
+      'app.dropin.playdate://#error=&error_description=',
+    ]) {
+      expect(sentenceFor(url).trim(), `${url} must produce a sentence`).not.toBe('')
+    }
+  })
+})
+
 describe('oauthReturnErrorMessage (slice 2c: failures said as sentences)', () => {
   it('turns a provider cancellation into the sentence the email path shows', () => {
     expect(oauthReturnErrorMessage('access_denied')).toBe('Sign-in was cancelled.')
@@ -141,6 +202,63 @@ describe('oauthReturnErrorMessage (slice 2c: failures said as sentences)', () =>
 
   it('passes an unknown failure through untouched', () => {
     expect(oauthReturnErrorMessage('network timeout')).toBe('network timeout')
+  })
+
+  it('never returns an empty sentence — the blank-screen guarantee, at its root', () => {
+    // The root-cause half of the fix: whatever entry point composes the message
+    // (the parser, a provider error, a `setSession` failure with no message),
+    // an empty one leaves here as a sentence.
+    expect(oauthReturnErrorMessage('')).toBe('Could not finish sign-in. Try again.')
+    expect(oauthReturnErrorMessage('   ')).toBe('Could not finish sign-in. Try again.')
+    expect(oauthErrorMessage('google', '')).toBe('Could not finish sign-in. Try again.')
+  })
+})
+
+/**
+ * Slice 2c fix round 1 — THE SCHEME HAS THREE HOMES AND ONLY ONE IS CODE.
+ *
+ * `NATIVE_OAUTH_SCHEME` (pinned above) is what the app sends as `redirectTo`;
+ * `AndroidManifest.xml` is what the OS matches to hand the URL back; and
+ * `capacitor.config.ts`'s `appId` is the package the whole thing is built from
+ * — a value its own comment says is free to change until the first Play upload.
+ * Drift between any two of them means the OAuth return SILENTLY never fires, and
+ * nothing in src/ or scripts/guards/ compared them.
+ *
+ * WHY A VITEST TEST AND NOT A `scripts/guards/` ENTRY: this repo's guard
+ * discipline (docs/agents/borrowed-guards.md) requires a written rule in the
+ * build law PLUS a `.check.mjs` seeded proof that the guard can fire, and a
+ * second copy of the manifest fixture to drive it — disproportionate for one
+ * string equality that a three-line read of the real files settles. This runs
+ * inside `npm run verify` with the rest of the unit lane, and its own red-green
+ * proof (change one of the three, watch this go red) is the same evidence
+ * standard.
+ */
+describe('the native scheme cannot drift (slice 2c fix round 1)', () => {
+  /** The manifest with its comments removed — prose must not satisfy a pin. */
+  const manifest = androidManifestSource.replace(/<!--[\s\S]*?-->/g, '')
+
+  it('matches the ACTION_VIEW/BROWSABLE intent filter the OS actually routes on', () => {
+    const oauthFilter = [...manifest.matchAll(/<intent-filter>([\s\S]*?)<\/intent-filter>/g)]
+      .map((match) => match[1])
+      .find((body) => /<action\s+android:name="android\.intent\.action\.VIEW"\s*\/>/.test(body))
+
+    expect(oauthFilter, 'no ACTION_VIEW intent filter in AndroidManifest.xml').toBeDefined()
+    // BROWSABLE is what lets a browser redirect target it at all; without it the
+    // filter matches nothing we need.
+    expect(oauthFilter).toMatch(/android\.intent\.category\.BROWSABLE/)
+
+    expect(oauthFilter?.match(/<data\s+android:scheme="([^"]+)"\s*\/>/)?.[1]).toBe(
+      NATIVE_OAUTH_SCHEME,
+    )
+  })
+
+  it("matches capacitor.config.ts's appId, the package the scheme is built from", () => {
+    expect(capacitorConfigSource.match(/appId:\s*'([^']+)'/)?.[1]).toBe(NATIVE_OAUTH_SCHEME)
+  })
+
+  it('is the same scheme the app hands the provider as its redirect', () => {
+    // The third leg, so all three homes are pinned to one string in one place.
+    expect(nativeOAuthRedirectTo().startsWith(`${NATIVE_OAUTH_SCHEME}://`)).toBe(true)
   })
 })
 

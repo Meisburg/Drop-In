@@ -430,8 +430,11 @@ export async function completeNativeOAuthReturn(
  * SLICE 2c — WAIT FOR THE OS TO HAND THE APP A URL, and finish the sign-in the
  * round trip was started for. Subscribed from /login's own mount (the screen
  * that starts the round trip, and the screen the parent is on when it comes
- * back); a browser silently no-ops, so `npm run dev` and the web app are
- * untouched.
+ * back). On the WEB the subscription is not skipped — it is registered and
+ * simply never fires, because @capacitor/app ships a web implementation that
+ * dispatches no `appUrlOpen` (the catch note below says exactly what that costs
+ * and nothing more). So `npm run dev` and the web app are unaffected without
+ * being special-cased here.
  *
  * ⚠️ WHY A SEPARATE SUBSCRIPTION AND NOT AN `await` IN THE CLICK HANDLER: a
  * parent who abandons the browser without completing — Chrome swiped away, no
@@ -481,8 +484,22 @@ export function subscribeNativeOAuthReturn(onFailure: (sentence: string) => void
       }
       detach = () => void handle.remove()
     } catch {
-      // A browser has no App plugin. Nothing to subscribe to, and nothing to
-      // say: the web path never needed this.
+      // NOT a browser arm, and saying so was wrong until fix round 1. On the
+      // web @capacitor/app SHIPS AN IMPLEMENTATION (`dist/esm/web.js`, which
+      // registers `web`), so this subscription is live there: it resolves
+      // through @capacitor/core's `WebPlugin.addListener`, succeeds, and is
+      // removed on unmount like any other platform. Nothing ever dispatches
+      // `appUrlOpen` on the web — AppWeb fires only appStateChange, pause and
+      // resume — which is why the web app is unaffected.
+      //
+      // Bounded side effect of registering at all, named rather than implied:
+      // AppWeb's constructor adds ONE `document` visibilitychange listener, and
+      // @capacitor/core caches the implementation per plugin name for the life
+      // of the JS realm, so it is added once per page load, not once per mount.
+      //
+      // What actually lands here is the narrower case: the plugin cannot be
+      // loaded at all (a bundle that dropped it, an import that throws). Then
+      // there is genuinely nothing to subscribe to, and nothing to say.
     }
   })()
 
