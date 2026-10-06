@@ -122,6 +122,24 @@ it at all. Budget for the new spec, not for editing an old one.
   review — the drift class this repo has paid for repeatedly (the one-copy rule,
   `docs/agents/code-structure.md`).
 
+⚠️ **AND THE `place-more-details` LINK MUST STOP PROMISING WHAT IS NOW INLINE —
+this is the one thing his annotation was pinned to, so it cannot be left alone.**
+Its label today is **"What parents say about this place →"**. Once the place page
+SHOWS what parents say, that label is false: it sends a parent away to read
+something they are already looking at, which is precisely the confusion he
+expressed ("Why would this link to a separate page?").
+
+**Ruling: RELABEL it, keep the door.** `/details` still carries content the place
+page does not — the full review wall, the comment thread, hours, and the web
+search — so the *research* path V23 slice 5 built is worth keeping. The label must
+name what the research page ADDS rather than repeating what the place page now
+shows: e.g. **"All reviews and comments →"** or **"Hours, comments and more →"**.
+Keep `data-testid="place-more-details"` (nothing selects it today, so this is
+free), and keep the MAP POPUP's link to `placeDetailsPath` exactly as it is — the
+popup has no inline summary, so its door is still the only one there. Do NOT
+delete the route, and do not leave the old label in place.
+
+
 ## 4. Interfaces to pin
 
 Test ids that must survive (specs select on them):
