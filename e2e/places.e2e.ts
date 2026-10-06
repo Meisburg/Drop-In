@@ -1012,6 +1012,34 @@ test('the marker bubble stays open, and a different circle replaces it (V20 t03)
       ) {
         continue
       }
+      /**
+       * ⚠️ HIT-TEST THE POINT ITSELF, not just the geometry around it (nightly
+       * 2026-10-05). Everything above is arithmetic: the point is inside the pane,
+       * clear of the controls, clear of the open bubble, clear of the tapped pin.
+       * None of that proves the point BELONGS to this pin. With overlapping circle
+       * markers — this spec's own subject — a neighbouring pin drawn later can sit
+       * on top of the centre, so the click lands on the WRONG pin, its own popup
+       * never opens, and Playwright retries until the 120s timeout: the nightly's
+       * `places.e2e.ts:918` failure, and indistinguishable from "no pin is
+       * reachable" in the log.
+       *
+       * This is the same rule the helper already applies to Leaflet's CONTROLS
+       * ("hit-tested, not merely avoided by geometry") — the controls got it and
+       * the pins did not. If nothing passes now, the helper returns -1 and the
+       * caller says so in one line instead of hanging.
+       */
+      const hitIsSelf = await pins
+        .nth(i)
+        .evaluate(
+          (el, pt) =>
+            el !== null &&
+            (() => {
+              const top = document.elementFromPoint(pt.x, pt.y)
+              return top !== null && (top === el || el.contains(top) || top.contains(el))
+            })(),
+          { x: cx, y: cy },
+        )
+      if (!hitIsSelf) continue
       return i
     }
     return -1

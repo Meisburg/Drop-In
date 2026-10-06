@@ -380,8 +380,17 @@ Assets below were read from Google's own
     The app's own comment says never; its observed behaviour says it follows the
     settled geometry. **Decide the rule, then fix the app or the assertion — an
     agent changing either one alone would be picking the answer by accident.**
-  - **#1 `places.e2e.ts:918`** — the marker bubble, a genuine Leaflet timing race
-    on overlapping circles (2.0m timeout). Needs a reproduction under load.
+  - **#1 `places.e2e.ts:918` — FIXED 2026-10-05, awaiting the referee.** The
+    helper chose a pin by ARITHMETIC (inside the pane, clear of the controls, of
+    the open bubble, of the tapped pin) and never asked whether the point
+    BELONGED to that pin. With overlapping circle markers a neighbour drawn later
+    sits on top, the click lands on the wrong pin, its popup never opens, and
+    Playwright retries until the **120s timeout** — which in the log is
+    indistinguishable from "no pin is reachable". It now hit-tests the point
+    (`elementFromPoint`, the same rule this helper already applied to Leaflet's
+    CONTROLS), so an unreachable pin is skipped and, if none is reachable, the
+    spec says so in one line instead of hanging. Green locally (2 passed); the
+    next nightly decides.
   ⚠️ The same dispatch found and fixed something bigger: **a real regression from
   the `E2E_BASE_URL` centralisation** — seven specs had lost the import and threw
   `ReferenceError: E2E_BASE_URL is not defined` at RUN time, which `--list` cannot
