@@ -322,6 +322,42 @@ export async function settleOnRoute(page: Page, routePath: string): Promise<void
 }
 
 /**
+ * V31 map-and-distance — SET THE PLACE DIRECTORY'S RADIUS, THROUGH ITS ONE DOOR.
+ *
+ * WHY THIS IS A SHARED HELPER AND NOT SIX COPIES. Before this slice, every spec
+ * that needed the directory widened drove the `places-distance-filter-btn` pill
+ * and its sheet — the same two lines, copied into each spec's own setup helper.
+ * That pill is DELETED (the radius is the location control's, and two doors to
+ * one number is what the founder ruled out), so the same two lines would have
+ * become three, six times over — the drift the repo's one-copy rule exists to
+ * stop.
+ *
+ * WHAT "ONE DOOR" MEANS HERE, and why the radius actually reaches the list: the
+ * LocationModal's radius slider is now the directory's radius CEILING as well as
+ * the drawn circle's radius (see `PlaceDirectory`'s `pickedRadiusMiles`), so
+ * setting it here filters the list the way the pill did. MEASURED before that
+ * wiring: a 30-mile setting with Apply left the seeded directory at 117 matched
+ * rows, unchanged — which is why deleting the pill alone would have deleted the
+ * radius filter.
+ *
+ * `miles` OMITTED = THE WIDEST THE CONTROL OFFERS, read from the slider's own
+ * `max` attribute rather than a copied 30 — the number lives in `LocationModal`
+ * (and is pinned by `e2e/places.e2e.ts`), so copying it here would be a second
+ * source of truth. Callers that mean "widen it so the whole seeded directory is
+ * in scope" (the furthest seeded place is ~12.5 mi from the marker's home zip)
+ * simply omit it.
+ */
+export async function setDirectoryRadius(page: Page, miles?: number): Promise<void> {
+  await page.getByTestId('set-location-btn').click()
+  const slider = page.getByTestId('location-radius-slider')
+  await expect(slider).toBeVisible()
+  const widest = (await slider.getAttribute('max')) ?? '30'
+  await slider.fill(miles === undefined ? widest : String(miles))
+  await page.getByTestId('location-apply-btn').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
+}
+
+/**
  * V20 t01: SETTLE ON /profile AND OPEN ITS EDITOR.
  *
  * /profile opens on the READ view (the same face a @handle link shows); the

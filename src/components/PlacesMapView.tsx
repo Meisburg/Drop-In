@@ -53,7 +53,11 @@ import { reviewRatingLine } from '../lib/reviews'
  *     A swipe is therefore never the ONLY way to change the focus.
  *   - the MAP recentres from the focused place's id, through `PlacesMap`'s
  *     controlled `focusPlaceId` prop. It is never panned twice by two
- *     mechanisms.
+ *     mechanisms. V31: that includes the MOUNT frame (`focusOnMount`), because
+ *     the entry state used to be the one exception — the map opened on the
+ *     viewer's home pin while this component's own strip highlighted card 0,
+ *     which is the founder's "it should actually show the map where there's a
+ *     red pin in the middle and it doesn't do that".
  *
  * WHAT THIS COMPONENT DOES NOT DO: it does not re-derive the result set. The
  * rows arrive from `PlaceDirectory`'s own `planDirectoryList` output — the SAME
@@ -134,6 +138,46 @@ export function PlacesMapView({
   useEffect(() => {
     behaviorRef.current = focusBehavior
   }, [focusBehavior])
+
+  /**
+   * The map's own frame inside the map panel — what the entry scroll centres, so
+   * "the middle of what the parent sees" is the middle of the map rather than of
+   * the panel plus its header row.
+   */
+  const mapFrameRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * V31 map-and-distance — THE MAP COMES INTO THE MIDDLE OF WHAT THE PARENT SEES.
+   *
+   * THE FOUNDER, on tapping the map control: *"it should actually show the map
+   * where there's a red pin in the middle and it doesn't do that."* MEASURED on
+   * the built app at 390x844 before this effect: the view toggle only renders
+   * once the page is scrolled (list view hides it below ~220px), so the mode
+   * opened at a scroll position chosen by the LIST — the map card landed at
+   * viewport y 59..380 in an 844px screen and its centre pin at y≈219, while the
+   * middle of the screen was the card strip. One entry scroll (measured: from a
+   * deep list offset the browser's own clamp put the pane at y 250..571) is what
+   * makes "the map is what you now see" true rather than incidental.
+   *
+   * WHY THE MAP'S FRAME AND NOT THE WHOLE VIEW: the wrapper also carries the
+   * strip and the Previous/Next row, so centring the wrapper would put the MAP
+   * above the centre; and the panel adds a header row, which measured ~30px of
+   * offset. Centring `mapFrameRef` is what puts the map pane's centre — the pin
+   * the map was just told to frame — at the centre of the viewport.
+   *
+   * ONE SHOT, ON MOUNT, and never again: this is the mode's entry, not a
+   * scroll-follow. Re-running it as the parent scrolls would fight them. It uses
+   * the injected `behaviorRef` (the reduced-motion-derived value, written by the
+   * effect above), so reduced motion gets an instant jump.
+   *
+   * "BACK TO LIST" IS UNAFFECTED: `PlaceDirectory.openMapView` saves the list's
+   * offset BEFORE this mounts, and the return restores that saved number, so the
+   * round trip still lands where the parent left it (`places-map-view.e2e.ts`).
+   */
+  useEffect(() => {
+    const node = mapFrameRef.current
+    if (node === null) return
+    node.scrollIntoView({ block: 'center', behavior: behaviorRef.current })
+  }, [])
 
   /**
    * WHERE THE STRIP STOPS, as a tested rule rather than a slice in this file.
@@ -407,25 +451,50 @@ export function PlacesMapView({
             runtime path this spec exercises is the other one (an empty map that
             keeps its live camera). Splitting the rule out is what makes the
             unreachable branch assertable at all. */}
-        {shouldRenderPlacesMap(pins.length, homePin) ? (
-          <PlacesMap
-            className="h-[38dvh] min-h-[200px]"
-            places={pins.map((row) => row.place)}
-            zipCoords={zipCoords}
-            homePin={homePin}
-            radiusCircle={radiusCircle}
-            focusPlaceId={focusedPlaceId}
-            focusBehavior={focusBehavior}
-            testId="places-map-view-map"
-          />
-        ) : (
-          <p
-            data-testid="places-map-view-empty"
-            className="flex h-[38dvh] min-h-[200px] w-full items-center justify-center p-4 text-center text-sm text-slate-600"
-          >
-            No places to show on the map for this search. Widen it, or go back to the list.
-          </p>
-        )}
+        {/* V31 map-and-distance — THE MAP'S OWN FRAME, and the element the entry
+            scroll centres. A plain block wrapper with no layout of its own: it
+            exists so "the centre of what the parent sees" can mean the centre of
+            the MAP, not of the panel (whose header row would push the pane ~30px
+            below the viewport's middle — measured). */}
+        <div ref={mapFrameRef}>
+          {shouldRenderPlacesMap(pins.length, homePin) ? (
+            <PlacesMap
+              className="h-[38dvh] min-h-[200px]"
+              places={pins.map((row) => row.place)}
+              zipCoords={zipCoords}
+              homePin={homePin}
+              radiusCircle={radiusCircle}
+              focusPlaceId={focusedPlaceId}
+              /**
+               * V31 map-and-distance — THE ENTRY CAMERA IS THE FOCUSED PLACE.
+               *
+               * The founder, after tapping the map control: *"it should actually
+               * show the map where there's a red pin in the middle and it doesn't
+               * do that."* MEASURED on the built app (390x844, the seeded marker):
+               * the map view opened with `data-map-center=47.66753,-122.37791` —
+               * the marker's HOME ZIP 98107 — at zoom 13, while the card the strip
+               * highlighted was elsewhere and, at the viewer's own radius, mostly
+               * outside the pane. So the one caller whose camera is defined as "the
+               * focused card" was the one caller whose MOUNT frame ignored it.
+               *
+               * `focusOnMount` makes the mount frame take the same `setView` a
+               * focus change takes: the focused place's marker lands at the centre
+               * of the pane. It is passed HERE and nowhere else — the place page,
+               * /new's picker and the feed all keep their radius-framed mount.
+               */
+              focusOnMount
+              focusBehavior={focusBehavior}
+              testId="places-map-view-map"
+            />
+          ) : (
+            <p
+              data-testid="places-map-view-empty"
+              className="flex h-[38dvh] min-h-[200px] w-full items-center justify-center p-4 text-center text-sm text-slate-600"
+            >
+              No places to show on the map for this search. Widen it, or go back to the list.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* The strip. `overflow-x-auto` + `snap-x snap-mandatory` and `snap-center`

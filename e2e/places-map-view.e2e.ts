@@ -54,14 +54,19 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
-import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
+import { readMarkerSession, readSupabaseEnv, setDirectoryRadius, settleOnRoute } from './fixtures'
 import { MAP_STRIP_CARD_LIMIT } from '../src/lib/mapStrip'
 
-/** The directory's distance control, set to "Any distance" (see below). */
+/**
+ * Widen the directory to the widest radius the location control offers.
+ *
+ * V31 map-and-distance: this replaced the `places-distance-filter-btn` helper
+ * verbatim — the pill and its sheet are deleted, and the radius is now the
+ * location control's (which also ceilings the list, see
+ * `fixtures.setDirectoryRadius`).
+ */
 async function setAnyDistance(page: Page): Promise<void> {
-  // V27: the distance filter is a dropdown button + bottom sheet now.
-  await page.getByTestId('places-distance-filter-btn').click()
-  await page.getByTestId('places-distance-sheet-option-any').click()
+  await setDirectoryRadius(page)
 }
 
 /**
@@ -85,8 +90,8 @@ async function scrollPastMapToggleThreshold(page: Page): Promise<void> {
 }
 
 /**
- * Open /browse with the distance filter wide, which is what makes this spec
- * INDEPENDENT of whatever radius an earlier spec parked the marker on.
+ * Open /browse with the RADIUS wide, which is what makes this spec INDEPENDENT of
+ * whatever radius an earlier spec parked the marker on.
  *
  * `feed-empty-state.e2e.ts` deliberately leaves the marker ~118 miles away on a
  * 2-mile radius; without this the map view would open over a one-card strip and
@@ -726,14 +731,18 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   /**
    * THE STYLE, READ TWO WAYS THAT DO NOT DEPEND ON THE PIN BEING IN VIEW.
    *
-   * MEASURED while writing this: the focused place is not necessarily near the
-   * map's initial view, and Leaflet draws an off-pane marker as a zero-size path
-   * (`d="M0 0"`) — so at this moment the focused pin's BOX is genuinely 0x0 and a
-   * ratio against a visible pin would be meaningless. The two style attributes
-   * survive a culled marker, and the arc radius Leaflet computed into `d` is
-   * readable whenever the path has been drawn at all. The rendered BOX is
-   * asserted after the recentre below, where the pin is on the pane by
+   * The two style attributes survive a culled marker, and the arc radius Leaflet
+   * computed into `d` is readable whenever the path has been drawn at all, so
+   * this comparison holds wherever the camera happens to be. The rendered BOX is
+   * asserted after the focus move below, where the pin is on the pane by
    * definition.
+   *
+   * V31 map-and-distance: this comment used to say "the focused place is not
+   * necessarily near the map's initial view … at this moment the focused pin's
+   * BOX is genuinely 0x0". That is no longer true — the map view now FRAMES the
+   * focused place on mount (`PlacesMap`'s `focusOnMount`), so on entry it is the
+   * one pin that IS on the pane. The comparison below is unchanged deliberately:
+   * it must hold either way, and it is what pins the style distinction.
    */
   const focusedStyle = focusedMarker.evaluate((el) => ({
     fillOpacity: Number(el.getAttribute('fill-opacity') ?? '0'),
@@ -753,10 +762,12 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
     focusedAttrs.strokeWidth,
     'the focused pin carries a heavier stroke than a plain place pin',
   ).toBeGreaterThan(plainAttrs.strokeWidth)
-  // (The pins' drawn RADII are not compared here: at this moment the focused
-  // place has not been centred yet, so it — and often every other pin — is
-  // culled to `d="M0 0"`. That comparison is in the swipe spec, after a recentre
-  // has put the pin on the pane, which is where it is measurable at all.)
+  // (The pins' drawn RADII are not compared here: the radius is a property of the
+  // marker TYPE as Leaflet drew it, and the comparison that matters — that the
+  // focused pin is drawn BIGGER than a plain one — is made in the swipe spec,
+  // after the focus has moved and both pins are on the pane by construction.
+  // V31: the focused pin IS on the pane on entry now (`focusOnMount`), but the
+  // claim is deliberately kept where it also holds for a rotated result set.)
 
   // AC: the camera reports a centre at all (Leaflet's own `getCenter()` on
   // `moveend`), which is the observable the recentre assertions below use.
@@ -803,6 +814,87 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
     await page.evaluate(() => window.scrollY),
     'a horizontal scroll inside the strip must not move the page',
   ).toBe(pageScrollBefore)
+})
+
+/**
+ * V31 map-and-distance — THE ENTRY FRAME, from the founder's report.
+ *
+ * *"when you tap the map button … it should actually show the map where there's a
+ * red pin in the middle and it doesn't do that."*
+ *
+ * WHAT WAS MEASURED BEFORE THIS SLICE (built app, 390x844, the seeded marker):
+ * tapping `places-view-toggle` mounted the map with `data-map-center =
+ * 47.66753,-122.37791` — the marker's HOME ZIP 98107 — at zoom 13. The focused
+ * card's pin was elsewhere (and, at a viewer's own radius, usually outside the
+ * pane), because `PlacesMap`'s focus effect deliberately skipped the first pass
+ * and let the MOUNT view own the entry camera. So the one surface whose camera is
+ * defined as "the focused card" opened somewhere else.
+ *
+ * THE TWO CLAIMS THE FIX HAS TO SATISFY, and both are geometry rather than
+ * state — `data-focused-place` alone would pass on the broken build:
+ *
+ *  1. THE FOCUSED PIN IS AT THE CENTRE OF THE MAP PANE. The helper is the file's
+ *     own (`expectPinCentredOnMap`, 12px), which the swipe spec already relies on
+ *     for a focus MOVE; this asserts it at ENTRY, which is the half that was
+ *     missing.
+ *  2. THE MAP IS AT THE CENTRE OF THE VIEWPORT, so "in the middle" is true of
+ *     what the parent actually sees. Before this slice the map view inherited the
+ *     LIST's scroll offset: measured at scrollY 400 the pane sat at y 59..380 in
+ *     an 844px screen, with the card strip occupying the middle. The view now
+ *     scrolls its own map into the middle on mount, and the tolerance below is
+ *     the same 12px the pane assertion uses — the map container is centred, so
+ *     this is layout rounding, not a fudge.
+ */
+test('entering the map view frames the focused place, in the middle of the pane and of the screen (V31)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openMapView(page)
+  const mapViewMap = page.getByTestId('places-map-view-map')
+  await expect(mapViewMap).toBeVisible()
+
+  // (1) The focused card's own pin, at the centre of the map pane.
+  await expectPinCentredOnMap(page)
+
+  // (2) The map pane, at the centre of the viewport — and the focused pin with
+  // it, since (1) puts it at the pane's centre.
+  const offsets = await page.evaluate(() => {
+    const pane = document.querySelector('[data-testid="places-map-view-map"]')
+    const pin = document.querySelector('[data-focused-marker]')
+    if (pane === null || pin === null) return null
+    const paneBox = pane.getBoundingClientRect()
+    const pinBox = pin.getBoundingClientRect()
+    const paneCentre = { x: paneBox.x + paneBox.width / 2, y: paneBox.y + paneBox.height / 2 }
+    const pinCentre = { x: pinBox.x + pinBox.width / 2, y: pinBox.y + pinBox.height / 2 }
+    return {
+      pane: {
+        dx: Math.abs(paneCentre.x - window.innerWidth / 2),
+        dy: Math.abs(paneCentre.y - window.innerHeight / 2),
+      },
+      pin: {
+        dx: Math.abs(pinCentre.x - window.innerWidth / 2),
+        dy: Math.abs(pinCentre.y - window.innerHeight / 2),
+      },
+      scrollY: window.scrollY,
+    }
+  })
+  if (offsets === null) throw new Error('the map pane or the focused pin is not in the DOM')
+  expect(
+    offsets.pane.dy,
+    `the map pane must sit at the middle of the screen (measured ${JSON.stringify(offsets)})`,
+  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
+  expect(
+    offsets.pin.dy,
+    `the focused pin must be at the middle of the screen (measured ${JSON.stringify(offsets)})`,
+  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
+  expect(offsets.pane.dx, 'the map pane is centred horizontally').toBeLessThanOrEqual(
+    FOCUSED_PIN_TOLERANCE_PX,
+  )
+
+  // (3) IT IS NOT THE EMPTY-STATE BRANCH, and not the home pin's frame: the map
+  // reports a live camera and the focused place is the one it is on.
+  expect(await mapCenter(page)).toMatch(/^-?\d+\.\d+,-?\d+\.\d+$/)
+  await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
 })
 
 test('swiping the strip recentres the map, and a card opens its detail page (V24 s10)', async ({
@@ -1143,9 +1235,12 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // AC: the FILTER STATE survived the round trip. Asserted from the CONTROLS,
   // not from the result count: a filter that silently reset could still leave a
   // same-sized list behind, and the control is the state itself.
-  // V27: the query is readable from the inline input's value; the type and
-  // distance state lives in their sheets, so each is reopened and its option
-  // checked.
+  // V27: the query is readable from the inline input's value, and the type state
+  // lives in its sheet, so it is reopened and its option checked.
+  // V31 map-and-distance: the RADIUS state is read from the location control —
+  // the surface that now owns it — by reopening it and reading its slider. The
+  // value asserted is the one this spec set at the top (`setAnyDistance` → the
+  // widest the slider offers, read from the slider itself rather than copied).
   await expect(page.getByTestId('places-search')).toHaveValue('park')
   await page.getByTestId('places-type-filter').click()
   await expect(page.getByTestId('places-type-sheet-option-indoor')).toHaveAttribute(
@@ -1153,12 +1248,16 @@ test('"Back to list" restores the same list, its filters and its scroll position
     'true',
   )
   await page.getByTestId('places-type-sheet-close').click()
-  await page.getByTestId('places-distance-filter-btn').click()
-  await expect(page.getByTestId('places-distance-sheet-option-any')).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await page.getByTestId('places-distance-sheet-close').click()
+  await page.getByTestId('set-location-btn').click()
+  const radiusSlider = page.getByTestId('location-radius-slider')
+  await expect(radiusSlider).toBeVisible()
+  const widestRadius = (await radiusSlider.getAttribute('max')) ?? ''
+  expect(
+    await radiusSlider.inputValue(),
+    'the radius the parent picked must survive the list/map round trip',
+  ).toBe(widestRadius)
+  await page.getByTestId('location-modal-close').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
   // The sort lives behind the modal, so it is read from the control that owns it.
   await page.getByTestId('filter-sort-btn').click()
   await expect(page.getByTestId('filter-sort-select')).toHaveValue('newest')
@@ -1658,13 +1757,31 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
    * depends on a third party being up is a flake, not a check. The stub is a
    * real Street View of the seam — the app's own `geocodeAddress` turns this
    * response into a centre and everything after it is production code.
+   *
+   * V31 map-and-distance — WHY THE STUB IS AIMED AT THE FOCUSED PLACE, and it is
+   * the whole reason this spec changed. The map view now opens FRAMED ON ITS
+   * FOCUSED CARD (`PlacesMap`'s `focusOnMount`) — the founder's "show the map
+   * where there's a pin in the middle". MEASURED consequence: the radius circle is
+   * only DRAWABLE when its centre is near that place — at the entry zoom the pane
+   * is ~0.7 mi across, so a circle centred on the viewer's home (5 mi away) is
+   * culled by Leaflet to `d="M0 0"`, and two culled states compare equal. The
+   * redraw this spec measures is a property of the CIRCLE, not of the camera, so
+   * the stub answers with the camera's own reported centre — the focused place's
+   * coordinates — which puts the circle back on the pane and leaves both claims
+   * ("the centre moved the circle", "the radius redrew it") intact.
+   *
+   * The stub is MUTABLE: the coordinates are only known after the map has mounted
+   * and reported its camera, so the handler reads `stubCentre` at request time
+   * rather than closing over a constant.
    */
+  let stubCentre: Array<{ lat: string; lon: string }> = []
   await page.route('https://nominatim.openstreetmap.org/search**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      // Green Lake, Seattle — a centre inside the seeded directory.
-      body: JSON.stringify([{ lat: '47.6806', lon: '-122.3283' }]),
+      body: JSON.stringify(
+        stubCentre.length > 0 ? stubCentre : [{ lat: '47.6806', lon: '-122.3283' }],
+      ),
     })
   })
 
@@ -1672,6 +1789,17 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
   const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
   await expect(circle, 'the committed circle must be drawn first').toHaveCount(1)
   const dCommitted = await circle.getAttribute('d')
+
+  // The camera's own report IS the focused place (V31): `data-map-center` is
+  // written by Leaflet's `getCenter()`, so this reads where the map actually is
+  // rather than re-deriving the place's coordinates in the spec.
+  const cameraCentre = (await mapCenter(page)) ?? ''
+  const [focusedLat, focusedLng] = cameraCentre.split(',')
+  expect(focusedLat, 'the map must report its camera before the stub is aimed at it').toMatch(
+    /^-?\d+\.\d+$/,
+  )
+  expect(focusedLng).toMatch(/^-?\d+\.\d+$/)
+  stubCentre = [{ lat: focusedLat ?? '', lon: focusedLng ?? '' }]
 
   // V27: "Set location" is an inline icon button in the controls card; tapping
   // it hands off to the shared modal (the map stays mounted behind it).

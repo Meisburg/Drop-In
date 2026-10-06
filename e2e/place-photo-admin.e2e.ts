@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   readMarkerSession,
   readPlaceByName,
+  setDirectoryRadius,
   setModerator,
   setPlacePhotos,
   type AdminResult,
@@ -47,21 +48,23 @@ async function readTarget(): Promise<PlacePhotoRow> {
 }
 
 /**
- * Land on /browse with no distance ceiling and the target row on screen.
+ * Land on /browse with the radius widened and the target row on screen.
  *
  * `search` defaults to the edited place's name. The slice-4 scroll test passes a
  * BROAD term instead, because proving "the changed card is brought back into
  * view" needs a page that can actually scroll the card off screen first — a
  * one-row list is not a measurement.
+ *
+ * V31 map-and-distance: the radius is set through the LOCATION control (the
+ * distance pill is deleted, and the modal's radius now ceilings the list too —
+ * `fixtures.setDirectoryRadius`).
  */
 async function openDirectoryAt(
   page: import('@playwright/test').Page,
   search: string = PLACE_NAME,
 ) {
   await page.goto('/browse')
-  await expect(page.getByTestId('places-distance-filter-btn')).toBeVisible()
-  await page.getByTestId('places-distance-filter-btn').click()
-  await page.getByTestId('places-distance-sheet-option-any').click()
+  await setDirectoryRadius(page)
   await page.getByTestId('places-search').fill(search)
   await expect(page.getByTestId('places-list')).toBeVisible()
 }

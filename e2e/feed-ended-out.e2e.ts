@@ -120,7 +120,7 @@ import { localDayKey, PAST_DROP_INS_LABEL } from '../src/lib/feed'
 import {
   E2E_BASE_URL,
   editTitle, localDatePlusDays, openProfileEditor, readMarkerMeta,
-  readMarkerSession, readSupabaseEnv, settleOnRoute, finishSignup,
+  readMarkerSession, readSupabaseEnv, setDirectoryRadius, settleOnRoute, finishSignup,
   signUpViewer,
   stepStartTimeOnce,
 } from './fixtures'
@@ -637,8 +637,8 @@ test('a host-ended post (status="ended") is absent from the feed and lands in Pa
  *
  * Neither state can be produced from live data at the marker's pinned location,
  * so both are forced at the network layer (the feed's own read returns [], and
- * /browse's places read returns one REAL-SHAPED place ~53 mi away — outside the
- * marker's 5-mile radius, so the app's own distance math is what empties the
+ * /browse's places read returns one REAL-SHAPED place ~15 mi away — outside the
+ * marker's stored radius, so the app's own distance math is what empties the
  * screen). The route stubs are installed before the first navigation, because
  * the places read is cached per SPA session.
  */
@@ -650,16 +650,25 @@ test('the empty state offers the archive; the places directory does not', async 
   await page.route(PLAYDATES_READ, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   )
-  // One place ~53 mi from 98107 (lat/lng chosen for distance, not for reality):
-  // in radius terms it does not exist, which is the state Browse's empty state
-  // exists for.
+  // One place ~15 mi from 98107 (lat/lng chosen for distance, not for reality):
+  // in radius terms the default view does not reach it, which is the state
+  // Browse's empty state exists for — and the widest the LOCATION control offers
+  // (its slider's max, 30) does, which is what makes the control assertion below
+  // a real check rather than a stub that could never be shown.
+  //
+  // V31 map-and-distance: this stub used to sit ~53 mi out, because the radius
+  // was changed by the DISTANCE pill, whose top ladder entry was 35. That pill is
+  // deleted; with the location control as the one radius door, a place the
+  // control cannot reach would make the "the far place is really there" control
+  // impossible to satisfy. The distance was reduced to ~15 mi, which still loses
+  // the place at the marker's stored radius (5) — the property this stub is for.
   const farPlace = {
     id: 'e2e-ended-out-place',
     name: 'E2E far park',
     kind: 'park',
     address: 'Far away, WA',
-    lat: 46.9,
-    lng: -122.0,
+    lat: 47.4502,
+    lng: -122.3779,
     indoor: false,
     age_min: null,
     age_max: null,
@@ -712,12 +721,12 @@ test('the empty state offers the archive; the places directory does not', async 
   // places directory has no personal archive behind it.
   await expect(browseEmpty.getByRole('link', { name: PAST_DROP_INS_LABEL })).toHaveCount(0)
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toHaveCount(0)
-  // CONTROL for the stub: the far place is really there — switching the distance
-  // filter to "Any distance" renders it, which proves the empty state above was
-  // the radius's doing and not a page that failed to load its directory.
-  // V27: the distance filter is a dropdown button + bottom sheet now.
-  await page.getByTestId('places-distance-filter-btn').click()
-  await page.getByTestId('places-distance-sheet-option-any').click()
+  // CONTROL for the stub: the far place is really there — widening the radius to
+  // the most the location control offers renders it, which proves the empty state
+  // above was the radius's doing and not a page that failed to load its
+  // directory. V31 map-and-distance: that control is `set-location-btn`'s modal
+  // now (the distance pill and its sheet are deleted).
+  await setDirectoryRadius(page)
   await expect(page.getByTestId('place-row')).toHaveCount(1)
   await expect(page.getByText(farPlace.name)).toBeVisible()
 })

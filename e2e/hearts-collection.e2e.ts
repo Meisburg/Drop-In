@@ -41,7 +41,7 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
-import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
+import { readMarkerSession, readSupabaseEnv, setDirectoryRadius, settleOnRoute } from './fixtures'
 
 /** A real seeded playground (the V17 heart spec's own marker place). */
 const MARKER_PLACE_NAME = 'Ballard Corners Park'
@@ -100,14 +100,18 @@ async function openPlacesTab(page: Page): Promise<void> {
 }
 
 /**
- * Set the distance filter to "Any distance": the directory's default follows the
- * viewer's own radius, and the marker's radius is whatever the last spec left it
- * on. Driving the control keeps this spec independent of that.
+ * Widen the directory to the widest radius the location control offers: its
+ * default follows the viewer's own stored radius, and the marker's radius is
+ * whatever the last spec left it on. Driving the control keeps this spec
+ * independent of that.
+ *
+ * V31 map-and-distance: `selectAnyDistance` used to drive the
+ * `places-distance-filter-btn` pill and its sheet. Both are deleted; the radius
+ * is the location control's, which now ceilings the list as well
+ * (`fixtures.setDirectoryRadius`).
  */
 async function selectAnyDistance(page: Page): Promise<void> {
-  // V27: the distance filter is a dropdown button + bottom sheet now.
-  await page.getByTestId('places-distance-filter-btn').click()
-  await page.getByTestId('places-distance-sheet-option-any').click()
+  await setDirectoryRadius(page)
 }
 
 /** The seeded place row for the marker place (a link to the place page). */
@@ -293,15 +297,20 @@ test('the post form offers the saved places, and selecting one writes the form (
   await expect(sheet).toBeVisible()
 
   // The sheet opens on the WHOLE directory (the picker's own semantics are
-  // untouched), and it carries the SAME collection door. The distance control is
-  // the sheet's own (the marker's radius is whatever the last spec left it on),
-  // so it is driven here exactly as on /browse.
+  // untouched), and it carries the SAME collection door. The RADIUS is the
+  // sheet's own location control (the marker's radius is whatever the last spec
+  // left it on), so it is driven here exactly as on /browse — V31: through
+  // `set-location-btn`'s modal, which the deleted distance pill duplicated.
   const chip = sheet.getByTestId('places-saved-filter')
   await expect(chip).toBeVisible()
   await expect(chip).toHaveAttribute('aria-pressed', 'false')
-  // V27: the distance control is a dropdown button + bottom sheet.
-  await sheet.getByTestId('places-distance-filter-btn').click()
-  await sheet.getByTestId('places-distance-sheet-option-any').click()
+  await sheet.getByTestId('set-location-btn').click()
+  const sheetSlider = sheet.getByTestId('location-radius-slider')
+  await expect(sheetSlider).toBeVisible()
+  const widest = (await sheetSlider.getAttribute('max')) ?? '30'
+  await sheetSlider.fill(widest)
+  await sheet.getByTestId('location-apply-btn').click()
+  await expect(sheet.getByTestId('location-modal')).toHaveCount(0)
   await chip.click()
   await expect(chip).toHaveAttribute('aria-pressed', 'true')
 

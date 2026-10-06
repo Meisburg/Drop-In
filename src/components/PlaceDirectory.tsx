@@ -9,12 +9,7 @@ import { PlacesMapView } from './PlacesMapView'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 import { RadiusEmptyState } from './RadiusEmptyState'
 import {
-  DEFAULT_RADIUS_MILES,
-  distanceChoiceFromValue,
   formatDistanceLabel,
-  milesWord,
-  RADIUS_MILES_OPTIONS,
-  type DistanceChoice,
 } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
@@ -53,10 +48,11 @@ import { ModalShell } from './ModalShell'
 import { PlacePhotoAdmin } from './PlacePhotoAdmin'
 
 /**
- * V27 — one of the three prominent dropdown triggers. A shared presentational
- * control so the type, distance and when buttons cannot drift apart: same
- * height, same chevron, same focus ring. Pure presentation; the caller owns the
- * option list and the sheet.
+ * V27 — one of the prominent dropdown triggers. A shared presentational control
+ * so the type and when buttons cannot drift apart: same height, same chevron,
+ * same focus ring. Pure presentation; the caller owns the option list and the
+ * sheet. (V31 map-and-distance deleted the third trigger — the distance pill —
+ * and this control is unchanged by that: it renders whatever it is handed.)
  */
 function DropdownTrigger({
   testId,
@@ -268,9 +264,39 @@ export function PlaceDirectory({
 
   const [query, setQuery] = useState('')
   const [indoorFilter, setIndoorFilter] = useState<boolean | null>(null)
-  // 'profile' = follow the viewer's own radius (the default, and what makes the
-  // shared empty state's escapes work). 'any' = no ceiling. A number = picked.
-  const [distanceChoice, setDistanceChoice] = useState<DistanceChoice>('profile')
+  /**
+   * V31 map-and-distance — THE ONE RADIUS DOOR.
+   *
+   * `null` = follow the viewer's own stored radius (the profile's
+   * `radius_miles`, arriving as the `viewerRadius` prop). A number = the radius
+   * the parent picked in the LOCATION CONTROL (`set-location-btn` →
+   * `LocationModal`'s slider → Apply), which is now the only radius control on
+   * this surface: the `places-distance-filter-btn` pill and its sheet were the
+   * second door to the same number, and the founder's ruling was that the
+   * location control already owns it.
+   *
+   * DELETING THE PILL ALONE WOULD HAVE DELETED THE RADIUS FILTER, which is why
+   * this state exists at all. MEASURED on the built app (390x844, the seeded
+   * marker, whose stored radius is 5): setting the modal's radius to 30 and
+   * pressing Apply left the directory at 117 matched rows — UNCHANGED — while
+   * the pill took it to 239 at "Any distance". The modal's radius only reached
+   * the list when an address had been geocoded; with the pill gone it must reach
+   * it whatever the centre is, so the location control now drives the same value
+   * the pill did.
+   *
+   * The lib seam KEEPS its `DistanceChoice` policy ('profile' | 'any' | a
+   * number): that is the tested radius rule, and the FEED's own ladder still
+   * speaks it. This component simply only ever passes 'profile' (nothing picked)
+   * or the picked number — `'any'` is unreachable from /browse by design now,
+   * because "no ceiling" is not something the radius control can say.
+   */
+  const [pickedRadiusMiles, setPickedRadiusMiles] = useState<number | null>(null)
+  /**
+   * The radius every consumer here agrees on: the parent's pick, else the
+   * viewer's stored radius. One value, so the filtered list, the drawn circle
+   * and the slider cannot disagree.
+   */
+  const radiusMiles = pickedRadiusMiles ?? viewerRadius
   // The filter & sort modal. The list defaults to alphabetical (A–Z); the modal
   // is where filtering + re-sorting lives — there are no controls below the list.
   const [sortMode, setSortMode] = useState<SortMode>('alpha')
@@ -307,10 +333,15 @@ export function PlaceDirectory({
    *
    * The state and the `planDirectoryList` parameter are KEPT, not removed: the
    * seam's radius branch (`places.ts` `filterPlacesByRadius`) is the tested
-   * mechanism, and `radiusMiles` — the SEPARATE, saved-and-overridable value
-   * the dropdown drives — is the live path. Deleting the seam would remove
-   * tested behaviour for no user-visible gain, so the parameter stays as the
-   * explicit "no modal radius constraint" default.
+   * mechanism, and it is reached through `radiusMiles` — the ONE value the
+   * location control owns (see `pickedRadiusMiles` above). Deleting the seam
+   * would remove tested behaviour for no user-visible gain, so the parameter
+   * stays as the explicit "no modal radius constraint" default.
+   *
+   * V31 map-and-distance: the sentence above used to end "and `radiusMiles` —
+   * the SEPARATE, saved-and-overridable value the dropdown drives — is the live
+   * path". There is no dropdown any more; the one radius value is the location
+   * control's, which is what this parameter never was.
    */
   const [radiusFilter] = useState<number | null>(null)
 
@@ -362,7 +393,6 @@ export function PlaceDirectory({
    * rendered, and it is not necessarily the first one.
    */
   const photoRowNodes = useRef(new Map<string, HTMLDivElement>())
-  const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
 
   // --- V27: the top controls ------------------------------------------------
 
@@ -383,8 +413,8 @@ export function PlaceDirectory({
    * only ever return an empty list, they open one honest "coming soon" line.
    */
   const [comingSoonKind, setComingSoonKind] = useState<string | null>(null)
-  /** Which of the three prominent dropdowns is open (one at a time), or none. */
-  const [openDropdown, setOpenDropdown] = useState<'type' | 'distance' | 'when' | null>(null)
+  /** Which of the prominent dropdowns is open (one at a time), or none. */
+  const [openDropdown, setOpenDropdown] = useState<'type' | 'when' | null>(null)
   /**
    * The place-name shown on the pill / location row. The host may pass one
    * (the viewer's city); after a "Set location" geocode the typed address wins,
@@ -508,7 +538,11 @@ export function PlaceDirectory({
     places,
     query,
     indoorFilter,
-    distanceChoice,
+    // V31 map-and-distance: the pill that used to write this is gone. A pick in
+    // the location control is the radius ceiling; nothing picked means 'profile',
+    // which resolves to the viewer's stored radius — byte-identical to the old
+    // default. `'any'` is no longer reachable from this surface.
+    distanceChoice: pickedRadiusMiles ?? 'profile',
     viewerRadius,
     selectedKinds,
     savedOnly,
@@ -705,8 +739,19 @@ export function PlaceDirectory({
     return result
   }
 
+  /**
+   * V31 map-and-distance — OPEN THE LOCATION CONTROL, AND DO NOT TOUCH ITS RADIUS.
+   *
+   * This used to reset the radius to the viewer's stored value on every open
+   * (`setRadiusMiles(viewerRadius)`), because the modal's slider was then a
+   * per-session draft that had to mirror the profile's saved radius each time.
+   * The radius it commits is now the LIST's ceiling — the only radius door this
+   * surface has — so resetting it here would silently discard a radius the
+   * parent picked the moment they reopened the control to change the address.
+   * The slider mirrors whatever the control holds, which is what "one radius
+   * value" means.
+   */
   function openLocationModal() {
-    setRadiusMiles(viewerRadius)
     setLocationModalOpen(true)
   }
 
@@ -754,27 +799,22 @@ export function PlaceDirectory({
   // --- Render ----------------------------------------------------------------
 
   /**
-   * V27 / v30-3 — the three dropdown triggers' own labels. Each names the
-   * CONTROL and its CURRENT choice, so the row reads as three named state
-   * readouts rather than three unlabelled values. The derivation is the pure
-   * `filterTriggerLabels` seam (lib/places, unit-tested); the option lists live
-   * beside it so a trigger and its sheet can never disagree about what is
-   * selectable.
+   * V27 / v30-3 — the dropdown triggers' own labels. Each names the CONTROL and
+   * its CURRENT choice, so the row reads as named state readouts rather than
+   * unlabelled values. The derivation is the pure `filterTriggerLabels` seam
+   * (lib/places, unit-tested); the option lists live beside it so a trigger and
+   * its sheet can never disagree about what is selectable.
+   *
+   * V31 map-and-distance: there are TWO triggers now, not three. The distance
+   * pill — and with it this seam's `distance` label — is gone; the radius is the
+   * location control's and is stated on that control (`radiusMiles` below).
    */
-  const triggers = filterTriggerLabels({ indoorFilter, distanceChoice, viewerRadius, dateWindow })
+  const triggers = filterTriggerLabels({ indoorFilter, dateWindow })
   const typeOptions = [
     { value: 'any', label: 'Any setting' },
     { value: 'indoor', label: 'Indoor' },
     { value: 'outdoor', label: 'Outdoor' },
   ] as const
-  const distanceOptions = [
-    { value: 'profile', label: `Within your radius (${viewerRadius} mi)` },
-    ...RADIUS_MILES_OPTIONS.map((m) => ({
-      value: String(m),
-      label: `Within ${m} ${milesWord(m)}`,
-    })),
-    { value: 'any', label: 'Any distance' },
-  ]
   const whenOptions = DATE_WINDOWS.map((window) => ({
     value: window,
     label: DATE_DROPDOWN_LABELS[window],
@@ -807,24 +847,26 @@ export function PlaceDirectory({
           : 'flex flex-col gap-4'
       }
     >
-      {/* V27 — THE TOP THIRD: search pill, three dropdowns, and the horizontal
+      {/* V27 — THE TOP THIRD: search pill, the dropdowns, and the horizontal
           icon sub-filter row. The founder's ask was that the controls read like
-          the reference (a rounded search bar, three prominent dropdown filters,
+          the reference (a rounded search bar, prominent dropdown filters,
           a colourful icon strip under them) and occupy only the top of the
           screen, leaving the list to own the rest of it. The controls that used
           to sit here are all still reachable, restated:
             * the TYPE dropdown      — Any type / Indoor / Outdoor (was the
                                        indoor + outdoor chip pair)
-            * the DISTANCE dropdown  — the same radius ladder the <select> had
             * the WHEN dropdown      — Any day / Today / Tomorrow / Weekend
                                        (was the date chip radiogroup)
-            * the search pill        — opens the full-screen search sheet, which
-                                       now owns the location row (the old "Set
-                                       location" control) and the topic list
+            * the search pill        — a real inline input (the old full-screen
+                                       search sheet is gone)
+            * the location control   — address + THE radius (the "Set location"
+                                       modal). V31 map-and-distance: this is the
+                                       ONE radius door; the DISTANCE dropdown
+                                       that used to sit in this row is deleted.
             * the icon strip         — the same `selectedKinds` set as the
                                        filter sheet's own chips
-          Sorting and the home-pin radius input still live in the sliders
-          ("Filter & sort") sheet, so nothing was dropped in the restyle. */}
+          Sorting still lives in the sliders ("Filter & sort") sheet, so nothing
+          was dropped in the restyle. */}
       <div
         className={`flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ${view === 'map' ? 'md:col-start-2' : ''} ${stickyControls ? 'sticky top-0 z-10' : ''}`}
       >
@@ -900,33 +942,39 @@ export function PlaceDirectory({
           ) : null}
         </div>
 
-        {/* The three prominent dropdowns. Equal width, one open sheet at a time;
-            the fourth control is the Saved gate, rendered only when it is not a
-            door to nowhere (see `savedToggleAvailable`).
+        {/* The prominent dropdowns. Equal width, one open sheet at a time; the
+            next control is the Saved gate, rendered only when it is not a door
+            to nowhere (see `savedToggleAvailable`).
 
-            v30-3, measured: with the Saved gate present at 390px each pill was
-            86px wide and the caption column only 52px — "Distance" needs 66px,
-            so it ellipsized by 14px and the parent could not read what the pill
+            V31 map-and-distance — TWO triggers, NOT THREE. The
+            `places-distance-filter-btn` pill and its `places-distance-sheet`
+            are deleted: the radius is the location control's (the `set-location-btn`
+            row above), and two doors to one number is what the founder ruled
+            out. The radius itself is unchanged in behaviour — it still ceilings
+            the list — it is simply written by the location modal now.
+
+            v30-3, measured (kept because the geometry lesson still governs this
+            row): with the Saved gate present at 390px each pill was 86px wide and
+            the caption column only 52px — "Distance" needed 66px, so it
+            ellipsized by 14px and the parent could not read what the pill
             filtered, which is the whole defect. The row therefore WRAPS
-            (`flex-wrap`) with a real `basis` on each trigger, so a fourth
+            (`flex-wrap`) with a real `basis` on each trigger, so a further
             control moves to a second line instead of squeezing the captions out
-            of the first. Without the Saved gate the three still share one line.
+            of the first. With the distance pill gone the remaining two captions
+            ("Setting", "When") have more room than they did, not less.
 
             V30 (2026-10-05, accepted over impeccable live on /browse): the gate
             itself was the next thing the founder could not read — a 44px
             icon-only circle whose only word was its `aria-label`, and his note
             was "as a user, I would have no idea what this does". It is now a
-            named pill (bookmark + "Saved"), which is the whole change: the row
-            geometry is untouched because the gate never shared a line with the
-            three captions, and the three remain un-ellipsized at 390px. */}
+            named pill (bookmark + "Saved"). */}
         {/* DISTILL (V30, 2026-10-05, over impeccable live on /browse): the
             card spent TWO rows on one job — a row of filter pills, then a row
             of quick gates, with a gap and a heading-shaped comment between
             them. They are the same kind of control answering the same
             question ("narrow what I am looking at"), so they are now one
-            wrapping row and the card is a row shorter. Nothing was dropped:
-            every control, test id, pressed state and colour rule is verbatim.
-            The gates stay last, where the eye arrives after the filters. */}
+            wrapping row and the card is a row shorter. The gates stay last,
+            where the eye arrives after the filters. */}
         <div className="flex flex-wrap items-center gap-2">
           <DropdownTrigger
             testId="places-type-filter"
@@ -934,13 +982,6 @@ export function PlaceDirectory({
             label={triggers.setting.value}
             iconPath={NAV_ICONS.tag}
             onClick={() => setOpenDropdown('type')}
-          />
-          <DropdownTrigger
-            testId="places-distance-filter-btn"
-            caption={triggers.distance.caption}
-            label={triggers.distance.value}
-            iconPath={NAV_ICONS.nearby}
-            onClick={() => setOpenDropdown('distance')}
           />
           <DropdownTrigger
             testId="places-when-filter"
@@ -1482,10 +1523,11 @@ export function PlaceDirectory({
         </div>
       ) : null}
 
-      {/* The Set location modal — address input + radius slider + "See places".
-          V27: opened from the search sheet's location row (the pill no longer
-          has a separate "Set location" button). The founder's placeholder names
-          the coordinate kinds a parent might type. */}
+      {/* The Set location modal — address + THE radius. V31 map-and-distance:
+          this is the surface's ONE radius door (the distance pill that used to
+          repeat it is deleted), so the slider's value ceilings the list as well
+          as drawing the circle. The founder's placeholder names the coordinate
+          kinds a parent might type. */}
       <LocationModal
         open={locationModalOpen}
         onClose={closeLocationModal}
@@ -1503,8 +1545,14 @@ export function PlaceDirectory({
         // commits through before the dialog closes, and it makes the modal's
         // apply-then-close contract uniform for both callers. It cannot fail, so
         // the modal's error surface simply never fires here.
-        onRadiusChange={(miles) => setRadiusMiles(miles)}
-        onApplyRadius={(miles) => setRadiusMiles(miles)}
+        //
+        // V31: both halves write the SAME `pickedRadiusMiles`, which is the
+        // list's radius ceiling as well as the circle's radius. One value, so the
+        // number on the slider is the number the list was filtered by — which is
+        // exactly what the deleted pill could not guarantee (they were two
+        // independent states that could disagree).
+        onRadiusChange={(miles) => setPickedRadiusMiles(miles)}
+        onApplyRadius={(miles) => setPickedRadiusMiles(miles)}
         // V28 r4: the device tap moves the map before its label resolves.
         onDeviceCoords={handleDeviceCoords}
       />
@@ -1553,9 +1601,11 @@ export function PlaceDirectory({
         </ModalShell>
       ) : null}
 
-      {/* V27: the three dropdown sheets. One shared component, one open at a
-          time (`openDropdown`), each committing straight into the same state the
-          controls above render — there is no separate "apply" step. */}
+      {/* V27: the dropdown sheets. One shared component, one open at a time
+          (`openDropdown`), each committing straight into the same state the
+          controls above render — there is no separate "apply" step.
+          V31 map-and-distance: two, not three — the distance sheet is deleted
+          with its pill. */}
       <PlaceFilterSheet
         open={openDropdown === 'type'}
         testId="places-type-sheet"
@@ -1564,17 +1614,6 @@ export function PlaceDirectory({
         value={indoorFilter === true ? 'indoor' : indoorFilter === false ? 'outdoor' : 'any'}
         onSelect={(value) => {
           setIndoorFilter(value === 'any' ? null : value === 'indoor')
-        }}
-        onClose={() => setOpenDropdown(null)}
-      />
-      <PlaceFilterSheet
-        open={openDropdown === 'distance'}
-        testId="places-distance-sheet"
-        title="Distance"
-        options={distanceOptions}
-        value={distanceChoice === 'profile' || distanceChoice === 'any' ? distanceChoice : String(distanceChoice)}
-        onSelect={(value) => {
-          setDistanceChoice(distanceChoiceFromValue(value))
         }}
         onClose={() => setOpenDropdown(null)}
       />

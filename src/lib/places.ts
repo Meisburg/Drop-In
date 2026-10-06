@@ -1332,16 +1332,22 @@ export interface FilterTriggerLabel {
 }
 
 /**
- * The three filter triggers' visible labels (founder annotation 4, 2026-10-05).
+ * The filter triggers' visible labels (founder annotation 4, 2026-10-05).
  *
  * The problem this exists for: at 390px the pills could only show "Any SETT…"
  * and "within three…", so a parent could not tell what they filtered. The
  * caption names the purpose; the value shortens to fit.
  *
- * The SHEETS keep their long option labels (`Any setting`, `Within your radius
- * (5 mi)`, `Any day`) — only the trigger shortens, and the option lists are
- * built from the same constants, so a trigger and its sheet cannot disagree
- * about what is selectable.
+ * The SHEETS keep their long option labels (`Any setting`, `Any day`) — only the
+ * trigger shortens, and the option lists are built from the same constants, so a
+ * trigger and its sheet cannot disagree about what is selectable.
+ *
+ * V31 map-and-distance — THERE IS NO `distance` FIELD HERE ANY MORE. The
+ * `places-distance-filter-btn` pill was deleted (the radius is the location
+ * control's, and that control states its own value), so there is no distance
+ * trigger left to label. `DistanceChoice` itself stays in `lib/feed.ts`: the
+ * feed's own radius ladder still speaks it, and `planDirectoryList` still
+ * consumes it for the FEED-style 'profile'/'any'/number policy.
  *
  * Pure, and deliberately statement-shaped rather than a chain of nested
  * ternaries (the review rules ban those).
@@ -1349,26 +1355,17 @@ export interface FilterTriggerLabel {
 export function filterTriggerLabels(input: {
   /** null = both kinds; true = indoor only; false = outdoor only. */
   indoorFilter: boolean | null
-  /** 'profile' = the viewer's stored radius; 'any' = no ceiling; a number = picked. */
-  distanceChoice: DistanceChoice
-  /** The viewer's stored radius in miles (what 'profile' resolves to). */
-  viewerRadius: number
   dateWindow: DateWindow
-}): { setting: FilterTriggerLabel; distance: FilterTriggerLabel; when: FilterTriggerLabel } {
+}): { setting: FilterTriggerLabel; when: FilterTriggerLabel } {
   let settingValue = 'Any'
   if (input.indoorFilter === true) settingValue = 'Indoor'
   else if (input.indoorFilter === false) settingValue = 'Outdoor'
-
-  let distanceValue = 'Any'
-  if (input.distanceChoice === 'profile') distanceValue = `${input.viewerRadius} mi`
-  else if (typeof input.distanceChoice === 'number') distanceValue = `${input.distanceChoice} mi`
 
   let whenValue = 'Any'
   if (input.dateWindow !== 'upcoming') whenValue = DATE_DROPDOWN_LABELS[input.dateWindow]
 
   return {
     setting: { caption: 'Setting', value: settingValue },
-    distance: { caption: 'Distance', value: distanceValue },
     when: { caption: 'When', value: whenValue },
   }
 }

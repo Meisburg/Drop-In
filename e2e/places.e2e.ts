@@ -89,6 +89,7 @@ import {
   readMarkerMeta,
   readMarkerSession,
   readSupabaseEnv,
+  setDirectoryRadius,
   settleOnRoute,
   stepStartTimeOnce,
 } from './fixtures'
@@ -154,19 +155,20 @@ async function openPlacesTab(page: Page): Promise<void> {
 }
 
 /**
- * Set the Places distance filter to "Any distance".
+ * Widen the Places radius to the widest the location control offers.
  *
- * Every assertion about a SPECIFIC place needs this: the filter's default
- * follows the viewer's own radius, and the marker's radius is whatever the
+ * Every assertion about a SPECIFIC place needs this: the radius's default
+ * follows the viewer's own stored radius, and the marker's radius is whatever the
  * last spec left it on (feed-empty-state deliberately parks it 118 miles away
  * on a 2-mile radius). Driving the control keeps this spec independent of that
  * — and exercises the control itself.
+ *
+ * V31 map-and-distance: the control is the LOCATION one now. The
+ * `places-distance-filter-btn` pill and its sheet are deleted, and the modal's
+ * slider is the directory's radius ceiling (`fixtures.setDirectoryRadius`).
  */
 async function useAnyDistance(page: Page): Promise<void> {
-  // V27: the distance filter is a dropdown button + bottom sheet now, not a
-  // `<select>`. Open the dropdown, tap "Any distance", and the sheet closes.
-  await page.getByTestId('places-distance-filter-btn').click()
-  await page.getByTestId('places-distance-sheet-option-any').click()
+  await setDirectoryRadius(page)
 }
 
 /** The seeded place row for `name` (the row is a link to the place page). */
@@ -1430,7 +1432,7 @@ test('an active search narrows the WHOLE list, and no map is drawn (V25 t01)', a
   await expect(page.getByTestId('places-view-toggle')).toBeVisible()
 })
 
-test('the distance control narrows and widens the LIST, and still draws no map (V25 t01)', async ({
+test('the radius control narrows and widens the LIST, and still draws no map (V25 t01)', async ({
   page,
 }) => {
   /**
@@ -1442,35 +1444,38 @@ test('the distance control narrows and widens the LIST, and still draws no map (
    * drag the radius, it should expand or grow the red circle in real time"* —
    * has no surface left to happen on while list view is showing, so this spec
    * does NOT pretend to pin it. What it pins is the half that survives and that
-   * the radius feature is actually FOR: the distance control changes which
-   * places the parent is shown, and no map materialises while they change it.
+   * the radius feature is actually FOR: the radius control changes which places
+   * the parent is shown, and no map materialises while they change it.
    *
    * (The modal's own radius label is asserted too, so the number the parent
    * reads cannot drift from the value the control holds.)
+   *
+   * V31 map-and-distance: the control this drives is the LOCATION one, because
+   * the distance pill was a second door to the same number and is deleted. The
+   * spec's claim is unchanged — and it is stronger than it looks, because the
+   * seam here is exactly what the pill used to write: the modal's radius is now
+   * the list's ceiling, and `setDirectoryRadius` proves it by changing which
+   * rows render. The widest value is the slider's own max (read from the
+   * control) rather than the pill's old 35-mile ladder entry — the seeded
+   * directory's furthest place is ~12.5 mi, so 30 covers it.
    */
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
 
-  const radiusControl = page.getByTestId('places-distance-filter-btn')
+  const radiusControl = page.getByTestId('set-location-btn')
   await expect(radiusControl).toBeVisible()
 
   async function listRowCount(): Promise<number> {
     return page.getByTestId('places-list').getByTestId('place-row').count()
   }
 
-  /** V27: a distance choice is a dropdown button + bottom sheet now. */
-  async function chooseDistance(miles: string): Promise<void> {
-    await page.getByTestId('places-distance-filter-btn').click()
-    await page.getByTestId(`places-distance-sheet-option-${miles}`).click()
-  }
-
-  await chooseDistance('1')
+  await setDirectoryRadius(page, 1)
   await page.waitForTimeout(2200)
   const atOneMile = await listRowCount()
 
-  await chooseDistance('35')
+  await setDirectoryRadius(page)
   await page.waitForTimeout(2200)
-  const atThirtyFive = await listRowCount()
+  const atWidest = await listRowCount()
 
   // AC: the control really filters. Without this the ordering claim below would
   // be an assertion over an unchanged list.
@@ -1479,8 +1484,8 @@ test('the distance control narrows and widens the LIST, and still draws no map (
     'a 1-mile radius must leave at least one place (the marker lives in it)',
   ).toBeGreaterThan(0)
   expect(
-    atThirtyFive,
-    `a 35-mile radius must widen the list (1 mi -> ${atOneMile} rows, 35 mi -> ${atThirtyFive})`,
+    atWidest,
+    `the widest radius must widen the list (1 mi -> ${atOneMile} rows, the slider's max -> ${atWidest})`,
   ).toBeGreaterThan(atOneMile)
 
   // AC: and the frame the founder asked about is now judged where it lives —
@@ -2574,37 +2579,35 @@ test('the neighbourhood frame is a MODE, and the radius only widens the list (V2
     return page.getByTestId('places-list').getByTestId('place-row').count()
   }
 
-  const radiusControl = page.getByTestId('places-distance-filter-btn')
+  const radiusControl = page.getByTestId('set-location-btn')
   await expect(radiusControl).toBeVisible()
 
-  /** V27: a distance choice is a dropdown button + bottom sheet now. */
-  async function chooseDistance(miles: string): Promise<void> {
-    await page.getByTestId('places-distance-filter-btn').click()
-    await page.getByTestId(`places-distance-sheet-option-${miles}`).click()
-  }
-
   // ---- radius = 1 mile -----------------------------------------------------
-  await chooseDistance('1')
+  // V31 map-and-distance: the control is the location one (the distance pill is
+  // deleted; the modal's radius is now the list's ceiling too). The widest value
+  // below is read from the slider's own max rather than the pill's old 35-mile
+  // ladder entry — the furthest seeded place is ~12.5 mi, so it is in scope.
+  await setDirectoryRadius(page, 1)
   await page.waitForTimeout(2200)
   const d1 = await maxListMiles()
   const n1 = await listRowCount()
 
-  // ---- radius = 35 miles (the widest) --------------------------------------
-  await chooseDistance('35')
+  // ---- the widest the location control offers ------------------------------
+  await setDirectoryRadius(page)
   await page.waitForTimeout(2200)
-  const d35 = await maxListMiles()
-  const n35 = await listRowCount()
+  const dWidest = await maxListMiles()
+  const nWidest = await listRowCount()
 
   // (2) THE LIST MOVED. If this is flat, the radius stopped filtering and the
   // absence below would have passed for the wrong reason.
   expect(
-    n35,
-    `the list must widen with the radius (${n1} rows at 1 mi, ${n35} rows at 35 mi)`,
+    nWidest,
+    `the list must widen with the radius (${n1} rows at 1 mi, ${nWidest} rows at the widest)`,
   ).toBeGreaterThan(n1)
   expect(
-    d35,
+    dWidest,
     `the furthest rendered place must widen with the radius (max ${d1} mi at 1 mi radius, ` +
-      `${d35} mi at 35 mi) — the radius still filters the LIST`,
+      `${dWidest} mi at the widest) — the radius still filters the LIST`,
   ).toBeGreaterThan(d1)
 
   // (1) THE MAP IS NOT THERE TO MOVE. The neighbourhood frame D1 protects is
@@ -3362,9 +3365,11 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   // spec that asserted an absolute `overflow === 0` at 320px was WRONG about
   // this app (it failed, and the failure was a fact, not a flake). MEASURED at
   // 320px on this bundle: the page overflows by 3px, from an unrelated
-  // pre-existing control (the old Distance `<select>`, since replaced by the
-  // `places-distance-filter-btn` dropdown). Hiding the chip row's whole block
-  // leaves that 3px IDENTICAL, so the row's own contribution is exactly 0 at
+  // pre-existing control (the Distance control that used to sit in this card —
+  // first a `<select>`, then the `places-distance-filter-btn` pill, both now
+  // deleted; the differential assertion is what keeps this spec from depending
+  // on which control is the culprit). Hiding the chip row's whole block
+  // leaves that overflow IDENTICAL, so the row's own contribution is exactly 0 at
   // 320 and 390, light and dark.
   //
   // So this asserts the property the ticket actually needs — the horizontally

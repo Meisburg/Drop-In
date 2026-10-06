@@ -202,6 +202,7 @@ export function PlacesMap({
   testId = 'places-map',
   onSelect,
   focusPlaceId,
+  focusOnMount = false,
   focusBehavior = 'smooth',
   pinEvents,
 }: {
@@ -284,6 +285,35 @@ export function PlacesMap({
    * the two-sources-of-truth defect this prop is shaped to avoid.
    */
   focusPlaceId?: string | null
+  /**
+   * V31 map-and-distance — DOES THE FOCUS ALSO FRAME THE MAP ON THE FIRST PASS?
+   *
+   * THE DEFECT THIS NAMES (founder report, 2026-10-05, and MEASURED on the built
+   * app at 390x844): *"when you tap the map button … it should actually show the
+   * map where there's a red pin in the middle and it doesn't do that."* The map
+   * view passes `focusPlaceId` (its focused card IS its subject), but the focus
+   * effect below deliberately skipped the first pass — so the ENTRY camera was
+   * the mount view: `homePin ?? markers[0]`. A viewer with a home pin therefore
+   * opened on their own house, at zoom 13 with the 1-mile frame circle, while the
+   * place pins the strip highlighted sat wherever the directory put them — and
+   * on the founder's own 35-mile radius, mostly outside the pane (measured:
+   * `data-map-center=47.66753,-122.37791`, the marker's home zip 98107, with the
+   * focused card's place elsewhere).
+   *
+   * WHY A PROP RATHER THAN CHANGING THE DEFAULT: the skip is load-bearing for
+   * every OTHER caller. The place page, /new's picker and the (retired) list-view
+   * band frame the map by the SEARCH RADIUS (`radiusCircle`) or by the mount
+   * anchor, and re-running the focus on mount would zoom a freshly-opened map
+   * into whatever pin happened to be first, overriding the frame they asked for.
+   * So the behaviour stays opt-in, and `true` is passed by exactly one caller —
+   * `PlacesMapView`, whose own header states the rule this prop makes true:
+   * "FOCUS IS THE SINGLE SOURCE OF TRUTH ... the MAP recentres from the focused
+   * place's id".
+   *
+   * `false`/absent is every pre-existing caller, and their behaviour is
+   * byte-for-byte unchanged.
+   */
+  focusOnMount?: boolean
   /**
    * How the recentre ANIMATES, as a value rather than a boolean.
    *
@@ -986,16 +1016,31 @@ export function PlacesMap({
    * The comment on the circle effect above says "this is now the ONLY effect
    * that moves the camera". That stays true for every caller that passes no
    * `focusPlaceId` — which is all of them except the map view. The map view
-   * passes no `radiusCircle` at all, so the two effects can never both drive the
-   * camera in the same mount: exactly one of them is armed. That is why this is
-   * an addition rather than a conflict.
+   * passes BOTH props (it draws the committed-radius circle AND centres on the
+   * focused card), and the two effects cannot fight because the circle effect's
+   * own guard returns the moment a `focusPlaceId` is present — that yield, not
+   * an absence of the prop, is what keeps one camera authority. (This sentence
+   * said "the map view passes no `radiusCircle` at all" until V31; that was
+   * false when it was written and stayed false, which is why the yield is now
+   * named here as the thing that makes the two compatible.)
    *
-   * WHY IT SKIPS THE FIRST RUN. The mount view and the circle effect above
-   * already frame the map correctly on mount. Re-running the focus here on mount
-   * would zoom a freshly-opened map into whatever card happened to be first —
+   * WHY IT SKIPS THE FIRST RUN BY DEFAULT. The mount view and the circle effect
+   * above already frame the map correctly on mount. Re-running the focus here on
+   * mount would zoom a freshly-opened map into whatever card happened to be first —
    * overriding the frame the caller asked for and doing it invisibly. So the
    * first pass records the id and does nothing; only a CHANGE pans. The ref (not
    * a state flag) is what makes that decision without a re-render.
+   *
+   * V31 map-and-distance — UNLESS THE CALLER SAYS THE FOCUS *IS* THE FRAME
+   * (`focusOnMount`; the prop's own docblock carries the founder report and the
+   * measurement). The map view's entry camera was the one place its own rule —
+   * "FOCUS IS THE SINGLE SOURCE OF TRUTH … the MAP recentres from the focused
+   * place's id" — did not hold: it opened on the viewer's HOME PIN with the
+   * focused card's place somewhere else, so tapping "Map" did not show the place
+   * the strip was pointing at. With `focusOnMount`, the first pass takes the same
+   * `setView` the later passes take, so the entry frame is the focused place with
+   * its marker at the centre of the pane — and it does so WITHOUT animation: the
+   * parent asked for a map, not for a flight across the city from their home pin.
    *
    * `focusPlaceId === null` is honoured as "no card is focused": the map simply
    * does not move. `undefined` (the prop absent) and `null` therefore behave the
@@ -1085,18 +1130,20 @@ export function PlacesMap({
   useEffect(() => {
     const map = mapRef.current
     if (map === null) return
-    // The first pass records the incoming id and does NOT move: on mount the map
-    // is already framed (see above). The separate ref is load-bearing — an empty
-    // focusKey ('') on that first pass would otherwise be indistinguishable from
-    // "has not run", and the second pass would re-run the comparison forever.
-    if (!ranOnceRef.current) {
-      ranOnceRef.current = true
-      lastFocusKeyRef.current = focusKey
-      return
-    }
-    if (lastFocusKeyRef.current === focusKey) return
+    // The first pass is the MOUNT frame. It records the incoming id and, for
+    // every caller that has not opted in, does NOT move (see above). The
+    // separate ref is load-bearing — an empty focusKey ('') on that first pass
+    // would otherwise be indistinguishable from "has not run", and the second
+    // pass would re-run the comparison forever.
+    const firstPass = !ranOnceRef.current
+    ranOnceRef.current = true
+    if (!firstPass && lastFocusKeyRef.current === focusKey) return
     lastFocusKeyRef.current = focusKey
     if (focusedEntry === null) return
+    // V31: a caller whose camera is the focus (`focusOnMount`) takes the mount
+    // frame too. `undefined`/false — every pre-existing caller — keeps its own
+    // mount frame exactly as it was.
+    if (firstPass && !focusOnMount) return
     // The map's size is re-measured before the move, for the reason the marker
     // group's own `invalidateSize` gives: a card tap can be the first event after
     // a layout change, and a stale measurement would center on the wrong pixel.
@@ -1104,15 +1151,19 @@ export function PlacesMap({
     map.setView(
       [focusedEntry.coords.lat, focusedEntry.coords.lng],
       DETAIL_ZOOM,
-      { animate: focusBehavior === 'smooth' },
+      // The MOUNT frame is instant — there is nothing to animate from, and a
+      // flight from the home pin would be a move the parent did not ask for.
+      { animate: !firstPass && focusBehavior === 'smooth' },
     )
     // `focusBehavior` IS a dependency, even though it changes only when the
     // viewer's reduced-motion preference does: the effect reads it, and leaving
     // it out would let a preference flipped while the map view is open keep
-    // animating until the next focus change. `focusedEntry` is derived from
-    // `focusKey` (a place id present in `entries`) so the key is the honest
-    // identity of everything this body reads.
-  }, [focusKey, focusBehavior])
+    // animating until the next focus change. `focusOnMount` is read on the first
+    // pass only, but a caller that changed it would be changing the mount frame
+    // it asked for. `focusedEntry` is derived from `focusKey` (a place id present
+    // in `entries`) so the key is the honest identity of everything this body
+    // reads.
+  }, [focusKey, focusBehavior, focusOnMount])
 
   if (entries.length === 0 && homePin === undefined && homePin === null) return null
 
