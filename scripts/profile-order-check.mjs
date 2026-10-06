@@ -52,6 +52,8 @@
  * edit-only), which is why the seeding below writes a card as well as a bio.
  *
  * Usage: node scripts/profile-order-check.mjs [baseURL]
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  *   Needs a running server on :4173 (`npm run build && npm run preview`) and the
  *   signed-in marker session at e2e/.auth/marker-state.json (the Playwright
  *   setup project writes it; gitignored).
@@ -68,7 +70,7 @@
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const MARKER_STATE = new URL('../e2e/.auth/marker-state.json', import.meta.url).pathname
 // The pinned order, copied from src/lib/profileSections.ts:42 (a script under
 // scripts/ is plain JS and cannot import the TS module; re-implemented here so
@@ -357,6 +359,11 @@ async function deleteParentCard(env, jwt, id) {
   })
 }
 
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. A silent target is how a lane measures a sibling
+// checkout's build and reports it as a defect in this tree.
+console.log(`profile-order-check against ${BASE}\n`)
+
 const browser = await chromium.launch()
 let seeded = false
 let prior = null
@@ -373,8 +380,6 @@ try {
     viewport: { width: 390, height: 844 },
   })
   page = await context.newPage()
-
-  console.log(`profile-order-check against ${BASE}\n`)
 
 await page.goto(BASE + '/profile', { waitUntil: 'networkidle' })
 // The boot splash is a fixed inset-0 overlay that unmounts a beat after mount;

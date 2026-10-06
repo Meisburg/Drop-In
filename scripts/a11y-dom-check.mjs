@@ -14,6 +14,8 @@
  *
  * Usage: node scripts/a11y-dom-check.mjs [baseURL]
  *   Needs a running server: `npm run build && npm run preview` (default :4173).
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  *
  * It asserts, on /login:
  *   1. a failed submit produces at least one `role="alert"` node with an id;
@@ -28,7 +30,7 @@
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const failures = []
 
 function check(label, ok, detail) {
@@ -39,6 +41,11 @@ function check(label, ok, detail) {
     failures.push(label)
   }
 }
+
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. A silent target is how a lane measures a sibling
+// checkout's build and reports it as a defect in this tree.
+console.log(`a11y-dom-check against ${BASE}\n`)
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } })

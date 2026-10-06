@@ -9,6 +9,8 @@
  *
  * Usage: node scripts/focus-trap-check.mjs [baseURL]
  *   Needs a running server: `npm run build && npm run preview` (default :4173).
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  *
  * It drives the ReportDialog (reachable on a public drop-in detail page) and
  * asserts, with real Tab presses:
@@ -21,7 +23,7 @@
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const DETAIL_ID = process.argv[3]
 const failures = []
 
@@ -29,6 +31,11 @@ function check(label, ok, detail) {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`)
   if (!ok) failures.push(label)
 }
+
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. A silent target is how a lane measures a sibling
+// checkout's build and reports it as a defect in this tree.
+console.log(`focus-trap-check against ${BASE}\n`)
 
 if (!DETAIL_ID) {
   console.log('SKIP — no drop-in id supplied.')

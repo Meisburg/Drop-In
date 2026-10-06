@@ -13,10 +13,12 @@
  * cannot be satisfied by a comment claiming the behaviour.
  *
  * Usage: node scripts/theme-contract-check.mjs [baseURL]
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const failures = []
 const check = (label, ok, detail) => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`)
@@ -26,6 +28,11 @@ const check = (label, ok, detail) => {
 const LIGHT_PAGE = 'rgb(255, 255, 255)' // --color-page light (V25 t12: white page)
 const DARK_PAGE = 'rgb(24, 20, 18)'
 const KEY = 'dropin-theme'
+
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. A silent target is how a lane measures a sibling
+// checkout's build and reports it as a defect in this tree.
+console.log(`theme-contract-check against ${BASE}\n`)
 
 const browser = await chromium.launch()
 
@@ -95,8 +102,6 @@ async function load({ osDark, stored }) {
   await context.close()
   return { firstFrame, settled, splashFirstFrame }
 }
-
-console.log(`theme-contract-check against ${BASE}\n`)
 
 // --- THE REGRESSION THE HUMAN REPORTED -------------------------------------
 console.log('1. OS says dark, user has NO preference -> app must be LIGHT')

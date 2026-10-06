@@ -16,10 +16,12 @@
  *
  * Usage: node scripts/dark-mode-check.mjs [baseURL]
  *   Needs a running server on :4173 (`npm run build && npm run preview`).
+ *   `E2E_BASE_URL` wins over both, so a run can be pointed at a private port
+ *   without an argument (same precedence as the e2e specs).
  */
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] ?? 'http://localhost:4173'
+const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const failures = []
 
 // The pinned painted values (src/index.css token declarations):
@@ -132,6 +134,11 @@ async function samplePage(page) {
     }
   })
 }
+
+// FIRST LINE, before anything is launched or measured: say which app this run
+// is about to measure. A silent target is how a lane measures a sibling
+// checkout's build and reports it as a defect in this tree.
+console.log(`dark-mode-check against ${BASE}\n`)
 
 const browser = await chromium.launch()
 
