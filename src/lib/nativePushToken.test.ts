@@ -22,7 +22,10 @@ import {
   NATIVE_PUSH_DENIED_REASON,
   NATIVE_PUSH_EMPTY_TOKEN_REASON,
   NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON,
+  NATIVE_PUSH_WEB_REASON,
   deviceTokenRow,
+  disableNativePush,
+  nativePlatformOf,
   planNativePushRegistration,
   registerNativePushToken,
   type DeviceTokenRow,
@@ -324,5 +327,58 @@ describe('deviceTokenRow — the upsert payload', () => {
       deviceTokenRow({ profileId: 'p', token: 'abc', platform: 'android', appVersion: '  ', now: NOW })
         ?.app_version,
     ).toBeNull()
+  })
+})
+
+describe('nativePlatformOf — the one platform mapping', () => {
+  it('names the two shells the sender can address', () => {
+    expect(nativePlatformOf('android')).toBe('android')
+    expect(nativePlatformOf('ios')).toBe('ios')
+  })
+
+  it('treats a browser — and anything unreadable — as NOT native', () => {
+    // '' is the shape a shell that never initialised reports. A platform we
+    // cannot read must never be assumed native: the native path stores a token
+    // the web sender cannot address.
+    for (const platform of ['web', '', 'electron', 'ANDROID', 'unknown']) {
+      expect(nativePlatformOf(platform)).toBeNull()
+    }
+  })
+})
+
+describe('disableNativePush — the opt-out deletes the row, or says why not', () => {
+  function counter(options: { throws?: Error } = {}) {
+    const calls: string[] = []
+    return {
+      calls,
+      deleteTokens: async () => {
+        calls.push('deleteTokens')
+        if (options.throws) throw options.throws
+      },
+    }
+  }
+
+  it('deletes this install’s device row and reports it removed', async () => {
+    const fake = counter()
+    const outcome = await disableNativePush({ platform: 'android', deleteTokens: fake.deleteTokens })
+    expect(outcome).toEqual({ status: 'removed' })
+    expect(fake.calls).toEqual(['deleteTokens'])
+  })
+
+  it('does NOT delete anything in a browser — the web path owns that one', async () => {
+    const fake = counter()
+    const outcome = await disableNativePush({ platform: null, deleteTokens: fake.deleteTokens })
+    expect(outcome).toEqual({ status: 'unsupported', reason: NATIVE_PUSH_WEB_REASON })
+    expect(fake.calls).toEqual([])
+  })
+
+  it('reports a failed delete as an error instead of claiming “off”', async () => {
+    const fake = counter({ throws: new Error('permission denied for table device_tokens') })
+    const outcome = await disableNativePush({ platform: 'ios', deleteTokens: fake.deleteTokens })
+    expect(outcome.status).toBe('error')
+    if (outcome.status !== 'error') throw new Error('unreachable')
+    // The parent must be told the row is still there, so the raw cause is kept.
+    expect(outcome.reason).toContain('permission denied')
+    expect(fake.calls).toEqual(['deleteTokens'])
   })
 })

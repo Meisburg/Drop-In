@@ -222,8 +222,17 @@ describe('nativePushCredentialFailure — the sender’s own fault never condemn
     if (result.ok) throw new Error('unreachable')
     expect(result.deadToken).toBe(false)
     expect(nativePushOutcome(result)).toBe('failed')
-    // The recorded error must not tell a human the device was deleted.
-    expect(result.error).not.toContain('pruned')
+    // THE WORDING LIVES IN THE VERDICT, NOT IN `error`. `nativePushFailure`
+    // prefers the provider's own words verbatim, so `result.error` above is
+    // FCM's text ("The registration token is not a valid FCM registration
+    // token.") and can never carry what the sender decided — an assertion on it
+    // could not fail for the reason it claimed. The sentence that must not tell
+    // a human the device was deleted is the VERDICT's, so the verdict is what is
+    // checked: the credential classification of this exact shape, the same call
+    // `nativePushCredentialFailure` makes internally.
+    const verdict = classifyNativePushFailure({ ...shape, aboutTheDeviceToken: false })
+    expect(verdict.reason).toMatch(/row is kept/i)
+    expect(verdict.reason).not.toContain('pruned')
   })
 
   it('still classifies a 5xx credential failure as retryable', () => {

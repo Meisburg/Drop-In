@@ -109,6 +109,10 @@ import type { ReviewWithAuthor } from './reviews'
 // permission memory) live in ./push and are not duplicated here — db.ts only
 // moves rows.
 import { RECENT_NOTIFICATIONS_LIMIT, isNotificationKind, type NotificationKind } from './push'
+// Slice 2b-ii: the native token's row shape and upsert key live in the seam
+// (./nativePushToken) so the write here and the row the seam builds cannot
+// drift — db.ts only moves the bytes.
+import { DEVICE_TOKEN_CONFLICT_KEY, type DeviceTokenRow } from './nativePushToken'
 import { resetRedirectTo } from './passwordReset'
 // V8 ticket 06: the weekly series' pure payload seams (the series row and the
 // playdates `series_id` key — omitted entirely for a standalone post, so
@@ -3825,6 +3829,132 @@ export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]
   } = await supabase.auth.getUser()
   if (user === null) return []
   return listPushSubscriptionsWithClient(supabase, user.id)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// device_tokens (slice 2b-ii) — the NATIVE twin of the block above, against
+// migration 0065. Same posture, deliberately: the write is profile-scoped and
+// asks for the row back, the read is owner-only, and "turn off" is a delete of
+// this profile's rows. The TOKEN is never returned to a caller that does not
+// own the row — 0065 pin (a): a device token is a capability.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One registered native install. The token itself is never read back (0065 pin a). */
+export interface DeviceTokenSummary {
+  id: string
+  platform: string
+  appVersion: string | null
+  lastSeenAt: string
+}
+
+/**
+ * Register (or re-register) this install's native push token, against an
+ * injected client. `row` is built by the seam's `deviceTokenRow`, so the upsert
+ * key (`DEVICE_TOKEN_CONFLICT_KEY`, 0065 pin b) is named in exactly one place.
+ *
+ * THE RETURNING CHECK IS THE SAME DEFECT 0031 NEEDED IT FOR, and 0065 pin (b)
+ * records the same failure mode: when the token already belongs to another
+ * profile, Postgres takes the ON CONFLICT UPDATE path, the UPDATE policy's USING
+ * clause filters it out, ZERO rows are written and the call still answers
+ * success. An empty representation is therefore the detector — a real write
+ * returns the row it wrote — so a non-owner gets a real error instead of a false
+ * "Notifications are on". (It cannot be a follow-up `select()`: an immediate
+ * read-after-write on this project was measured missing the row it had just
+ * written.)
+ */
+export async function saveDeviceTokenWithClient(
+  client: SupabaseClient,
+  row: DeviceTokenRow,
+): Promise<void> {
+  const { data, error } = await client
+    .from('device_tokens')
+    .upsert(row, { onConflict: DEVICE_TOKEN_CONFLICT_KEY })
+    .select('profile_id')
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<{ profile_id?: string }>
+  if (rows.length !== 1 || rows[0]?.profile_id !== row.profile_id) {
+    throw new Error(
+      'This device is already registered for notifications under a different Drop In ' +
+        'account. Turn notifications off in that account, then try again here.',
+    )
+  }
+}
+
+/** The default-client wrapper (the native opt-in path). */
+export async function saveDeviceToken(row: DeviceTokenRow): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) throw new Error('Not signed in')
+  return saveDeviceTokenWithClient(supabase, row)
+}
+
+/**
+ * This profile's registered native installs. Owner-only SELECT is the wall
+ * (0065 pin a). It exists so the /settings section can answer "are notifications
+ * on?" for the NATIVE channel: inside the shell the web read is empty, and
+ * rendering "off" over a live `device_tokens` row would tell a parent to turn on
+ * something that is already on.
+ */
+export async function listDeviceTokensWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<DeviceTokenSummary[]> {
+  const { data, error } = await client
+    .from('device_tokens')
+    .select('id, platform, app_version, last_seen_at')
+    .eq('profile_id', profileId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return ((data ?? []) as Array<{
+    id: string
+    platform: string | null
+    app_version: string | null
+    last_seen_at: string | null
+  }>).map((row) => ({
+    id: row.id,
+    platform: row.platform ?? '',
+    appVersion: row.app_version,
+    lastSeenAt: row.last_seen_at ?? '',
+  }))
+}
+
+/** The default-client wrapper (the native status read). */
+export async function listDeviceTokens(): Promise<DeviceTokenSummary[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return []
+  return listDeviceTokensWithClient(supabase, user.id)
+}
+
+/**
+ * "Turn off notifications" for the NATIVE channel: delete EVERY `device_tokens`
+ * row this profile owns, against an injected client. This is the whole opt-out
+ * (0065's own pin, on the DELETE policy): with no device row the sender has
+ * nothing to address natively.
+ *
+ * Profile-scoped rather than token-scoped on purpose, exactly as the web twin
+ * is: the token the plugin reported is not necessarily the row in the table, so
+ * a token-scoped delete can remove nothing while the UI claims "off" — a parent
+ * still being buzzed after tapping turn-off is the worst version of this control.
+ */
+export async function deleteDeviceTokensForProfileWithClient(
+  client: SupabaseClient,
+  profileId: string,
+): Promise<void> {
+  const { error } = await client.from('device_tokens').delete().eq('profile_id', profileId)
+  if (error) throw error
+}
+
+/** The default-client wrapper (the native opt-out). */
+export async function deleteDeviceTokensForProfile(): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user === null) return
+  return deleteDeviceTokensForProfileWithClient(supabase, user.id)
 }
 
 /**

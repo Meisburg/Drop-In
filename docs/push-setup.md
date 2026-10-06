@@ -1,4 +1,4 @@
-# Web push setup (V8 ticket 08)
+# Push setup — web push, and the native app (V8 ticket 08 + slice 2b-ii)
 
 The code is done. **Nothing about web push actually delivers until the steps in
 this file are done**, and every one of them needs access this machine does not
@@ -21,6 +21,7 @@ Project ref: `ayzvjwxbxyrcgyoeaxuk` (from `.env` → `VITE_SUPABASE_URL`).
 | 3 | Deploy `send-push` + secrets | **DONE** — verified through the Management API, not assumed: the function is `ACTIVE`, `verify_jwt: true`, and the three secrets `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` all exist. The wall is proven live: an **anon** bearer gets `401 {"error":"send-push is service-role only"}` (a 404 would have meant "not deployed") |
 | 4 | Schedule every 5 minutes | **DONE (2026-09-12)** — cron job `send-push-every-5-minutes`, `*/5 * * * *`, active; `cron.job_run_details.status: succeeded` on the first tick, and the two canary rows drained in the same run (evidence below). It was provably missing before that: `pg_cron`/`pg_net` were not installed and six minutes of polling showed no drain. Created from the dashboard, which enables the extensions and supplies the service-role key itself — deliberately not from a SQL snippet, where that key would sit in a statement |
 | 5 | Verify | partly done (see below); the on-device half needs step 4 plus an opt-in from the phone |
+| 6 | **Native (Android/FCM): put `FCM_SERVICE_ACCOUNT_JSON` in the function's secrets** | **NOT DONE** — the secret does not exist, so the native channel is `disabled`: one `console.warn` naming the reason, then every parent gets web push, then email. See §6 |
 
 **Live evidence already collected** (the DB half of the pipeline works): a real
 ping from a second account wrote `notification_log` row `ping_received` ("… is
@@ -279,6 +280,91 @@ job name still says only `send-push`.
    `push_subscriptions` row in the same pass (`node scripts/sweep-e2e-markers.mjs
    delete` handles the account, which cascades its subscriptions and log).
 
+## 6. The native channel (Android / FCM) — the app, not the browser
+
+Everything above is **web push**: a VAPID keypair, a `push_subscriptions` row,
+and a service worker. The **installed app** is a second, independent channel.
+The Capacitor WebView has no `PushManager` at all, so a parent inside the app
+cannot take the web path — they register a **device token** instead (migration
+**0065**, `device_tokens`), and `send-push` addresses it through **FCM HTTP v1**.
+Native tokens win over web push when both exist, web push is the fallback and
+email is last. **Neither channel is derived from the other** — do not "unify"
+them (0065's header says the same thing).
+
+### What the code does, and what is proven here
+
+- `src/lib/nativePushToken.ts` runs the registration inside the shell:
+  `checkPermissions()` → (maybe) `requestPermissions()` → `register()` — and it
+  **re-reads** the permission after asking. A second `request` reading (Android's
+  `prompt-with-rationale`, a dismissed dialog, an unreadable state) is a
+  **blocked** outcome, never a registration: on Android 13+ a `register()` before
+  the grant hands back a token that can never produce a visible alert.
+- `/settings` → Notifications (`src/components/NotificationsSection.tsx`) now
+  offers that control **inside the shell** — it is reachable, not just
+  implemented. Inside the shell it reads its state from `device_tokens` (the web
+  read is empty there by construction), and **"Turn off" deletes this profile's
+  device rows**: with no row the sender has nothing to address natively, which is
+  the whole opt-out (0065's DELETE policy).
+- Both seams are unit-tested with **injected dependencies** (no device, no
+  network): `src/lib/nativePushToken.test.ts` pins the permission ORDER and every
+  outcome, and `src/lib/db-device-tokens.test.ts` pins the `on conflict (token)`
+  upsert, the `RETURNING`-based refusal of a silent non-owner write, and the
+  owner-scoped read/delete.
+
+### ⚠️ What is NOT proven here (a device has to confirm it)
+
+**The device run is UNPROVEN.** There is no installed build and no FCM
+service-account key on the development machine, so nothing above has produced a
+real notification. A device must confirm, in this order: the OS permission dialog
+appears when the button is tapped and the seam reports the real answer; a token
+lands in `device_tokens` with the right `platform`; the row is gone after "Turn
+off"; and a send with the app CLOSED shows the alert.
+
+### The credential (the founder's step — the native channel is dead without it)
+
+One Edge Function secret turns the channel on:
+
+```
+FCM_SERVICE_ACCOUNT_JSON
+```
+
+- It is a Google **service-account key**: a JSON object. Firebase console →
+  **Project settings** → **Service accounts** → **Generate new private key**, for
+  the Firebase project the app's `google-services.json` was generated from.
+- ⚠️ **It is a DIFFERENT artifact from `google-services.json`.** That file is
+  CLIENT config: it identifies the app to Firebase, it ships inside the Android
+  build, and it is gitignored on purpose (this repo is public). The
+  service-account key is the **SERVER** credential — whoever holds it can send to
+  every install — so it goes into the Edge Function's **secrets** and **never**
+  into the repo, a commit, a chat, or `android/`. Set it exactly the way the
+  VAPID secrets are set in step 3, then redeploy `send-push`.
+- **A missing or malformed value does not throw — it disables the native
+  channel.** The sender reads the secret once at module scope; an absent value, a
+  value that is not a JSON object, or one missing `project_id` / `client_email` /
+  `private_key` logs **exactly one `console.warn`** naming the reason
+  (`send-push: native push disabled — …`), and the native branch is skipped with
+  the parent none the wiser: they still get web push, then email. **The value is
+  never echoed** — not into that warning, not into `notification_log.error`, not
+  into a response.
+
+### Known limits of the native channel (stated, not hidden)
+
+- **Android only.** APNs/iOS is deferred (slice 2a): no `apnsDeno.ts`, no
+  `APNS_*` secret, and no iOS transport in the sender. The `device_tokens.platform`
+  CHECK already carries `'ios'`, so the branch can be added without reshaping
+  anything — but today an iOS install has no channel.
+- **`FCM_SERVICE_ACCOUNT_JSON` does not exist yet**, so the app can write a
+  device row while every native send is still skipped (the step 6 row at the top
+  of this file). Writing a row and being able to send to it are two different
+  steps; both are needed.
+- **The web opt-out and the native opt-out own their own channel.** Inside the
+  shell, "Turn off" deletes `device_tokens` rows; in a browser it deletes
+  `push_subscriptions` rows and unsubscribes, exactly as before. A parent who
+  wants BOTH channels off turns them off in both places.
+- **The `token`→`fid` deprecation** Firebase's v1 reference mentions is recorded
+  UNVERIFIED in the native grounding: the Capacitor plugin exposes only the
+  token, and no action is taken until the timeline or the plugin moves.
+
 ## What the code does (for reference)
 
 - `supabase/migrations/0031_push_subscriptions.sql` — the capability store.
@@ -308,6 +394,11 @@ job name still says only `send-push`.
   the permission-decision memory), all unit-tested. `src/lib/pushClient.ts` is
   the only file that touches the browser. `src/components/NotificationsSection.tsx`
   and `src/components/PushOptInPrompt.tsx` render; they do not decide.
+- `supabase/migrations/0065_device_tokens.sql`, `src/lib/nativePushToken.ts` and
+  the `device_tokens` block in `src/lib/db.ts` — the NATIVE channel: the token
+  store, the permission-before-register seam and its opt-out, and the
+  persistence. `supabase/functions/_shared/nativePush.ts` + `fcmDeno.ts` are the
+  sender's half. See §6.
 
 ## Known limits (stated, not hidden)
 

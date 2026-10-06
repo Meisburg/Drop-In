@@ -26,6 +26,12 @@
  * is the injected `saveToken` seam and the caller owns the Supabase client
  * (the `togglePingWithClient` pattern). `deviceTokenRow` builds the exact row
  * an `upsert(row, { onConflict: DEVICE_TOKEN_CONFLICT_KEY })` writes.
+ *
+ * THE OPT-OUT IS THE SAME SHAPE (`disableNativePush`, injected `deleteTokens`),
+ * and `nativePushShellPlatform` is the one question a caller asks before drawing
+ * the native control at all — slice 2b built and tested this seam but nothing in
+ * the app called it, so a `device_tokens` row could never be written; that gap is
+ * what 2b-ii closed.
  */
 import type { NativePushPlatform } from '../../supabase/functions/_shared/nativePush.ts'
 
@@ -63,6 +69,26 @@ export interface NativePushPlugin {
     event: 'registrationError',
     handler: (error: { error: string }) => void,
   ): Promise<NativePushListener>
+}
+
+/**
+ * The two platforms a native shell reports and the provider send can address
+ * (migration 0065 pin c: `platform` is a CHECK, not free text).
+ */
+export type NativePushShellPlatform = 'android' | 'ios'
+
+/**
+ * A Capacitor platform string as a shell platform, or `null` outside a shell.
+ * Pure and total, so the mapping is written ONCE: both the runtime edge
+ * (`nativePushShellPlatform`) and `registerForNativePush` go through it rather
+ * than each testing for 'android'/'ios' on its own.
+ *
+ * `null` is the honest answer for 'web' AND for the `''` a shell that never
+ * initialised reports — an unreadable platform is a browser, never an
+ * assumption of native.
+ */
+export function nativePlatformOf(platform: string): NativePushShellPlatform | null {
+  return platform === 'android' || platform === 'ios' ? platform : null
 }
 
 /**
@@ -371,8 +397,8 @@ export async function registerForNativePush(
       import('@capacitor/push-notifications'),
     ])
 
-    const platform = Capacitor.getPlatform()
-    if (platform !== 'android' && platform !== 'ios') {
+    const platform = nativePlatformOf(Capacitor.getPlatform())
+    if (platform === null) {
       return { status: 'unsupported', reason: NATIVE_PUSH_WEB_REASON }
     }
 
@@ -387,6 +413,78 @@ export async function registerForNativePush(
     return {
       status: 'error',
       reason: describeError(error) || 'the notification plugin could not be loaded',
+    }
+  }
+}
+
+/**
+ * Which shell this build is running in, or `null` in a browser.
+ *
+ * The runtime edge for `nativePlatformOf`, and the ONE question a caller asks
+ * before rendering the native control: the web opt-in is gated on
+ * `pushSupported()`, which is FALSE inside the shell (the Capacitor WebView has
+ * no `PushManager`), so without this the native path would have no button to be
+ * reached from — the whole defect slice 2b-ii exists to close.
+ *
+ * The plugin is loaded lazily for the same reason `registerForNativePush` loads
+ * it that way, and a Capacitor that throws or is absent is a BROWSER: this never
+ * rejects, so a caller can `await` it in a mount effect without a `catch`.
+ */
+export async function nativePushShellPlatform(): Promise<NativePushShellPlatform | null> {
+  try {
+    const { Capacitor } = await import('@capacitor/core')
+    return nativePlatformOf(Capacitor.getPlatform())
+  } catch {
+    return null
+  }
+}
+
+export type NativePushOptOutOutcome =
+  | { status: 'removed' }
+  | { status: 'unsupported'; reason: string }
+  | { status: 'error'; reason: string }
+
+export interface DisableNativePushInput {
+  /**
+   * The shell the caller detected (`nativePushShellPlatform`), injected so the
+   * opt-out is pinned without loading Capacitor in the test lane.
+   */
+  platform: NativePushShellPlatform | null
+  /**
+   * The persistence seam: the caller runs the `device_tokens` DELETE. Migration
+   * 0065's pin, verbatim — "Turn off notifications" IS the row's absence, and
+   * nothing else in the app can stand in for it: a toggle that leaves the row
+   * behind keeps the parent reachable after they said stop.
+   */
+  deleteTokens(): Promise<void>
+}
+
+/**
+ * The opt-out, the twin of `registerForNativePush`. Resolves on every path and
+ * never throws into a click handler:
+ *
+ *  * a browser is `unsupported` — the web "Turn off" owns that path;
+ *  * a failed delete is `error`, so the caller can say so instead of reporting
+ *    "off" over a row that is still there.
+ *
+ * It deletes EVERY `device_tokens` row of this profile (the caller's delete is
+ * profile-scoped, the `deletePushSubscriptionsForProfile` shape) rather than
+ * one scoped to a token: the token the plugin hands back today is not
+ * necessarily the row in the table, and a delete that removes nothing while the
+ * UI claims "off" is the worst version of this control.
+ */
+export async function disableNativePush(
+  input: DisableNativePushInput,
+): Promise<NativePushOptOutOutcome> {
+  if (input.platform === null) return { status: 'unsupported', reason: NATIVE_PUSH_WEB_REASON }
+
+  try {
+    await input.deleteTokens()
+    return { status: 'removed' }
+  } catch (error) {
+    return {
+      status: 'error',
+      reason: describeError(error) || 'could not remove this device’s registration',
     }
   }
 }
