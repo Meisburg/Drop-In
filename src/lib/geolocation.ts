@@ -74,19 +74,19 @@ export function isGeolocationAvailable(): boolean {
 }
 
 /**
- * Ask for ONE position fix. Never rejects: every failure mode becomes a named
- * outcome, so a caller never needs a try/catch and a parent never sees a crash
- * from a permission dialog.
- *
- * `once: false` is left at its default deliberately — this reads a single fix
- * and stops; nothing here subscribes to movement.
+ * ONE `getCurrentPosition` call. `timeout` is an INTERNAL status and never
+ * escapes this module: `readDeviceCoords` maps it to `unavailable` in the end,
+ * because "we could not get a fix" is what the parent has to act on, and the
+ * four named outcomes are what `locationCopy` writes sentences for ("a new
+ * status cannot be added without a compile error here" — `lib/locationCopy.ts`).
+ * The two are kept apart inside ONLY so the caller below can tell a request that
+ * ran out of time from one the device actually answered, which is the whole
+ * basis of the retry.
  */
-export function readDeviceCoords(
-  timeoutMs: number = GEOLOCATION_TIMEOUT_MS,
-): Promise<GeolocationOutcome> {
-  if (!isGeolocationAvailable()) return Promise.resolve({ status: 'unsupported' })
+type Attempt = GeolocationOutcome | { status: 'timeout' }
 
-  return new Promise<GeolocationOutcome>((resolve) => {
+function askOnce(timeoutMs: number): Promise<Attempt> {
+  return new Promise<Attempt>((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords
@@ -99,11 +99,17 @@ export function readDeviceCoords(
         resolve({ status: 'granted', coords: { lat: latitude, lng: longitude } })
       },
       (error) => {
-        // The spec's three error codes. A TIMEOUT is "unavailable" and not
-        // "denied": the parent did not refuse, and telling them they did would
-        // be a lie that also hides the retry.
+        // The spec's three error codes. A TIMEOUT is not "denied": the parent
+        // did not refuse, and telling them they did would be a lie that also
+        // hides the retry. It is kept distinct from POSITION_UNAVAILABLE (code
+        // 2 — location services off, no provider, no hardware) because only the
+        // timeout is worth another window; see `readDeviceCoords`.
         if (error.code === error.PERMISSION_DENIED) {
           resolve({ status: 'denied' })
+          return
+        }
+        if (error.code === error.TIMEOUT) {
+          resolve({ status: 'timeout' })
           return
         }
         resolve({ status: 'unavailable' })
@@ -136,4 +142,66 @@ export function readDeviceCoords(
       },
     )
   })
+}
+
+/**
+ * Ask for ONE position fix — or, after a timeout, for one more. Never rejects:
+ * every failure mode becomes a named outcome, so a caller never needs a
+ * try/catch and a parent never sees a crash from a permission dialog.
+ *
+ * ⚠️ WHY A RETRY AND NOT A LONGER CONSTANT — measured, 2026-10-06. Chromium
+ * starts this timeout when the request is made, and the OS permission dialog is
+ * part of that request: on the emulator the call died at `ms=10001`, code 3
+ * "Timeout expired", with `GrantPermissionsActivity` **still focused and
+ * unanswered**, while a cold precise fix afterwards took ~4.4–5.9 s. So a
+ * first-time parent — the only one who ever sees that dialog, and the parent this
+ * feature was built for — who took more than ~5 s to read it was told
+ * *"We couldn't get your location just now"* AFTER allowing, and had to tap
+ * again. With the retry in place the same walk was measured on the device
+ * answering at t+11 s and returning a position (`ms=5876`), so the survivable
+ * dialog-read time went from ~5 s to ~11 s. Raising `GEOLOCATION_TIMEOUT_MS`
+ * would buy that by making EVERY failure wait longer, including the ones with no
+ * dialog in sight; this buys it by spending a second window only where the first
+ * expired.
+ *
+ * ⚠️ THE RETRY IS UNCONDITIONAL ON PURPOSE, AND A GATE HERE WAS TRIED AND
+ * REMOVED. The first version of this fix asked `navigator.permissions.query`
+ * before the call and skipped the retry when the permission was already
+ * `granted` — reasoning that no dialog can appear then, so a timeout is a real
+ * "no fix in 10 s". MEASURED, AND IT IS FALSE IN THE SHIPPED ANDROID SHELL: with
+ * `dumpsys package` showing `ACCESS_FINE_LOCATION: granted=true`, that query
+ * still answers `"prompt"`, because Capacitor satisfies the WebView's geolocation
+ * prompt itself (`onGeolocationPermissionsShowPrompt`) and never persists a
+ * Chromium grant. The gate could not fire in the app at all — dead code that
+ * looked like protection, which by this repo's own standard ("a checker that
+ * matches nothing looks like a clean repo") is a defect, not caution. The shell
+ * genuinely cannot tell "a dialog is pending" from "the provider is silent", and
+ * pretending otherwise is what produced that dead gate.
+ *
+ * What is left is the honest shape: **every TIMEOUT gets one more attempt**;
+ * `denied` (code 1) and POSITION_UNAVAILABLE (code 2) do not — see `askOnce`. A
+ * timeout on the first attempt usually MEANS a pending dialog or a fix that
+ * needed longer, which is precisely what the second attempt fixes, so the extra
+ * time is mostly spent on requests that then succeed; and when it does not
+ * succeed, it was going to fail anyway.
+ *
+ * WORST CASE, stated plainly: 20 s — 10 s + 10 s — before the parent is told
+ * `unavailable`, with the button reading "Finding you…" for the whole of it. It
+ * applies to the TIMEOUT path ONLY. `denied`, POSITION_UNAVAILABLE (Location
+ * services off, no provider, no hardware) and `unsupported` are single-attempt
+ * and still resolve in 10 s or less.
+ *
+ * `once: false` is left at its default deliberately — this reads a single fix
+ * and stops; nothing here subscribes to movement.
+ */
+export async function readDeviceCoords(
+  timeoutMs: number = GEOLOCATION_TIMEOUT_MS,
+): Promise<GeolocationOutcome> {
+  if (!isGeolocationAvailable()) return { status: 'unsupported' }
+
+  const first = await askOnce(timeoutMs)
+  if (first.status !== 'timeout') return first
+
+  const second = await askOnce(timeoutMs)
+  return second.status === 'timeout' ? { status: 'unavailable' } : second
 }

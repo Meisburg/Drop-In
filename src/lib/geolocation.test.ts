@@ -50,8 +50,58 @@ function removeGeolocation(): void {
   })
 }
 
+/**
+ * Answer `navigator.permissions.query({name:'geolocation'})` with `state`.
+ *
+ * ⚠️ THE MODULE UNDER TEST DOES NOT READ THIS API AT ALL — and that is the
+ * property the stub is here to hold. An earlier version of the fix gated the
+ * retry on this value, which measured as DEAD CODE in the Android shell (see
+ * `lib/geolocation.ts`); the one test that uses this stub feeds it `"granted"`,
+ * the value that used to suppress the retry, and requires the retry anyway.
+ * `removePermissions` below keeps a stale stub from leaking between tests.
+ */
+function stubPermissionState(state: PermissionState): void {
+  Object.defineProperty(navigator, 'permissions', {
+    value: { query: () => Promise.resolve({ state } as PermissionStatus) },
+    configurable: true,
+    writable: true,
+  })
+}
+
+/** Remove the Permissions API, so no stub leaks between tests. */
+function removePermissions(): void {
+  Object.defineProperty(navigator, 'permissions', {
+    value: undefined,
+    configurable: true,
+    writable: true,
+  })
+}
+
+/**
+ * Sequence several `getCurrentPosition` calls. Each entry decides how THAT call
+ * settles, so a timeout followed by a fix (the dialog case) can be expressed.
+ */
+function stubGeolocationCalls(
+  impls: Array<(success: PositionCallback, error: PositionErrorCallback) => void>,
+): ReturnType<typeof vi.fn> {
+  const spy = vi.fn((success: PositionCallback, error: PositionErrorCallback) => {
+    const impl = impls[spy.mock.calls.length - 1]
+    if (impl) impl(success, error)
+    // No impl left: the call never answers, like a device that stopped replying.
+  })
+  stubGeolocation(spy)
+  return spy
+}
+
+/** The spec's TIMEOUT, the only error a retry is spent on. */
+const timeoutError = (
+  _success: PositionCallback,
+  error: PositionErrorCallback,
+): void => error({ code: 3, TIMEOUT: 3 } as GeolocationPositionError)
+
 afterEach(() => {
   removeGeolocation()
+  removePermissions()
   vi.restoreAllMocks()
 })
 
@@ -135,7 +185,10 @@ describe('readDeviceCoords (four named outcomes, and it never rejects)', () => {
     const spy = vi.fn()
     stubGeolocation(spy)
     void readDeviceCoords(1234)
-    expect(spy).toHaveBeenCalledTimes(1)
+    // The permission state is read BEFORE the request now, so the call is one
+    // microtask later than it used to be — nothing the app can observe, but the
+    // assertion has to wait for it.
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
     const options = spy.mock.calls[0][2] as PositionOptions
     expect(options.timeout).toBe(1234)
     // ⚠️ THIS USED TO ASSERT `false`, ON THE REASONING THAT COARSE IS CHEAPER
@@ -157,7 +210,100 @@ describe('readDeviceCoords (four named outcomes, and it never rejects)', () => {
     const spy = vi.fn()
     stubGeolocation(spy)
     void readDeviceCoords()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
     const options = spy.mock.calls[0][2] as PositionOptions
     expect(options.timeout).toBe(GEOLOCATION_TIMEOUT_MS)
+  })
+})
+
+/**
+/**
+ * THE RETRY.
+ *
+ * Chromium starts the request's 10 s clock when the request is made, and the OS
+ * permission dialog is inside that window — measured on the emulator: the call
+ * died at `ms=10001`, code 3 "Timeout expired", with `GrantPermissionsActivity`
+ * still focused and unanswered. So the first-ever ask can be spent entirely on a
+ * parent reading the dialog, and the retry is what makes that survivable
+ * (measured on the device: answered at t+11 s → a position, `ms=5876`).
+ *
+ * These tests pin the rule and its two exceptions, because a retry that fires in
+ * the wrong place doubles a wait instead of saving one:
+ *
+ *  - every TIMEOUT gets exactly one more attempt, WHATEVER the Permissions API
+ *    says — including `"granted"`, which is precisely the shell's confusing case
+ *    and the value a since-removed gate wrongly trusted;
+ *  - `denied` and POSITION_UNAVAILABLE are answers, not timeouts: one attempt;
+ *  - `timeout` never escapes to a caller: two of them become `unavailable`.
+ */
+describe('readDeviceCoords — the one retry after a TIMEOUT', () => {
+  it('retries when the dialog ate the budget, and the second call gets the fix', async () => {
+    // The dialog case: the first attempt times out while the parent is still
+    // reading, and they have answered by the time the retry runs.
+    const spy = stubGeolocationCalls([
+      timeoutError,
+      (success) => success(position(47.6685, -122.386)),
+    ])
+    await expect(readDeviceCoords()).resolves.toEqual({
+      status: 'granted',
+      coords: { lat: 47.6685, lng: -122.386 },
+    })
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries every TIMEOUT once, whatever the Permissions API claims — including "granted"', async () => {
+    // ⚠️ THE SHELL'S CASE, AND THE REGRESSION GUARD FOR THE REMOVED GATE. Inside
+    // the Android app `permissions.query` answers "prompt" even while the OS
+    // permission is granted, so gating the retry on this value suppressed it
+    // nowhere and protected nothing. Whatever it says, a TIMEOUT retries.
+    for (const state of ['granted', 'prompt', 'denied'] as PermissionState[]) {
+      stubPermissionState(state)
+      const spy = stubGeolocationCalls([timeoutError, timeoutError])
+      await expect(readDeviceCoords()).resolves.toEqual({ status: 'unavailable' })
+      expect(spy, `permission state ${state}`).toHaveBeenCalledTimes(2)
+    }
+  })
+
+  it('gives up after the second timeout without leaking an internal status', async () => {
+    // `timeout` exists only inside this module; the caller's world has four
+    // statuses and `unavailable` is the honest one after two windows.
+    const spy = stubGeolocationCalls([timeoutError, timeoutError])
+    await expect(readDeviceCoords()).resolves.toEqual({ status: 'unavailable' })
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
+  it('spends the retry on the same budget as the first attempt', async () => {
+    const spy = stubGeolocationCalls([timeoutError, timeoutError])
+    await readDeviceCoords(1234)
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect((spy.mock.calls[0][2] as PositionOptions).timeout).toBe(1234)
+    expect((spy.mock.calls[1][2] as PositionOptions).timeout).toBe(1234)
+  })
+
+  it('never retries a refusal — a denial is an answer, not a timeout', async () => {
+    const spy = stubGeolocationCalls([
+      (_success, error) => error({ code: 1, PERMISSION_DENIED: 1 } as GeolocationPositionError),
+      (success) => success(position(1, 2)),
+    ])
+    await expect(readDeviceCoords()).resolves.toEqual({ status: 'denied' })
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('never retries POSITION_UNAVAILABLE — GPS off is not a slow dialog', async () => {
+    const spy = stubGeolocationCalls([
+      (_success, error) => error({ code: 2, POSITION_UNAVAILABLE: 2 } as GeolocationPositionError),
+      (success) => success(position(1, 2)),
+    ])
+    await expect(readDeviceCoords()).resolves.toEqual({ status: 'unavailable' })
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a first attempt that succeeded', async () => {
+    const spy = stubGeolocationCalls([(success) => success(position(3, 4))])
+    await expect(readDeviceCoords()).resolves.toEqual({
+      status: 'granted',
+      coords: { lat: 3, lng: 4 },
+    })
+    expect(spy).toHaveBeenCalledTimes(1)
   })
 })
