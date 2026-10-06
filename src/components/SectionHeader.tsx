@@ -32,9 +32,15 @@ export function SectionHeader({
   /** Omit when the title alone says what the screen is for. */
   tagline?: string
   /**
-   * r3-7: an optional testid on the masthead itself — the first-run tooltips
-   * point the feed's "Drop Ins" step at it (`feed-section-header`). Omitted
-   * everywhere else, so it never leaks a locator onto another screen.
+   * An optional testid on the masthead itself. ⚠️ IT IS NO LONGER THE FIRST-RUN
+   * TOUR'S TARGET: r3-7 pointed the "Drop Ins" step here (`feed-section-header`),
+   * and the founder overruled that on 2026-10-05 — the first lightbox must ring
+   * the Drop Ins NAV ICON, because a parent has to be able to press the thing
+   * being taught (see `lib/firstRunTooltips.ts`'s target docblock for his words
+   * and the measurement). The id is kept because `FeedPage` still passes it and
+   * a screen's own masthead is a reasonable anchor for a future reader; nothing
+   * locates it today. Omitted everywhere else, so it never leaks a locator onto
+   * another screen.
    */
   testId?: string
 }) {
