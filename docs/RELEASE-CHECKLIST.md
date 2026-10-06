@@ -504,7 +504,32 @@ Assets below were read from Google's own
   rest would ship BOTH vocabularies. One-line change once that file is free; the
   full classification is in `.scratch/next-batch-brief.md`.
   ~~"ping" → "going" terminology pass.~~
-- [x] **7.5 — DONE WITH 1.1** on 2026-10-06 (same action, same run)., and 1.2 WAS deferred (no scratch project),
+- [x] **7.5 — DONE WITH 1.1** on 2026-10-06 (same action, same run).
+- [x] **1.1b — THE SWEEP'S SAFETY NET WAS HALF BLIND, AND THAT IS FIXED (found
+  2026-10-06, after the sweep ran).** The collateral probe — the gate that exists
+  because a real parent's row was once destroyed by a cascade nobody modelled —
+  named **17** cascade edges while the live schema had **34 over 29 pairs**. It was
+  blind to whole tables added since it was written: `messages`,
+  `message_recipients`, `message_reactions`, `notification_log`,
+  `conversation_reads`, `direct_conversation_reads`, `account_links`,
+  `parent_cards`, `place_comments`, `reviews`, `ping_kids`. **The check that was
+  supposed to catch this asserted `length === 17` — a count pinned to one day's
+  measurement, which stays green while the model rots.**
+  **WAS ANYTHING LOST? MEASURED: NO.** All 36 unmodelled edges were re-queried
+  against the live database and every one held **zero** blocker rows, so the
+  2026-10-06 sweep destroyed nothing it did not name. The probe was blind, not
+  wrong — this time.
+  **FIXED:** every one of the 29 pairs is modelled (34 edges), the stale count is
+  replaced by a floor plus a requirement that every cascade-bearing TABLE is named,
+  and the live probe now refuses rather than reporting "Safe" over edges it never
+  looked at. Three real bugs were found and fixed in my OWN first attempt, each by
+  running it rather than reading it: a duplicate edge, `id in VICTIMS` on tables
+  with no `id` column (the probe refused with 42703 — a crash, not a guard), and
+  `select p.id` on `going_pings`, whose key is `(playdate_id, profile_id)`.
+  **KNOWN LIMIT, written down rather than implied:** a new edge on an
+  already-named table cannot be detected from a static list; the composite
+  `ping_kids`→`going_pings` key is modelled per-column and **over-counts on
+  purpose**, because a false refusal is survivable and a false "safe" is not., and 1.2 WAS deferred (no scratch project),
   so this is live: the residue is **801 accounts / 1620 rows**, measured
   2026-10-05 with `founder_overlap: 0`, and the sweep tool supports
   `select` / `delete` / `verify` with a dry run first. **It is the same single

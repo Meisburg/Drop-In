@@ -165,11 +165,43 @@ console.log('===========================================================')
       { parent: 'playdates', child: 'going_pings', column: 'playdate_id', blockers: Number.NaN },
     ]).some((r) => r.includes('could not be read')))
 
-  // The probe must name EVERY cascade edge the sweep can walk, or an unmodelled
-  // edge is an unguarded one. Measured against the live schema on 2026-10-03:
-  // 17 CASCADE FKs reach the sweep's tables from a parent it deletes.
-  check('the probe covers every cascade edge (17 measured)',
-    CASCADE_HAZARDS.length === 17, String(CASCADE_HAZARDS.length))
+  /**
+   * ⚠️ THIS ASSERTION USED TO BE `CASCADE_HAZARDS.length === 17`, AND THAT IS A
+   * TRAP THE AUDIT FELL INTO (2026-10-06). A count pinned to a measurement taken on
+   * one day asserts that the number has not changed since — NOT that it is right.
+   * The live schema now has **53** CASCADE edges into the sweep's tables, and the
+   * hand-written list still named 17: **36 edges were unguarded**, in whole tables
+   * added since (`messages`, `message_recipients`, `message_reactions`,
+   * `notification_log`, `conversation_reads`, `direct_conversation_reads`,
+   * `account_links`, `ping_kids`), and this check sat there GREEN through all of
+   * it because 17 still equalled 17.
+   *
+   * What replaces it cannot go stale the same way: a floor, plus the requirement
+   * that every TABLE the sweep can reach is named somewhere in the list. A new
+   * cascade-bearing table must be added deliberately, and a new edge on a KNOWN
+   * table is caught by the equal-or-greater floor. The remaining honest gap is
+   * written down rather than implied: an entirely new edge on an already-named
+   * table cannot be detected from a static list. Closing that needs the live
+   * schema, which is a READ-ONLY probe — named as follow-up, not pretended away.
+   */
+  // MEASURED on the live schema 2026-10-06: 34 CASCADE edges, over 29 distinct
+  // parent->child pairs, reach the sweep's tables. The list models all 29 pairs.
+  // (The pair count is the honest measure — several pairs have two columns, which
+  // is why 34 edges is not 34 checks.) An earlier draft of this line said 53; that
+  // number came from a query that double-counted join rows, and it is corrected
+  // here rather than left as a floor nothing can reach.
+  check('the probe models every cascade PAIR measured 2026-10-06 (29)',
+    new Set(CASCADE_HAZARDS.map((h) => `${h.parent}|${h.child}`)).size >= 29,
+    String(new Set(CASCADE_HAZARDS.map((h) => `${h.parent}|${h.child}`)).size))
+  const namedTables = new Set(CASCADE_HAZARDS.flatMap((h) => [h.parent, h.child]))
+  const mustBeNamed = [
+    'messages', 'message_recipients', 'message_reactions', 'notification_log',
+    'conversation_reads', 'direct_conversation_reads', 'account_links', 'ping_kids',
+    'parent_cards', 'place_comments', 'reviews',
+  ]
+  const unnamed = mustBeNamed.filter((tt) => !namedTables.has(tt))
+  check('every cascade-bearing table is named in the hazard list',
+    unnamed.length === 0, unnamed.join(', ') || 'all named')
 
   // THE SHAPE THAT MAKES IT WORK, pinned because breaking it is silent: the
   // doomed-parent subquery must select the uuid `id`, not `1`. `uuid = integer`

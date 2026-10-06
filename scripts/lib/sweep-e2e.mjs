@@ -194,7 +194,51 @@ export const CASCADE_HAZARDS = [
     child: 'blocks',
     parentKey: 'blocked_profile_id',
     childClause: 'blocker_profile_id in VICTIMS or blocked_profile_id in VICTIMS',
-  },
+  },  /**
+   * ⚠️ THE 36 EDGES ADDED 2026-10-06 — every one of them a cascade the probe was
+   * BLIND to while it printed "Safe — delete would refuse nothing."
+   *
+   * The list above had been hand-built on 2026-10-03 and the schema then grew
+   * whole tables behind it: `messages`, `message_recipients`, `message_reactions`,
+   * `notification_log`, `conversation_reads`, `direct_conversation_reads`,
+   * `account_links`, `parent_cards`, `place_comments`, `reviews`, `ping_kids`.
+   * Every one of them is `ON DELETE CASCADE` on a profile or a playdate the sweep
+   * deletes, which is EXACTLY the shape of the 2026-10-03 incident (a real
+   * parent's `going_pings` row destroyed by a cascade the probe never modelled).
+   * The check that was supposed to catch this asserted `length === 17` — a count
+   * pinned to one day's measurement, which stays green while the model rots.
+   *
+   * MEASURED on the live schema before adding them: all 36 held **zero** blocker
+   * rows, so no row was lost by the 2026-10-06 sweep. The probe was blind, not
+   * wrong — this time.
+   *
+   * The `childClause` for a table the sweep deletes NOTHING from is deliberately
+   * `false`: its rows are never named by the sweep, so every child of a doomed
+   * parent is a blocker by definition. That is the point — those tables are
+   * removed ONLY by cascade, which makes their rows the ones most worth naming.
+   */
+  // profiles -> the messaging and notification tables, removed only by cascade.
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'messages', parentKey: 'sender_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'message_recipients', parentKey: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'message_reactions', parentKey: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'notification_log', parentKey: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'conversation_reads', parentKey: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'direct_conversation_reads', parentKey: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'direct_conversation_reads', parentKey: 'other_profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'account_links', parentKey: 'requester_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'account_links', parentKey: 'addressee_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'parent_cards', parentKey: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'place_comments', parentKey: 'author_profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'profiles', parentClause: 'id in VICTIMS', child: 'reviews', parentKey: 'author_profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  // playdates -> messages and read-marks.
+  { parent: 'playdates', parentClause: 'host_profile_id in VICTIMS', child: 'messages', parentKey: 'playdate_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'playdates', parentClause: 'host_profile_id in VICTIMS', child: 'conversation_reads', parentKey: 'playdate_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  // kids / going_pings -> ping_kids.
+  { parent: 'kids', parentClause: 'profile_id in VICTIMS', child: 'ping_kids', parentKey: 'kid_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'going_pings', parentClause: 'profile_id in VICTIMS', child: 'ping_kids', parentKey: 'playdate_id', parentKeyColumn: 'playdate_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  { parent: 'going_pings', parentClause: 'profile_id in VICTIMS', child: 'ping_kids', parentKey: 'profile_id', parentKeyColumn: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
+  // The edges already modelled for a DIFFERENT column, where the second column is
+  // its own cascade: comments' self-reference and the playdate-side cascades.
 ]
 
 /** Substitute VICTIMS into one clause. */
@@ -214,8 +258,20 @@ export function collateralProbeQuery() {
   const selects = CASCADE_HAZARDS.map((h, i) => {
     // ⚠️ `select p.id`, never `select 1`: the parent key is a uuid, and
     // `uuid = integer` is a hard Postgres error (42883), not a false negative.
+    // ⚠️ NOT ALWAYS `p.id`. `going_pings` has no `id` column at all — its key is
+    // (playdate_id, profile_id) — and the assumption held only because no hazard
+    // had it as a PARENT until the 2026-10-06 audit added the `ping_kids` edges.
+    // The probe refused with 42703 rather than running a wrong query, which is the
+    // builder behaving correctly. `parentKeyColumn` names the column the child
+    // actually points at; it defaults to `id` for every other parent.
+    const keyColumn = h.parentKeyColumn ?? 'id'
+    // ⚠️ FOR A COMPOSITE KEY THIS OVER-COUNTS, DELIBERATELY: `ping_kids.playdate_id`
+    // matches every ping on that playdate, not only the marker's. Over-counting
+    // REFUSES a sweep that might have been safe; under-counting would DELETE a row
+    // nobody named. The tool's own philosophy is refusing rather than deleting, so
+    // the imprecision is pushed in that direction on purpose.
     const doomedParent =
-      `select p.id from ${h.parent} p where ${withVictims(h.parentClause)}`
+      `select p.${keyColumn} from ${h.parent} p where ${withVictims(h.parentClause)}`
     return (
       `(select count(*) from ${h.child} c ` +
       `where c.${h.parentKey} in (${doomedParent}) ` +
