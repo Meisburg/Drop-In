@@ -15,70 +15,55 @@
 
 ---
 
-## 📍 WHERE THIS ACTUALLY STANDS (2026-10-05, and the checkboxes agree)
+## 📍 WHERE THIS ACTUALLY STANDS (2026-10-06 — the sweep is DONE)
 
-**YOUR MOVE — one word clears the most: "sweep it".** It covers **1.1 and 7.5**,
-which are the same action, plus five duplicate place rows found on the way
-(measured: every one has **zero** references, so nothing needs repointing).
-801 accounts / 1620 rows, `founder_overlap: 0`, dry run first, read-back after.
+**✅ 1.1 AND 7.5 ARE DONE, AND SO ARE THE FIVE DUPLICATE PLACE ROWS.** The founder
+authorised it on 2026-10-06 and it ran with BOTH of the sweep tool's gates green
+before anything was deleted:
 
-> ⚠️ **RE-MEASURED 2026-10-05 22:30 — THE RESIDUE HAS GROWN TO 1210 ACCOUNTS /
-> 2447 ROWS.** Nothing about the decision changed; the number did, and it is the
-> number the sweep will act on. Per the tool's own query builders
-> (`scripts/lib/sweep-e2e.mjs`'s `countsQuery()` run through `scripts/db-sql.sh` —
-> no Chrome, no writes, so this is repeatable):
->
-> | table | marker rows |
-> |---|---|
-> | profiles | 1210 |
-> | auth.users | 1210 |
-> | kids | 16 |
-> | follows | 8 |
-> | playdates | **3** |
-> | **TOTAL** | **2447** |
->
-> **`founder_overlap` is still 0** — the sweep's own safety gate, re-run at the
-> same time, so the action is still safe to authorise. Two things this exposes:
-> **it grew 1620 → 2447 in a few hours** because every spec run signs up a fresh
-> marker (this item's own recorded mechanism, and the reason 1.2 — a scratch
-> Supabase project — is the durable fix), and **`messages` is not in the sweep's
-> table list at all**: 22 marker-owned messages sit there today and the sweep will
-> leave them (the DM spec's cleanup was fixed to stop GROWING that pile by
-> migration 0064, not to empty it).
->
-> ✅ **AND THE FIVE DUPLICATE PLACE PAIRS WERE RE-VERIFIED SAFE AT THE SAME TIME**
-> (2026-10-05 22:30), because that half of the word "sweep it" is DESTRUCTIVE and
-> its safety was measured hours earlier. All five still have exactly two rows, and
-> across all ten ids there are **0 playdates, 0 `reviews`, 0 `place_comments` and
-> 0 `follows`** — re-counted in one query over the four tables that reference
-> `places.id` (`reviews` is the table's real name; `place_reviews` does not
-> exist). So removing the extra row of each pair still has nothing to repoint.
+- **`founder_overlap: 0`** (no real family was in scope) and the **collateral
+  probe all-zero** ("Safe — delete would refuse nothing"), the second gate that
+  exists because a cascade once destroyed a real parent's `going_pings` row.
+- **3,262 marker rows removed** across 13 tables, then the tool RE-READ the
+  database: **0 remaining, every total down by exactly what it claimed.** The
+  count had grown to 1,613 accounts because the nightly lane was dispatched
+  several times that evening to verify e2e fixes — a real consequence, recorded
+  rather than glossed.
+- **The five duplicate places are gone**: 239 → **234** rows, one per name, after
+  re-verifying 0 references across `playdates`, `follows`, `reviews` and
+  `place_comments` immediately beforehand.
+- **Nothing dangles.** `public.messages` is the one table the sweep does not
+  cover: **12 rows, 0 orphaned senders, none marker-authored.**
+- **Production is now 58 real accounts, 58 profiles, 22 drop-ins, 234 places,**
+  and exactly **1 moderator** (Jon Meisburg).
 
-**THEN, RANKED BY WHAT UNBLOCKS THE MOST:**
+**WHAT IS LEFT IS SHORTER THAN IT WAS:**
 
-1. **An FCM Firebase project** (→ slices 2.5): drop `google-services.json` into
-   `android/app/` and a service-account JSON into the Edge Function's secrets.
-   Nothing else blocks native push.
-2. **The upload keystore path** (→ slice 2.6): it lives in the gitignored
-   `android/keystore.properties`; `assetlinks.json` needs its SHA-256.
-3. **The 0.2 child-data posture** — one sentence, and it gates the store
-   descriptions (4.4), the Data safety form (5.1) and 5.3.
-4. **Confirm `appId: app.dropin.playdate`**, then install
-   `android/app/build/outputs/apk/debug/app-debug.apk` and say whether it stays
-   open. That answers 2.3's "Done when", the only part of it left.
-5. **Rotate the Exa API key** (7.2) — it was pasted into a chat on 2026-10-03.
+1. **An FCM Firebase project** — the project EXISTS
+   (`project-1ab24a5b-7d94-4c8d-bbc`); what remains is that the CLI on this box is
+   **not authenticated**, so fetching `google-services.json` needs one login from
+   you. Everything after that is mine.
+2. **The upload keystore is FOUND** — `/home/jmeisburg/.android-keys/drop-in-upload.jks`
+   (alias `upload`, valid to 2054), so slice 2.6 is unblocked. Its public
+   fingerprints are recorded in the plan. ⚠️ Play App Signing adds a SECOND key
+   after the first upload, and `assetlinks.json` will need BOTH.
+3. **The 0.2 child-data posture** — one sentence, gating the store descriptions
+   (4.4), the Data safety form (5.1) and 5.3. A recommendation is written up.
+4. **`appId`** — the founder's instinct is `app.dropin`; the tree currently says
+   `app.dropin.playdate`. It is cheap NOW (a rename plus re-registering the
+   Firebase Android app) and **impossible after the first Play upload**.
+5. **Rotate the Exa API key** (7.2) — pasted into a chat on 2026-10-03.
 
-⚠️ **ONE PRODUCT DECISION, NOT A BUG FIX** (7.3): on a programmatic scroll of the
-places strip, should the selection follow the settled snap point, or never move?
-The app's comment says never; its behaviour says it follows. Decide the rule and
-the fix is obvious; guess and it will flip back.
-
-**ALREADY DONE, verified — do not redo:** grounding (2.2), the rot table (2.1),
-the four browser-origin hazards (2.4), the legal pages + a live policy URL
-(1.6 / 4.5), the icon (4.1), and the whole shell except the device run
-(built, branded, signed — 2.3). `npm run verify` is green on every commit.
-
----
+**2.3's "Done when" is now much closer, and the emulator answered the part it
+could**: the APK installs, launches, **survives 100+ seconds** (the earlier
+disappearance did not reproduce, and this run logged **zero** `android.hardwar`
+crashes), and its WebView was queried over CDP to prove it RENDERED —
+`readyState: complete`, boot splash cleared, React mounting the real `/login`
+screen with all seven controls. A screenshot of it is WHITE, and that is a
+**headless-emulator screencap limitation, not a blank screen**: a stock app
+captures correctly on the same emulator while WebView content does not. ⚠️ **Only
+your phone can confirm how it LOOKS** — I cannot see images with this model, so
+that is an honest gap, not a skipped step.
 
 ## ⏰ The timing fact that drives this whole plan
 
@@ -131,7 +116,17 @@ requirement does not apply — check that first, it may save you two weeks.)*
 independent of the store work, so the store's 14-day clock can be running while
 you do them.
 
-- [ ] **1.1 — Sweep the e2e markers out of production.**
+- [x] **1.1 — SWEPT 2026-10-06, both gates green first.** `select` reported
+  **1,613 marker accounts / 3,262 rows, `founder_overlap: 0`**; the collateral
+  cascade probe reported **all-zero** ("Safe — delete would refuse nothing");
+  `delete` removed **3,262 rows across 13 tables** and then RE-READ the database:
+  **0 marker rows remaining, every total down by exactly what it claimed**, and
+  `verify` exits 0. Production is left with **58 real accounts / 58 profiles / 22
+  drop-ins / 234 places / 1 moderator**. The count had grown from 1,620 because
+  the nightly lane was dispatched repeatedly that evening to verify e2e fixes.
+  `public.messages`, the one table the sweep does not cover, holds **12 rows, 0
+  orphaned senders, none marker-authored**.
+  ~~Sweep the e2e markers out of production.~~
   **This is the single most embarrassing thing a first parent can see.** Live
   measurement on 2026-10-03: **709 marker rows, 352 fake accounts**, and the only
   future-dated drop-in in the entire database is a marker at "1234 E2E Ave NE."
@@ -251,7 +246,19 @@ this phase is where it unparks.
   Java 26 and `~/Android/Sdk` are installed on this box — the whole loop is
   testable locally today.
   *Done when: a debug build installs and launches on a real Android device.*
-  **STATE 2026-10-05 — the build half is DONE, the "done when" is NOT.** The
+  **STATE 2026-10-06 — the emulator answered everything it can.** The APK
+  installs, launches, and **survives 100+ seconds** (the earlier disappearance at
+  ~45s did NOT reproduce, and this run logged **zero** `android.hardwar` crashes,
+  which is what was suspected). Its WebView was then queried over Chrome DevTools
+  Protocol — not assumed — and it RENDERS: `readyState: complete`, the boot splash
+  has cleared itself, and React has mounted the real `/login` screen
+  ("Playdates with other families — just show up.", 7 controls, Privacy/Terms
+  links). ⚠️ A `screencap` of it is WHITE, and that is a **headless-emulator
+  screencap limitation rather than a blank screen**: a stock app captures
+  correctly on the same emulator while WebView content does not. **What is still
+  unproven is how it LOOKS**, because this model cannot read images — that is a
+  real gap and only a phone closes it.
+  **EARLIER STATE 2026-10-05 — the build half is DONE, the "done when" is NOT.** The
   shell exists (`9420465`), wears the app's own icon and splash (`a0c628d`), names
   the public web app in its outbound links (`01da1aa`), and **the release bundle
   is SIGNED** (`ce3da9e`). The APK is at
@@ -290,6 +297,16 @@ this phase is where it unparks.
 
 - [ ] **2.6 — Deep links: a shared drop-in link opens the app if installed, the
   web page if not.** *Done when: tested both ways on a real device.*
+  **UNBLOCKED 2026-10-06 — the keystore was found by searching the box:** the
+  upload key is `/home/jmeisburg/.android-keys/drop-in-upload.jks` (alias
+  `upload`, mode 600, valid to 2054), referenced by the gitignored
+  `android/keystore.properties`. Its **public** fingerprints, which is all
+  `assetlinks.json` needs:
+  `SHA-256 95:D0:0B:EF:A5:15:5C:23:5B:3F:2B:DB:EA:FD:70:D9:AD:B6:37:2D:23:46:8E:43:8E:27:E6:66:75:91:29:B4`.
+  ⚠️ **Play App Signing re-signs your upload with GOOGLE's key**, so the live
+  `assetlinks.json` will need **both** this fingerprint and the app-signing one
+  Play shows after the first upload — a file with only the upload key verifies
+  nothing for users who installed from Play.
 
 - [ ] **2.7 — iOS (only once a macOS route exists).** ⚠️ **This Linux box cannot
   build iOS** — no `xcodebuild`, no CocoaPods. Options: GitHub Actions
@@ -453,7 +470,7 @@ Assets below were read from Google's own
   rest would ship BOTH vocabularies. One-line change once that file is free; the
   full classification is in `.scratch/next-batch-brief.md`.
   ~~"ping" → "going" terminology pass.~~
-- [ ] **7.5 — THE SAME ACTION AS 1.1**, and 1.2 WAS deferred (no scratch project),
+- [x] **7.5 — DONE WITH 1.1** on 2026-10-06 (same action, same run)., and 1.2 WAS deferred (no scratch project),
   so this is live: the residue is **801 accounts / 1620 rows**, measured
   2026-10-05 with `founder_overlap: 0`, and the sweep tool supports
   `select` / `delete` / `verify` with a dry run first. **It is the same single

@@ -235,6 +235,16 @@ the app when installed. Both files are served from the web app.
 - **Files in scope:** `public/.well-known/apple-app-site-association` (new),
   `public/.well-known/assetlinks.json` (new), `capacitor.config.ts`, the router's
   link handling.
+- **🔑 THE KEYSTORE IS FOUND (2026-10-06), so Android no longer needs a founder
+  input for this slice:** `/home/jmeisburg/.android-keys/drop-in-upload.jks`, alias
+  `upload`, referenced by the gitignored `android/keystore.properties`. Its PUBLIC
+  fingerprint for `assetlinks.json`:
+  `SHA-256 95:D0:0B:EF:A5:15:5C:23:5B:3F:2B:DB:EA:FD:70:D9:AD:B6:37:2D:23:46:8E:43:8E:27:E6:66:75:91:29:B4`.
+  ⚠️ **TWO FINGERPRINTS, NOT ONE**: Play App Signing re-signs the upload with
+  Google's own key, so the DEPLOYED file needs this one AND the app-signing
+  certificate Play publishes after the first upload. Shipping only the upload key
+  is the classic App Links mistake — it works for sideloaded builds and fails for
+  everyone who installed from Play.
 - **Approach:** Universal Links (iOS) + App Links (Android). The association
   files are served by the web app, so **this is the one slice that needs a
   production deploy to verify** — and the Vercel pipeline is working again.
