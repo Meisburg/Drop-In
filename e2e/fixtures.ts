@@ -12,13 +12,30 @@
  *   reused by the specs via the chromium project's storageState in
  *   playwright.config.ts. No secrets live in the specs.
  *
+ * - THE STALE-MARKER GUARD (2026-10-05): every spec registers a `beforeEach`
+ *   that refuses to run when the marker session in `e2e/.auth/` has expired,
+ *   because an invocation that skips the `setup` project (`--no-deps`, or a
+ *   config that pins chromium's storageState) reuses whatever the last full run
+ *   left behind. See the guard's own docblock below, beside
+ *   `readMarkerSession`.
+ *
  * Playwright is invoked from the repo root (the `test:e2e` npm script),
  * so everything here resolves off process.cwd().
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { expect, type Page, type Route } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
+// The stale-marker RULE, in one place (src/lib/markerToken.ts): the pure
+// decision, and the storageState session walk that `readMarkerSession` below
+// used to carry its own copy of. e2e/ importing src/lib is the established
+// pattern here — `feed` above is the other one.
+import {
+  diagnoseMarkerToken,
+  findStoredMarkerSession,
+  type MarkerTokenDiagnosis,
+  type StoredMarkerSession,
+} from '../src/lib/markerToken'
 // The stepper's own pure math — imported so a spec's expectation is the same
 // rule the form applies, never a copy of it (feed.ts is pure: its only
 // imports are `import type`, erased at runtime).
@@ -121,64 +138,163 @@ export function readMarkerMeta(): MarkerMeta {
 }
 
 /** The marker's Supabase session, read out of the storageState file. */
-export interface MarkerSession {
-  accessToken: string
-  userId: string
+export type MarkerSession = StoredMarkerSession
+
+/**
+ * The storageState file, parsed — `undefined` when it is absent or unreadable
+ * (a truncated file is a session that cannot be proven fresh, not a crash).
+ */
+function readMarkerStateFile(statePath: string): unknown {
+  if (!existsSync(statePath)) return undefined
+  try {
+    return JSON.parse(readFileSync(statePath, 'utf8'))
+  } catch {
+    return undefined
+  }
 }
 
 /**
  * Parse the marker's session (access token + user id) from the Playwright
- * storageState file. supabase-js persists its session in localStorage under
- * a key like `sb-<project-ref>-auth-token`; depending on the version/config
- * the blob is either the raw session object ({ access_token, user, ... })
- * or a MultiSession wrapper ({ currentSession | allSessions | sessions }) —
- * this accepts both.
+ * storageState file.
+ *
+ * THE WALK ITSELF IS NOT HERE (2026-10-05): it is `findStoredMarkerSession` in
+ * `src/lib/markerToken.ts`, which accepts every blob shape supabase-js has
+ * persisted (the raw session object, or a MultiSession wrapper under
+ * `currentSession` / `allSessions` / `sessions`) and is unit-tested there. This
+ * function stays the file-reading face its 127 call sites across 52 specs
+ * already import; it must not grow a second copy of the walk, because the
+ * staleness decision reads the same walk and the two copies would drift apart
+ * the next time the blob shape changes.
  */
 export function readMarkerSession(statePath: string = MARKER_STATE_PATH): MarkerSession {
   if (!existsSync(statePath)) {
     throw new Error(`${statePath} missing — run the full e2e suite (the setup project writes it).`)
   }
-  const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
-    origins?: Array<{
-      origin: string
-      localStorage?: Array<{ name: string; value: string }>
-    }>
+  const session = findStoredMarkerSession(readMarkerStateFile(statePath))
+  if (session === null) {
+    throw new Error(`No Supabase session found in ${statePath} — re-run the setup project.`)
   }
-  for (const origin of state.origins ?? []) {
-    for (const item of origin.localStorage ?? []) {
-      if (!item.name.includes('auth')) continue
-      let blob:
-        | {
-            access_token?: string
-            user?: { id?: string }
-            currentSession?: { access_token?: string; user?: { id?: string } }
-            allSessions?: Array<{ access_token?: string; user?: { id?: string } }>
-            sessions?: Array<{ access_token?: string; user?: { id?: string } }>
-          }
-        | null
-        | undefined
-      try {
-        blob = JSON.parse(item.value)
-      } catch {
-        continue
-      }
-      const session =
-        (typeof blob?.access_token === 'string' ? blob : undefined) ??
-        blob?.currentSession ??
-        blob?.allSessions?.[0] ??
-        blob?.sessions?.[0]
-      if (
-        session !== null &&
-        session !== undefined &&
-        typeof session.access_token === 'string' &&
-        typeof session.user?.id === 'string'
-      ) {
-        return { accessToken: session.access_token, userId: session.user.id }
-      }
-    }
-  }
-  throw new Error(`No Supabase session found in ${statePath} — re-run the setup project.`)
+  return session
 }
+
+/**
+ * ⚠️ THE STALE-MARKER GUARD — A FILTERED RUN MUST NOT DRIVE THE APP WITH A DEAD
+ * SESSION (2026-10-05).
+ *
+ * THE DEFECT, measured: Supabase access tokens live 3600 s, and
+ * `e2e/.auth/marker-state.json` (gitignored, machine-local) holds exactly one of
+ * them. The `chromium` project does not mint a session — it REUSES that file,
+ * and the `setup` project is the only thing that refreshes it. Any invocation
+ * that does not run the setup project therefore drives the app with whatever the
+ * last full run left behind, and from ~1 hour after that run the session is dead.
+ *
+ * ⚠️ THE TRIGGER IS NOT WHAT THE FILED SPEC SAID, and this is a measurement, not
+ * a reading (`.scratch/e2e-marker-token/spec.md` blames a plain file filter):
+ * `npx playwright test e2e/zip-radius.e2e.ts` does NOT reproduce it. A project
+ * DEPENDENCY runs in full and unfiltered — `--list` shows the setup test
+ * selected, and with a deliberately stale file in place that run refreshed the
+ * marker and passed 4/4 (both measured while writing this guard, Playwright
+ * 1.63). What actually skips the setup project is:
+ *
+ *   - `--no-deps`, which is how this was really hit: the V31 session was running
+ *     `--config playwright.private.config.ts --project=chromium --no-deps
+ *     e2e/places-map-view.e2e.ts` (`.scratch/map-and-distance/STOP-token-expired.md`
+ *     spells the mechanism out: "`--no-deps` + the private config's pinned
+ *     storageState means the `setup` project never runs");
+ *   - or a second config that pins chromium's storageState and drops the setup
+ *     project, the `playwright.private.config.ts` pattern that recipe copied.
+ *
+ * Both `--no-deps --list` (3 tests, 1 file) and the private-config shape are
+ * covered by this guard, because it does not care HOW the setup project was
+ * skipped — it only asks whether the file the run is about to trust is still
+ * alive. It fires in ~400 ms, before the first navigation.
+ *
+ * WHY IT IS WORSE THAN ONE RED SPEC: the failure signature is indistinguishable
+ * from a flake or a real regression. Measured 2026-10-05 — a run whose stored
+ * token had expired 11 minutes earlier produced **11 red specs across four
+ * files**, all `HTTP 401 {"code":"PGRST303","message":"JWT expired"}`, reading
+ * as product regressions; one of them nearly had `src/` "fixed" to match. The
+ * repo has chased that shape before (RELEASE-CHECKLIST.md:277-278 records a
+ * "named known flake").
+ *
+ * WHY A `beforeEach` IN THIS MODULE RATHER THAN A CHECK INSIDE
+ * `readMarkerSession`: a per-call check only fires for specs that make a REST
+ * call, and it fires MID-RUN — after the app has already been driven with the
+ * dead token, which is the product-shaped failure this guard exists to prevent.
+ * Worse, a per-call check is wrong in a way a per-test one is not: the browser
+ * refreshes its own token (supabase-js rotates it from the refresh_token), so a
+ * session that was fresh at the start of a long test can read as expired later
+ * while the browser is perfectly healthy. The decision belongs at the START of
+ * a test, against the file the run is about to trust.
+ *
+ * AND IT IS EVERY SPEC, NOT THE ONES THAT OPT IN: every one of the 69 spec files
+ * imports this module, so registering the hook here — at module load, in the
+ * file each spec already imports — covers the whole suite with no per-spec
+ * edit. Measured before it was written (a throwaway two-file probe): a
+ * `test.beforeEach` declared in a module applies to the test files that import
+ * that module and to no others.
+ *
+ * THE `setup` SPEC IS EXEMPT, because it IS the remedy — the spec that mints a
+ * fresh marker must be allowed to run against a stale one. It is exempted by
+ * project name AND by filename, so naming `e2e/auth.setup.ts` (which refreshes
+ * the marker, and is the repo's documented remedy for the full suite too) works
+ * however the run is selected.
+ *
+ * WHAT IT COSTS A HEALTHY RUN: one 2.5 KB read and one JWT payload decode per
+ * test, and nothing in the output. With a fresh token a filtered run behaves
+ * exactly as it did before this guard existed.
+ */
+export const MARKER_SESSION_REMEDY =
+  're-run with e2e/auth.setup.ts named, or run the full suite'
+
+/** The failure sentence: which session state it is, the clock, and the remedy. */
+function markerSessionFailureMessage(
+  statePath: string,
+  diagnosis: MarkerTokenDiagnosis,
+  now: number,
+): string {
+  const state =
+    diagnosis.reason === 'expired'
+      ? `the access token in ${statePath} expired at ${new Date(diagnosis.expMs ?? 0).toISOString()}`
+      : diagnosis.reason === 'no-exp'
+        ? `the access token in ${statePath} carries no readable exp claim, so it cannot be proven fresh`
+        : diagnosis.reason === 'malformed-token'
+          ? `the access token in ${statePath} is not a decodable JWT, so its expiry cannot be read`
+          : `${statePath} is absent or holds no Supabase session`
+  return (
+    `marker session expired — ${state} (now ${new Date(now).toISOString()}). ` +
+    `This is a HARNESS failure, not a product one: no spec has run yet, so nothing here is a ` +
+    `regression in src/. ${MARKER_SESSION_REMEDY} ` +
+    `(npx playwright test e2e/auth.setup.ts e2e/<spec>.e2e.ts).`
+  )
+}
+
+/**
+ * Throw when the stored marker session is expired, absent or unreadable.
+ * Pure decision in `src/lib/markerToken.ts`; this function only reads the file
+ * and reports. `now` is injectable so the behaviour is testable without waiting
+ * an hour.
+ */
+export function assertMarkerSessionFresh(
+  statePath: string = MARKER_STATE_PATH,
+  now: number = Date.now(),
+): void {
+  const diagnosis = diagnoseMarkerToken(readMarkerStateFile(statePath), now)
+  if (!diagnosis.expired) return
+  throw new Error(markerSessionFailureMessage(statePath, diagnosis, now))
+}
+
+// Registered for every spec file that imports this module — all 69 of them.
+//
+// `browserName` is destructured but deliberately unused: Playwright requires
+// this hook's first argument to be an object DESTRUCTURING pattern, and an
+// empty one (`({}, testInfo)`) is an `eslint(no-empty-pattern)` warning of its
+// own — the gate counts warnings, so the guard must not add one.
+test.beforeEach(({ browserName: _browserName }, testInfo) => {
+  if (testInfo.project.name === 'setup') return
+  if (path.basename(testInfo.file) === 'auth.setup.ts') return
+  assertMarkerSessionFresh()
+})
 
 /** Local calendar date N days from today, as YYYY-MM-DD (a date input's value). */
 export function localDatePlusDays(days: number): string {
