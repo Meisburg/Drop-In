@@ -51,15 +51,73 @@ const ACCEPTED = [
     reason:
       'DELIBERATE, and the contrast is fine — slate-700 ink on an indigo-50 ground (dark on light; the rule targets low-contrast gray ON a saturated ground, which this is not). It is the location modal\'s "sign up to join in" prompt. The open question is PALETTE, not contrast: the brand moved to terracotta in V7 and this block kept an indigo tint. That belongs to a palette review with the design tool, not to a per-line exclusion — and the file is another session\'s in-flight work, so an agent editing it now would race them.',
   },
+  // ⚠️ THE COLOUR AND TYPE-RAMP ACCEPTANCES ARE KEYED BY VALUE, ONE ENTRY EACH,
+  // and that is the point of the transcription below rather than a single
+  // rule-wide entry. A rule-wide acceptance would silently excuse the NEXT
+  // off-palette colour somebody adds; these excuse exactly the values verified by
+  // hand on 2026-10-05. Adding a colour means adding an entry WITH A REASON, which
+  // is the decision this list exists to force.
   {
     rule: 'design-system-color',
+    detail: '#dc2626',
     reason:
-      'EVERY REMAINING MATCH IS A DELIBERATE VALUE, checked one at a time on 2026-10-05 rather than waved through: #dc2626 is the error/"you are here" Leaflet circle (a concrete colour is required in an SVG path — a CSS variable is not available there), rgba(15,23,42,.25/.62) are the tour veil and the crop-dialog dim (boxShadow overlays, likewise not token-able), #241f1c is the dark-mode card plate, and the slate/red/indigo values are the Tailwind utilities the app uses for ink and hairlines. The detector asks that every VALUE appear in DESIGN.md\'s colour block; this repo\'s contract is that COMPONENTS use the tokens defined in `src/index.css`\'s @theme, and they do. Two of these matches were also COMMENTS (the e2e test that pins the red marker). ⚠️ ONE REAL DEFECT WAS FOUND BEHIND THIS RULE and is FIXED rather than accepted: `PlaceMap.tsx` re-typed `PLACE_MARKER_STYLE` as a literal while the constant was already imported — two copies of the picker pin\'s colour, which the build law forbids. ⚠️ AND THIS ACCEPTANCE IS STILL THE BLUNT FORM, stated so nobody assumes otherwise: it is keyed on the RULE, so a NEW undocumented colour would be accepted silently too. Tightening it means one entry per verified value (`detail: \'#dc2626\'`, …), which the narrow matcher added on 2026-10-05 already supports — the work is transcribing eight values, and it is worth doing the next time this lane is opened rather than done in a hurry now.',
+      'DELIBERATE — Tailwind red-600, the error / "you are here" Leaflet circle. A concrete colour is required in an SVG path; a CSS variable is not available there. (Two of these matches are also COMMENTS: the e2e test that pins the red marker.)',
+  },
+  {
+    rule: 'design-system-color',
+    detail: 'rgba(15, 23, 42, 0.25)',
+    reason: 'DELIBERATE — the first-run tour veil, a boxShadow overlay. Not token-able.',
+  },
+  {
+    rule: 'design-system-color',
+    detail: 'rgba(15, 23, 42, 0.62)',
+    reason:
+      'DELIBERATE — the crop dialog dim, the same boxShadow-overlay technique as the tour veil.',
+  },
+  {
+    rule: 'design-system-color',
+    detail: '#241f1c',
+    reason: 'DELIBERATE — the dark-mode card plate, defined with the dark palette in src/index.css.',
+  },
+  {
+    rule: 'design-system-color',
+    detail: '#64748b',
+    reason:
+      "DELIBERATE — Tailwind slate-500, secondary ink. The repo's contract is that COMPONENTS use the @theme tokens; this is the value such a token resolves to, which the detector cannot see through.",
+  },
+  {
+    rule: 'design-system-color',
+    detail: '#0f172a',
+    reason: 'DELIBERATE — Tailwind slate-900, primary ink. Same reasoning as slate-500 above.',
+  },
+  {
+    rule: 'design-system-color',
+    detail: '#4f46e5',
+    reason:
+      'DELIBERATE — the map marker indigo, now in ONE place (`PLACE_MARKER_STYLE`, src/lib/mapStrip.ts) after this review found `PlaceMap.tsx` re-typing it as a second literal. The marker palette predates the V7 terracotta brand and is a deliberate map-layer choice; changing it is a palette decision, not a per-line one.',
+  },
+  {
+    rule: 'design-system-color',
+    detail: '#312e81',
+    reason:
+      "DELIBERATE — the FOCUSED marker's darker indigo, the other half of the pair in src/lib/mapStrip.ts.",
   },
   {
     rule: 'design-system-font-size',
+    detail: 'font-size: 16px',
     reason:
-      'DELIBERATE, and two of the six are THE RAMP ITSELF: `font-size: 16px` and `22px` at `src/index.css` are definitions in the type scale, which the detector cannot tell from a call site using them. The other four are `text-[10px]` photo credits and the moderator "review" badge on a picture — a label ON an image that must not compete with it. The ramp\'s floor is 14px for TEXT; a 10px badge over a photograph is not body copy.',
+      'THE RAMP ITSELF — a definition in the type scale at src/index.css, which the detector cannot tell from a call site using it.',
+  },
+  {
+    rule: 'design-system-font-size',
+    detail: 'font-size: 22px',
+    reason: 'THE RAMP ITSELF — the second definition the detector read as a call site. Same file.',
+  },
+  {
+    rule: 'design-system-font-size',
+    detail: '10px',
+    reason:
+      'DELIBERATE — the photo credit and the moderator "review" badge, both labels ON a photograph that must not compete with it. The ramp\'s 14px floor is a floor for TEXT; a badge over an image is not body copy.',
   },
   {
     rule: 'text-occlusion',
