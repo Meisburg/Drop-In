@@ -3,6 +3,7 @@ import { useFocusTrap } from './FocusTrap'
 import { milesWord } from '../lib/feed'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, addressFromCoordsBounded } from '../lib/geocode'
 import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
+import { DEVICE_LOCATION_NOTES } from '../lib/locationCopy'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 
 /**
@@ -196,15 +197,15 @@ export function LocationModal({
     try {
       const outcome = await readDeviceCoords()
       if (outcome.status === 'unsupported') {
-        setDeviceNote('This browser cannot share your location. Type an address instead.')
+        setDeviceNote(DEVICE_LOCATION_NOTES.unsupported)
         return
       }
       if (outcome.status === 'denied') {
-        setDeviceNote('Location is off for Drop In. Turn it on in your browser settings, or type an address.')
+        setDeviceNote(DEVICE_LOCATION_NOTES.denied)
         return
       }
       if (outcome.status === 'unavailable') {
-        setDeviceNote("We couldn't get your location just now. Try again, or type an address.")
+        setDeviceNote(DEVICE_LOCATION_NOTES.unavailable)
         return
       }
       // The device fix itself is the centre — that is what the caller needs and

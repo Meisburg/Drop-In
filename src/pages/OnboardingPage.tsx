@@ -53,6 +53,7 @@ import type { ZipCoords } from '../lib/feed'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, locationFromAddressQueryBounded, type AddressGeocodeResult, zipFromCoordsBounded } from '../lib/geocode'
 import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
+import { DEVICE_LOCATION_NOTES } from '../lib/locationCopy'
 import { PlacesMap } from '../components/PlaceMapLazy'
 import { shouldRenderPlacesMap } from '../lib/mapStrip'
 import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
@@ -1189,15 +1190,15 @@ export function OnboardingPage() {
       if (outcome.status === 'unsupported') {
         // Reachable only if the API vanished between render and tap (an
         // origin downgrade, or a browser that lied about support).
-        setLocationNote('This browser cannot share your location. Type your address instead.')
+        setLocationNote(DEVICE_LOCATION_NOTES.unsupported)
         return
       }
       if (outcome.status === 'denied') {
-        setLocationNote('Location is off for Drop In. Type your address instead, or turn it on in your browser settings.')
+        setLocationNote(DEVICE_LOCATION_NOTES.denied)
         return
       }
       if (outcome.status === 'unavailable') {
-        setLocationNote("We couldn't get your location just now. Try again, or type your address.")
+        setLocationNote(DEVICE_LOCATION_NOTES.unavailable)
         return
       }
 
