@@ -25,6 +25,14 @@ import {
   splitSuggestedName,
 } from './oauth'
 
+/**
+ * A return URL on OUR scheme, built from the constant rather than re-typed.
+ * `NATIVE_OAUTH_SCHEME` is the scheme's ONE home in `src/`; a fixture that
+ * restated the literal would be a second one, which is the drift class the
+ * last describe in this file exists to catch.
+ */
+const returnUrl = (tail: string): string => `${NATIVE_OAUTH_SCHEME}://${tail}`
+
 describe('oauthRedirectTo', () => {
   it('keeps a bare origin and adds the trailing slash', () => {
     expect(oauthRedirectTo('http://localhost:5173')).toBe('http://localhost:5173/')
@@ -69,6 +77,11 @@ describe('oauthErrorMessage', () => {
  */
 describe('the native redirect target (slice 2c)', () => {
   it('is the appId, named once — the string the manifest also registers', () => {
+    // ⚠️ THESE TWO LITERALS ARE DELIBERATE, AND MUST STAY LITERALS. This test
+    // pins the constant's VALUE — a rename should be a deliberate, failing act.
+    // Deriving either side from `NATIVE_OAUTH_SCHEME` / `nativeOAuthRedirectTo()`
+    // would make it a tautology, which is precisely the leg fix round 2 deleted
+    // from the drift block below.
     expect(NATIVE_OAUTH_SCHEME).toBe('app.dropin.playdate')
     expect(nativeOAuthRedirectTo()).toBe('app.dropin.playdate://')
   })
@@ -87,7 +100,7 @@ describe('parseOAuthReturn (slice 2c: implicit flow, tokens in the FRAGMENT)', (
     'access_token=at-123&expires_in=3600&refresh_token=rt-456&token_type=bearer&type=recovery'
 
   it('reads the tokens out of the fragment', () => {
-    expect(parseOAuthReturn(`app.dropin.playdate://#${fragment}`)).toEqual({
+    expect(parseOAuthReturn(returnUrl(`#${fragment}`))).toEqual({
       status: 'session',
       accessToken: 'at-123',
       refreshToken: 'rt-456',
@@ -96,12 +109,12 @@ describe('parseOAuthReturn (slice 2c: implicit flow, tokens in the FRAGMENT)', (
 
   it('reads a cancellation out of the query, where the server puts errors', () => {
     expect(
-      parseOAuthReturn('app.dropin.playdate://?error=access_denied&error_description=User+denied+access'),
+      parseOAuthReturn(returnUrl('?error=access_denied&error_description=User+denied+access')),
     ).toEqual({ status: 'error', message: 'User denied access' })
   })
 
   it('falls back to the error code when no description came with it', () => {
-    expect(parseOAuthReturn('app.dropin.playdate://?error=server_error')).toEqual({
+    expect(parseOAuthReturn(returnUrl('?error=server_error'))).toEqual({
       status: 'error',
       message: 'server_error',
     })
@@ -109,18 +122,18 @@ describe('parseOAuthReturn (slice 2c: implicit flow, tokens in the FRAGMENT)', (
 
   it('lets a URL carrying both report the failure, not a half sign-in', () => {
     expect(
-      parseOAuthReturn(`app.dropin.playdate://?error=access_denied#${fragment}`),
+      parseOAuthReturn(returnUrl(`?error=access_denied#${fragment}`)),
     ).toEqual({ status: 'error', message: 'access_denied' })
   })
 
   it('refuses a half session rather than calling a partial return a sign-in', () => {
-    expect(parseOAuthReturn('app.dropin.playdate://#access_token=at-123')).toEqual({
+    expect(parseOAuthReturn(returnUrl('#access_token=at-123'))).toEqual({
       status: 'none',
     })
-    expect(parseOAuthReturn('app.dropin.playdate://#refresh_token=rt-456')).toEqual({
+    expect(parseOAuthReturn(returnUrl('#refresh_token=rt-456'))).toEqual({
       status: 'none',
     })
-    expect(parseOAuthReturn('app.dropin.playdate://#access_token=&refresh_token=')).toEqual({
+    expect(parseOAuthReturn(returnUrl('#access_token=&refresh_token='))).toEqual({
       status: 'none',
     })
   })
@@ -130,9 +143,9 @@ describe('parseOAuthReturn (slice 2c: implicit flow, tokens in the FRAGMENT)', (
     // NOT handled, because `flowType` is 'implicit' (see parseOAuthReturn's
     // docblock); this pin is what makes that a known shape instead of a silent
     // surprise, and the caller warns rather than swallowing it.
-    expect(parseOAuthReturn('app.dropin.playdate://?code=abc')).toEqual({ status: 'none' })
+    expect(parseOAuthReturn(returnUrl('?code=abc'))).toEqual({ status: 'none' })
     expect(parseOAuthReturn('https://dropin.example/?code=abc')).toEqual({ status: 'none' })
-    expect(parseOAuthReturn('app.dropin.playdate://')).toEqual({ status: 'none' })
+    expect(parseOAuthReturn(returnUrl(''))).toEqual({ status: 'none' })
     expect(parseOAuthReturn('')).toEqual({ status: 'none' })
   })
 })
@@ -157,29 +170,54 @@ describe('the failure sentence can never be empty (slice 2c fix round 1)', () =>
     // `?error_description=` is the shape that defeated `??`: the key EXISTS and
     // is '', and `'' ?? error` is ''. Measured, not hypothesised.
     expect(
-      parseOAuthReturn('app.dropin.playdate://?error=access_denied&error_description='),
+      parseOAuthReturn(returnUrl('?error=access_denied&error_description=')),
     ).toEqual({ status: 'error', message: 'access_denied' })
-    expect(sentenceFor('app.dropin.playdate://?error=access_denied&error_description=')).toBe(
+    expect(sentenceFor(returnUrl('?error=access_denied&error_description='))).toBe(
       'Sign-in was cancelled.',
     )
   })
 
+  it('treats a WHITESPACE-ONLY description as absent, so the specific sentence survives', () => {
+    // Fix round 2: `||` alone called `' '` present, so this shape lost
+    // "Sign-in was cancelled." and got the generic fallback instead — a worse
+    // sentence, and a false one. `?.trim() ||` is what makes it fall through.
+    expect(parseOAuthReturn(returnUrl('?error=access_denied&error_description=%20'))).toEqual({
+      status: 'error',
+      message: 'access_denied',
+    })
+    expect(sentenceFor(returnUrl('?error=access_denied&error_description=%20'))).toBe(
+      'Sign-in was cancelled.',
+    )
+    expect(sentenceFor(returnUrl('?error=access_denied&error_description=+++'))).toBe(
+      'Sign-in was cancelled.',
+    )
+    // A description with real content wins over the code, trimmed.
+    expect(parseOAuthReturn(returnUrl('?error=x&error_description=+User+denied+'))).toEqual({
+      status: 'error',
+      message: 'User denied',
+    })
+  })
+
   it('says a sentence for a bare error with no code and no description at all', () => {
-    expect(sentenceFor('app.dropin.playdate://?error=')).toBe('Could not finish sign-in. Try again.')
-    expect(sentenceFor('app.dropin.playdate://#error=')).toBe('Could not finish sign-in. Try again.')
-    expect(sentenceFor('app.dropin.playdate://?error=&error_description=')).toBe(
+    expect(sentenceFor(returnUrl('?error='))).toBe('Could not finish sign-in. Try again.')
+    expect(sentenceFor(returnUrl('#error='))).toBe('Could not finish sign-in. Try again.')
+    expect(sentenceFor(returnUrl('?error=&error_description='))).toBe(
       'Could not finish sign-in. Try again.',
     )
+    // A whitespace-only CODE is absent too, and reaches the same fallback.
+    expect(sentenceFor(returnUrl('?error=%20'))).toBe('Could not finish sign-in. Try again.')
   })
 
   it('renders a sentence for EVERY error shape, which is the property that matters', () => {
     for (const url of [
-      'app.dropin.playdate://?error=access_denied',
-      'app.dropin.playdate://?error=access_denied&error_description=',
-      'app.dropin.playdate://?error=access_denied&error_description=User+denied',
-      'app.dropin.playdate://?error=',
-      'app.dropin.playdate://#error=',
-      'app.dropin.playdate://#error=&error_description=',
+      returnUrl('?error=access_denied'),
+      returnUrl('?error=access_denied&error_description='),
+      returnUrl('?error=access_denied&error_description=%20'),
+      returnUrl('?error=access_denied&error_description=User+denied'),
+      returnUrl('?error='),
+      returnUrl('#error='),
+      returnUrl('#error=&error_description='),
+      returnUrl('?error=%20'),
     ]) {
       expect(sentenceFor(url).trim(), `${url} must produce a sentence`).not.toBe('')
     }
@@ -215,27 +253,51 @@ describe('oauthReturnErrorMessage (slice 2c: failures said as sentences)', () =>
 })
 
 /**
- * Slice 2c fix round 1 — THE SCHEME HAS THREE HOMES AND ONLY ONE IS CODE.
+ * Slice 2c, fix round 2 — THE SCHEME LIVES IN EXACTLY ONE PLACE IN `src/`, AND
+ * EVERY OTHER STATEMENT OF IT IS CHECKED AGAINST THAT ONE.
  *
- * `NATIVE_OAUTH_SCHEME` (pinned above) is what the app sends as `redirectTo`;
- * `AndroidManifest.xml` is what the OS matches to hand the URL back; and
- * `capacitor.config.ts`'s `appId` is the package the whole thing is built from
- * — a value its own comment says is free to change until the first Play upload.
+ * The three statements of the value that no compiler connects:
+ *
+ *   1. `NATIVE_OAUTH_SCHEME` (the single home — every other use derives from it);
+ *   2. `AndroidManifest.xml`'s `<data android:scheme>`, which is what the OS
+ *      matches to hand the URL back at all;
+ *   3. `capacitor.config.ts`'s `appId`, the package the scheme is built from —
+ *      a value its own comment says is free to change until the first Play
+ *      upload.
+ *
  * Drift between any two of them means the OAuth return SILENTLY never fires, and
- * nothing in src/ or scripts/guards/ compared them.
+ * nothing in src/ or scripts/guards/ compared them. The fourth statement — the
+ * `redirectTo` the shell branch actually hands Supabase — is pinned in
+ * db-native-oauth.test.ts, which asserts it equals `nativeOAuthRedirectTo()`
+ * rather than re-typing the string.
+ *
+ * ⚠️ THE TAUTOLOGICAL THIRD LEG IS GONE (fix round 2). It asserted
+ * `nativeOAuthRedirectTo()` starts with `${NATIVE_OAUTH_SCHEME}://` — which is
+ * literally that function's body, so no mutation could ever make it red. A leg
+ * that cannot fail is a leg that reports green forever; the reviewer proved it
+ * by drifting both the manifest and the constant with this test still passing.
  *
  * WHY A VITEST TEST AND NOT A `scripts/guards/` ENTRY: this repo's guard
  * discipline (docs/agents/borrowed-guards.md) requires a written rule in the
  * build law PLUS a `.check.mjs` seeded proof that the guard can fire, and a
- * second copy of the manifest fixture to drive it — disproportionate for one
- * string equality that a three-line read of the real files settles. This runs
+ * second copy of the manifest fixture to drive it — disproportionate for two
+ * string equalities that a three-line read of the real files settles. This runs
  * inside `npm run verify` with the rest of the unit lane, and its own red-green
- * proof (change one of the three, watch this go red) is the same evidence
- * standard.
+ * proof (change either file, watch this go red) is the same evidence standard.
  */
-describe('the native scheme cannot drift (slice 2c fix round 1)', () => {
+describe('the native scheme cannot drift (slice 2c)', () => {
   /** The manifest with its comments removed — prose must not satisfy a pin. */
   const manifest = androidManifestSource.replace(/<!--[\s\S]*?-->/g, '')
+  /**
+   * The config with ITS comments removed, for the same reason (fix round 2):
+   * this file's docblock NAMES `app.dropin.playdate`, so a raw read is an
+   * instrument its own prose could satisfy — the exact failure the manifest leg
+   * already guards against. Block comments first, then whole-line `//` comments;
+   * a trailing `//` inside a string is deliberately left alone.
+   */
+  const config = capacitorConfigSource
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
 
   it('matches the ACTION_VIEW/BROWSABLE intent filter the OS actually routes on', () => {
     const oauthFilter = [...manifest.matchAll(/<intent-filter>([\s\S]*?)<\/intent-filter>/g)]
@@ -253,12 +315,7 @@ describe('the native scheme cannot drift (slice 2c fix round 1)', () => {
   })
 
   it("matches capacitor.config.ts's appId, the package the scheme is built from", () => {
-    expect(capacitorConfigSource.match(/appId:\s*'([^']+)'/)?.[1]).toBe(NATIVE_OAUTH_SCHEME)
-  })
-
-  it('is the same scheme the app hands the provider as its redirect', () => {
-    // The third leg, so all three homes are pinned to one string in one place.
-    expect(nativeOAuthRedirectTo().startsWith(`${NATIVE_OAUTH_SCHEME}://`)).toBe(true)
+    expect(config.match(/appId:\s*'([^']+)'/)?.[1]).toBe(NATIVE_OAUTH_SCHEME)
   })
 })
 

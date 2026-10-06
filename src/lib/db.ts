@@ -464,19 +464,40 @@ export function subscribeNativeOAuthReturn(onFailure: (sentence: string) => void
       const { App } = await import('@capacitor/app')
       if (stopped) return
       const handle = await App.addListener('appUrlOpen', ({ url }) => {
-        void completeNativeOAuthReturn(url).then((outcome) => {
-          if (outcome.status === 'failed') onFailure(outcome.message)
-          else if (outcome.status === 'ignored') {
-            // A URL that carried no session and no error. The only reachable way
-            // here is a return shape this client's flow does not produce (a
-            // PKCE `?code=`), so it is said out loud rather than swallowed:
-            // "nothing happened" is the one outcome this slice must not ship.
-            console.warn(
-              `[oauth] native return carried no session and no error (${url}) — ` +
-                'this client is on the implicit flow; see parseOAuthReturn in lib/oauth.ts.',
-            )
-          }
-        })
+        void completeNativeOAuthReturn(url)
+          .then((outcome) => {
+            if (outcome.status === 'failed') onFailure(outcome.message)
+            else if (outcome.status === 'ignored') {
+              // A URL that carried no session and no error. The only reachable way
+              // here is a return shape this client's flow does not produce (a
+              // PKCE `?code=`), so it is said out loud rather than swallowed:
+              // "nothing happened" is the one outcome this slice must not ship.
+              console.warn(
+                `[oauth] native return carried no session and no error (${url}) — ` +
+                  'this client is on the implicit flow; see parseOAuthReturn in lib/oauth.ts.',
+              )
+            }
+          })
+          // ⚠️ THE CATCH IS LOAD-BEARING (fix round 2). `completeNativeOAuthReturn`
+          // can REJECT, not merely resolve `failed`: supabase-js's `setSession`
+          // throws a plain `Error` on some inputs rather than returning one
+          // (measured by the reviewer — a malformed access token rejects with
+          // "Invalid UTF-8 sequence", not an `AuthError`), and the parse path
+          // can throw too. Without this, the rejection is unhandled and
+          // `onFailure` is never called: the parent reads NOTHING, which is the
+          // dead-screen outcome this whole handler exists to prevent.
+          //
+          // It is REACHABLE, not theoretical: MainActivity is
+          // `android:exported="true"` with a BROWSABLE VIEW filter, so any app
+          // on the device — or any mangled link — can deliver a crafted
+          // `app.dropin.playdate://…` here. A rejected return must be a sentence
+          // like every other failure, and the sentence is composed by the SAME
+          // mapping (`oauthReturnErrorMessage`), so the copy has one home.
+          .catch((error: unknown) => {
+            // A non-Error rejection yields `''`, which the mapping turns into
+            // its own sentence — never the string "undefined".
+            onFailure(oauthReturnErrorMessage(error instanceof Error ? error.message : ''))
+          })
       })
       if (stopped) {
         void handle.remove()

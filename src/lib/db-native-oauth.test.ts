@@ -60,9 +60,22 @@ import {
   subscribeNativeOAuthReturn,
   supabase,
 } from './db'
+import { NATIVE_OAUTH_SCHEME, nativeOAuthRedirectTo } from './oauth'
 
 const PROVIDER_URL = 'https://project.supabase.co/auth/v1/authorize?provider=google'
 const FRAGMENT = '#access_token=at-123&expires_in=3600&refresh_token=rt-456&token_type=bearer'
+
+/**
+ * A return URL on OUR scheme, built from the constant rather than re-typed.
+ *
+ * Fix round 2: this file used to hardcode `'app.dropin.playdate://'` — a FOURTH
+ * statement of the scheme's value, which no leg of the drift test covered, so
+ * drifting the call site at `db.ts`'s shell branch left every leg green. The
+ * scheme is now written down once in `src/` (`NATIVE_OAUTH_SCHEME`) and every
+ * other mention derives from it: the helper below for inputs, and
+ * `nativeOAuthRedirectTo()` for the assertion that pins the call site.
+ */
+const returnUrl = (tail: string): string => `${NATIVE_OAUTH_SCHEME}://${tail}`
 
 let assign: ReturnType<typeof vi.fn>
 
@@ -112,7 +125,7 @@ describe('signInWithOAuthProvider — the SHELL path (slice 2c)', () => {
 
     await signInWithOAuthProvider('google')
 
-    expect(askedRedirectTo()).toBe('app.dropin.playdate://')
+    expect(askedRedirectTo()).toBe(nativeOAuthRedirectTo())
     expect(caps.opened).toEqual([PROVIDER_URL])
     // NEVER window.location.assign here: that is the defect — it navigates the
     // WebView to Google and leaves the parent with no way back.
@@ -146,7 +159,7 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
   it('turns the fragment the OS handed back into a session', async () => {
     const { client, setSession } = fakeClient()
 
-    const outcome = await completeNativeOAuthReturn(`app.dropin.playdate://${FRAGMENT}`, client)
+    const outcome = await completeNativeOAuthReturn(returnUrl(FRAGMENT), client)
 
     expect(outcome).toEqual({ status: 'signed-in' })
     expect(setSession).toHaveBeenCalledWith({ access_token: 'at-123', refresh_token: 'rt-456' })
@@ -156,7 +169,7 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
     const { client, setSession } = fakeClient()
 
     const outcome = await completeNativeOAuthReturn(
-      'app.dropin.playdate://?error=access_denied&error_description=User+denied+access',
+      returnUrl('?error=access_denied&error_description=User+denied+access'),
       client,
     )
 
@@ -167,10 +180,7 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
   it('reports a rejected session as a sentence, never as a sign-in', async () => {
     const { client } = fakeClient({ data: {}, error: { message: 'invalid grant' } })
 
-    const outcome = await completeNativeOAuthReturn(
-      `app.dropin.playdate://${FRAGMENT}`,
-      client,
-    )
+    const outcome = await completeNativeOAuthReturn(returnUrl(FRAGMENT), client)
 
     expect(outcome).toEqual({ status: 'failed', message: 'invalid grant' })
   })
@@ -178,7 +188,7 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
   it('ignores a URL with nothing to complete', async () => {
     const { client, setSession } = fakeClient()
 
-    expect(await completeNativeOAuthReturn('app.dropin.playdate://', client)).toEqual({
+    expect(await completeNativeOAuthReturn(returnUrl(''), client)).toEqual({
       status: 'ignored',
     })
     expect(setSession).not.toHaveBeenCalled()
@@ -188,16 +198,17 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
    * Slice 2c fix round 1 — the user-facing half of the blank-screen fix.
    *
    * /login renders this outcome's message as `{error ? <p>…</p> : null}`, so an
-   * EMPTY message is a failed sign-in the parent is never told about. The three
-   * shapes below all produced exactly that before the `??`→`||` change; this
+   * EMPTY message is a failed sign-in the parent is never told about. The four
+   * shapes below all produced exactly that before the `??`→`||` fix (and the
+   * whitespace-only third one still lost the specific sentence until `?.trim() ||`); this
    * asserts on what the SCREEN would show, at the seam the screen reads.
    */
   it('never reports a failure the parent would not be told about', async () => {
     const emptyShapes = [
-      'app.dropin.playdate://?error=access_denied&error_description=',
-      'app.dropin.playdate://?error=',
-      'app.dropin.playdate://#error=',
-      'app.dropin.playdate://#error=&error_description=',
+      returnUrl('?error=access_denied&error_description='),
+      returnUrl('?error='),
+      returnUrl('#error='),
+      returnUrl('#error=&error_description='),
     ]
 
     for (const url of emptyShapes) {
@@ -211,7 +222,7 @@ describe('completeNativeOAuthReturn (slice 2c)', () => {
   it('turns a rejected session with an EMPTY provider message into a sentence too', async () => {
     const { client } = fakeClient({ data: {}, error: { message: '' } })
 
-    const outcome = await completeNativeOAuthReturn(`app.dropin.playdate://${FRAGMENT}`, client)
+    const outcome = await completeNativeOAuthReturn(returnUrl(FRAGMENT), client)
 
     expect(outcome).toEqual({ status: 'failed', message: 'Could not finish sign-in. Try again.' })
   })
@@ -229,7 +240,7 @@ describe('subscribeNativeOAuthReturn (slice 2c)', () => {
     await vi.waitFor(() => expect(caps.listeners).toHaveLength(1))
     expect(caps.listeners[0].event).toBe('appUrlOpen')
 
-    caps.listeners[0].callback({ url: `app.dropin.playdate://${FRAGMENT}` })
+    caps.listeners[0].callback({ url: returnUrl(FRAGMENT) })
 
     await vi.waitFor(() =>
       expect(setSession).toHaveBeenCalledWith({
@@ -250,7 +261,7 @@ describe('subscribeNativeOAuthReturn (slice 2c)', () => {
     subscribeNativeOAuthReturn(onFailure)
     await vi.waitFor(() => expect(caps.listeners).toHaveLength(1))
 
-    caps.listeners[0].callback({ url: 'app.dropin.playdate://?error=access_denied' })
+    caps.listeners[0].callback({ url: returnUrl('?error=access_denied') })
 
     await vi.waitFor(() => expect(onFailure).toHaveBeenCalledWith('Sign-in was cancelled.'))
     expect(setSession).not.toHaveBeenCalled()
@@ -265,5 +276,56 @@ describe('subscribeNativeOAuthReturn (slice 2c)', () => {
     detach()
 
     await vi.waitFor(() => expect(caps.removed).toBe(1))
+  })
+
+  /**
+   * Slice 2c fix round 2 — A REJECTED RETURN MUST STILL BE A SENTENCE.
+   *
+   * `completeNativeOAuthReturn` can REJECT rather than resolve `failed`:
+   * supabase-js's `setSession` throws a plain `Error` on some inputs instead of
+   * returning one (the reviewer measured "Invalid UTF-8 sequence" for a
+   * malformed access token), and the parse path can throw too. The chain in
+   * `subscribeNativeOAuthReturn` had a single `.then` and no `.catch`, so the
+   * rejection was unhandled and `onFailure` was never called — the parent read
+   * NOTHING, the one outcome the handler exists to prevent.
+   *
+   * REACHABLE, NOT THEORETICAL: MainActivity is `android:exported="true"` with a
+   * BROWSABLE VIEW filter, so any app on the device can deliver a crafted
+   * `app.dropin.playdate://…` URL to this handler.
+   *
+   * WHAT THESE ASSERT: the exact string handed to `onFailure`, which is the
+   * string /login puts in `setError` and renders — i.e. the sentence a parent
+   * sees. The second case pins the never-empty guarantee on this path too: a
+   * rejection that is not an `Error` must not surface as the string
+   * "undefined".
+   */
+  it('says the sentence when completing the return REJECTS (not just when it fails)', async () => {
+    caps.platform = 'android'
+    vi.spyOn(supabase.auth, 'setSession').mockRejectedValue(
+      new Error('Invalid UTF-8 sequence'),
+    )
+    const onFailure = vi.fn()
+
+    subscribeNativeOAuthReturn(onFailure)
+    await vi.waitFor(() => expect(caps.listeners).toHaveLength(1))
+
+    caps.listeners[0].callback({ url: returnUrl(FRAGMENT) })
+
+    await vi.waitFor(() => expect(onFailure).toHaveBeenCalledWith('Invalid UTF-8 sequence'))
+  })
+
+  it('says a sentence when the rejection is not an Error at all', async () => {
+    caps.platform = 'android'
+    vi.spyOn(supabase.auth, 'setSession').mockRejectedValue('boom')
+    const onFailure = vi.fn()
+
+    subscribeNativeOAuthReturn(onFailure)
+    await vi.waitFor(() => expect(caps.listeners).toHaveLength(1))
+
+    caps.listeners[0].callback({ url: returnUrl(FRAGMENT) })
+
+    await vi.waitFor(() =>
+      expect(onFailure).toHaveBeenCalledWith('Could not finish sign-in. Try again.'),
+    )
   })
 })

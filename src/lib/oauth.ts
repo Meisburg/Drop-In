@@ -143,13 +143,15 @@ export function parseOAuthReturn(returnUrl: string): OAuthReturn {
 
   const error = params.get('error')
   if (error !== null) {
-    // `||`, NOT `??`. A provider can send the key with an EMPTY value
-    // (`?error=access_denied&error_description=`), and `??` falls through only
-    // on null/undefined — so `''` would survive as the message and the parent
-    // would read nothing at all, which is the one outcome this path must never
-    // produce. An empty description falls back to the code, and an empty code
-    // falls through to `oauthReturnErrorMessage`'s own sentence below.
-    return { status: 'error', message: params.get('error_description') || error }
+    // `||`, NOT `??` — and `.trim()`, because `||` alone treats a
+    // WHITESPACE-ONLY description as present. Both shapes are measured: with
+    // `??`, `?error=access_denied&error_description=` yields `''` and the parent
+    // reads nothing at all; with a bare `||`,
+    // `?error=access_denied&error_description=%20` yields `' '` and the parent
+    // reads the generic fallback INSTEAD of "Sign-in was cancelled." — a worse
+    // sentence, and a false one. A blank description falls back to the code, and
+    // a blank code falls through to `oauthReturnErrorMessage`'s own sentence.
+    return { status: 'error', message: params.get('error_description')?.trim() || error }
   }
 
   const accessToken = params.get('access_token')
@@ -182,14 +184,22 @@ export function oauthErrorMessage(provider: OAuthProvider, message: string): str
  * nothing can come back. The mapping itself lives once, here, so the two
  * entries cannot drift.
  *
- * ⚠️ THIS FUNCTION'S LAST ARM IS THE ONLY THING BETWEEN A FAILED ROUND TRIP AND
- * A BLANK SCREEN. /login renders `{error ? <p>…</p> : null}`, so an EMPTY
- * message is a failure the parent is never told about — and an empty message is
- * reachable three ways, all measured: a present-but-empty `error_description`,
- * a bare `?error=` with no code at all, and a `setSession` failure whose own
- * `message` is empty. Hence the fallback sentence, here rather than at each of
- * those three call sites, so no future entry point can reintroduce the blank
- * screen by composing a message of its own.
+ * ⚠️ THIS FUNCTION NEVER RETURNS AN EMPTY SENTENCE — and the claim is stated no
+ * wider than that, because the code does not hold wider. /login renders
+ * `{error ? <p>…</p> : null}`, so an empty message is a failure the parent is
+ * never told about, and four measured shapes reach here with one: a
+ * present-but-empty `error_description`, a whitespace-only one, a bare
+ * `?error=` with no code at all, and a `setSession` failure whose own `message`
+ * is empty. The fallback lives here, where the RETURN PATH's messages are
+ * composed, rather than at each of those call sites.
+ *
+ * ⚠️ IT DOES NOT COVER THE EMAIL/PASSWORD PATH, and saying so is the point of
+ * this paragraph. `LoginPage.handleSubmit` composes its own message
+ * (`err instanceof Error ? err.message : …`) and guards the same render with
+ * `{error ? … : null}`, so an `Error` with an empty message raised there still
+ * renders NOTHING. That is pre-existing, is not this slice's to change, and is
+ * NOT fixed by this function: the two entry points share a render site, not a
+ * mapping.
  */
 export function oauthReturnErrorMessage(message: string): string {
   if (/cancel|closed|denied|access_denied/i.test(message)) {
