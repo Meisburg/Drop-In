@@ -53,8 +53,9 @@ before anything was deleted:
    (alias `upload`, valid to 2054), so slice 2.6 is unblocked. Its public
    fingerprints are recorded in the plan. ⚠️ Play App Signing adds a SECOND key
    after the first upload, and `assetlinks.json` will need BOTH.
-3. **The 0.2 child-data posture** — one sentence, gating the store descriptions
-   (4.4), the Data safety form (5.1) and 5.3. A recommendation is written up.
+3. ~~The 0.2 child-data posture~~ — **DECIDED 2026-10-06: not child-directed,
+   adults.** Items 4.4, 5.1, 5.3 and 4.6 in `.scratch/store-copy-2026-10/spec.md`
+   are therefore FINAL and can be typed into the console as written.
 4. **`appId`** — the founder's instinct is `app.dropin`; the tree currently says
    `app.dropin.playdate`. It is cheap NOW (a rename plus re-registering the
    Firebase Android app) and **impossible after the first Play upload**.
@@ -99,7 +100,16 @@ requirement does not apply — check that first, it may save you two weeks.)*
   rule. An organization account needs a D-U-N-S number but skips the gate.
   *Time: 5 min. Done when: you know which kind you have or will create.*
 
-- [ ] **0.2 — Decide the child-data posture.** ⚠️ **The biggest submission risk.**
+- [x] **0.2 — DECIDED 2026-10-06: NOT child-directed, target audience ADULTS.** The
+  founder confirmed it. The reasoning, recorded because the Play forms and the copy
+  both rest on it: the account holder is a parent, **children have no accounts and
+  no logins**, there is no child-facing surface, no ads, no games. This keeps the app
+  out of Play's Families programme and its separate stricter review track. It does
+  NOT remove the obligation to declare kids' data honestly in 5.1 — first names,
+  ages and optional photos are collected as content a parent enters.
+  ⚠️ **One optional yes/no remains and can be answered at the form:** "Designed for
+  Families" → **No** (recommended).
+  ~~Decide the child-data posture.~~
   Drop In stores children's first names and ages. You must decide, and write down:
   **(a)** is this a "children's app" under Google's Families policy, or a parents'
   app that stores data about kids? **(b)** what age rating will you declare?
@@ -364,7 +374,7 @@ Assets below were read from Google's own
   correctly placed; treat it as a starting point, not a finished asset.
 - [ ] **4.3 — Screenshots:** minimum 2, up to 8 per device type. Phone is
   required. Use the real app with real (seeded) content — not mockups.
-- [x] **4.4 — DRAFTED 2026-10-06** in `.scratch/store-copy-2026-10/spec.md`, with
+- [x] **4.4 — FINAL 2026-10-06** (posture confirmed) in `.scratch/store-copy-2026-10/spec.md`, with
   the character counts MEASURED rather than estimated: **short description 69**
   (limit 80) and **full description 1,722** (limit 4,000). Every claim in the copy
   is traced to a line of the shipped privacy policy, so the listing cannot promise
@@ -375,7 +385,7 @@ Assets below were read from Google's own
 - [x] **4.5 — LIVE, checked 2026-10-05:** `https://drop-in-mu.vercel.app/privacy`
   returns **HTTP 200** (terms at `/terms`), from item 1.6.
   ~~Privacy policy URL from 1.6.~~
-- [x] **4.6 — DRAFTED 2026-10-06** (`.scratch/store-copy-2026-10/spec.md` §6): the
+- [x] **4.6 — FINAL 2026-10-06** (`.scratch/store-copy-2026-10/spec.md` §6): the
   expected content-rating answers, with **user-generated content / interaction =
   YES** called out as the one honest "yes" (comments and messages exist). The
   contact email still needs the founder's pick — the policy uses
@@ -385,7 +395,7 @@ Assets below were read from Google's own
 
 ## Phase 5 — Policy declarations (Console forms — be precise)
 
-- [x] **5.1 — ANSWERED ON PAPER 2026-10-06** (`.scratch/store-copy-2026-10/spec.md`
+- [x] **5.1 — FINAL 2026-10-06** (posture confirmed) (`.scratch/store-copy-2026-10/spec.md`
   §5): a row per Play data type with collected / shared / optional / purpose, and
   each row names the policy line it rests on. The global answers are **not shared
   with third parties** (the four processors act on our behalf — ⚠️ read Play's own
@@ -397,7 +407,7 @@ Assets below were read from Google's own
   ⚠️ **It must match the privacy policy from 1.6 exactly.** A mismatch between the
   two is a common rejection cause. *Time: 1 hour, and read each question twice.*
 - [ ] **5.2 — Ads declaration.** Declare "no ads" — there are none.
-- [x] **5.3 — DRAFTED 2026-10-06** (`.scratch/store-copy-2026-10/spec.md` §4):
+- [x] **5.3 — FINAL 2026-10-06**, posture confirmed (`.scratch/store-copy-2026-10/spec.md` §4):
   **adults only, NOT designed for Families**, with user interaction declared
   honestly (comments + messages exist) and the location answer reasoned from the
   policy ("an area, not a position"). ⚠️ One judgement call is flagged there:

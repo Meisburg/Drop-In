@@ -1,10 +1,16 @@
-# Store listing + Play forms — Drop In (drafted 2026-10-06)
+# Store listing + Play forms — Drop In (DRAFTED 2026-10-06, POSTURE CONFIRMED)
 
-> ⚠️ **ONE ASSUMPTION IS UNCONFIRMED AND THE COPY DEPENDS ON IT.** This is drafted
-> under the **recommended posture: NOT child-directed, target audience adults**,
-> because the account holder is a parent, **kids have no accounts or logins**, and
-> there is no child-facing content. If the founder decides otherwise, items 4 and
-> 5 below change and the copy's "who it's for" paragraph changes with it.
+> ✅ **THE POSTURE IS DECIDED: NOT child-directed, target audience ADULTS.** The
+> founder confirmed it on 2026-10-06. **Items 4, 5 and 6 below are therefore FINAL**
+> and can be typed into the console as written. The reasoning they rest on: the
+> account holder is a parent, **kids have no accounts or logins**, there is no
+> child-facing content, no ads, and no games.
+>
+> ⚠️ **ONE OPTIONAL DECISION REMAINS INSIDE THIS FILE, and it is a yes/no you can
+> answer at the form:** Google's optional **"Designed for Families"** programme —
+> answered **No** here (recommended). Answering **Yes** opts into a separate review
+> track with stricter content rules; the posture above does not require it and
+> nothing in this app needs it.
 >
 > **EVERY CLAIM HERE IS TRACEABLE TO THE SHIPPED PRIVACY POLICY** (`src/lib/legal.ts`,
 > live at `https://drop-in-mu.vercel.app/privacy`, effective 2026-10-05). A listing
