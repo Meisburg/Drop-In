@@ -53,7 +53,8 @@ import type { ZipCoords } from '../lib/feed'
 import { splitSuggestedName, suggestedHandle } from '../lib/oauth'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, locationFromAddressQueryBounded, type AddressGeocodeResult, zipFromCoordsBounded } from '../lib/geocode'
 import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
-import { DEVICE_LOCATION_NOTES } from '../lib/locationCopy'
+import { deviceLocationNotes } from '../lib/locationCopy'
+import { nativePushShellPlatform } from '../lib/nativePushToken'
 import { PlacesMap } from '../components/PlaceMapLazy'
 import { shouldRenderPlacesMap } from '../lib/mapStrip'
 import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
@@ -1186,19 +1187,25 @@ export function OnboardingPage() {
     setLocating(true)
     setLocationNote(null)
     try {
+      // ⚠️ PLATFORM, NOT GUESSWORK: inside the Android app the location
+      // permission belongs to the APP and the way back is Android Settings —
+      // in a browser it is the browser's per-site setting. The same existing
+      // seam `NotificationsSection` uses, and it never rejects (a missing
+      // Capacitor is a browser). Slice 2d, `lib/locationCopy.ts`.
+      const notes = deviceLocationNotes((await nativePushShellPlatform()) !== null)
       const outcome = await readDeviceCoords()
       if (outcome.status === 'unsupported') {
         // Reachable only if the API vanished between render and tap (an
         // origin downgrade, or a browser that lied about support).
-        setLocationNote(DEVICE_LOCATION_NOTES.unsupported)
+        setLocationNote(notes.unsupported)
         return
       }
       if (outcome.status === 'denied') {
-        setLocationNote(DEVICE_LOCATION_NOTES.denied)
+        setLocationNote(notes.denied)
         return
       }
       if (outcome.status === 'unavailable') {
-        setLocationNote(DEVICE_LOCATION_NOTES.unavailable)
+        setLocationNote(notes.unavailable)
         return
       }
 

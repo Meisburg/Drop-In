@@ -118,4 +118,38 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Slice 2d — "USE MY LOCATION" HAD NO PERMISSION TO ASK FOR. Declaring
+        INTERNET alone made the WebView's geolocation request a runtime request
+        for permissions the manifest never declared, and Android resolves that
+        immediately and NEGATIVELY, with NO UI: the parent saw nothing and the
+        app reported a refusal they never made.
+
+        BOTH, not just coarse, and the reason is Capacitor's, not the page's:
+        `BridgeWebChromeClient.onGeolocationPermissionsShowPrompt` requests
+        ACCESS_COARSE_LOCATION and ACCESS_FINE_LOCATION together
+        (`node_modules/@capacitor/android/…/BridgeWebChromeClient.java:249`,
+        installed 8.5.2), so on Android 12+ the OS draws its own
+        Approximate/Precise toggle — and Capacitor's `Build.VERSION.SDK_INT >= S`
+        branch (`:256-261`) deliberately treats the Approximate answer as a
+        grant. And on Android 12+ the pair is required: "you must request both
+        ACCESS_FINE_LOCATION and ACCESS_COARSE_LOCATION … If you request only
+        ACCESS_FINE_LOCATION, the system ignores the request and your app isn't
+        granted either permission"
+        (developer.android.com/training/location/permissions — the page the
+        grounding quotes for the Approximate/Precise accuracy figures).
+
+        ⚠️ NO `<uses-feature android:name="android.hardware.location.gps" />`.
+        The plugin README lists it as optional ("necessary if your app REQUIRES
+        GPS"); this app must work on an Approximate fix (research §5), and a
+        required feature is also a Play Store device filter. Deliberately absent.
+
+        ⚠️ THE MERGED MANIFEST IS THE ARTIFACT TO CHECK, not this file:
+        android/app/build/intermediates/merged_manifest/release/…/AndroidManifest.xml
+        is what the OS sees. Before this change it contained ZERO occurrences of
+        "location".
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 </manifest>

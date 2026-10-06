@@ -138,9 +138,19 @@ describe('readDeviceCoords (four named outcomes, and it never rejects)', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     const options = spy.mock.calls[0][2] as PositionOptions
     expect(options.timeout).toBe(1234)
-    // Coarse accuracy is deliberate: a ZIP needs city-block precision, and
-    // high accuracy means a longer fix and a bigger battery cost for nothing.
-    expect(options.enableHighAccuracy).toBe(false)
+    // ⚠️ THIS USED TO ASSERT `false`, ON THE REASONING THAT COARSE IS CHEAPER
+    // AND A ZIP NEEDS NO MORE. The reasoning was about battery, and the
+    // assertion was about the ONLY thing that can break the feature: it is
+    // edited on purpose in slice 2d, and the comment it replaced was wrong in
+    // the installed Android shell. Chromium's `LocationProviderAndroid` reports
+    // "Cannot generate approximate location." — a POSITION_UNAVAILABLE, i.e.
+    // the app's `unavailable` — whenever the app holds ACCESS_FINE_LOCATION and
+    // the page asked for LOW accuracy, and that guard is enabled by default
+    // (`LocationProviderAndroid.java:61-73`, `features.cc:42-48`). So with
+    // `false` the flow works for a parent who taps Approximate and FAILS for one
+    // who taps Precise; `true` is the only value that works in both branches.
+    // `lib/geolocation.ts` carries the full reasoning beside the option.
+    expect(options.enableHighAccuracy).toBe(true)
   })
 
   it('defaults the timeout to the exported constant', async () => {

@@ -3,7 +3,8 @@ import { useFocusTrap } from './FocusTrap'
 import { milesWord } from '../lib/feed'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, addressFromCoordsBounded } from '../lib/geocode'
 import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
-import { DEVICE_LOCATION_NOTES } from '../lib/locationCopy'
+import { deviceLocationNotes } from '../lib/locationCopy'
+import { nativePushShellPlatform } from '../lib/nativePushToken'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 
 /**
@@ -195,17 +196,24 @@ export function LocationModal({
     setDeviceNote(null)
     setGeocodeError(null)
     try {
+      // ⚠️ WHICH HOLDER THE NOTE NAMES IS A PLATFORM FACT, resolved through the
+      // existing shell seam rather than guessed: in a browser the permission
+      // belongs to the browser's per-site setting, inside the Android app it
+      // belongs to the APP and the route is Android Settings (slice 2d,
+      // `lib/locationCopy.ts`). One answer per tap, and it never rejects — a
+      // missing Capacitor is a browser.
+      const notes = deviceLocationNotes((await nativePushShellPlatform()) !== null)
       const outcome = await readDeviceCoords()
       if (outcome.status === 'unsupported') {
-        setDeviceNote(DEVICE_LOCATION_NOTES.unsupported)
+        setDeviceNote(notes.unsupported)
         return
       }
       if (outcome.status === 'denied') {
-        setDeviceNote(DEVICE_LOCATION_NOTES.denied)
+        setDeviceNote(notes.denied)
         return
       }
       if (outcome.status === 'unavailable') {
-        setDeviceNote(DEVICE_LOCATION_NOTES.unavailable)
+        setDeviceNote(notes.unavailable)
         return
       }
       // The device fix itself is the centre — that is what the caller needs and

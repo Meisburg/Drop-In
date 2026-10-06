@@ -109,7 +109,28 @@ export function readDeviceCoords(
         resolve({ status: 'unavailable' })
       },
       {
-        enableHighAccuracy: false,
+        // ⚠️ `true` IS NOT COSMETIC, AND THE OBVIOUS CHOICE — `false` — IS THE
+        // WRONG ONE. The W3C spec calls this hint only ("the implementation MAY
+        // avoid using geolocation providers that consume a significant amount of
+        // power"), so asking for LESS accuracy looks strictly safer. In the
+        // installed Android shell it is the opposite.
+        //
+        // Chromium's `LocationProviderAndroid.start()` refuses to answer at all
+        // when it holds ACCESS_FINE_LOCATION and the page asked for low accuracy
+        // — "When Chrome is granted with app-level precise permission, we cannot
+        // generate approximate (coarse) location using Criteria. To avoid leaking
+        // precise location when coarse location is requested, report a position
+        // error." (`services/device/geolocation/android/java/…/LocationProviderAndroid.java:61-73`,
+        // crbug.com/502587667) — and the feature behind it
+        // (`kApproximateGeolocationPermission`) is
+        // `FEATURE_ENABLED_BY_DEFAULT` on Android. So with `false` the feature
+        // WORKS for a parent who taps Approximate (no fine permission held → the
+        // guard cannot fire) and FAILS, as `unavailable`, for one who taps
+        // Precise — the reverse of intuition, and the one branch no one would
+        // test. `true` never enters the guard in either branch; if the parent
+        // chose Approximate, `has_precise_permission_` is false and the coarse
+        // fix still comes back.
+        enableHighAccuracy: true,
         timeout: timeoutMs,
         maximumAge: 60_000,
       },
