@@ -1,13 +1,24 @@
 /**
  * send-push — the V8 ticket 08 sender (Supabase Edge Function, Deno), now the
- * ONE sender for TWO transports.
+ * ONE sender for THREE channels: web push, NATIVE push (Android/FCM, slice 2b)
+ * and email.
  *
  * One job, run every 5 minutes by pg_cron (or by hand): turn the
- * `notification_log` rows we OWE into real Web Push POSTs — and, when a parent
- * has NO registered device at all, into an email instead. Email is a FALLBACK
- * BRANCH inside `drain()`, not a second function and not a second queue: a
- * second function draining the same `sent_at is null` rows would race this one
- * for the same rows.
+ * `notification_log` rows we OWE into real Web Push POSTs — or, for a parent
+ * with an installed app, into a real FCM send — and, when a parent has NO
+ * registered device at all, into an email instead. Email is a FALLBACK BRANCH
+ * inside `drain()`, not a second function and not a second queue: a second
+ * function draining the same `sent_at is null` rows would race this one for the
+ * same rows. THAT RULE IS WHY NATIVE PUSH IS A BRANCH HERE TOO, and it is not
+ * negotiable: two functions draining the same queue race for the same rows.
+ *
+ * PRECEDENCE, once, for every row: NATIVE first (an installed app is the better
+ * channel), WEB PUSH as the fallback channel, EMAIL as the last resort. The
+ * native branch is skipped — and the row falls through to web push, then email —
+ * when the deployment has no `FCM_SERVICE_ACCOUNT_JSON` or the recipient has no
+ * `device_tokens` row. It reads BESIDE the `push_subscriptions` read, never
+ * instead of it: a native token is not a VAPID subscription and the two
+ * coexist.
  *
  * THE EMAIL TRANSPORT IS SELECTABLE, SMTP PREFERRED. Gmail SMTP
  * (`SMTP_USER` + `SMTP_PASS` + `EMAIL_FROM`) is the PRIMARY path: the account
@@ -34,9 +45,12 @@
  *  2. DRAIN. Every row with `sent_at is null`, newest last: post it, stamp
  *     `sent_at` (or `error`), and DELETE any subscription the push service
  *     answers 404/410 for (the endpoint is dead: the browser unsubscribed, the
- *     app was deleted, or the subscription was rotated). A row whose recipient
- *     has NO subscription is handed to the email fallback: configured and
- *     addressable → send the email; otherwise stamp it exactly as before.
+ *     app was deleted, or the subscription was rotated) — and, on the native
+ *     branch, DELETE the `device_tokens` row when the provider says the token is
+ *     dead (UNREGISTERED / 404 / 410), counted in the same `pruned` counter. A
+ *     row whose recipient has NO device on either channel is handed to the email
+ *     fallback: configured and addressable → send the email; otherwise stamp it
+ *     exactly as before.
  *
  * NAMING DEBT, RECORDED RATHER THAN HIDDEN. The function is still called
  * `send-push` even though it now sends email too. The name is retained
@@ -77,6 +91,12 @@ import { FALLBACK_BASE_URL, buildEmailPayload, type EmailEnv } from '../_shared/
 import { sendEmail } from '../_shared/resend.ts'
 import { sendEmailViaSmtp, smtpConfigFrom } from '../_shared/smtp.ts'
 import { smtpDeps } from '../_shared/smtpDeno.ts'
+import {
+  buildNativePushRequest,
+  fcmConfigFrom,
+  nativePushOutcome,
+} from '../_shared/nativePush.ts'
+import { createFcmTransport } from '../_shared/fcmDeno.ts'
 import { chooseTransport } from '../_shared/emailTransport.ts'
 import { classifySendResult, decideEmailFallback } from '../_shared/emailFallback.ts'
 import {
@@ -128,6 +148,24 @@ const SMTP_CONFIG = smtpConfigFrom({
   SMTP_PORT,
 })
 
+/**
+ * The NATIVE transport's credential, read ONCE at module scope for the same
+ * reason as `TRANSPORT` above, and reported the same honest way: a missing
+ * secret is a `disabled` state that NAMES the variable, not a throw. `fcmConfigFrom`
+ * never echoes the value — that reason can land in `notification_log.error`.
+ */
+const FCM = fcmConfigFrom({
+  FCM_SERVICE_ACCOUNT_JSON: Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '',
+})
+
+/**
+ * The FCM transport, created ONCE (it caches its OAuth2 access token, so a warm
+ * isolate must reuse it), or `null` when the deployment has no service account.
+ * `null` is a real state, not an error: the native branch is then skipped and a
+ * parent with a registered install still gets web push, then email.
+ */
+const FCM_TRANSPORT = FCM.kind === 'fcm' ? createFcmTransport({ fetch }, FCM.config) : null
+
 /** Links are built against the configured origin, else the pinned deployment
  *  fallback — a relative link in an inbox is a dead link. */
 const EMAIL_ENV: EmailEnv = {
@@ -158,6 +196,14 @@ interface PushSubscriptionRow {
   endpoint: string
   p256dh: string | null
   auth: string | null
+}
+
+/** One installed app's registration token (migration 0065). The NATIVE channel. */
+interface DeviceTokenRow {
+  id: string
+  profile_id: string
+  platform: string
+  token: string
 }
 
 interface LogRow {
@@ -486,10 +532,41 @@ async function drain(admin: SupabaseClient): Promise<{
 
     const subscriptions = (subscriptionRows ?? []) as PushSubscriptionRow[]
 
-    // No device has opted in (a denial, or they turned it off). The row is
-    // stamped anyway: it is not "owed" any more — it is the /profile fallback
-    // list's content — and leaving it unsent would make every future tick
-    // re-read it forever.
+    // The recipient's NATIVE installs (migration 0065), read BESIDE the web
+    // subscriptions rather than instead of them — the two channels coexist and
+    // neither is derived from the other.
+    //
+    // THE READ IS GUARDED ON PURPOSE. A pre-0065 project (42P01) or any
+    // transient PostgREST error means "no native channel for this row", and the
+    // web/email paths below then behave exactly as they did before this slice —
+    // one unreadable table must not strand a drain that has parents in it.
+    let deviceTokens: DeviceTokenRow[] = []
+    try {
+      const { data, error } = await admin
+        .from('device_tokens')
+        .select('id, profile_id, platform, token')
+        .eq('profile_id', row.profile_id)
+      if (error) throw error
+      deviceTokens = (data ?? []) as DeviceTokenRow[]
+    } catch (error) {
+      console.error(
+        `send-push: could not read device_tokens for ${row.profile_id}:`,
+        errorMessage(error),
+      )
+      deviceTokens = []
+    }
+
+    // A native row is only a CHANNEL when this deployment can actually send
+    // natively. With no `FCM_SERVICE_ACCOUNT_JSON` the token cannot be
+    // addressed, so the row falls through to web push (if any) and then email,
+    // instead of being consumed by a branch that could only fail.
+    const nativeTransport = FCM_TRANSPORT
+    const nativeTokens = nativeTransport === null ? [] : deviceTokens
+
+    // No device has opted in (a denial, or they turned it off) — on EITHER
+    // channel. The row is stamped anyway: it is not "owed" any more — it is the
+    // /profile fallback list's content — and leaving it unsent would make every
+    // future tick re-read it forever.
     //
     // …UNLESS a transport is configured, in which case "no device" is no longer
     // "no way to reach them": an iPhone parent who never completed the push
@@ -499,7 +576,7 @@ async function drain(admin: SupabaseClient): Promise<{
     // would race this one for them. The unique key
     // `(profile_id, kind, playdate_id)` plus `sent_at is null` remains the only
     // anti-double-send wall; there is still no in-memory dedupe.
-    if (subscriptions.length === 0) {
+    if (nativeTokens.length === 0 && subscriptions.length === 0) {
       if (TRANSPORT.kind === 'disabled') {
         // Not configured. Keep the EXISTING behaviour, including the LEADING
         // part of the error string — other things read it, and the honest
@@ -621,6 +698,84 @@ async function drain(admin: SupabaseClient): Promise<{
         })
         .eq('id', row.id)
       failed += 1
+      continue
+    }
+
+    // NATIVE FIRST. An installed app is the BETTER channel, so a parent who has
+    // both a device token and a web subscription is reached natively and NOT
+    // twice. "Web push is the fallback" is a CHANNEL-AVAILABILITY rule, not a
+    // per-attempt one: falling back after a native failure would buzz one parent
+    // on two channels for one event, and the attempt-once stamp below would not
+    // even record which one delivered.
+    if (nativeTokens.length > 0 && nativeTransport !== null) {
+      const nativeErrors: string[] = []
+
+      for (const device of nativeTokens) {
+        if (sends >= MAX_SENDS_PER_RUN) {
+          // The per-invocation budget ran out on an EARLIER device of this same
+          // row. Record it rather than stamping a silent success: the next tick
+          // picks the row up again only if `sent_at` is still null, and the
+          // stamp below is what the queue has.
+          nativeErrors.push('send budget exhausted for this run')
+          break
+        }
+        sends += 1
+
+        // The copy is NOT rebuilt here: `row.title`/`row.body` are the columns
+        // the producers wrote from the ONE copy module (`_shared/pushCopy.ts`),
+        // and `buildNativePushRequest` only maps them onto the provider's shape.
+        const result = await nativeTransport.send(
+          buildNativePushRequest({
+            token: device.token,
+            platform: device.platform === 'ios' ? 'ios' : 'android',
+            title: row.title,
+            body: row.body,
+            url: row.url,
+            kind: isNotificationKind(row.kind) ? row.kind : 'starting_soon',
+            profileId: row.profile_id,
+            playdateId: row.playdate_id,
+          }),
+        )
+
+        // The prune rule lives in the PURE classifier (`nativePushOutcome`), not
+        // as an `if` here: `prune` is exactly "the provider says this token will
+        // never work again", and only that deletes the row.
+        const outcome = nativePushOutcome(result)
+
+        if (outcome === 'sent') {
+          sent += 1
+          await admin
+            .from('device_tokens')
+            .update({ last_seen_at: new Date().toISOString() })
+            .eq('id', device.id)
+          continue
+        }
+
+        if (outcome === 'prune') {
+          // The same automated delete a 404/410 performs on a
+          // `push_subscriptions` row, for the same fact: the token is gone
+          // (the app was uninstalled, or the token rotated). Counted in the
+          // existing `pruned` counter — never silently dropped.
+          await admin.from('device_tokens').delete().eq('id', device.id)
+          pruned += 1
+          nativeErrors.push('token gone (pruned)')
+          continue
+        }
+
+        failed += 1
+        nativeErrors.push(result.ok ? 'unknown' : result.error)
+      }
+
+      // The SAME stamping semantics as the web path below, including that
+      // `sent_at` is stamped even when every send failed (the attempt-once rule
+      // and its reason are documented there).
+      await admin
+        .from('notification_log')
+        .update({
+          sent_at: new Date().toISOString(),
+          error: nativeErrors.length === 0 ? null : nativeErrors.join('; ').slice(0, 500),
+        })
+        .eq('id', row.id)
       continue
     }
 
