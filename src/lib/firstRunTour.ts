@@ -152,7 +152,7 @@ export const TOUR_LINES: readonly TourLine[] = [
     // PUTTING ON" asserted current activity — the existential presupposition
     // r1's places list carried, reworded.
     label: 'Drop Ins',
-    detail: 'browse drop-ins within your radius, soonest first, and ping one to join',
+    detail: 'browse drop-ins within your radius, soonest first, and say you’re going',
   },
   {
     label: 'Inbox',

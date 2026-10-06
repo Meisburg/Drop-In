@@ -59,6 +59,34 @@ supabase/functions/_shared --include=*.ts*` and classify each hit
 1. No user-visible string on any screen, push, or email says "ping(ed)"; the
    detail page, cards, and notifications all say the same word ("going").
 2. `npm run verify` green; any test pinning old copy updated, not deleted.
+
+> **📌 STATUS 2026-10-05 — THE PASS IS ~95% DONE ALREADY, AND THE SWEEP ABOVE
+> OVERSTATES IT.** Re-run against the current tree, the classification is:
+>
+> - **`src/lib/push.ts` / `_shared/pushCopy.ts` ALREADY SAY "going"** —
+>   `ping_received` renders as `${actor} is going` / `to ${subject}`
+>   (`pushCopy.ts:241`), so the push half of this item landed in an earlier slice
+>   and `grep` finds only a COMMENT containing "ping" there. The same is true of
+>   the email copy.
+> - **MOST hits the sweep returns are NOT user copy**, which the scope rule
+>   already excludes: `kind: 'pinged'` is a type union in `rsvpConfirmation.ts`,
+>   `ping_received`/`going_pings`/`togglePing` are identifiers, and the hits in
+>   `WhileAwayCard.tsx`, `trust.ts`, `follows.ts`, `feed.ts`, `db.ts`,
+>   `PlaceDetailsPage.tsx` and `PushOptInPrompt.tsx` are all COMMENTS or thrown
+>   Error text.
+> - **A JSX-text / attribute sweep (`(label|detail|title|alt|aria-label)[:=]` with
+>   "ping", comments excluded) returns EXACTLY ONE hit in `src/`:**
+>   `src/lib/firstRunTour.ts:155`, the first-run tour's step copy. **FIXED
+>   2026-10-05** — it now reads "…and say you’re going", and it IS user-visible
+>   (the launch audit captured that line rendered on the feed as "1 of 5").
+> - ⚠️ **ONE STRING REMAINS AND IT IS BLOCKED**: `src/pages/FeedPage.tsx:195`,
+>   "N new families pinged your drop-ins". That file is ANOTHER SESSION'S
+>   in-flight work, and this item's own acceptance criterion is "no user-visible
+>   string on ANY screen … says ping(ed)" — so doing the rest while that one
+>   stands would ship BOTH vocabularies, which is worse than shipping one. **Do
+>   this item when `FeedPage.tsx` is free, and it is then a ONE-LINE change.**
+> - `supabase/functions/_shared/` needs no edit for this item (see above), so
+>   there is no Edge Function redeploy in the path either.
 3. Terminology map recorded in the batch summary: "ping" = internal column/
    kind name only, "going" = the word parents see. Future slices must not
    re-introduce "ping" in user-facing copy (worth adding to the steering
