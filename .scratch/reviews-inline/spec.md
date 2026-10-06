@@ -8,16 +8,31 @@
 > lightboxed compose modal on ModalShell; decide the fate of the `/place/:id/details`
 > route and check the V24 read-surface ruling before changing what is exposed."*
 
-⚠️ **NO FOUNDER REPORT EXISTS FOR THIS ITEM — and that is a measured fact, not a
-gap in the search.** The previous session's full transcript was read
-(`~/.dsh/sessions/--home-jmeisburg-Projects-playdate-app--/session-db9c0116-…`,
-120 user messages): the founder asked for the map fix, the distance-dropdown
-deletion, the profile past rework, the settings rework and the first-tooltip fix,
-and **never mentioned reviews**. So this item comes from the prior session's own
-backlog rather than from his words, and it is therefore the one item in the
-handover whose *motivation* is unverified. That does not make it wrong — a place
-page that shows what parents say is plainly in PRODUCT.md's spirit — but it is the
-half worth showing him before a lot of code exists.
+✅ **THE FOUNDER'S VERBATIM REPORT — and it is stronger than this brief's
+paraphrase.** Recovered from the impeccable live-tool annotations (a SECOND
+feedback channel, `.impeccable/live/sessions/33eecdcf.jsonl`, 2026-10-05T18:20:04Z),
+annotated ON the element itself — `a[data-testid="place-more-details"]`, the
+"what parents say about this place →" link on `/place/:id`:
+
+> *"Why would this link to a separate page? Like, wouldn't you see what parents say
+> about this place and they're rating right here? And then you have the option to
+> click on something to leave a review And I think that review should be like a
+> modal that gets light boxed in where you just leave the review"*
+
+⚠️ **An earlier version of this brief claimed no founder report existed. That was
+WRONG** — it was based on the DSH chat transcript alone, and his live annotations
+are a separate channel. The correction is left visible (rather than deleted)
+because the mistake is the class this repo keeps paying for: *a claim about what a
+person said, made without reading where they said it.*
+
+Three things his words settle, and this brief is rewritten against them:
+
+- **The "what parents say" link to a separate page is the thing he QUESTIONS**
+  (§3's `/details` discussion), annotated directly on `place-more-details`.
+- **The rating belongs on the place page** — he says *"they're rating right here"*,
+  and today the place page carries no `place-rating-line` at all (§1).
+- **The compose control is a lightboxed modal** — his words, verbatim, matching
+  §3's `ModalShell` decision.
 
 ---
 
