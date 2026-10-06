@@ -521,6 +521,83 @@ async function expectPinCentredOnMap(page: Page): Promise<void> {
     .toBe(true)
 }
 
+/**
+ * The ENTRY FRAME as the browser laid it out: how far the MAP PANE's centre and
+ * the FOCUSED PIN's centre each sit from the centre of the VIEWPORT, in pixels,
+ * plus the scroll offset they were read at.
+ *
+ * THIS IS THE SCREEN-CENTRING HALF OF THE V31 CLAIM, and it is a different
+ * question from `expectPinCentredOnMap` above. That one is PANE-RELATIVE
+ * geometry, which the map camera controls; this one is DOCUMENT geometry, which
+ * the map view's ENTRY SCROLL controls. A build whose entry effect does nothing
+ * still passes the first: the camera can put the pin dead centre of a pane that
+ * the parent cannot see in the middle of their screen — which is the founder's
+ * report, and the reason both halves exist.
+ *
+ * Read in ONE `evaluate` so every rect comes from the same layout pass, and read
+ * only after the caller has awaited `waitForEntryScrollToSettle`, so it is the
+ * layout the app settled in rather than a frame of the smooth scroll. `null` when
+ * the pane or the focused pin is not in the DOM.
+ */
+function entryFrameOffsets(page: Page): Promise<{
+  pane: { dx: number; dy: number }
+  pin: { dx: number; dy: number }
+  scrollY: number
+} | null> {
+  return page.evaluate(() => {
+    const pane = document.querySelector('[data-testid="places-map-view-map"]')
+    const pin = document.querySelector('[data-focused-marker]')
+    if (pane === null || pin === null) return null
+    const paneBox = pane.getBoundingClientRect()
+    const pinBox = pin.getBoundingClientRect()
+    const paneCentre = { x: paneBox.x + paneBox.width / 2, y: paneBox.y + paneBox.height / 2 }
+    const pinCentre = { x: pinBox.x + pinBox.width / 2, y: pinBox.y + pinBox.height / 2 }
+    return {
+      pane: {
+        dx: Math.abs(paneCentre.x - window.innerWidth / 2),
+        dy: Math.abs(paneCentre.y - window.innerHeight / 2),
+      },
+      pin: {
+        dx: Math.abs(pinCentre.x - window.innerWidth / 2),
+        dy: Math.abs(pinCentre.y - window.innerHeight / 2),
+      },
+      scrollY: window.scrollY,
+    }
+  })
+}
+
+/**
+ * Assert the pane — and, with it, the focused pin — sit at the middle of the
+ * SCREEN.
+ *
+ * `at` NAMES THE VIEWPORT IN EVERY MESSAGE, because the V31 spec measures this
+ * claim at more than one viewport and a failure that does not say WHICH entry
+ * frame it measured sends the reader to the wrong phone size. The offsets are
+ * printed with it, so the failure carries the measurement rather than only the
+ * verdict.
+ *
+ * NOT a `expect.poll`: the caller has awaited `waitForEntryScrollToSettle`, so a
+ * settled layout is already guaranteed, and this reads it in one pass.
+ */
+async function expectEntryFrameCentredOnScreen(page: Page, at: string): Promise<void> {
+  const offsets = await entryFrameOffsets(page)
+  if (offsets === null) {
+    throw new Error(`the map pane or the focused pin is not in the DOM at ${at}`)
+  }
+  expect(
+    offsets.pane.dy,
+    `the map pane must sit at the middle of the screen at ${at} (measured ${JSON.stringify(offsets)})`,
+  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
+  expect(
+    offsets.pin.dy,
+    `the focused pin must be at the middle of the screen at ${at} (measured ${JSON.stringify(offsets)})`,
+  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
+  expect(
+    offsets.pane.dx,
+    `the map pane is centred horizontally at ${at} (measured ${JSON.stringify(offsets)})`,
+  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
+}
+
 test('the map view pins EVERY matching place, capping only the cards (V24 s10)', async ({
   page,
 }) => {
@@ -918,6 +995,46 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
  *     scrolls its own map into the middle on mount, and the tolerance below is
  *     the same 12px the pane assertion uses — the map container is centred, so
  *     this is layout rounding, not a fudge.
+ *
+ * WHY THIS SPEC MEASURES THE SCREEN-CENTRING CLAIM AT TWO VIEWPORTS, AND WHY
+ * NEITHER OF THEM MAY BE "TIDIED" BACK TO ONE TALLER PHONE.
+ *
+ * At 390x844 — the founder's report size — the browser's own CLAMP happens to
+ * agree with the centring call. The map view's own document is only ~147px taller
+ * than the 844px viewport, so when the list unmounts the page scroll clamps to
+ * that 147px and the pane lands 11.64px from the middle: INSIDE the 12px
+ * tolerance, without the app doing anything. MEASURED on this build with the
+ * entry effect's `node.scrollIntoView({ block: 'center', … })` DELETED:
+ *
+ *   390x844 → pane.dy 11.640625   (passes by 0.36px — the coincidence)
+ *   390x844 → pane.dy 35.640625   (a LATER run of the SAME deletion, scrollY 171:
+ *                                  fails — the coincidence is not stable)
+ *   390x814 → pane.dy 20.34375    (fails, but only by 8px)
+ *   375x667 → pane.dy 89.7734375  (isolated probe; fails by 78px)
+ *   375x667 → pane.dy 65.7734375  (this spec's own failing run, scrollY 256)
+ *
+ * and with the app's centring call in place the same three read 0.359375,
+ * 0.34375 and 0.2265625. THE MAP VIEW'S OWN DOCUMENT HEIGHT MOVES WITH THE DATA —
+ * 1015px in the 35.64 run against 991px in the 11.64 one — so at 390x844 the
+ * screen assertion is not merely toothless, it is FLAKY: whether the no-op clamp
+ * lands inside the 12px tolerance depends on the seed, which is a verdict decided
+ * by data rather than by the app. At 375x667 the same deletion read 65.77 and
+ * 89.77 on two runs: never within a factor of five of the tolerance. (An earlier
+ * probe of this same mechanism recorded 44px of overshoot at 390x814 where this
+ * run read 20.34; that spread IS the data-dependence, and it is why the short
+ * viewport is the one that carries the falsifiable measurement.)
+ *
+ * 375x667 (iPhone SE) is a REAL phone and the shortest of the three: it gives the
+ * page the most clamp to overshoot with. The 390x844 assertions are KEPT rather
+ * than moved — that is the size the defect was reported and first measured at,
+ * it is where claim (1) and the live-camera claim below were measured, and it
+ * still catches a pane displaced FAR from the middle (a `window.scrollTo(0, 0)`
+ * mutation of the same entry effect measured pane.dy 135.36 at this size). The
+ * short viewport adds the tooth 390x844 does not have.
+ *
+ * DO NOT COLLAPSE THIS BACK TO A SINGLE TALLER VIEWPORT, and do not widen
+ * `FOCUSED_PIN_TOLERANCE_PX` to make one viewport enough: either move gives the
+ * defect (an entry effect that does nothing) a passing test again.
  */
 test('entering the map view frames the focused place, in the middle of the pane and of the screen (V31)', async ({
   page,
@@ -935,45 +1052,31 @@ test('entering the map view frames the focused place, in the middle of the pane 
   //
   // 2026-10-06: `openMapView` has already waited for the entry scroll to stop, so this
   // reads the layout the app settled in rather than one frame of the animation
-  // that got it there. The tolerance below is unchanged at 12px — the drift this
+  // that got it there. The tolerance is unchanged at 12px — the drift this
   // spec exists to catch is what made the spacer come out.
-  const offsets = await page.evaluate(() => {
-    const pane = document.querySelector('[data-testid="places-map-view-map"]')
-    const pin = document.querySelector('[data-focused-marker]')
-    if (pane === null || pin === null) return null
-    const paneBox = pane.getBoundingClientRect()
-    const pinBox = pin.getBoundingClientRect()
-    const paneCentre = { x: paneBox.x + paneBox.width / 2, y: paneBox.y + paneBox.height / 2 }
-    const pinCentre = { x: pinBox.x + pinBox.width / 2, y: pinBox.y + pinBox.height / 2 }
-    return {
-      pane: {
-        dx: Math.abs(paneCentre.x - window.innerWidth / 2),
-        dy: Math.abs(paneCentre.y - window.innerHeight / 2),
-      },
-      pin: {
-        dx: Math.abs(pinCentre.x - window.innerWidth / 2),
-        dy: Math.abs(pinCentre.y - window.innerHeight / 2),
-      },
-      scrollY: window.scrollY,
-    }
-  })
-  if (offsets === null) throw new Error('the map pane or the focused pin is not in the DOM')
-  expect(
-    offsets.pane.dy,
-    `the map pane must sit at the middle of the screen (measured ${JSON.stringify(offsets)})`,
-  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
-  expect(
-    offsets.pin.dy,
-    `the focused pin must be at the middle of the screen (measured ${JSON.stringify(offsets)})`,
-  ).toBeLessThanOrEqual(FOCUSED_PIN_TOLERANCE_PX)
-  expect(offsets.pane.dx, 'the map pane is centred horizontally').toBeLessThanOrEqual(
-    FOCUSED_PIN_TOLERANCE_PX,
-  )
+  await expectEntryFrameCentredOnScreen(page, '390x844')
 
   // (3) IT IS NOT THE EMPTY-STATE BRANCH, and not the home pin's frame: the map
   // reports a live camera and the focused place is the one it is on.
   expect(await mapCenter(page)).toMatch(/^-?\d+\.\d+,-?\d+\.\d+$/)
   await expect(page.getByTestId('places-map-card-0')).toHaveAttribute('aria-current', 'true')
+
+  // (4) THE SAME ENTRY AT A SHORTER, REAL PHONE — the measurement that FAILS if
+  // the app's entry effect stops scrolling the pane into the middle. See the
+  // docblock: at 390x844 the browser's own clamp lands the pane 11.64px from the
+  // middle on its own (inside the 12px tolerance), so that reading alone cannot
+  // fail for the defect this spec exists to catch. At 375x667 the clamp
+  // overshoots and the same deletion is caught (measured 65.77px on the failing
+  // run, 89.77px in the isolated probe that chose the viewport).
+  //
+  // A FULL RE-ENTRY — a fresh `/browse` load, the real scroll past the toggle
+  // threshold, a real click — and NOT a resize of the open view: a resize
+  // reflows the map view around a scroll offset the app chose for the taller
+  // screen, so it would measure the resize rather than the entry.
+  await page.setViewportSize({ width: 375, height: 667 })
+  await openMapView(page)
+  await expectPinCentredOnMap(page)
+  await expectEntryFrameCentredOnScreen(page, '375x667')
 })
 
 test('swiping the strip recentres the map, and a card opens its detail page (V24 s10)', async ({
