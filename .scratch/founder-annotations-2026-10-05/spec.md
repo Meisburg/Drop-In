@@ -102,5 +102,33 @@ must NOT contain the phrase "Location is off for Drop In" (the reading he had), 
 it must name the browser as the owner of the permission BEFORE offering the
 alternative.
 
-**Status of this item: ready-for-agent, unblocked, and the founder's own words are
-its specification.**
+**Status of this item: ready-for-agent, unblocked in CONTENT and BLOCKED IN MECHANICS — and the mechanics are the do-not-touch rule.**
+
+⚠️ **THE FIX IS WRITTEN AND CANNOT LAND YET, for a reason that is not about the
+copy.** The canonical strings belong in `src/lib/geolocation.ts` (which already
+owns the four named outcomes and has a sibling test), and both call sites must read
+them — but **one of the two call sites is `src/components/LocationModal.tsx`,
+which is ANOTHER SESSION'S UNCOMMITTED FILE** (it carries that session's "+Use my
+location" ripple work; `src/index.css` and `src/pages/FeedPage.tsx` are the other
+two). This session's standing rule is *do not touch another session's uncommitted
+files*, so the fix was written, verified as ready, and then REVERTED rather than
+left as a half-fix that would put the canonical copy on the onboarding screen
+while the founder's own surface — the modal's note — still said the thing he
+misread. **The moment that file is committed or reverted, this is a 10-minute
+change:** add `GEOLOCATION_OUTCOME_COPY` to `src/lib/geolocation.ts` with the
+`denied` sentence below (and the other two byte-identical to the modal's, which
+are the canonical ones), point `LocationModal.tsx`'s three `setDeviceNote` calls
+and `OnboardingPage.tsx`'s three `setLocationNote` calls at it, and add the
+properties to `geolocation.test.ts`.
+
+The `denied` sentence, ready to paste:
+
+> `'Drop In isn’t allowed to use your location — that setting lives in your browser, not in Drop In. Allow it there, or type an address.'`
+
+and the test's two properties: the string does NOT contain `Location is off for
+Drop In` (the reading he had), and it names the browser as the permission's owner
+BEFORE it offers the typed-address alternative.
+
+⚠️ **`git status` is the gate on this item, not the copy.** While those three
+files are uncommitted, this fix is parked; if they are still uncommitted at launch,
+it is a one-line hotfix rather than a slice.
