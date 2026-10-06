@@ -80,6 +80,17 @@ export function FirstRunTooltips({ onDismiss }: { onDismiss: () => void }) {
         height: rect.height,
       }
       const metrics: TooltipCardMetrics = { width: card.offsetWidth, height: card.offsetHeight }
+      /**
+       * The app's PRIMARY NAVIGATION rect, handed to the placement so a card
+       * beside the desktop left rail cannot cover the rail's own items — the
+       * measured defect `placeTooltip`'s docblock records (a swallowed tap on
+       * `nav-tab-inbox`). Below `md` the same `<nav>` is a horizontal bottom
+       * bar and the rule does not fire, so the phone's placement is unchanged.
+       * Absent on a route without the shell: the placement is then exactly
+       * what it was before this parameter existed.
+       */
+      const navElement = document.querySelector<HTMLElement>('nav[aria-label="Primary"]')
+      const navRect = navElement === null ? null : navElement.getBoundingClientRect()
       setTargetRect(rectNow)
       setCardMetrics(metrics)
       setPlacement(
@@ -87,6 +98,10 @@ export function FirstRunTooltips({ onDismiss }: { onDismiss: () => void }) {
           rectNow,
           { width: window.innerWidth, height: window.innerHeight },
           metrics,
+          undefined,
+          navRect === null
+            ? null
+            : { left: navRect.left, top: navRect.top, width: navRect.width, height: navRect.height },
         ),
       )
     }

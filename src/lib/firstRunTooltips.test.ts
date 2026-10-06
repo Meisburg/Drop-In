@@ -83,7 +83,7 @@ describe('the "what it does" property, on the tooltip surface', () => {
 describe('target binding', () => {
   it('resolves every tour label through the table (no current label relies on the fallback)', () => {
     for (const line of TOUR_LINES) {
-      // The fallback returns 'feed' for any unknown label — for the five
+      // The fallback returns 'dropIns' for any unknown label — for the five
       // labels the tour carries, the label MUST be a key of the table, so
       // the mapping below is what resolves it, not the escape hatch.
       expect(FIRST_RUN_TOOLTIPS_LABELS, `"${line.label}" has no table entry`).toContain(line.label)
@@ -91,15 +91,38 @@ describe('target binding', () => {
   })
 
   it('maps the labels to the controls the tour teaches', () => {
-    expect(tooltipTargetForLabel('Drop Ins')).toBe('feed')
+    expect(tooltipTargetForLabel('Drop Ins')).toBe('dropIns')
     expect(tooltipTargetForLabel('Inbox')).toBe('inbox')
     expect(tooltipTargetForLabel('Post a drop-in')).toBe('post')
     expect(tooltipTargetForLabel('Places')).toBe('places')
     expect(tooltipTargetForLabel('Profile')).toBe('profile')
   })
 
-  it('the fallback (a future sixth line) points at the feed, never crashes', () => {
-    expect(tooltipTargetForLabel('A line the tour does not carry yet')).toBe('feed')
+  /**
+   * THE FOUNDER'S RULE, PINNED WHERE IT CAN FAIL (2026-10-05).
+   *
+   * His report, verbatim: *"the first thing at lightboxes should be the drop-in
+   * icon on the bottom left of the app, but it doesn't do that at lightboxes
+   * something else randomly."* The first step's label was already "Drop Ins";
+   * its TARGET was the feed's `feed-section-header` — the "Near you" `<h1>` at
+   * the top of the page — while every step after it rang a nav control.
+   *
+   * Two assertions, because two things must stay true: the first step is the
+   * Drop Ins line, and the element that line rings is the nav's first tab. The
+   * regression this pins is a silent retarget back to a heading (or to any
+   * element that is not a control).
+   */
+  it('rings the nav’s Drop Ins tab on the FIRST step, not the feed heading', () => {
+    expect(TOOLTIPS_STEPS[0].label).toBe('Drop Ins')
+    expect(TOOLTIPS_STEPS[0].target).toBe('dropIns')
+    expect(TOOLTIP_TARGET_TEST_IDS.dropIns).toBe('nav-tab-drop-ins')
+    // And the old target is GONE, not merely unused: a leftover id would let a
+    // future edit point back at the heading without reading as a change.
+    expect(Object.values(TOOLTIP_TARGET_TEST_IDS)).not.toContain('feed-section-header')
+  })
+
+  it('the fallback (a future sixth line) points at the Drop Ins tab, never crashes', () => {
+    expect(tooltipTargetForLabel('A line the tour does not carry yet')).toBe('dropIns')
   })
 })
 
@@ -240,5 +263,64 @@ describe('placeTooltip', () => {
     expect(placement.top).toBeGreaterThanOrEqual(8)
     expect(placement.top).toBeLessThan(viewport.height)
     expect(placement.left).toBeGreaterThanOrEqual(8)
+  })
+
+  /**
+   * ⚠️ THE MEASURED DEFECT THIS RULE REPAIRS (2026-10-05, 1280×720).
+   *
+   * Above `md` the app's navigation is a LEFT RAIL at the viewport's left edge,
+   * and the tour's steps ring nav controls. With the first step ringing the
+   * Drop Ins tab, the card was placed BELOW it and left-clamped to 8 — so it
+   * occupied x 8..296, straight over the rail's own column (x 0..72), and
+   * `document.elementFromPoint` at the centre of `nav-tab-inbox` returned THE
+   * TOUR rather than the tab. A parent's tap on Inbox was swallowed.
+   * `e2e/first-run-tooltips.e2e.ts`'s pass-through leg caught it. The card now
+   * starts at the rail's right edge, for every rail item.
+   *
+   * The rects are the MEASURED ones (probe, 390×844 and 1280×720), not invented:
+   * the rail's items are 71×58 at x 0, stacked from y 53.
+   */
+  it('sits to the RIGHT of a vertical nav rail, so it can never cover a tab', () => {
+    const nav = { left: 0, top: 53, width: 72, height: 667 }
+    const card = { width: 288, height: 210 }
+    const wide = { width: 1280, height: 720 }
+    const railItems = [
+      { left: 0, top: 53, width: 71, height: 58 }, // Drop Ins
+      { left: 0, top: 111, width: 71, height: 58 }, // Inbox
+      { left: 0, top: 169, width: 71, height: 58 }, // Post
+      { left: 0, top: 227, width: 71, height: 58 }, // Places
+      { left: 0, top: 285, width: 71, height: 58 }, // Profile
+    ]
+    for (const target of railItems) {
+      const placement = placeTooltip(target, wide, card, undefined, nav)
+      // The RULE, as one number: the rail's right edge plus the gap.
+      expect(placement.left).toBe(nav.left + nav.width + 12)
+      // And the PROPERTY the rule exists for: the card never touches the rail.
+      expect(
+        placement.left,
+        'the card must clear the rail, or a tap on a covered tab is swallowed',
+      ).toBeGreaterThanOrEqual(nav.left + nav.width)
+    }
+  })
+
+  it('leaves the phone bottom bar alone — a horizontal nav does not fire the rail rule', () => {
+    // Measured at 390×844: the bar spans the viewport, 58px tall at y 786.
+    const nav = { left: 0, top: 786, width: 390, height: 58 }
+    const target = { left: 0, top: 786, width: 84, height: 58 } // the Drop Ins tab
+    const card = { width: 288, height: 160 }
+    const placement = placeTooltip(target, { width: 390, height: 844 }, card, undefined, nav)
+    expect(placement.side).toBe('above')
+    expect(placement.left).toBe(8)
+    expect(placement.top + card.height, 'the card sits clear above the bar').toBeLessThanOrEqual(
+      nav.top,
+    )
+  })
+
+  it('is byte-identical when there is no nav (a route without the shell)', () => {
+    const target = { left: 150, top: 300, width: 90, height: 40 }
+    const card = { width: 288, height: 160 }
+    expect(placeTooltip(target, viewport, card)).toEqual(
+      placeTooltip(target, viewport, card, undefined, null),
+    )
   })
 })

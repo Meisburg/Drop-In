@@ -75,6 +75,32 @@ test('the tour shows on arrival, walks, ends on Escape — and the second load i
     await expect(tour).toContainText('Drop Ins')
     await expect(tour).toContainText('browse drop-ins within your radius')
 
+    /**
+     * THE FOUNDER'S RULE, ASSERTED IN THE BROWSER (2026-10-05).
+     *
+     * His report, verbatim: *"the first thing at lightboxes should be the drop-in
+     * icon on the bottom left of the app, but it doesn't do that at lightboxes
+     * something else randomly."* The step's LABEL was already "Drop Ins"; its
+     * TARGET was the feed's "Near you" `<h1>` at the top of the page, which is
+     * what he saw as something else. The ring is the target's rect ± 4px
+     * (`FirstRunTooltips`'s `deco.ring`), so "the ring IS the nav tab" is a
+     * subtraction a browser can check. The unit test pins the mapping; this pins
+     * that the mapping reaches the real control on the real screen.
+     */
+    const firstRing = tour.getByTestId('first-run-tooltips-ring')
+    await expect(firstRing).toBeVisible()
+    const ringBox = await firstRing.boundingBox()
+    const dropInsBox = await viewer.getByTestId('nav-tab-drop-ins').boundingBox()
+    expect(ringBox, 'the first step must draw a ring').not.toBeNull()
+    expect(dropInsBox, 'the nav renders the Drop Ins tab for a finished run').not.toBeNull()
+    expect(
+      Math.abs(dropInsBox!.x - (ringBox!.x + 4)),
+      `the first lightbox must ring the Drop Ins nav tab (ring ${JSON.stringify(ringBox)}, tab ${JSON.stringify(dropInsBox)})`,
+    ).toBeLessThanOrEqual(2)
+    expect(Math.abs(dropInsBox!.y - (ringBox!.y + 4))).toBeLessThanOrEqual(2)
+    expect(Math.abs(dropInsBox!.width - (ringBox!.width - 8))).toBeLessThanOrEqual(2)
+    expect(Math.abs(dropInsBox!.height - (ringBox!.height - 8))).toBeLessThanOrEqual(2)
+
     // NEXT walks the steps: step 2 is the "Inbox" line.
     await tour.getByRole('button', { name: 'Next' }).click()
     await expect(tour).toContainText('Inbox')
@@ -131,11 +157,18 @@ test('a tap on the app passes through the tour (the veil never blocks)', async (
     const tour = tourOf(viewer)
     await expect(tour).toBeVisible({ timeout: 30_000 })
 
-    // THE PARENT IGNORES THE TOUR: with it still up, they tap the inbox tab
-    // (the tour's step 1 card sits by the feed's header — far from the nav).
+    // THE PARENT IGNORES THE TOUR: with it still up, they tap the inbox tab.
     // The capture-phase pointerdown dismisses the tour AND the tap activates
-    // the control: both happen in one gesture. (Step 1's target is the feed
-    // header, so the card cannot sit on the nav in either layout.)
+    // the control: both happen in one gesture.
+    //
+    // ⚠️ THIS LEG IS WHY STEP 1'S TARGET MOVED, AND IT CAUGHT THE REASON THE
+    // MOVE ALONE WAS NOT ENOUGH (2026-10-05). Once step 1 rang the nav's Drop
+    // Ins tab, this tap was SWALLOWED at desktop width: the card was placed
+    // below the rail's first item and left-clamped to x 8, so it sat over the
+    // left rail (x 0..72) and `elementFromPoint` at Inbox's centre returned the
+    // tour. `placeTooltip` now starts a card beside a VERTICAL rail at the
+    // rail's right edge, so no rail item is ever covered — the rail's items in
+    // the unit test are these same measured rects.
     await viewer.getByTestId('nav-tab-inbox').click()
     await expect(viewer.getByTestId('new-message-button')).toBeVisible({ timeout: 30_000 })
     await expect(viewer.getByTestId('first-run-tooltips')).toHaveCount(0)

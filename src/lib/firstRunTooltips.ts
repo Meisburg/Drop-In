@@ -101,14 +101,37 @@ export function isFirstRunTooltipsArmed(state: unknown): state is FirstRunToolti
 /**
  * The real control each tour line points at, by the control's testid.
  *
- * "Drop Ins" points at the feed's own section header — the surface the line
- * teaches (the feed IS the Drop Ins tab); the other four point at the nav
- * controls in the order the nav renders them (bottom bar below `md`, left
- * rail above it — the tour works in both arrangements because it measures
- * the target's rect, not its layout).
+ * EVERY FIVE POINT AT A NAV CONTROL, and that is a founder reversal recorded
+ * here rather than assumed. His report, verbatim (impeccable live annotation,
+ * 2026-10-05T18:20, recovered into
+ * `.scratch/founder-annotations-2026-10-05/source-annotations.json`):
+ *
+ *   *"After you create an account and it does the tooltips and lightboxes
+ *   different things, the first thing at lightboxes should be the drop-in icon
+ *   on the bottom left of the app, but it doesn't do that at lightboxes
+ *   something else randomly."*
+ *
+ * ⚠️ WHAT WAS WRONG, and why it looked "random": `feed` pointed at
+ * `feed-section-header` — the feed's "Near you" `<h1>` at the TOP of the page,
+ * a static heading — while the four steps after it ring nav controls. r3-7 chose
+ * it deliberately ("the feed IS the Drop Ins tab"), and the founder overruled
+ * that: the first lightbox must ring the icon a parent can PRESS, in the place
+ * they will look for it. A probe (`.scratch/map-and-distance/zz-tour-probe.e2e.ts`
+ * at 390×844 and 1280×720) measured every step's ring against the element
+ * actually under its centre, which is how the mismatch was pinned rather than
+ * guessed.
+ *
+ * THE FIRST NAV CONTROL, in both layouts, is the SAME testid: below `md` the
+ * bottom bar's leftmost tab, above it the left rail's first item. So the target
+ * is layout-neutral and the tour still works in both arrangements by measuring
+ * the target's rect rather than its position.
  */
 export const TOOLTIP_TARGET_TEST_IDS = {
-  feed: 'feed-section-header',
+  /**
+   * The Drop Ins tab — the bottom-left icon on a phone, the rail's first item on
+   * a wide screen. NOT the feed's section header: see the docblock above.
+   */
+  dropIns: 'nav-tab-drop-ins',
   inbox: 'nav-tab-inbox',
   post: 'feed-post-drop-in',
   places: 'nav-tab-places',
@@ -131,12 +154,12 @@ export interface TooltipStep {
 /**
  * The label→target table. It covers exactly the labels in
  * `FIRST_RUN_TOOLTIPS_LABELS` (pinned together: a label that joins
- * `TOUR_LINES` without a table entry degrades to pointing at the feed
+ * `TOUR_LINES` without a table entry degrades to pointing at the Drop Ins tab
  * instead of crashing the lookup, and the sibling test pins that every
  * CURRENT label resolves through the table, not the fallback).
  */
 const LABEL_TO_TARGET: Record<string, TooltipTargetId> = {
-  'Drop Ins': 'feed',
+  'Drop Ins': 'dropIns',
   Inbox: 'inbox',
   'Post a drop-in': 'post',
   Places: 'places',
@@ -152,7 +175,7 @@ export const FIRST_RUN_TOOLTIPS_LABELS: readonly string[] = Object.keys(LABEL_TO
 
 /** Which control a tour line teaches. */
 export function tooltipTargetForLabel(label: string): TooltipTargetId {
-  return LABEL_TO_TARGET[label] ?? 'feed'
+  return LABEL_TO_TARGET[label] ?? 'dropIns'
 }
 
 /**
@@ -246,6 +269,14 @@ export interface TooltipPlacement {
 const TOOLTIP_VIEWPORT_MARGIN = 8
 const TOOLTIP_TARGET_GAP = 12
 
+/** The primary navigation's viewport rect — what the card must never cover. */
+export interface TooltipNavRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 /**
  * Where the card sits for a target:
  *
@@ -256,27 +287,57 @@ const TOOLTIP_TARGET_GAP = 12
  *     `TOOLTIP_VIEWPORT_MARGIN` from the left/right edges otherwise;
  *   - clamped into the viewport top-to-bottom as well, so a degenerate
  *     target+card pair (card taller than the viewport) still renders
- *     somewhere sensible rather than at a negative top.
+ *     somewhere sensible rather than at a negative top;
+ *   - ⚠️ and TO THE RIGHT OF THE NAVIGATION when `nav` is a VERTICAL RAIL
+ *     (see below — this is a measured defect repair, not a preference).
  *
- * Pure: the caller measures the three inputs (the card is rendered once,
- * invisibly, before its first placement).
+ * Pure: the caller measures the inputs (the card is rendered once, invisibly,
+ * before its first placement).
+ *
+ * ⚠️ WHY THE VERTICAL-RAIL CASE EXISTS (measured 2026-10-05, 1280×720).
+ * Above `md` the app's navigation is a LEFT RAIL spanning the viewport's full
+ * height at its left edge (`App.tsx`: `md:grid-cols-[4.5rem_minmax(0,1fr)]`),
+ * and the tour's five steps ring five nav controls. The card is 288px wide and
+ * was left-clamped to `TOOLTIP_VIEWPORT_MARGIN`, so a card placed BELOW any
+ * rail item landed at x 8..296 — directly over the rail's own column. Measured
+ * with the first step's target (`nav-tab-drop-ins`, box 0,53,71×58): the card
+ * occupied 8,123,288×210 and `document.elementFromPoint` at the centre of
+ * `nav-tab-inbox` returned THE TOUR, not the tab. A parent's tap on Inbox was
+ * swallowed, which `e2e/first-run-tooltips.e2e.ts`'s pass-through leg caught
+ * the moment the first step began ringing a nav control instead of the feed's
+ * heading. The fix is one rule: **a card beside a vertical rail sits to the
+ * RIGHT of the rail**, so it can cover neither the rail nor the tabs in it.
+ * (The bottom bar needs no rule: `side` is already `'above'` there, 12px clear
+ * of the bar's top edge, because there is no room below.)
  */
 export function placeTooltip(
   target: TooltipTargetRect,
   viewport: TooltipViewport,
   card: TooltipCardMetrics,
   gap: number = TOOLTIP_TARGET_GAP,
+  nav: TooltipNavRect | null = null,
 ): TooltipPlacement {
   const belowTop = target.top + target.height + gap
   const side: 'above' | 'below' =
     belowTop + card.height + TOOLTIP_VIEWPORT_MARGIN <= viewport.height ? 'below' : 'above'
   const top = side === 'below' ? belowTop : target.top - gap - card.height
   const centeredLeft = target.left + target.width / 2 - card.width / 2
-  const left = clampNumber(
+  const clampedLeft = clampNumber(
     centeredLeft,
     TOOLTIP_VIEWPORT_MARGIN,
     Math.max(TOOLTIP_VIEWPORT_MARGIN, viewport.width - card.width - TOOLTIP_VIEWPORT_MARGIN),
   )
+  // A rail is taller than it is wide. Beside one, the card starts at its right
+  // edge — never at the margin, which is where the clamping above puts it.
+  const besideRail =
+    nav !== null && nav.height > nav.width ? nav.left + nav.width + gap : null
+  const left =
+    besideRail === null
+      ? clampedLeft
+      : Math.min(
+          besideRail,
+          Math.max(TOOLTIP_VIEWPORT_MARGIN, viewport.width - card.width - TOOLTIP_VIEWPORT_MARGIN),
+        )
   return { side, top: clampNumber(top, TOOLTIP_VIEWPORT_MARGIN, viewport.height - 1), left }
 }
 
