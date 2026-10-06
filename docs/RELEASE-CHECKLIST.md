@@ -39,10 +39,16 @@ before anything was deleted:
 
 **WHAT IS LEFT IS SHORTER THAN IT WAS:**
 
-1. **An FCM Firebase project** — the project EXISTS
-   (`project-1ab24a5b-7d94-4c8d-bbc`); what remains is that the CLI on this box is
-   **not authenticated**, so fetching `google-services.json` needs one login from
-   you. Everything after that is mine.
+1. ~~An FCM Firebase project~~ — **DONE 2026-10-06.** The CLI is logged in, the
+   Android app is **registered by CLI** (app id
+   `1:773084814487:android:9519c5aa6a8cd1e896ddd2`, package
+   `app.dropin.playdate`), `android/app/google-services.json` is written and
+   gitignored with its reasoning, and the **upload keystore's SHA-1 is registered**
+   on the app. **Proven, not assumed**: a debug build generated `google_app_id`,
+   `gcm_defaultSenderId`, `google_api_key` and `project_id` into the merged
+   resources, so the plugin really ran. ⚠️ **The service-account key is still
+   needed for the SEND side** (FCM HTTP v1) and belongs in the Edge Function's
+   secrets, never the repo — that is a different artifact from the client config.
 2. **The upload keystore is FOUND** — `/home/jmeisburg/.android-keys/drop-in-upload.jks`
    (alias `upload`, valid to 2054), so slice 2.6 is unblocked. Its public
    fingerprints are recorded in the plan. ⚠️ Play App Signing adds a SECOND key

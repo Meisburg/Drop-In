@@ -235,6 +235,29 @@ the app when installed. Both files are served from the web app.
 - **Files in scope:** `public/.well-known/apple-app-site-association` (new),
   `public/.well-known/assetlinks.json` (new), `capacitor.config.ts`, the router's
   link handling.
+- **✅ FIREBASE IS WIRED (2026-10-06), so this slice's Android half is unblocked.**
+  Project `project-1ab24a5b-7d94-4c8d-bbc` (number `773084814487`), display name
+  "Drop In". Registered by CLI, not by hand:
+  - app id **`1:773084814487:android:9519c5aa6a8cd1e896ddd2`**, package
+    `app.dropin.playdate`;
+  - `npx firebase-tools apps:sdkconfig ANDROID <appId> --out android/app/google-services.json`
+    wrote the config (709 bytes);
+  - the **upload keystore's SHA-1** (`68:12:56:A3:…`) is registered on the app, so
+    Firebase can verify builds from this keystore.
+  **PROVEN, NOT ASSUMED**: a debug build with the file in place generated
+  `google_app_id`, `gcm_defaultSenderId`, `google_api_key` and `project_id` into
+  the merged resources — the plugin really ran; `android/app/build.gradle` had the
+  check-and-apply block waiting all along.
+  ⚠️ **`android/app/google-services.json` IS GITIGNORED** (`android/.gitignore:70`,
+  uncommented deliberately, with the reasoning in place): it is machine-specific
+  config, regenerable in one command, and this repo is PUBLIC. Capacitor ships that
+  line commented out; leaving it commented would have committed it silently.
+  ⚠️ **THE SERVICE-ACCOUNT KEY IS STILL NEEDED** for the send side: FCM HTTP v1
+  authenticates with a Google service account, and that JSON goes in the Edge
+  Function's SECRETS — never the repo. That is a separate artifact from
+  `google-services.json` (which serves the CLIENT) and its absence does not block
+  writing the code, only testing a real send.
+
 - **🔑 THE KEYSTORE IS FOUND (2026-10-06), so Android no longer needs a founder
   input for this slice:** `/home/jmeisburg/.android-keys/drop-in-upload.jks`, alias
   `upload`, referenced by the gitignored `android/keystore.properties`. Its PUBLIC

@@ -52,17 +52,41 @@ captures/
 # Comment next line if keeping position of elements in Navigation Editor is relevant for you
 .idea/navEditor.xml
 
-# Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# Keystore files.
+#
+# UNCOMMENTED ON PURPOSE (2026-10-05). The template ships these commented out, and
+# the Play upload keystore does not exist yet, so nothing leaks today. It becomes a
+# leak the moment one is created and someone runs `git add -A`, and an upload key
+# in git history cannot be rotated without losing the ability to update the app.
+*.jks
+*.keystore
+keystore.properties
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 .cxx/
 
 # Google Services (e.g. APIs or Firebase)
-# google-services.json
+google-services.json
+#
+# ⚠️ THE LINE ABOVE IS UNCOMMENTED ON PURPOSE, AND IT IS THIS REPO'S CHOICE
+# RATHER THAN CAPACITOR'S DEFAULT. `npx cap add android` wrote it commented out,
+# and generators usually leave it that way because the file is harmless-ish. It is
+# ignored here for three reasons:
+#
+#   1. IT IS MACHINE-SPECIFIC CONFIG, not source. It carries the project number,
+#      the app id and an API key for THIS Firebase project. A fresh clone does not
+#      have it and does not need it — `android/app/build.gradle` already checks for
+#      the file and logs "Push Notifications won't work" instead of failing.
+#   2. IT IS REGENERABLE IN ONE COMMAND, and that command is recorded in
+#      `.scratch/native-apps/plan.md`:
+#        npx firebase-tools apps:sdkconfig ANDROID <appId> --out android/app/google-services.json
+#      so ignoring it costs nobody a step, while committing it would publish a
+#      config blob that goes stale the moment the Firebase project changes.
+#   3. THE API KEY IN IT IS BROADER THAN IT LOOKS. Firebase's Android API key is
+#      restricted by app-signature on Google's side, which is why shipping it is
+#      common practice — but "common practice" is not a reason to put it in a
+#      PUBLIC repo (this repo is public) when one command regenerates it.
 
 # Freeline
 freeline.py
