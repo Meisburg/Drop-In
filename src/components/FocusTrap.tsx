@@ -8,26 +8,29 @@ import { nextTrapTarget, shouldInterceptTab, shouldYieldToNestedDialog } from '.
  * intercepted at both edges.
  *
  * RESTORING FOCUS TO THE OPENER IS CONDITIONAL, and the cleanup below is why it
- * silently does nothing for some callers. It gives focus back to whatever had
- * focus when this effect RAN. An owner that focuses its first control in an
- * effect declared BEFORE its `useFocusTrap` call moves focus into the dialog
- * first, so `previouslyFocused` here is that IN-DIALOG control rather than the
- * trigger; when the dialog unmounts, `document.contains(previouslyFocused)` is
- * false and the restore is skipped, leaving `document.activeElement` on `<body>`.
- * That order is the whole mechanism and it is verifiable by reading the call
- * sites — no run is needed to see which effect React executes first.
+ * silently does nothing for some callers — which is why those callers no longer
+ * rely on it. It gives focus back to whatever had focus when this effect RAN. An
+ * owner that focuses its first control in an effect declared BEFORE its
+ * `useFocusTrap` call moves focus into the dialog first, so `previouslyFocused`
+ * here is that IN-DIALOG control rather than the trigger; when the dialog
+ * unmounts, `document.contains(previouslyFocused)` is false and the restore is
+ * skipped, leaving `document.activeElement` on `<body>`. That order is the whole
+ * mechanism and it is verifiable by reading the call sites — no run is needed to
+ * see which effect React executes first.
  *
- * The affected set is therefore exact, and it is NOT every caller:
- *   - `DeletePlaydateDialog.tsx` (focus at `:46`, trap at `:53`) and
- *     `ReportDialog.tsx` (`:46`, `:53`) declare focus first — restore LOST;
- *   - `ModalShell.tsx` does the same (its focus effect precedes its
- *     `useFocusTrap`), so its two consumers `ConfirmDialog` and
- *     `RsvpConfirmationDialog` lose it too;
- *   - `LocationModal.tsx` and `NewPlaydatePage.tsx:380` have NO
- *     focus-into-dialog effect (LocationModal's `:88` only clears a draft), so
- *     they capture the real opener and the restore DOES run.
- * Tracked as its own follow-up ticket (the fix is an opener-capture change in
- * the calling shell, not here).
+ * THAT SET IS FIXED ELSEWHERE, as the follow-up ticket here said it should be:
+ * the fix is an opener capture in the CALLING SHELL, never in this file.
+ * `DeletePlaydateDialog.tsx`, `ReportDialog.tsx` and `ModalShell.tsx` (hence
+ * `ConfirmDialog` and `RsvpConfirmationDialog`) each capture the real opener with
+ * `useOpenerFocusRestore` — a LAYOUT effect, which React flushes before this
+ * PASSIVE one — and restore through the pure `planFocusRestore`. The lane
+ * `scripts/focus-trap-check.mjs` measured the Report dialog's focus falling to
+ * `<body>` and now GATES the restore.
+ *
+ * The cleanup below is therefore the WORKING path for exactly the callers with
+ * no focus-into-dialog effect — `LocationModal.tsx` and
+ * `NewPlaydatePage.tsx:380` (LocationModal's `:88` only clears a draft) — and it
+ * stays as it is for them. Do not "simplify" it away.
  *
  * `useFocusTrap` is used by `ModalShell.tsx` and directly by
  * `DeletePlaydateDialog.tsx`, `ReportDialog.tsx`, `LocationModal.tsx` and
@@ -107,14 +110,14 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
     document.addEventListener('keydown', onKeyDown, true)
     return () => {
       document.removeEventListener('keydown', onKeyDown, true)
-      // Hand focus back to whatever had it when this effect ran. For a caller
-      // whose focus-into-dialog effect is declared before its `useFocusTrap`
-      // call, that is a control INSIDE the dialog, and the guard below turns the
-      // restore into a silent skip: the captured control unmounts with the
-      // dialog, so `document.contains` is false and nothing is focused. For a
-      // caller with no such effect (`LocationModal`, `NewPlaydatePage`) the
-      // capture is the real opener and this restore works. See the header for
-      // which callers are which.
+      // Hand focus back to whatever had it when this effect ran. This IS the
+      // restore for a caller with no focus-into-dialog effect (`LocationModal`,
+      // `NewPlaydatePage`): the capture is the real opener. For a caller whose
+      // focus-into effect is declared before its `useFocusTrap` call it is a
+      // control INSIDE the dialog, and the guard below turns the restore into a
+      // silent skip — that control unmounts with the dialog. Those callers no
+      // longer depend on it: they capture the opener in the shell
+      // (`useOpenerFocusRestore`). See the header.
       if (previouslyFocused !== null && document.contains(previouslyFocused) && typeof previouslyFocused.focus === 'function') {
         previouslyFocused.focus()
       }

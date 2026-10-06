@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useFocusTrap } from './FocusTrap'
+import { useOpenerFocusRestore } from './useOpenerFocusRestore'
 
 /**
  * The app's one portal-modal shell (V25 ticket 13) — the backdrop, the
@@ -36,29 +37,32 @@ import { useFocusTrap } from './FocusTrap'
  *  - `role="dialog"`, `aria-modal="true"`, and a REAL accessible name via
  *    `aria-labelledby` wired to the rendered `<h2>` (not an `aria-label`
  *    duplicating the visible title);
- *  - focus moved INTO the dialog on open and Tab trapped there (`useFocusTrap`,
- *    the shared seam). **Restoring focus to the opener on close is NOT
- *    performed today** (V25 ticket 13 recovery; follow-up ticket recorded by
- *    the orchestrator). The reason is an effect-ordering bug in this shell, not
- *    in the trap, and it is established by READING the order below rather than
- *    by a logged run: the focus-into-dialog effect at the top of this component
- *    is declared BEFORE the `useFocusTrap` call, so React runs it first, the
- *    trap's effect then captures `document.activeElement` — the dialog's own
- *    first control, by then — as "previously focused", and when the dialog
- *    unmounts that control is no longer in the document, so
- *    `FocusTrap.tsx`'s `document.contains(previouslyFocused)` guard skips the
- *    restore and `document.activeElement` falls to `<body>`. The same order is
- *    what makes the affected set exact: a caller whose focus-into-dialog effect
- *    is declared before `useFocusTrap` loses the restore, which is this shell
- *    (hence `ConfirmDialog.tsx` and `RsvpConfirmationDialog.tsx`, the only two
- *    consumers), `DeletePlaydateDialog.tsx:45-53` and `ReportDialog.tsx:45-53`.
+ *  - focus moved INTO the dialog on open, Tab trapped there (`useFocusTrap`,
+ *    the shared seam), and focus RETURNED TO THE OPENER on close
+ *    (`useOpenerFocusRestore`, the second shared seam). The second half is a
+ *    FIX, and the mechanism it corrects is worth keeping: until it landed this
+ *    shell dropped focus to `<body>` on close, because the focus-into-dialog
+ *    effect below is declared BEFORE the `useFocusTrap` call, so the trap's
+ *    effect captured `document.activeElement` — the dialog's own first control,
+ *    by then — as "previously focused", and when the dialog unmounts that
+ *    control is no longer in the document, so the trap's
+ *    `document.contains(previouslyFocused)` guard skipped the restore. The
+ *    opener capture therefore lives in the CALLING SHELL and reads the real
+ *    trigger in a LAYOUT effect, which React flushes before the trap's PASSIVE
+ *    one. That order is also what makes the affected set exact: a caller whose
+ *    focus-into-dialog effect is declared before `useFocusTrap` lost the
+ *    restore, which is this shell (hence `ConfirmDialog.tsx` and
+ *    `RsvpConfirmationDialog.tsx`, the only two consumers, both fixed by this
+ *    one call), `DeletePlaydateDialog.tsx:45-53` and `ReportDialog.tsx:45-53`,
+ *    which now call the same hook.
  *    `LocationModal.tsx` and `NewPlaydatePage.tsx:380` call `useFocusTrap`
  *    directly and have no focus-into-dialog effect at all (LocationModal's
  *    effect at `:88` only clears a draft), so for them the trap captures the
- *    real opener and the restore DOES run. `CropPhotoDialog` uses no trap.
+ *    real opener and the restore already ran — they deliberately do NOT call the
+ *    new hook and their behaviour is unchanged. `CropPhotoDialog` uses no trap.
  *    Closing the dialog still leaves the parent on the same page with the action
- *    intact — which is what this ticket requires — the four surfaces above are
- *    simply not re-focused onto the control that opened them;
+ *    intact — which is what this ticket requires — and now also puts focus back
+ *    on the control that opened it;
  *  - Escape and a backdrop click both dismiss, and BOTH yield while `busy` is
  *    true (a write in flight must not be dismissed out from under itself);
  *  - the page behind cannot scroll (`document.body.style.overflow = 'hidden'`,
@@ -147,9 +151,13 @@ export function ModalShell({
     target?.focus()
   }, [initialFocusRef])
 
+  // Hand focus back to the control that opened this dialog when it closes. A
+  // LAYOUT effect on purpose: React flushes it before the focus-into effect
+  // above and before `useFocusTrap`, so it captures the real trigger rather than
+  // the dialog's own first control. See the semantics block at the top.
+  useOpenerFocusRestore()
+
   // Focus is moved INTO the dialog by the effect above and Tab is trapped here.
-  // Focus is NOT restored to the opener on close — see the semantics block at the
-  // top of this file for the measurement and the follow-up ticket.
   useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click), unless the write is in flight.

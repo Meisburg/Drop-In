@@ -119,3 +119,52 @@ export function shouldYieldToNestedDialog(
   if (activeInsideRoot) return false
   return activeInsideAnotherDialog
 }
+
+/**
+ * WHO GETS FOCUS BACK WHEN A DIALOG CLOSES — PURE.
+ *
+ * THE DEFECT THIS DECIDES ABOUT, measured by `scripts/focus-trap-check.mjs` on a
+ * fresh build: closing the Report dialog left `document.activeElement` on
+ * `<body>`, so a keyboard user lost their place. `useFocusTrap`'s own cleanup
+ * gives focus back to whatever had focus when ITS effect ran, and the shells
+ * that focus their first control in an effect declared earlier
+ * (`ReportDialog`, `DeletePlaydateDialog`, `ModalShell` — whose consumers are
+ * `ConfirmDialog` and `RsvpConfirmationDialog`) therefore handed that effect an
+ * IN-DIALOG control. On unmount the control is out of the document, the trap's
+ * guard skips the restore, and focus falls to `<body>`.
+ *
+ * THE FIX IS AN OPENER CAPTURE IN THE CALLING SHELL, and this function is that
+ * fix's decision. The shell captures `document.activeElement` in a LAYOUT
+ * effect: React flushes every layout effect in a commit before the first
+ * PASSIVE one, so the capture reads the trigger the parent actually pressed even
+ * though the focus-into-dialog effect is declared above it. On unmount the shell
+ * asks here whether the capture is still worth focusing.
+ *
+ * `openerStillInDocument` is PASSED IN rather than read here (`document.contains`
+ * stays in the component) so the rule is testable in this repo's DOM-less test
+ * environment — the same split as the rest of this module.
+ *
+ * Returns the element to focus, or `null` to LEAVE FOCUS WHERE IT IS. Null is
+ * the honest answer in both miss cases: there was no opener to capture (a
+ * programmatic open), or the opener is gone from the document (the row that
+ * opened a confirm was itself unmounted by the action). Focusing a detached node
+ * is a no-op, and inventing a different target would move focus somewhere the
+ * user never was — a product decision, not this rule's.
+ *
+ * A RECORDED SECOND COPY, and why it stays: `useFocusTrap`'s own cleanup still
+ * carries this same "restore only if `document.contains`" rule inline, because
+ * that cleanup IS the working restore for the two callers with no
+ * focus-into-dialog effect (`LocationModal`, `NewPlaydatePage`) — this slice's
+ * ticket is explicit that the fix is an opener capture in the CALLING SHELL and
+ * that those two must not change, so the trap's runtime is left byte-identical.
+ * Folding its guard into this function is a follow-up that must re-measure those
+ * two callers, not a tidy-up to slip into this slice.
+ */
+export function planFocusRestore<T extends { focus(): void }>(
+  capturedOpener: T | null,
+  openerStillInDocument: boolean,
+): T | null {
+  if (capturedOpener === null) return null
+  if (!openerStillInDocument) return null
+  return capturedOpener
+}

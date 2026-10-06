@@ -5,6 +5,7 @@ import { createReport } from '../lib/db'
 import { validateReportReason } from '../lib/trust'
 import { errorId, fieldA11y } from '../lib/a11y'
 import { useFocusTrap } from './FocusTrap'
+import { useOpenerFocusRestore } from './useOpenerFocusRestore'
 
 /**
  * The report flow (slice 4): a reason (required, inline-validated) + submit
@@ -13,8 +14,9 @@ import { useFocusTrap } from './FocusTrap'
  * calm "a moderator will look at it" state — no further handling in V1
  * (the mod tools land in slice 5).
  *
- * Accessible enough for V1: focus lands in the dialog on open, and Esc or a
- * backdrop click closes it. Rendered into document.body (portal) so it is
+ * Focus lands in the dialog on open and RETURNS TO THE TRIGGER on close (the
+ * shared `useOpenerFocusRestore` capture); Esc or a backdrop click closes it.
+ * Rendered into document.body (portal) so it is
  * never a DOM descendant of an interactive element — in DropInCard the
  * dialog sits inside the card's <Link>, which must stay the card, not a
  * container.
@@ -46,10 +48,15 @@ export function ReportDialog({
     textareaRef.current?.focus()
   }, [])
 
-  // Trap Tab inside the dialog. Focus is NOT restored to the trigger on close:
-  // the effect above focuses the textarea BEFORE `useFocusTrap` runs, so the
-  // trap captures it as "previously focused" and skips the restore when it
-  // unmounts. See `FocusTrap.tsx`'s header.
+  // Hand focus back to the trigger on close. A LAYOUT effect on purpose: React
+  // flushes it before the focus-into effect above and before `useFocusTrap`, so
+  // it captures the REPORT CONTROL the parent pressed. Without it the trap's own
+  // cleanup captures the textarea (an in-dialog control by then), skips the
+  // restore on unmount, and focus falls to `<body>` — the defect
+  // `scripts/focus-trap-check.mjs` measured and now gates.
+  useOpenerFocusRestore()
+
+  // Trap Tab inside the dialog.
   useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click).

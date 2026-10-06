@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { errorId, fieldA11y } from '../lib/a11y'
 import { useFocusTrap } from './FocusTrap'
+import { useOpenerFocusRestore } from './useOpenerFocusRestore'
 
 /**
  * The delete-a-post confirmation (V8 ticket 05) — the ReportDialog pattern:
@@ -46,10 +47,14 @@ export function DeletePlaydateDialog({
     cancelRef.current?.focus()
   }, [])
 
-  // Trap Tab inside the dialog. Focus is NOT restored to the trigger on close:
-  // the effect above focuses Cancel BEFORE `useFocusTrap` runs, so the trap
-  // captures Cancel as "previously focused" and skips the restore when it
-  // unmounts. See `FocusTrap.tsx`'s header.
+  // Hand focus back to the trigger on close. A LAYOUT effect on purpose: React
+  // flushes it before the focus-into effect above and before `useFocusTrap`, so
+  // it captures the DELETE control the host pressed rather than the Cancel
+  // button the trap would otherwise see. One shared seam with ReportDialog and
+  // ModalShell — see `useOpenerFocusRestore`.
+  useOpenerFocusRestore()
+
+  // Trap Tab inside the dialog.
   useFocusTrap(dialogRef, true)
 
   // Esc closes (same as a backdrop click), unless the write is in flight.

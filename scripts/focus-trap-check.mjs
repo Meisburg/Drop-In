@@ -29,7 +29,9 @@
  *   5. Tab from the LAST control WRAPS to the first, and Shift+Tab from the FIRST
  *      wraps to the last — the edge behaviour the trap exists for, asserted at
  *      both edges rather than only "it stayed inside";
- *   6. Escape closes the dialog.
+ *   6. Escape closes the dialog, and focus RETURNS to the Report control that
+ *      opened it (until the opener-capture fix this lane measured focus falling
+ *      to `<body>` and did not gate it — see the last bullet below).
  *
  * ⚠️ THE ORIGIN TRAP, AND WHY THIS LANE MUST FAIL LOUDLY. A Playwright
  * `storageState` restores `localStorage` **PER ORIGIN**. The stored marker state
@@ -68,15 +70,21 @@
  *     none of them here;
  *   - the signed-out surfaces: the Report control only exists in the
  *     authenticated drop-in view, which is why this lane needs a session;
- *   - focus RESTORE, which is measured but NOT gated. The dialog's opener does
- *     not get focus back: `ReportDialog` focuses its first control in an effect
- *     declared before `useFocusTrap`, so the trap captures an in-dialog control
- *     and skips the restore on unmount, leaving `document.activeElement` on
- *     `<body>`. That is a DOCUMENTED, tracked separate defect
- *     (`src/components/FocusTrap.tsx:10-30`, "Tracked as its own follow-up
- *     ticket"), so the lane prints it on every run and does not fail on it — a
- *     permanently-red lane is a lane nobody reads. When that ticket lands,
- *     promote the printed line to a `check()`.
+ *   - focus RESTORE on those other call sites: this lane opens the REPORT dialog
+ *     only. The Report dialog's own restore IS gated here ("focus returns to the
+ *     opener on close"). The mechanism this lane caught, and the fix it now
+ *     pins: `ReportDialog` focused its textarea in an effect declared before
+ *     `useFocusTrap`, so the trap captured an IN-DIALOG control as "previously
+ *     focused" and its `document.contains` guard skipped the restore on unmount,
+ *     leaving `document.activeElement` on `<body>`. Every shell that had that
+ *     order (`ReportDialog`, `DeletePlaydateDialog`, `ModalShell`) now captures
+ *     the real opener with `useOpenerFocusRestore` — a LAYOUT effect, which React
+ *     flushes before the `useFocusTrap` PASSIVE effect — and
+ *     `planFocusRestore` (`src/lib/focusTrap.ts`) decides whether that captured
+ *     element is still in the document. Before the fix this lane printed the
+ *     failure as
+ *     `KNOWN GAP focus restore on close — focus fell to <body> (body)`, measured
+ *     and ungated; it is a `check()` now, so a regression is exit 1.
  *
  * Usage: node scripts/focus-trap-check.mjs [baseURL] [playdateId] [--state=<path>]
  *   `E2E_BASE_URL` wins over a positional baseURL (same precedence as the e2e
@@ -468,7 +476,10 @@ async function main() {
       `focus index ${wrappedBack.index} of ${opened.controls.length}`,
     )
 
-    // Escape closes, and (measured, not gated) where focus lands.
+    // Escape closes, and the trigger GETS FOCUS BACK — GATED as of the
+    // opener-capture fix. The old lane printed the restore as a `KNOWN GAP` line
+    // and stayed green; a measured defect that fails nothing is a defect nobody
+    // fixes, which is exactly what happened to this one. See the docblock.
     await page.keyboard.press('Escape')
     await page.waitForTimeout(600)
     const after = await page.evaluate(() => ({
@@ -478,20 +489,13 @@ async function main() {
       tag: document.activeElement?.tagName?.toLowerCase() ?? null,
     }))
     check('Escape closes the dialog', after.dialogGone === true)
-    // MEASURED, NOT GATED: see the docblock. The restore is a documented separate
-    // defect (FocusTrap.tsx:10-30); this line makes it visible on every run and
-    // says what to do when it is fixed.
-    if (after.onTrigger) {
-      console.log(
-        '  GAP CLOSED focus restore on close — focus DOES return to the trigger; ' +
-          'src/components/FocusTrap.tsx:10-30 is fixed, so promote this line to a check()',
-      )
-    } else {
-      console.log(
-        `  KNOWN GAP focus restore on close — focus fell to <${after.tag}>${after.onBody ? ' (body)' : ''}; ` +
-          'tracked separately in src/components/FocusTrap.tsx:10-30, measured here and not gated',
-      )
-    }
+    // The trigger element is the one flagged before the click, so this asserts
+    // focus came back to THAT control and not merely "somewhere not <body>".
+    check(
+      'focus returns to the opener on close',
+      after.onTrigger === true,
+      `focus on <${after.tag}>${after.onBody ? ' (body)' : ''}`,
+    )
   } finally {
     if (fixtureId !== null) {
       const removed = await deleteFixturePlaydate(env, jwt, fixtureId)
@@ -508,7 +512,7 @@ async function main() {
     console.log(`\nFAIL — ${failures.length} check(s) failed`)
     return 1
   }
-  console.log('\nPASS — the dialog traps Tab at both edges and closes on Escape')
+  console.log('\nPASS — the dialog traps Tab at both edges, closes on Escape, and hands focus back to its opener')
   return 0
 }
 

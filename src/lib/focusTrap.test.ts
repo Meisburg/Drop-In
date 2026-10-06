@@ -18,7 +18,12 @@
  * extracted into `lib/` (pure) and pinned here.
  */
 import { describe, expect, it } from 'vitest'
-import { nextTrapTarget, shouldInterceptTab, shouldYieldToNestedDialog } from './focusTrap'
+import {
+  nextTrapTarget,
+  planFocusRestore,
+  shouldInterceptTab,
+  shouldYieldToNestedDialog,
+} from './focusTrap'
 
 describe('nextTrapTarget', () => {
   it('advances normally in the middle of the dialog', () => {
@@ -129,5 +134,42 @@ describe('shouldYieldToNestedDialog', () => {
     // The trap exists for this case: a stray click or a focusout must not leave
     // focus on the page behind an aria-modal.
     expect(shouldYieldToNestedDialog(false, false)).toBe(false)
+  })
+})
+
+/**
+ * THE OPENER RESTORE — the decision behind the measured defect this slice
+ * closes. `scripts/focus-trap-check.mjs` measured, on a fresh build, that
+ * closing the Report dialog left focus on `<body>`; that lane now GATES the
+ * restore ("focus returns to the opener on close", exit 1 when it regresses).
+ *
+ * The decision is pinned here because the DOM halves cannot be: the capture
+ * timing (a layout effect, so it beats `useFocusTrap`'s passive one) and
+ * `document.contains` both need a browser, while the rule itself is one
+ * question — is the captured opener still a real target? The three cases below
+ * are the whole contract, including the one that must NOT move focus.
+ */
+describe('planFocusRestore', () => {
+  // Structurally typed, the way the module's generic is: the rule only needs
+  // something focusable, never a real element.
+  const opener = { focus: () => {} }
+
+  it('returns the captured opener when it is still in the document', () => {
+    // Identity, not merely non-null: the component focuses THIS element, and a
+    // function returning some other focusable would pass a looser assertion.
+    expect(planFocusRestore(opener, true)).toBe(opener)
+  })
+
+  it('returns null when the opener is gone, so a detached node is never focused', () => {
+    // The row that opened a confirm can be unmounted by the confirm itself (the
+    // comment-delete case). `document.contains` is false there, focusing would
+    // be a no-op, and this rule does not invent a replacement target — that
+    // would be a product decision.
+    expect(planFocusRestore(opener, false)).toBeNull()
+  })
+
+  it('returns null when there was no opener to capture', () => {
+    expect(planFocusRestore(null, true)).toBeNull()
+    expect(planFocusRestore(null, false)).toBeNull()
   })
 })
