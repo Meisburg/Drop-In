@@ -169,6 +169,13 @@ the app when installed. Both files are served from the web app.
 
 ### Slice 2: native push — the device-token table and the transport
 
+> **📄 COLD-START BRIEF: `.scratch/native-apps/slice-2-brief.md`.** Read it BEFORE this
+> slice. It carries the state (what is already done, so nothing gets redone), the two
+> founder inputs still owed, the five measured traps, and the verification order. It
+> exists because the session that prepared the Firebase wiring had already run 23
+> rounds — starting the biggest slice while holding the whole release checklist is
+> how a builder ships something plausible and wrong.
+
 - **Objective:** a parent who installs and grants notifications receives a real
   alert with the app closed, on both platforms.
 - **Files in scope:** `supabase/migrations/00XX_device_tokens.sql` (new),
