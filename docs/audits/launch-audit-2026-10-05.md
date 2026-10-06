@@ -244,3 +244,52 @@ Stated so the gaps are not mistaken for passes.
 3. **[P2] lane maintenance** — the three lanes in F3, so the next real regression
    in this family is visible.
 4. **[P3] `$impeccable polish`** — after 1–3, one pass over the six surfaces.
+
+---
+
+## ✅ ADDENDUM, 2026-10-05 late — THE DATA-DEPENDENT GREEN BREAKS, AND HERE IS THE INSTANCE
+
+Written by the orchestrator, **not** an edit of anything above: the measurements
+this audit made are the measurements it made, and they stay as they are.
+
+**Gap 3 above ("populated states… no populated feed has been rendered") is not a
+theoretical gap. It was hiding a real defect, and the lane found it the moment the
+feed had a post in it.**
+
+`scripts/signed-in-audit.mjs` run against a build of this tree
+(`E2E_BASE_URL=http://localhost:4191`) now exits **1 with three failures, one per
+width**, all the same element and all on `/`:
+
+```
+FAIL phone-390x844  feed all targets >= 44px — a 133x19 "See past drop-ins"
+FAIL tablet-768x1024 feed all targets >= 44px — a 133x19 "See past drop-ins"
+FAIL desktop-1440x900 feed all targets >= 44px — a 133x19 "See past drop-ins"
+```
+
+It is `src/pages/FeedPage.tsx:1564-1571` — the archive door the V9 ticket 04
+placed under the day sections, a `<Link>` inside a bare
+`<p className="text-center text-sm">` with no sibling text. Two consequences, both
+measured rather than argued:
+
+- **The repo's own 44px Floor Rule is broken on the feed**, and WCAG 2.5.8's
+  inline exemption cannot rescue it because there is no sentence around the link
+  to be inline *with*.
+- **This audit's green was possible only because the feed was EMPTY.** The link
+  renders inside the branch that exists when the viewer has posts; on an empty
+  feed the `RadiusEmptyState` branch replaces it and the element is not in the DOM.
+  So §"Positive findings" is correct about the DOM it measured and silent about
+  the DOM it could not — which is exactly what gap 3 said, now with a name.
+
+**Not repaired here:** the element lives in `src/pages/FeedPage.tsx`, another
+session's uncommitted file. The fix is one line of the repo's standard idiom
+(`inline-flex min-h-11 items-center` on the link, or on its wrapper).
+
+**And one thing this exercise exposed about the LANE, which is F3's family.**
+`signed-in-audit.mjs:34` defaults to `http://localhost:4180`, and this box has had
+a stale `vite preview` on `:4180` since 17:07 — so the FIRST run of this check
+measured an hours-old build and reported two `nav is a left rail` failures that do
+not exist in this tree. That is the same class the V32 `E2E_BASE_URL` change closed
+for the e2e specs (a local check silently measuring the wrong build), still open in
+this lane's DEFAULT. Pass `E2E_BASE_URL` explicitly, or make the default fail
+loudly when the port is already served by something else.
+
