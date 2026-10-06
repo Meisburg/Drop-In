@@ -304,9 +304,23 @@ Assets below were read from Google's own
     **with the number** instead of appearing later as a 128px geometry mystery.
     Both changes re-run green locally (card-circles 2 passed, post-fast 2 passed)
     and the next nightly is the referee.
-  **STILL OPEN, and genuinely harder: #1 and #2** — the two map races
-  (overlapping Leaflet markers; `aria-current` not yet set). Both need a real
-  reproduction under load, not a wait bolted on by guesswork.
+  **✅ CONFIRMED BY THE LANE (nightly on `06d168d`): 197 passed, 2 failed** — the
+  two fixes held, and the count went 195/4 → 197/2. The remaining red is ONLY the
+  two map races below.
+  **STILL OPEN, and now with a sharper diagnosis than "a race":**
+  - **#2 `places-map-view.e2e.ts:801`** — the spec writes `strip.scrollLeft =
+    clientWidth` and then asserts `places-map-card-0` still has
+    `aria-current="true"`, i.e. the stated invariant "the FOCUS does not move on a
+    programmatic write". Under `scroll-snap-type: x mandatory` Chromium CLAMPS and
+    re-snaps the write, and **card widths differ in CI because the webfont does**,
+    so the write can settle on a different snap point and the app then marks THAT
+    card current. ⚠️ **THIS IS A PRODUCT QUESTION, NOT A TEST TWEAK**: should a
+    programmatic scroll move the selection to the settled card, or never move it?
+    The app's own comment says never; its observed behaviour says it follows the
+    settled geometry. **Decide the rule, then fix the app or the assertion — an
+    agent changing either one alone would be picking the answer by accident.**
+  - **#1 `places.e2e.ts:918`** — the marker bubble, a genuine Leaflet timing race
+    on overlapping circles (2.0m timeout). Needs a reproduction under load.
   ⚠️ The same dispatch found and fixed something bigger: **a real regression from
   the `E2E_BASE_URL` centralisation** — seven specs had lost the import and threw
   `ReferenceError: E2E_BASE_URL is not defined` at RUN time, which `--list` cannot
