@@ -210,6 +210,33 @@ Stated so the gaps are not mistaken for passes.
 
 ## Recommended actions
 
+> **✅ STATUS, appended 2026-10-05 (the same day, later).** The two real findings
+> are FIXED, and the coverage gaps below are partly closed — the audit is left
+> standing as written, with this note rather than edits, so the measurements it
+> records stay the measurements that were made.
+>
+> - **F1 — FIXED** (`a9dc8a6`): the signed-in detail page's Share / Add to
+>   calendar / Report are `inline-flex min-h-11` and **measure 44px** (were
+>   45x26, 119x26, 51x26). The same commit fixed the 28px reaction pill by giving
+>   the BUTTON 44px (`h-11 -my-2`) around the unchanged 28px drawn pill — and the
+>   negative margin is load-bearing: a plain `h-11` added 16px to every message
+>   row and `e2e/inbox-thread-geometry.e2e.ts` caught it.
+> - **F5 — FIXED** (`a9dc8a6`): the onboarding area card's radius select carries
+>   `min-h-11` and **measures 44px** on a fresh signup (was 358x41).
+> - **F2 — STILL OPEN, and it is a data decision, not code:** five places exist
+>   twice in the live directory (Genesee, Madison Park, Rainier Beach CC, Seward
+>   Park, Yesler CC), at coordinates within ~50–230 m of each other.
+> - **F3 — PARTLY CLOSED:** the shell checks that `layout-width-check.mjs` could
+>   never pass now run — and are proven able to fail — in
+>   `scripts/signed-in-audit.mjs`, and that lane now covers gaps 2 and 5
+>   (signed-in contrast is still unmeasured; see below).
+> - **Coverage gaps 1 and 6 are now partly covered by a LANE rather than a
+>   reading:** `scripts/signed-in-audit.mjs` measures the same surfaces × 3
+>   widths and screenshots them, and refuses to report a pass with no session
+>   (`NOT MEASURED`, exit 2). Gaps 3 and 4 remain: the live database still has no
+>   upcoming drop-ins, so no populated feed has been rendered, and no synthesized
+>   touch has been exercised.
+
 1. **[P1] `$impeccable adapt`** — the signed-in detail page's three text buttons
    (F1): restore the 44px floor the public row already has. Same pass: the
    onboarding radius select (F5).
