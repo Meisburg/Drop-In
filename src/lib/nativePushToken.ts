@@ -34,6 +34,9 @@
  * what 2b-ii closed.
  */
 import type { NativePushPlatform } from '../../supabase/functions/_shared/nativePush.ts'
+// The classifier the notice frames: a failure cause is a developer string until
+// `settingsErrorMessage` has replaced it with the caller's plain sentence.
+import { settingsErrorMessage } from './settingsError'
 
 /**
  * The permission states the Capacitor plugin reports for `receive`. Declared as
@@ -219,17 +222,20 @@ export function deviceTokenRow(input: {
 /**
  * What a registration resolved to.
  *
- * ⚠️ THE ERROR SHAPE IS THE FIX-ROUND FINDING, and it is why `error` carries a
- * `cause` rather than a `reason`. Every `blocked`/`unsupported` reason here is
- * WRITTEN COPY (the `NATIVE_PUSH_*_REASON` consts) and the caller renders it as
- * the sentence. An `error`, by contrast, is a developer string — a PostgREST
- * message, an RLS `permission denied`, a plugin fault — and interpolating it
- * into a parent-facing sentence is exactly the defect `src/lib/settingsError.ts`
- * exists to prevent. So the two are different FIELDS with different contracts:
- * `reason` is copy, `cause` must be classified before a parent sees it. It is an
- * `Error` rather than a string because that classifier passes a human string
- * through and rewrites a database-shaped one, and `rawErrorMessage` reads
- * `error.message`.
+ * ⚠️ THE COPY / CAUSE SPLIT IS THE POINT, and fix round 2 corrected the reason
+ * written here first. `blocked` and `unsupported` carry `reason`: WRITTEN COPY
+ * (the `NATIVE_PUSH_*_REASON` consts) that the caller renders as the sentence.
+ * `error` carries `cause`: the RAW thrown value — a PostgREST message, an RLS
+ * `permission denied`, a Capacitor bridge rejection — which must be classified
+ * by `src/lib/settingsError.ts` before a parent sees it. Two different contracts,
+ * so they are two different FIELD NAMES: a field called `cause` cannot be
+ * interpolated into a sentence by accident the way a second `reason` could, and
+ * that is the whole of the protection. (The earlier comment claimed a wrapped
+ * `Error` was what made classification work. It is not: `settingsErrorMessage`
+ * classifies a BARE STRING fine — measured, and pinned by settingsError.test.ts.
+ * What the wrap actually cost was worse: `String(obj)` of a rejected plain object
+ * produced `'[object Object]'`, which the classifier reads as a HUMAN sentence.
+ * So the raw value is passed through instead.)
  */
 export type NativePushRegistrationOutcome =
   | { status: 'registered'; token: string }
@@ -250,34 +256,6 @@ export interface NativePushRegistrationDeps {
   saveToken(row: DeviceTokenRow): Promise<void>
   /** The clock, injected so the spec pins `last_seen_at` instead of reading it. */
   now?: () => Date
-}
-
-/** The narrow, non-throwing error text a thrown plugin error becomes. */
-function describeError(error: unknown): string {
-  if (error instanceof Error) return error.message.trim()
-  if (typeof error === 'string') return error.trim()
-  try {
-    return String(error).trim()
-  } catch {
-    return ''
-  }
-}
-
-/**
- * A failed SQL/transport reason as the sentence a retry SHOULD show — the copy
- * for a user action that did not land.
- *
- * ⚠️ WHY A FAILURE REASON COMES BACK AS AN ERROR OBJECT RATHER THAN A STRING.
- * The classifier in `src/lib/settingsError.ts` takes `unknown`, and
- * `settingsErrorMessage` passes an already-human message through while replacing
- * a DATABASE-shaped one with the fallback. Wrapping the raw detail in `Error` is
- * what lets the caller reuse that classifier: a STRING passed through would NOT
- * be classified — `rawErrorMessage` returns any non-empty string verbatim, so an
- * RLS `permission denied` reading would render in a parent-facing sentence. This
- * is the one shape that carries the detail AND survives the trip.
- */
-function failureMessage(reason: string): Error {
-  return new Error(reason)
 }
 
 interface Deferred<T> {
@@ -323,10 +301,11 @@ export async function registerNativePushToken(
     const checked = await deps.plugin.checkPermissions()
     permission = typeof checked?.receive === 'string' ? checked.receive : ''
   } catch (error) {
-    return {
-      status: 'error',
-      cause: failureMessage(describeError(error) || 'could not read the notification permission'),
-    }
+    // The RAW thrown value, not a stringified copy of it: Capacitor's bridge
+    // rejects with a plain object, and `settingsErrorMessage` reads `.message`
+    // off one. `String(obj)` would hand the classifier '[object Object]', which
+    // it treats as a human sentence and shows to a parent.
+    return { status: 'error', cause: error }
   }
 
   let plan = planNativePushRegistration(permission)
@@ -337,10 +316,7 @@ export async function registerNativePushToken(
       // The SECOND reading is the one that decides — never the first.
       permission = typeof asked?.receive === 'string' ? asked.receive : ''
     } catch (error) {
-      return {
-        status: 'error',
-        cause: failureMessage(describeError(error) || 'could not ask for the notification permission'),
-      }
+      return { status: 'error', cause: error }
     }
     plan = planNativePushRegistration(permission)
   }
@@ -382,11 +358,14 @@ export async function registerNativePushToken(
 
     if (settled.kind === 'error') {
       const detail = (settled.error?.error ?? '').trim()
+      // The plugin's own sentence, deliberately EXTRACTED rather than passed as
+      // the raw event: the event is `{ error: string }`, and the classifier reads
+      // `message`/`details`/`code`, so the object would classify to the caller's
+      // fallback and the one useful detail would be lost. A bare string is
+      // classified on its own (settingsError.test.ts pins that).
       return {
         status: 'error',
-        cause: failureMessage(
-          detail === '' ? 'the notification plugin reported a registration error' : detail,
-        ),
+        cause: detail === '' ? 'the notification plugin reported a registration error' : detail,
       }
     }
 
@@ -398,16 +377,13 @@ export async function registerNativePushToken(
       now: deps.now?.(),
     })
     if (row === null) {
-      return { status: 'error', cause: failureMessage(NATIVE_PUSH_EMPTY_TOKEN_REASON) }
+      return { status: 'error', cause: NATIVE_PUSH_EMPTY_TOKEN_REASON }
     }
 
     await deps.saveToken(row)
     return { status: 'registered', token: row.token }
   } catch (error) {
-    return {
-      status: 'error',
-      cause: failureMessage(describeError(error) || NATIVE_PUSH_REGISTRATION_FAILED_REASON),
-    }
+    return { status: 'error', cause: error }
   } finally {
     // Step 4. A removal failure must never change the outcome — by now the
     // token is saved (or the reason is decided), and a stuck teardown is not a
@@ -468,7 +444,7 @@ export async function registerForNativePush(
   } catch (error) {
     return {
       status: 'error',
-      cause: failureMessage(describeError(error) || 'the notification plugin could not be loaded'),
+      cause: error,
     }
   }
 }
@@ -523,11 +499,10 @@ export interface DisableNativePushInput {
  *  * a failed delete is `error`, so the caller can say so instead of reporting
  *    "off" over a row that is still there.
  *
- * An `error`'s `cause` is the RAW detail, wrapped (see `failureMessage`):
- * turning it into parent-facing copy is the caller's job, because the caller is
- * the one that knows the sentence its UI needs. The caller's FALLBACK copy is
- * exported from here (`NATIVE_PUSH_OPT_OUT_FAILED_REASON`), so the half that
- * produces the failure and the half that writes the sentence cannot drift.
+ * An `error`'s `cause` is the RAW thrown value, unclassified: turning it into
+ * parent-facing copy is the caller's job, and `nativePushFailureNotice` below is
+ * the caller's half of it. The fallback copy is exported from here, so the side
+ * that produces the failure and the side that writes the sentence cannot drift.
  *
  * It deletes EVERY `device_tokens` row of this profile (the caller's delete is
  * profile-scoped, the `deletePushSubscriptionsForProfile` shape) rather than
@@ -544,9 +519,58 @@ export async function disableNativePush(
     await input.deleteTokens()
     return { status: 'removed' }
   } catch (error) {
-    return {
-      status: 'error',
-      cause: failureMessage(describeError(error) || NATIVE_PUSH_OPT_OUT_FAILED_REASON),
-    }
+    return { status: 'error', cause: error }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The notice (pure) — the sentence a FAILED attempt shows a parent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The arms of the two outcome unions that are not a success. Structurally
+ * identical for registration and opt-out, which is what lets one notice builder
+ * serve both.
+ */
+export type NativePushFailureOutcome =
+  | { status: 'blocked'; reason: string }
+  | { status: 'unsupported'; reason: string }
+  | { status: 'error'; cause: unknown }
+
+/** The FRAME and the fallback for each native action, named once. */
+const NATIVE_PUSH_FAILURE_COPY = {
+  // The frames match the existing web sentences in NotificationsSection
+  // (`Couldn't turn notifications off (…)`), apostrophe and all, so a parent
+  // reads the same shape whichever channel failed.
+  'turn-on': {
+    frame: "Couldn't turn on notifications",
+    fallback: NATIVE_PUSH_REGISTRATION_FAILED_REASON,
+  },
+  'turn-off': {
+    frame: "Couldn't turn notifications off",
+    fallback: NATIVE_PUSH_OPT_OUT_FAILED_REASON,
+  },
+} as const
+
+/**
+ * The sentence a parent reads when a native attempt did NOT turn notifications
+ * on (or off). Pure and total, so the component renders it and decides nothing —
+ * and so the FRAME is pinned by a test instead of by a reviewer's eye.
+ *
+ * ⚠️ THE FRAME IS LOAD-BEARING, and fix round 2 caught its absence: rendering the
+ * classifier's return value alone shows a bare lowercase fragment — `native push
+ * registration failed` — which names neither what failed nor that nothing
+ * changed. `blocked`/`unsupported` already carry full sentences, so they are
+ * returned untouched (the denied one names the way back to the phone's settings);
+ * only an `error` is framed and classified.
+ */
+export function nativePushFailureNotice(
+  action: keyof typeof NATIVE_PUSH_FAILURE_COPY,
+  outcome: NativePushFailureOutcome,
+): string {
+  const { frame, fallback } = NATIVE_PUSH_FAILURE_COPY[action]
+  if (outcome.status === 'error') {
+    return `${frame} (${settingsErrorMessage(outcome.cause, fallback)}).`
+  }
+  return outcome.reason
 }

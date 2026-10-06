@@ -18,17 +18,21 @@
  *    (0065's DELETE policy): a token-scoped delete would leave the parent
  *    reachable whenever the row in the table is not the token we hold.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   deleteDeviceTokensForProfileWithClient,
   listDeviceTokensWithClient,
+  saveDeviceToken,
   saveDeviceTokenWithClient,
+  supabase,
 } from './db'
 import { DEVICE_TOKEN_CONFLICT_KEY, type DeviceTokenRow } from './nativePushToken'
 
 interface Recorded {
   client: SupabaseClient
+  /** The chained builder itself, so `supabase.from` can be spied with it. */
+  builder: unknown
   calls: string[]
   payloads: unknown[]
   options: unknown[]
@@ -80,7 +84,7 @@ function makeDeviceTokensMockClient(
       return builder
     },
   } as unknown as SupabaseClient
-  return { client, calls, payloads, options }
+  return { client, builder, calls, payloads, options }
 }
 
 const ROW: DeviceTokenRow = {
@@ -196,39 +200,60 @@ describe('deleteDeviceTokensForProfileWithClient — the opt-out', () => {
 })
 
 /**
- * FIX ROUND 1, finding 3 — THE WRAPPER'S CONTRACT WITH THE SEAM.
+ * FIX ROUND 1 finding 3, corrected in ROUND 2 — THE WRAPPER'S OWN CONTRACT.
  *
- * `saveDeviceToken` is the function the /settings call site actually passes into
- * `registerForNativePush`, so it is where the row the seam built becomes the row
- * the database receives. Nothing above this pins that trip: a wrapper that
- * rebuilt the row, re-timestamped it, or dropped the version would leave every
- * other test here green while `app_version` silently went null on every install
- * — the exact "null by lack of a caller" the reviewer flagged, one layer down.
- * The call site today passes NO version (the app has no build-version env, and
- * that is stated at the call site), so both halves of the contract are pinned:
- * whatever it IS given goes through, and an absent one is null rather than
- * invented.
+ * Round 1 pinned this by calling `saveDeviceTokenWithClient`, which is NOT the
+ * function the call site passes: `NotificationsSection` passes `saveDeviceToken`
+ * (`db.ts`), and that wrapper's two facts — it resolves the session user, and it
+ * hands the row to the `WithClient` function unchanged — were therefore untested.
+ * A wrapper that dropped `app_version` or rebuilt the row would have left this
+ * file green while `app_version` went null on every install.
+ *
+ * So these tests call the REAL wrapper. Its module-level `supabase` client is the
+ * live project, so both of its collaborators are spied for the duration and
+ * restored in `afterEach` — no network, but the real code path.
  */
-describe('saveDeviceToken — the wrapper passes the seam’s row through unchanged', () => {
+describe('saveDeviceToken — the wrapper resolves the user and passes the row on', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function spyWrapperClient(result: { data?: unknown } = { data: [{ profile_id: 'prof-1' }] }) {
+    const recorded = makeDeviceTokensMockClient('device_tokens', result)
+    const getUser = vi
+      .spyOn(supabase.auth, 'getUser')
+      .mockResolvedValue({ data: { user: { id: 'prof-1' } }, error: null } as never)
+    const from = vi.spyOn(supabase, 'from').mockReturnValue(recorded.builder as never)
+    return { ...recorded, getUser, from }
+  }
+
   it('writes exactly the row it was handed, version included', async () => {
-    const { client, calls, payloads } = makeDeviceTokensMockClient('device_tokens', {
-      data: [{ profile_id: 'prof-1' }],
-    })
+    const { from, calls, payloads } = spyWrapperClient()
 
-    await saveDeviceTokenWithClient(client, ROW)
+    await saveDeviceToken(ROW)
 
-    expect(calls).toEqual(['from(device_tokens)', 'upsert', 'select(profile_id)'])
+    // `from` is the spied entry point, so the table name is asserted on the spy
+    // rather than on the builder's own recorder (which the spy replaced).
+    expect(from).toHaveBeenCalledWith('device_tokens')
+    expect(calls).toEqual(['upsert', 'select(profile_id)'])
     expect(payloads).toEqual([ROW])
     expect((payloads[0] as DeviceTokenRow).app_version).toBe('2.0.0')
   })
 
   it('keeps a null version null — the documented state, not a default', async () => {
-    const { client, payloads } = makeDeviceTokensMockClient('device_tokens', {
-      data: [{ profile_id: 'prof-1' }],
-    })
+    const { payloads } = spyWrapperClient()
 
-    await saveDeviceTokenWithClient(client, { ...ROW, app_version: null })
+    await saveDeviceToken({ ...ROW, app_version: null })
 
     expect((payloads[0] as DeviceTokenRow).app_version).toBeNull()
+  })
+
+  it('reads the session before it writes, and refuses when there is none', async () => {
+    const { payloads } = spyWrapperClient()
+    vi.spyOn(supabase.auth, 'getUser').mockResolvedValue({ data: { user: null }, error: null } as never)
+
+    await expect(saveDeviceToken(ROW)).rejects.toThrow('Not signed in')
+    // Nothing was written for a signed-out caller.
+    expect(payloads).toEqual([])
   })
 })
