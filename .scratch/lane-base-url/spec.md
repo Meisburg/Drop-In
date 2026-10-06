@@ -89,6 +89,24 @@ plus the same mandatory first line (`<lane> against <BASE>`) that §2 requires, 
 reader can never again wonder which build a lane measured. **The defaults do not
 move.** Do not change what any lane checks.
 
+## 2c. ⚠️ THE LANES ARE ORIGIN-BOUND, AND THAT IS SILENT TOO (measured 2026-10-06)
+
+Pointing a lane at a port **other than the one the marker session was minted on**
+does not measure the wrong app — it measures the app **SIGNED OUT**, because a
+Playwright `storageState` restores `localStorage` per **origin**. Measured: the
+stored state's origin is `http://localhost:4191`, and running
+`E2E_BASE_URL=http://localhost:4192 node scripts/profile-order-check.mjs` (a preview
+of the same build) **timed out waiting for `getByTestId('edit-profile')`** — the
+signed-in editor never rendered. The same lane on `:4191` passed in seconds.
+
+So `E2E_BASE_URL` is necessary but not sufficient for a lane that needs a session:
+**re-mint the marker on the port you are about to use**, with
+`E2E_BASE_URL=http://localhost:<port> npx playwright test e2e/auth.setup.ts e2e/zip-radius.e2e.ts`
+(that is what the e2e specs do implicitly, which is why they are not hit by this).
+Worth a loud line in each session-bound lane if anyone wants to close it properly:
+if the page renders signed out, say "the marker session's origin is <X> and I am
+pointed at <Y> — re-mint with the setup spec" instead of timing out on a selector.
+
 ## 3. Acceptance criteria
 
 1. ✅ DONE (`3188ea6`) — `E2E_BASE_URL=…:4191 node scripts/mobile-audit.mjs`
