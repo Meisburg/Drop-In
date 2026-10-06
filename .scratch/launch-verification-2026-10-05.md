@@ -53,9 +53,20 @@ stale — the served bundle is the test, not the filename):
    Near you · Following & saved · **Privacy & safety** · Appearance · Account);
    tapping one opens just that category with a back control. On a desktop window
    it is a **left pane** with the body beside it. Nothing inside a category changed.
-6. **A place page** — it should show **what parents say** (the rating and up to
-   three review bodies) with **one button** opening a lightboxed compose modal.
-   (This is the slice building now; if it is not in the push, it comes next.)
+6. **A place page** — it now shows **what parents say**: the rating and up to
+   **three review bodies** inline, with **one button** opening a lightboxed compose
+   modal. The old *"What parents say about this place →"* link is relabelled
+   *"All reviews and comments →"* and still leads to the full wall + comments.
+7. **⚠️ AND CHECK A PLACE THAT HAS REVIEWS — it used to lie to you.** Every rating
+   line in the app (place page, details page, and the browse cards) said
+   ***"Be the first to rate …"*** even on places that already had reviews, because
+   the summary read a single object from a database function that returns a table.
+   Fixed and pinned. **Pick any reviewed place and confirm it shows the average and
+   the count instead.** This one is worth your eyes because it shipped wrong for a
+   long time and only one reviewer would ever have noticed.
+8. **Your profile's photo order is unchanged** — the editor still runs
+   *Your photo & name → About the kids → Family photos → The parents*. A stale
+   internal check disagreed with that and was corrected; the app never changed.
 
 ## 2. THE POST-PUSH VERIFICATION NOBODY HAS RUN
 
@@ -133,3 +144,16 @@ whole-app regression check this repo has.
   before the first navigation with *"marker session expired … This is a HARNESS
   failure, not a product one… re-run with `e2e/auth.setup.ts` named"*. Naming
   `e2e/auth.setup.ts` in the filter remains the remedy, and is harmless either way.
+- **⚠️ THE AUDIT LANES ARE ORIGIN-BOUND, so `E2E_BASE_URL` is not enough on its own.**
+  A Playwright `storageState` restores `localStorage` **per origin**: the marker
+  state's origin is `http://localhost:4191`, so pointing a session-bound lane at
+  another port (measured: `:4192`, the same build) does not measure the wrong app —
+  it measures the app **signed out**, and the lane dies on a selector timeout. Before
+  running a lane on a new port, mint the marker there:
+  `E2E_BASE_URL=http://localhost:<port> npx playwright test e2e/auth.setup.ts e2e/zip-radius.e2e.ts`.
+  As of `3188ea6` + `418e04a`, **all eight** lanes read `E2E_BASE_URL` and print
+  `against <BASE>` as their first line, so at least the target is never a guess again.
+- **`npm run a11y:profile-order` is NOT in `npm run verify`** — and it was RED from
+  V23 until 2026-10-06 (`21aa302`, a stale expectation, not an app defect). It is a
+  live lane (it seeds and restores a parent card), which is why it cannot join the
+  gate. **Run it by hand after any profile-surface change**, on the origin above.
