@@ -86,6 +86,17 @@ handover's list:
 > *"Drop In isn't allowed to use your location — that permission lives in your
 > browser, not in Drop In's settings. Allow it there, or type an address."*
 
+⚠️ **AND THERE ARE TWO COPIES OF THE OFFENDING SENTENCE, which is the one-copy rule
+firing on a string rather than a function.** Measured: `LocationModal.tsx:203`
+(*"Location is off for Drop In. Turn it on in your browser settings, or type an
+address."*) and `OnboardingPage.tsx:1196` (*"Location is off for Drop In. Type your
+address instead, or turn it on in your browser settings."*) — the same claim with
+the clauses swapped, which is what two futures looks like one edit apart. So the
+fix is a `lib/` const (one module, one sibling test that pins the two properties
+below) consumed by both call sites, not two edited strings. Nothing pins either
+sentence today: `grep -rn "Location is off for Drop In" src/ e2e/` returns only
+those two render sites.
+
 The acceptance criterion that makes it a fix rather than a rewording: the string
 must NOT contain the phrase "Location is off for Drop In" (the reading he had), and
 it must name the browser as the owner of the permission BEFORE offering the
