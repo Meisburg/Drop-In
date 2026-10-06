@@ -200,6 +200,34 @@ the app when installed. Both files are served from the web app.
   it is the largest slice in this plan.
 - **Depends on:** slice 1. **Needs the founder's Apple/Google credentials.**
 
+> **📌 GROUNDING ADDS (2026-10-05) — the specifics a builder would otherwise get
+> wrong, from `research/native-apps/2026-10-05-capacitor-grounding.md`.** These
+> EXTEND the design above; nothing here changes it.
+>
+> - **The Android transport is FCM HTTP v1, and the credential is a Google
+>   SERVICE ACCOUNT**, not a server key: OAuth2 with scope
+>   `https://www.googleapis.com/auth/firebase.messaging`, then `POST` to
+>   `https://fcm.googleapis.com/v1/projects/<project-id>/messages:send` with
+>   `{ message: { token, notification, data } }`. The JSON key goes in the Edge
+>   Function's SECRETS — never the repo (the same rule the APNs `.p8` carries).
+> - **The token is NOT a VAPID subscription**: a per-install FCM registration
+>   token from the plugin's `registration` listener. There is no `endpoint`,
+>   no `p256dh`/`auth`, and no service worker in the native path — the web
+>   transport in `send-push` is untouched and the two coexist.
+> - **Android 13+ (targetSdk 33+) makes the permission flow mandatory BEFORE
+>   `register()`**: `PushNotifications.checkPermissions()` then
+>   `requestPermissions()`. `google-services.json` goes in `android/app/`, and the
+>   plugin supplies the Firebase SDK itself (no gradle edits for it).
+> - ⚠️ **A CAVEAT TO WATCH, NOT TO ACT ON** (recorded as UNVERIFIED in the
+>   grounding): Firebase's v1 reference now marks the `token` field "deprecated —
+>   use fid instead", while saying `token` still works during the transition. The
+>   Capacitor plugin exposes only the token. No action until either the timeline
+>   or the plugin changes.
+> - **Deno adapters**: `fcmDeno.ts` needs an OAuth2 token mint (a JWT signed with
+>   the service-account key) and a cache. Test it against an in-process fake, the
+>   way `smtpDeno_test.ts` proved nodemailer — a type-checked adapter is NOT a
+>   tested adapter.
+
 ### Slice 3: deep links (shared links and email links open the app)
 
 - **Objective:** an `https://drop-in-mu.vercel.app/...` link opens the app when
@@ -221,6 +249,25 @@ the app when installed. Both files are served from the web app.
 - **Verification command:** `npm run verify` + a real-device link test on both
   platforms.
 - **Depends on:** slice 1.
+
+> **📌 GROUNDING ADDS (2026-10-05).**
+>
+> - **Exactly two Android artifacts**, and Google fixes their names: `public/.well-known/assetlinks.json` (a JSON ARRAY with
+>   `relation: delegate_permission/common.handle_all_urls`, the `package_name`
+>   (`app.dropin.playdate`) and `sha256_cert_fingerprints` from the UPLOAD
+>   keystore), and an `intent-filter` with `android:autoVerify="true"` in
+>   `AndroidManifest.xml`. The fingerprint comes from the keystore the signing
+>   commit set up (`android/keystore.properties`, gitignored) — **the keystore path
+>   is a founder input this slice needs.**
+> - **iOS needs `/apple-app-site-association`** (no extension, correct
+>   content-type) plus the Associated Domains capability — and ⚠️ **Capacitor
+>   8.5's UIScene change moves URL/universal-link handling OUT of `AppDelegate`**,
+>   so an iOS implementation copied from a Capacitor 6/7 example will not fire.
+>   This is the one place the 8.5 breaking minor bites.
+> - The router must keep the WEB fallback honest: a link that opens the app to a
+>   dead screen is worse than one that opens the browser (already the criterion
+>   above — the grounding only confirms the two platforms need different files
+>   for it).
 
 ### Slice 4: store assets and submission
 
@@ -426,3 +473,21 @@ the app when installed. Both files are served from the web app.
   launcher icon and the splash on the real device. A screenshot of the branded
   shell would also replace the unbranded one at
   `.scratch/native-shell-emulator.png`.
+- 2026-10-05 (hand-off state for a FRESH session — read this before slices 2–3).
+  **Slice 1 is DONE except the device run**: the shell builds (`9420465`), wears the
+  app's own icon and splash (`a0c628d`), outbound links name the public web app
+  (`01da1aa`), and **a release bundle is SIGNED** (`ce3da9e`, another session).
+  The device run is PARTLY proven: install + `MainActivity` resumed at t+5s/t+15s
+  and Capacitor serving the bundled assets, then the process gone by ~t+45s on an
+  emulator whose own `android.hardwar` was SIGABRT-ing every 5s — **which side is
+  at fault is NOT established**, and the real device answers it.
+  **TWO FOUNDER INPUTS BLOCK SLICES 2–3 and nothing else does**: (1) an FCM
+  **Firebase project** (`google-services.json` into `android/app/` + a
+  service-account JSON as an Edge Function secret) for slice 2; (2) the **upload
+  keystore path** (in the gitignored `android/keystore.properties`) so
+  `assetlinks.json` can carry the right SHA-256 for slice 3. A fresh session
+  should open with those two asks rather than rediscovering them at the point of
+  need.
+  ⚠️ **AND IT MUST NOT RELITIGATE**: bundle `dist/` and keep `server.url` OUT
+  (that IS the anti-4.2 decision), and push stays ONE Edge Function (`send-push`,
+  now with a native branch) — never a second drainer racing it for the same rows.
