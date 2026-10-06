@@ -295,8 +295,18 @@ Assets below were read from Google's own
   4. `post-fast.e2e.ts:768` `expect(measured.controls.length)
      .toBeGreaterThanOrEqual(8)` got **0** — passes locally; zero controls means
      the page had not rendered when the measure ran, i.e. a wait, not a layout.
-  **Still to fix when they annoy you**, and the useful diagnosis is now on
-  record: two are waits/timing (2, 4) and two are map/geometry races (1, 3).
+  **TWO OF THE FOUR ARE FIXED (2026-10-05, same night), on the diagnosis above:**
+  - **#4** — the sweep now waits for the `<form>` to attach before measuring, so
+    "zero controls" can only mean the form is genuinely absent. That guard was
+    doing its job on a form that had not arrived.
+  - **#3** — the alignment comparison took the FIRST `span.bg-slate-200` in the
+    card; the count is now pinned to exactly ONE, so an ambiguous selector fails
+    **with the number** instead of appearing later as a 128px geometry mystery.
+    Both changes re-run green locally (card-circles 2 passed, post-fast 2 passed)
+    and the next nightly is the referee.
+  **STILL OPEN, and genuinely harder: #1 and #2** — the two map races
+  (overlapping Leaflet markers; `aria-current` not yet set). Both need a real
+  reproduction under load, not a wait bolted on by guesswork.
   ⚠️ The same dispatch found and fixed something bigger: **a real regression from
   the `E2E_BASE_URL` centralisation** — seven specs had lost the import and threw
   `ReferenceError: E2E_BASE_URL is not defined` at RUN time, which `--list` cannot

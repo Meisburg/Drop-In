@@ -202,7 +202,22 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // matter — an x comparison alone would also pass if the two were stacked
   // vertically, so the SAME ROW is pinned by their vertical centres agreeing.
   // This is non-vacuous: the pre-ticket order (label first) fails the x check.
-  const goingCircleBox = await hostCard.locator('span.bg-slate-200').boundingBox()
+  // ⚠️ THE CIRCLE MUST BE UNAMBIGUOUS (nightly 2026-10-05). This comparison took
+  // the FIRST match of `span.bg-slate-200`; on CI the alignment assertion then
+  // failed by **128px**, which is not a circle drifting but a comparison against
+  // the WRONG element — a second circle elsewhere in the card. Locally a single
+  // match makes the same line correct, which is exactly how a flake hides. The
+  // count is now pinned so an ambiguous selector FAILS HERE, with the number,
+  // instead of surfacing later as a geometry mystery.
+  const goingCircles = hostCard.locator('span.bg-slate-200')
+  const goingCircleCount = await goingCircles.count()
+  if (goingCircleCount !== 1) {
+    throw new Error(
+      `expected exactly ONE going circle in the card, found ${goingCircleCount} — ` +
+        'the alignment comparison below would be against an arbitrary one',
+    )
+  }
+  const goingCircleBox = await goingCircles.first().boundingBox()
   const goingLabelBox = await hostCard
     .getByText('1 going', { exact: true })
     .boundingBox()

@@ -755,6 +755,12 @@ test('the phone pass: /new at 320/375/390/430 and both orientations', async ({
     await page.setViewportSize(viewport)
     await page.goto('/new')
     await settleOnRoute(page, '/new')
+    // ⚠️ WAIT FOR WHAT THIS SWEEP MEASURES (nightly 2026-10-05). On CI the sweep
+    // found ZERO controls and the vacuity guard below fired — correctly, but on a
+    // page whose `<form>` had not mounted yet. That guard can only mean "the form
+    // is absent" if the form has had its chance to arrive; without this wait it
+    // also means "the machine was slow", which costs a whole nightly run.
+    await page.locator('form').first().waitFor({ state: 'attached' })
 
     // V13 ticket 02: the disclosure is gone — the form is always fully visible,
     // so there is no collapsed/expanded distinction. Measure once per viewport.
