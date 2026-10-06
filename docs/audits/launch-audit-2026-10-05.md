@@ -293,3 +293,51 @@ for the e2e specs (a local check silently measuring the wrong build), still open
 this lane's DEFAULT. Pass `E2E_BASE_URL` explicitly, or make the default fail
 loudly when the port is already served by something else.
 
+
+## ✅ ADDENDUM 2, 2026-10-06 — F3 IS NOW TWO-THIRDS CLOSED, MEASURED RATHER THAN ASSUMED
+
+The finding above says three of the repo's own lanes "cannot pass where they run".
+Two of those three no longer hold, and the third is being fixed — each verified by
+the orchestrator on a fresh build, against a private port, not read off a report.
+
+- **`scripts/layout-width-check.mjs` — GREEN, and F3's first bullet is stale.** The
+  lane now runs **PASS at all 7 widths** (12 `ok` checks, no failures) and its
+  closing line says so explicitly: *"THE SHELL (nav, rail, targets) is measured by
+  `scripts/signed-in-audit.mjs`, which is where it can actually be seen."* The nav
+  assertions F3 describes (`nav … null` failing 10 of 13 checks on a route with no
+  nav) are gone; the lane now checks only overflow and the content measure on the
+  signed-out not-found page, which is what that page can answer. **F3's first bullet
+  should be read as closed.**
+- **`scripts/focus-trap-check.mjs` — the SKIP is being replaced by a real
+  measurement**, and a `SKIP` no longer counts as a pass: the lane is being given
+  the marker session so it reaches a surface with a Report control, and a
+  signed-out run must FAIL LOUDLY naming the origin problem rather than skip.
+- **`scripts/dark-mode-check.mjs` — STILL FAILING, and still accepted-red.** It
+  reports `card surfaces stay light` for `/login`, which is de-carded **on purpose**
+  (the page was deliberately de-carded and its own source says so). This audit's
+  recommendation stands and is NOT yet done: the lane should treat `/login` as
+  de-carded so it stops printing FAIL for a decision.
+
+**AND THE F3 FAMILY WAS WIDER THAN F3 SAID — the "silently measures the wrong app"
+class was in EIGHT scripts, not three.** Measured with
+`grep -rln 'localhost:4173\|localhost:4180' scripts/`: **all eight** reference one of
+those ports, and at the time of writing only **three** read `E2E_BASE_URL`
+(`signed-in-audit`, plus `mobile-audit` and `layout-width-check`, which this session
+fixed in `3188ea6`). The remaining five — `a11y-dom-check`, `dark-mode-check`,
+`focus-trap-check`, `profile-order-check`, `theme-contract-check` — read **only
+`argv[2]`**. Fixed in `418e04a`: all eight now take
+`process.env.E2E_BASE_URL ?? argv[2] ?? <unchanged default>` and **print
+`<lane> against <BASE>` as their first line**, so the target is never a guess again.
+`mobile-audit.mjs` previously printed nothing about its target at all.
+
+⚠️ **Two traps found while doing it, both recorded because both are silent:**
+1. **The lanes are ORIGIN-BOUND.** A Playwright `storageState` restores
+   `localStorage` **per origin**, and the stored marker state's origin is
+   `http://localhost:4191`. Pointing a session-bound lane at another port does not
+   measure the wrong app — it measures the app **SIGNED OUT** (measured: a timeout
+   waiting for `edit-profile` on `:4192`). `E2E_BASE_URL` is necessary but **not
+   sufficient**: mint the marker on the port you will use.
+2. **`npm run a11y:profile-order` is NOT in `npm run verify`, and it was RED from
+   V23 until `21aa302`** — a stale expectation contradicting the seam it polices, not
+   an app defect. It is a live lane (it seeds and restores a parent card), which is
+   why it cannot join the gate. Run it by hand after any profile-surface change.
