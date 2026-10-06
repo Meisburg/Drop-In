@@ -68,13 +68,25 @@ export const NOTIFICATION_COPY_WEB: NotificationSectionCopy = {
  * over-claim was this module's own. The first native wording said they "apply to
  * browser alerts", which is the same lie moved one channel over: the prefs are
  * written to the WebView's own `window.localStorage` (`pushClient.ts:74-80`) and
- * mirrored into Cache Storage (`pushClient.ts:260-276`), and the ONLY reader is
- * the service worker (`readPrefs`, `sw.ts:111`, used at `sw.ts:141-143`). The
- * service worker does not run in the shell and there is no
- * `pushNotificationReceived` listener anywhere in `src/`, so a toggle flipped
- * here is read by nothing and reaches no browser — a browser has its own
- * storage. A parent who believed "these apply to browser alerts" would still be
- * woken by a browser alert at 6am.
+ * mirrored into Cache Storage (`pushClient.ts:260-276`), and a browser has its
+ * own storage — so a toggle flipped here reaches no browser. A parent who
+ * believed "these apply to browser alerts" would still be woken by a browser
+ * alert at 6am.
+ *
+ * ⚠️ AND THE REASON THE SHELL'S CONTROLS SUPPRESS NOTHING IS NOT THAT THE WORKER
+ * IS ABSENT — fix round 2, which caught the earlier header claiming the service
+ * worker "does not run in the shell". That is UNSUPPORTED (and probably false):
+ * the shell ships the same UNCONDITIONAL registration
+ * (`android/app/src/main/assets/public/registerSW.js`, from `dist/index.html`'s
+ * `/registerSW.js`) and is served from `https://localhost` (`capacitor.config.ts:24`),
+ * a secure context — so the worker very likely does run there. The real reason
+ * is narrower and is the one `.scratch/native-apps/device-runbook.md` states:
+ * the worker never RECEIVES the alert. An FCM message is drawn by the OS, the
+ * shell holds no Web Push subscription, and the `push` handler that reads these
+ * prefs therefore never fires for it. Nor is the prefs read absent: they are
+ * read to RENDER the toggles (`NotificationsSection.tsx:126`) and, for
+ * SUPPRESSION, only by that handler (`readPrefs`, `sw.ts:111` → `sw.ts:141-143`).
+ * The slice's conclusion is unchanged; only this reason is the real one.
  *
  * So the notes state each control's SCOPE ("where they are set separately")
  * without promising propagation, which also restores the true "saved on this
