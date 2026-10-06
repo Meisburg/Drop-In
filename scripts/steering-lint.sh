@@ -61,6 +61,16 @@ ALLOW_ABSENT=(
   # create. Found by running the gate in a simulated fresh clone rather than by
   # reading the script.
   'supabase/.temp/linked-project.json'
+  # V32 CI (2026-10-05): THE SAME CLASS AGAIN, AND THE SAME MISTAKE MADE AGAIN.
+  # `e2e/.auth/marker-state.json` is the marker session the e2e suite's own
+  # `auth.setup` writes; it is GITIGNORED, so it exists on any machine that has
+  # run the suite and NEVER in a fresh clone. docs/agents/browser-lanes.md now
+  # names it — correctly, because `scripts/signed-in-audit.mjs` needs it and says
+  # so — and that made a locally-green gate RED IN CI: this box had the file, the
+  # runner never could. The lesson the V23 entry above records was not applied,
+  # which is why it is recorded again here with the same fix rather than a
+  # cleverer one.
+  'e2e/.auth/marker-state.json'
 )
 is_allowed_absent() {
   local p="$1" a
