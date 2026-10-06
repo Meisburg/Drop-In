@@ -65,6 +65,7 @@ import {
   readMarkerSession,
   readSupabaseEnv,
   settleOnRoute,
+  E2E_BASE_URL,
 } from './fixtures'
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'

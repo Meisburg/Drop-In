@@ -548,7 +548,7 @@ test('real-time delivery: a message sent by the host appears in the pinger\'s op
   const markerState = JSON.parse(fs.readFileSync(markerStatePath, 'utf8'))
   const hostContext = await browser.newContext({
     baseURL: E2E_BASE_URL,
-    storageState: markerState as { cookies: unknown[]; origins: unknown[] },
+    storageState: markerState as never,
   })
   const hostPage = await hostContext.newPage()
   // Capture console + network errors for diagnostics (the list load may fail
@@ -593,8 +593,7 @@ test('real-time delivery: a message sent by the host appears in the pinger\'s op
   })
   await expect(
     viewerPage.getByTestId('other-message'),
-    { timeout: 15_000 },
-  ).toContainText('Hi from the host!').catch(async () => {
+  ).toContainText('Hi from the host!', { timeout: 15_000 }).catch(async () => {
     // Surface diagnostics: the viewer's console errors + the current thread state.
     const threadMessages = await viewerPage.locator('[data-testid="other-message"]').count().catch(() => 0)
     const threadOwnMessages = await viewerPage.locator('[data-testid="own-message"]').count().catch(() => 0)

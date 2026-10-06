@@ -22,7 +22,7 @@
  * `e2e-` fixture, so the marker sweep owns it.
  */
 import { expect, test } from '@playwright/test'
-import { finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
+import { E2E_BASE_URL, finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
 
 test('sign out is in Settings, not the header, and still lands on /login', async ({ browser }) => {
   const marker = readMarkerMeta()

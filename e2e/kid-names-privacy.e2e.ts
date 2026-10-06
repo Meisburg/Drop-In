@@ -479,6 +479,7 @@ test('a kid’s name reaches the host and a pinger — and never a signed-in str
   )
   if (!postRes.ok) throw new Error(`post read HTTP ${postRes.status}: ${await postRes.text()}`)
   const [postRow] = (await postRes.json()) as Array<{
+    id: string
     title: string
     place: string
     starts_at: string

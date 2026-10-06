@@ -279,7 +279,7 @@ test('reactions update live: the host sees the pinger\'s 👍 without a reload',
   )
   const hostContext = await browser.newContext({
     baseURL: E2E_BASE_URL,
-    storageState: markerState as { cookies: unknown[]; origins: unknown[] },
+    storageState: markerState as never,
   })
   const hostPage = await hostContext.newPage()
   await hostPage.goto(`/inbox?thread=${playdateId}`)
@@ -303,7 +303,7 @@ test('reactions update live: the host sees the pinger\'s 👍 without a reload',
   // subscription).
   await confirmedReactPill(viewerPage).click()
   await viewerPage.getByTestId('react-option-like').click()
-  await expect(hostReactPill, { timeout: 15_000 }).toContainText('1')
+  await expect(hostReactPill).toContainText('1', { timeout: 15_000 })
 
   // Un-react (tap the current kind in the picker → remove) → the host's count
   // falls back to 0 and the pill disappears. This is the DELETE half of the
@@ -313,7 +313,7 @@ test('reactions update live: the host sees the pinger\'s 👍 without a reload',
   // change the PK, so the DELETE payload still carries both ids.
   await confirmedReactPill(viewerPage).click()
   await viewerPage.getByTestId('react-option-like').click()
-  await expect(hostReactPill, { timeout: 15_000 }).not.toContainText('1')
+  await expect(hostReactPill).not.toContainText('1', { timeout: 15_000 })
 
   await hostContext.close()
   await viewer.context.close()

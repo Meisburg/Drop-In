@@ -125,6 +125,7 @@ import {
   openProfileEditor, readMarkerMeta, readMarkerSession, readSupabaseEnv,
   settleOnRoute, finishSignup,
   signUpViewer,
+  E2E_BASE_URL,
 } from './fixtures'
 
 const AVATARS_BUCKET = 'avatars'

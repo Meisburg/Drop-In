@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "engines": {
-    "//": "Vite 8 needs Node ^20.19 || >=22.12 — pinned so the host cannot pick an older runtime and fail the build.",
+    "//": "Vite 8 needs Node ^20.19 || >=22.12 \u2014 pinned so the host cannot pick an older runtime and fail the build.",
     "node": ">=22"
   },
   "scripts": {
@@ -24,7 +24,8 @@
     "guards:lib": "bash scripts/guards/lib-sibling-guard.sh",
     "guards:config": "bash scripts/guards/config-guard.sh",
     "guards:nobypass": "bash scripts/guards/no-bypass-guard.sh",
-    "verify": "npm run build && npm run test && npm run lint && npm run a11y:focus && npm run steering-lint && npm run guards"
+    "verify": "npm run build && npm run typecheck:e2e && npm run test && npm run lint && npm run a11y:focus && npm run steering-lint && npm run guards",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

@@ -49,7 +49,7 @@
  * the whole cleanup story.
  */
 import { expect, test } from '@playwright/test'
-import { settleOnRoute, signUpViewer } from './fixtures'
+import { E2E_BASE_URL, settleOnRoute, signUpViewer } from './fixtures'
 
 test('a no-zip parent sees the location notice on the feed AND on browse, never the radius empty state', async ({
   browser,

@@ -307,7 +307,7 @@ test('the post form offers the saved places, and selecting one writes the form (
 
   // Exactly the saved place, with its heart reporting the saved state — the
   // heart in the sheet renders from the SAME batched read /browse made.
-  const row = markerRow(sheet)
+  const row = markerRow(sheet.page())
   await expect(row).toBeVisible()
   await expect(sheet.getByTestId('place-row')).toHaveCount(1)
   await expect(markerHeart(sheet)).toHaveAttribute('aria-pressed', 'true')

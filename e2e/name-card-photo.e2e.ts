@@ -49,7 +49,7 @@
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { deflateSync } from 'node:zlib'
-import { readSessionFromBrowserPage, readSupabaseEnv } from './fixtures'
+import { E2E_BASE_URL, readSessionFromBrowserPage, readSupabaseEnv } from './fixtures'
 
 // --- The dependency-free PNG (solid RGB, 8-bit, non-interlaced) — the
 // avatar.e2e.ts fixture, inlined (the repo pattern: each photo spec carries

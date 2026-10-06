@@ -88,7 +88,7 @@
  * fixture-marker guard that keeps this spec inside it.
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
-import { NOMINATIM_ROUTE, readMarkerMeta } from './fixtures'
+import { E2E_BASE_URL, NOMINATIM_ROUTE, readMarkerMeta } from './fixtures'
 // The tour's WORDS and the guard's DERIVATION are both data in
 // src/lib/firstRunTour (slice 5). Restating them here meant a legitimate copy
 // change needed three edits, and the spec built its OWN copy of the
