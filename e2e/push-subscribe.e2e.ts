@@ -965,6 +965,25 @@ test('every notification kind has a labelled toggle, and toggling is reflected',
   // The discoverability heading t01 added — the thing that made these findable.
   await expect(prefs.getByRole('heading', { name: 'Choose what you get notified about' })).toBeVisible()
 
+  // SLICE 2b-iii: the BROWSER sentences, verbatim. Web push really is filtered
+  // by the service worker (src/sw.ts:141-143), so this copy must not change —
+  // and because the section now picks its words by channel, this is what proves
+  // a browser gets the browser variant rather than saying so by inspection. The
+  // shell's variant cannot be driven here (no device, no FCM key); it is pinned
+  // in src/lib/notificationSectionCopy.test.ts and is UNPROVEN on a device.
+  await expect(
+    prefs.getByText(
+      'Unchecked kinds are dropped on this device before they show. These choices are saved on this device only — email is set separately above.',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    page.getByTestId('quiet-hours').getByText(
+      'Pause alerts while your family sleeps. Cancellations and drop-ins that end early still come through, so you never drive out to an empty park.',
+      { exact: true },
+    ),
+  ).toBeVisible()
+
   for (const kind of kinds) {
     const box = page.getByTestId(`push-pref-${kind}`)
     await expect(box, `${kind} must render a toggle`).toBeVisible()

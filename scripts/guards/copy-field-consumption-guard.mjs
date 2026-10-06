@@ -334,6 +334,14 @@ const COPY_MODULES = [
     module: 'src/lib/firstRunCopy.ts',
     consts: ['FIRST_RUN_COPY', 'FIRST_RUN_NUDGE_COPY'],
   },
+  // Slice 2b-iii. Its fields ARE read: NotificationsSection renders
+  // `notificationSectionCopy(native)` and prints all three sentences.
+  // Registered the day it was added, because that is the act this list exists
+  // to force.
+  {
+    module: 'src/lib/notificationSectionCopy.ts',
+    consts: ['NOTIFICATION_COPY_WEB', 'NOTIFICATION_COPY_NATIVE'],
+  },
 ]
 
 /**

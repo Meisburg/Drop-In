@@ -14,6 +14,7 @@ import {
 import { useSessionContext } from './SessionProvider'
 import { decideEmailOptoutControl } from '../lib/emailOptout'
 import { settingsErrorMessage } from '../lib/settingsError'
+import { notificationSectionCopy } from '../lib/notificationSectionCopy'
 import {
   disableNativePush,
   nativePushFailureNotice,
@@ -461,6 +462,14 @@ export function NotificationsSection() {
     }
   }
 
+  // WHAT THIS SECTION CLAIMS, PER CHANNEL (slice 2b-iii). The mutes and Quiet
+  // hours are enforced by the SERVICE WORKER (src/sw.ts:141-143), and a native
+  // alert is drawn by the OS without the service worker ever seeing it — so the
+  // shell's copy says so instead of promising a filter that does not run there.
+  // The words live in the seam; this picks one variant from the platform it
+  // already resolved (`native`), and does no detection of its own.
+  const sectionCopy = notificationSectionCopy(native)
+
   const sendingConfigured = vapidPublicKey() !== ''
 
   return (
@@ -550,10 +559,7 @@ export function NotificationsSection() {
             >
               {busy ? 'Turning off…' : 'Turn off notifications'}
             </button>
-            <p className="text-xs text-slate-500">
-              Turning them off removes every device you turned them on from. You can turn them back
-              on here any time.
-            </p>
+            <p className="text-xs text-slate-500">{sectionCopy.turnOffNote}</p>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -658,7 +664,9 @@ export function NotificationsSection() {
 
       {/* Per-kind mutes. Enforced by the service worker on this device (see
           src/sw.ts + 0032's accepted residual) — a muted kind arrives and is
-          dropped before it shows. */}
+          dropped before it shows. IN THE SHELL NOTHING ENFORCES THEM: the OS
+          draws an app alert, so the note below says which channel these govern
+          (slice 2b-iii). The controls themselves are unchanged. */}
       <div className="mt-4 border-t border-slate-100 pt-3" data-testid="push-kind-prefs">
         <h3 className="text-base font-semibold text-slate-900">
           Choose what you get notified about
@@ -688,23 +696,19 @@ export function NotificationsSection() {
             )
           })}
         </ul>
-        <p className="mt-2 text-xs text-slate-500">
-          Unchecked kinds are dropped on this device before they show. These choices are saved on
-          this device only — email is set separately above.
-        </p>
+        <p className="mt-2 text-xs text-slate-500">{sectionCopy.muteNote}</p>
       </div>
 
       {/* Quiet hours (V27). A device-level window enforced by the service
           worker, exactly like the mutes. Cancellations and early ends are
           deliberately exempt (see QUIET_HOURS_ALWAYS_ALLOWED): those exist to
           stop a parent driving out, so silence there would be a safety bug, not
-          a courtesy. */}
+          a courtesy. The exemption is a WEB-PUSH fact: in the shell the OS draws
+          the alert and nothing here suppresses it, which is what the note above
+          states rather than promising a silence that does not happen. */}
       <div className="mt-4 border-t border-slate-100 pt-3" data-testid="quiet-hours">
         <h3 className="text-base font-semibold text-slate-900">Quiet hours</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Pause alerts while your family sleeps. Cancellations and drop-ins that end early still
-          come through, so you never drive out to an empty park.
-        </p>
+        <p className="mt-1 text-xs text-slate-500">{sectionCopy.quietHoursNote}</p>
         <label className="mt-2 flex min-h-11 items-center gap-3">
           <input
             type="checkbox"
