@@ -239,6 +239,39 @@ export const CASCADE_HAZARDS = [
   { parent: 'going_pings', parentClause: 'profile_id in VICTIMS', child: 'ping_kids', parentKey: 'profile_id', parentKeyColumn: 'profile_id', childClause: 'false and exists (select u.id from auth.users u where u.id in VICTIMS)' },
   // The edges already modelled for a DIFFERENT column, where the second column is
   // its own cascade: comments' self-reference and the playdate-side cascades.
+  /**
+   * ⚠️ THE 0065 EDGE (found 2026-10-06, while `delete` refused on it).
+   *
+   * `0065_device_tokens.sql` added `device_tokens.profile_id ->
+   * profiles(id) ON DELETE CASCADE` and the list above was not told, so
+   * `schemaRefusals` refused the sweep: a live cascade edge the model does not
+   * name is exactly the 2026-10-06 blindness again, caught this time by the
+   * live-schema check rather than by an incident. The refusal was CORRECT;
+   * the model was incomplete.
+   *
+   * Verified against the migration, not assumed: the child's referencing column
+   * is `profile_id` and the parent's referenced column is `id` (line 88 of
+   * 0065_device_tokens.sql).
+   *
+   * ⚠️ WHY `childClause` IS `profile_id in VICTIMS` AND NOT the `false` idiom the
+   * 2026-10-06 block uses for tables the sweep deletes NOTHING from: here the
+   * child's key IS the marker predicate. The doomed parents are
+   * `profiles where id in VICTIMS`, so a child row reachable through
+   * `c.profile_id in (that set)` has its OWN `profile_id` in VICTIMS by
+   * construction — no other row can be behind this edge. `false` would count
+   * every e2e-OWNED device row as a "non-marker ... row would be destroyed"
+   * blocker, which is a false statement about e2e data rather than a refusal
+   * protecting a real parent; this clause is the same one 0031's mirror table
+   * (`push_subscriptions`) carries. It never removes protection: the set it
+   * scopes in is identical to the set the cascade will destroy.
+   */
+  {
+    parent: 'profiles',
+    parentClause: 'id in VICTIMS',
+    child: 'device_tokens',
+    parentKey: 'profile_id',
+    childClause: 'profile_id in VICTIMS',
+  },
 ]
 
 /** Substitute VICTIMS into one clause. */
