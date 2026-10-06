@@ -2095,6 +2095,12 @@ repeatable, gated tool: `node scripts/sweep-e2e-markers.mjs <list|select|delete|
 
 - 2026-09-26 — ✅ RESOLVED 2026-10-04 — all three firstmate items referenced here are now closed (see the triage lines above); kept as history. Originally: NOTE (V26, not an action): the `## Escalations` entries below dated 2026-09-25 and earlier are **firstmate** items (OmniRoute `provider_connections.is_active`, the `branch-row-routing-stall` (a)/(b)/(c) direction, and the two closed Playdate items). They are pre-existing and unrelated to the V26 drop-in-review work; they are left untouched here because they are still genuinely waiting on you.
 
+- 2026-10-06 — ⚠️ **ACTION REQUIRED (native apps / slice 2b, TWO items; both need YOUR credential or YOUR authorization, and neither is labour an agent can do).** The slice is code-complete at `d49be5b` and its three review lanes passed, but **a real device cannot receive an alert until both of these land.**
+  **1. GENERATE THE FCM SERVICE-ACCOUNT KEY (≈2 minutes, needs your Google login).** Firebase console → ⚙️ Project settings → **Service accounts** → *Generate new private key*. This is the SEND-side credential for FCM HTTP v1 and it is a **DIFFERENT artifact from `android/app/google-services.json`** (that one is CLIENT config and is already wired) — having one does not give you the other. Give me the file's path and I set it into the Edge Function **secrets** myself (`npx supabase secrets set FCM_SERVICE_ACCOUNT_JSON=…`); it must never enter the repo. **Why this is yours and not mine, measured rather than assumed:** `gcloud` is not installed on this box, and `firebase-tools` has no service-account key command (its `--help` has no `iam`/`service-account` surface) — though the Firebase CLI *is* authenticated as `jonmeisburg@gmail.com`. A path exists in principle by extracting that CLI's OAuth refresh token and calling the IAM API, but that means minting a long-lived production credential from a stored refresh token, which is a security act I will not take unilaterally — say the word if you would rather I try it.
+  **2. AUTHORIZE THE `send-push` REDEPLOY (a production change: a one-word yes, and I run it).** ⚠️ **MEASURED, NOT ASSUMED: the deployed function is STALE.** `npx supabase functions list` reports `send-push` **ACTIVE at VERSION 8, UPDATED_AT 2026-09-30 14:32:08** — which **predates the native branch**, so the committed native code is NOT live and the device check would fail today even with the key set and the app wired. The redeploy is one browserless command. Note the 5-minute `pg_cron` job is live, so once redeployed the sender is real; it degrades safely (no secret ⇒ the native branch is skipped and the existing web-push/email path runs exactly as before), which is why this deploy is low-risk and is not itself the go-live decision.
+  **What is already DONE so the above is the whole remainder:** migration `0065_device_tokens` is **APPLIED LIVE and verified** (probed read-only: `relrowsecurity = true`, exactly 4 policies, all scoped to `authenticated`); the server transport, the pure classifier and the Deno adapters are built, fixed and committed; the web-push path is **proven unaffected** (8 targeted e2e specs passed); and the RLS acceptance criterion is asserted by the migration itself, which was shown to FIRE on a seeded permissive policy. **Slice 2b-ii** (wiring the client registration into /settings, plus the opt-out and the missing FCM section in `docs/push-setup.md`) is dispatched and is the last code item.
+  **✅ RESOLVED 2026-10-06 — BOTH ITEMS DONE, and the whole path is now PROVEN ON HARDWARE.** (1) The FCM service-account key was created and set as the Supabase secret `FCM_SERVICE_ACCOUNT_JSON` (its presence confirmed by digest in `secrets list`); the downloaded file was **shredded** and `find ~` confirms no service-account JSON remains on disk. Creating it required clearing a Google org-policy block — `iam.disableServiceAccountKeyCreation` is enforced on org `jonmeisburg-org` (934300105311) — so the orchestrator added a **project-scoped** exception and then **revoked** the org-level policy-admin role it needed, verifying the revocation and leaving the org-wide default `enforce: true`. (2) `send-push` was redeployed with authorization. **The credential was then verified against the REAL FCM API** (token minted, FCM accepted it for the project, a bogus token returned the genuine `INVALID_ARGUMENT` wording — which also confirmed our prune heuristic against Google's own live response). **The device check PASSED all four criteria** — see the slice 2b record below. No further action.
+
 ## V24 — the places-and-polish batch (2026-09-25)
 
 Spec: `.scratch/v24/spec.md` (16 annotations from
@@ -2382,3 +2388,83 @@ withheld-category guard, with the pattern builder **throwing** so *"guard green,
 **Carried forward:** the escape/pattern-shape single-sourcing + the unreachable-branch and hardcoded-taxonomy nits
 -> **slice 6**; the stale docs + the migration's `26/239` -> **8a**; **6 marker accounts await the batch-end sweep**;
 `places.e2e.ts:2759` unexercised; the teardown-`close()` flake unobserved at `workers: 1`.
+
+### native-apps slice 2b (Android/FCM native push) -- CODE-COMPLETE (2026-10-06)
+
+Plan: `.scratch/native-apps/plan.md` §Slice 2; briefs `.scratch/native-apps/slice-2b-brief.md` +
+`slice-2b-ii-brief.md`. **Scope ruling: 2b (Android/FCM) only — 2a (APNs) DEFERRED by founder decision**,
+because this box is Linux with no Apple credentials, so iOS transport code could only ever be UNVERIFIED.
+Absence of APNs is correct, not a gap.
+
+Built `b929849` (14 files, staged BY NAME), fix round 1 `d49be5b` (8 files). **All lanes run:**
+`ocr` 7 findings (all adjudicated — 3 real, incl. one high-severity), reviewer **NEEDS_CHANGES -> PASS**
+(round 2), verifier **PASS** (twice: b929849 then d49be5b), and the web-push e2e lane PASS.
+
+**The defect worth remembering (both the agent reviewer and `ocr` found it independently).** The two lanes
+converged on the same root cause from different directions: `nativePushCredentialFailure`'s docstring promised
+*"deadToken is ALWAYS false — the sender's own mistake must never delete a parent's phone"*, but that override
+was only consulted by the 400 branch. **404/410 and `DEAD_TOKEN_CODES` short-circuited before it**, and
+`fcmDeno.ts` feeds the TOKEN endpoint's own status into that function — so an OAuth2 endpoint or proxy
+answering 404/410 would have **pruned every live `device_tokens` row on one drain**. The reviewer reproduced
+it. Fixed by gating every dead-token branch on one `tokenIsTheSubject` constant; `NOT_FOUND` was ALSO removed
+from `DEAD_TOKEN_CODES`, and that removal was independently NECESSARY — `parseProviderError` falls back to
+`error.status`, so a codeless project-404 arrives as `errorCode: 'NOT_FOUND'` and the status-level fix alone
+would have been cosmetic. Round 2 verified with a **1200-combination hostile probe** (16 statuses × 15 codes ×
+5 messages): zero prunes.
+
+**A defect in MY brief, recorded rather than hidden.** `registerForNativePush` shipped with **ZERO production
+callers** and the seam exported no opt-out, so nothing could ever write a `device_tokens` row and slice 2's
+acceptance criterion was **structurally unreachable, not merely unverified**. The 2b brief scoped "the app's
+registration seam" and never required the consumer. Slice 2b-ii closes it.
+
+**Evidence (fresh, per lane).** migration 0065 **APPLIED LIVE** (`HTTP 201 OK`) and probed read-only:
+`relrowsecurity = true`, exactly 4 policies, all scoped to `authenticated`, none permissive/anon; the
+migration's own assertion was shown to FIRE (seeded 5th permissive policy). `verify` exit 0 / 84 files /
+2548 tests; `deno-check` 2 functions; deno adapters 20 (6 SMTP + 14 FCM, real run not a skip); web-push
+unaffected (8 targeted e2e specs + 157 push unit tests).
+
+**Deliberately PARKED, with the reason (not silently dropped).** (a) A RETRYABLE native failure still stamps
+`sent_at`: the queue is attempt-once by design and the web path has the identical documented rule (0032 pins
+only `sent_at` + `error`; there is no attempt counter), so differing from the web branch would BE the
+regression. (b) `config-guard` fails bare on `package.json` (the `@capacitor/push-notifications` dependency);
+this is documented precedent (`9420465`), waived via `ALLOW_CONFIG_CHANGE` with the reason printed into the log.
+
+**Carried forward:** the one test-honesty nit at `nativePush.test.ts:225-226` (a `not.toContain('pruned')`
+assertion that cannot fail for its stated reason, since `result.error` carries the provider's words by design)
+-> folded into **2b-ii**, named in its brief. **8 marker accounts await the batch-end sweep** (4 from the
+builder's e2e run, 4 from the verifier's; ZERO content rows, founder overlap 0). **UNPROVEN and stated as
+such:** the live-device alert on both platforms, and whether real FCM ever reports an unregistered token as a
+codeless 404 (which the new keep-branch would leak — the documented safe direction).
+
+**TWO FOUNDER ITEMS BLOCK THE DEVICE CHECK — see the ACTION REQUIRED entry above:** the FCM
+service-account key, and authorization to redeploy `send-push` (measured: the live function is **VERSION 8,
+2026-09-30**, which predates the native branch).
+
+### native-apps slice 2b -- ACCEPTANCE CRITERION MET ON REAL HARDWARE (2026-10-06)
+
+**"A parent with the app closed receives a real alert" is PROVEN, not inferred**, on a Pixel 9 Pro via
+Android/FCM through the real production path (`pg_cron` -> `send-push` v9 -> FCM -> device). All four device
+checks pass: the permission flow ran BEFORE `register()` (trap #1 observed working, not just coded); a real
+token landed in `device_tokens` (`platform=android`); the alert was observed posted by Android with its exact
+title/body (`dumpsys notification` shows `pkg=app.dropin.playdate`, channel
+`fcm_fallback_notification_channel`, `android.title="Drop In — device test 2"`); and "Turn off" DELETED the row
+(1 -> 0), which is what migration 0065 pins. Native PRECEDENCE over web push was also proven: the account had a
+`push_subscriptions` row and the native branch won.
+
+**A FALSE NEGATIVE WAS CAUSED BY THE ORCHESTRATOR, AND IS RECORDED.** The first attempt showed nothing on the
+device. Cause: `adb shell am force-stop` to "close" the app sets Android's **stopped** state, and a stopped
+package receives **no FCM messages at all**. The server had SUCCEEDED while the phone silently discarded it —
+indistinguishable from a broken push path. The runbook said "force-close the app" and is now corrected with the
+exact sequence and with the disambiguation rule that saved the diagnosis: `device_tokens.last_seen_at` is bumped
+only by the native success arm, whereas `notification_log.error = null` does NOT disambiguate (a web-push
+success stamps null too).
+
+**Bonus, previously unproven:** slice 2b-iii's NATIVE copy variants render correctly on a real device screen —
+they had only ever been unit-tested.
+
+**⚠️ NEW PRODUCT-LEVEL FINDING — A LAUNCH BLOCKER, NOT A TEST ANNOYANCE:** a parent with a **Google-only**
+account **cannot sign into the native app at all**. They have no password, and "Continue with Google" cannot
+return to the shell because the OAuth redirect needs deep links (slice 3). The founder hit this directly. This
+reframes slice 3: deep links are not only for shared links — they are what makes Google sign-in work on native.
+Workaround used for this test: the founder set a password via the web reset flow. **No code change made; this
+needs a plan/slice decision before slice 4 store submission.**
