@@ -73,20 +73,84 @@ async function setAnyDistance(page: Page): Promise<void> {
  * Scroll far enough that the floating map toggle renders on /browse.
  *
  * V27: list view withholds `places-view-toggle` until `window.scrollY` clears
- * ~220px. Short result sets leave the page un-scrollable at Playwright's
- * viewport, so a temporary spacer (the same `scroll-range-probe` technique the
- * round-trip spec already uses) guarantees a scroll range without touching the
- * directory's own DOM. The spacer is left in place for the caller to remove.
+ * `MAP_TOGGLE_SCROLL_THRESHOLD_PX` (220px, `PlaceDirectory.tsx`).
+ *
+ * 2026-10-06 — THE ENTRY-FRAME FIX: THIS HELPER NO LONGER INFLATES THE DOCUMENT.
+ *
+ * It used to append a 1800px `scroll-range-probe` spacer so the page had a
+ * scroll range, and its callers removed the spacer once the map and strip were
+ * visible. That removal happened AFTER the app had centred the map pane against
+ * the inflated document, so the entry-frame assertion at the bottom of this file
+ * then measured a layout the app never saw: `window.scrollY` clamped as the
+ * document shrank and the pane landed off centre.
+ *
+ * MEASURED (built app, 390x844, radius widest, search "park", 112 rows): the
+ * spacer made the map view's document 2791px (its own 991px + 1800px), and the
+ * entry scroll was still mid-flight at scrollY 397 — animating from the list's
+ * 400 toward the pane's centre — when the spacer came out. The layout change
+ * clamped the scroll to the real 147px and left the pane 11.64px above the
+ * middle. On the orchestrator's run against the same build the same mechanism
+ * measured 25.64px, because 14px of settled layout moved where the clamp landed.
+ * Against a 12px tolerance that is a pass and a fail from the same code, which is
+ * why this read as flakiness instead of as a measure of the harness.
+ *
+ * IT WAS NEVER NEEDED. With those filters the /browse document is 47,365px tall,
+ * so `scrollTo(0, 600)` clears the toggle's 220px threshold by 380px — the
+ * spacer's own era was a short-results regression that no longer exists.
+ * MEASURED, no spacer: `document.documentElement.scrollHeight` 47393, max scroll
+ * 46549, and the toggle is visible from `scrollTo(0, 600)` (asserted in the
+ * helper below). So nothing is appended to <body>, nothing has to be removed, and
+ * the document the app centres in IS the document the spec measures.
+ *
+ * The spacer technique itself is NOT deleted from this file — the scroll-restore
+ * spec below still needs it for its own purpose (a page only ~1053px tall has no
+ * offset to lose and its round trip would be vacuously true), and `places.e2e.ts`
+ * keeps its own copy. Those are deliberate and untouched.
  */
 async function scrollPastMapToggleThreshold(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    if (document.getElementById('scroll-range-probe') !== null) return
-    const spacer = document.createElement('div')
-    spacer.id = 'scroll-range-probe'
-    spacer.style.height = '1800px'
-    document.body.appendChild(spacer)
-  })
-  await page.evaluate(() => window.scrollTo(0, 400))
+  await page.evaluate(() => window.scrollTo(0, 600))
+  /**
+   * The toggle renders from a rAF-sampled scroll listener, so it does not exist
+   * in the same task as the scroll. Waiting for it here is what makes "the
+   * scroll got past the threshold" an observed fact rather than an assumption.
+   */
+  await expect(page.getByTestId('places-view-toggle')).toBeVisible()
+}
+
+/**
+ * Wait for the map view's ENTRY SCROLL to stop moving, so a measurement taken
+ * afterwards is of a layout the app settled in.
+ *
+ * THE MAP VIEW CENTRES ITS OWN PANE with `scrollIntoView({ block: 'center',
+ * behavior })`, and `behavior` is `smooth` for a viewer who has not asked for
+ * reduced motion — so while the map and the strip first paint, the page is still
+ * animating. MEASURED, no spacer: sampling the pane right after the strip
+ * appears reads it 31.64px above the middle of the screen, and the same geometry
+ * reads 0.36px once the scroll stops. A pixel assertion taken mid-animation is a
+ * measure of the animation's frame rate.
+ *
+ * THE WAIT IS ON THE BROWSER'S OWN MOVEMENT, not a `waitForTimeout`: eight
+ * animation frames in a row with no change in `window.scrollY`, which a running
+ * smooth scroll cannot satisfy. It costs ~130ms when the scroll has already
+ * finished, and ~130ms is the whole price of the assertion being about layout
+ * instead of timing.
+ */
+async function waitForEntryScrollToSettle(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let previous = window.scrollY
+        let still = 0
+        const tick = (): void => {
+          const now = window.scrollY
+          still = now === previous ? still + 1 : 0
+          previous = now
+          if (still >= 8) resolve()
+          else requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }),
+  )
 }
 
 /**
@@ -112,7 +176,12 @@ async function openMapView(page: Page): Promise<void> {
   await page.getByTestId('places-view-toggle').click()
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
-  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
+  /**
+   * 2026-10-06: the map view is open AND ITS ENTRY SCROLL HAS LANDED. Nothing is
+   * removed from the document here any more (there is no spacer to remove), so
+   * the caller's next read is of the layout the app centred in.
+   */
+  await waitForEntryScrollToSettle(page)
 }
 
 /**
@@ -244,7 +313,9 @@ async function openMapViewByKeyboardEntry(page: Page): Promise<void> {
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('places-map-view-map')).toBeVisible()
   await expect(page.getByTestId('places-map-strip')).toBeVisible()
-  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
+  // 2026-10-06: nothing was appended to the document, so nothing is removed here; the
+  // entry scroll is settled so the focus work below is not racing it.
+  await waitForEntryScrollToSettle(page)
   /**
    * THE FOCUS IS PUT BACK ON THE CONTROL THAT NOW EXISTS, and this is a faithful
    * model rather than a convenience: activating the map toggle replaces the
@@ -491,7 +562,9 @@ test('the map view pins EVERY matching place, capping only the cards (V24 s10)',
   await page.getByTestId('places-view-toggle').click()
   const mapViewMap = page.getByTestId('places-map-view-map')
   await expect(mapViewMap).toBeVisible()
-  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
+  // 2026-10-06: no spacer to remove — the toggle helper no longer inflates the
+  // document. The entry scroll is settled before the pins are counted.
+  await waitForEntryScrollToSettle(page)
 
   // AC B1: THE PINS ARE COMPLETE — every placeable matching row, which is all
   // but the handful the seed carries without coordinates.
@@ -619,7 +692,8 @@ test('the map view shows the list\'s own result set and mounts exactly one map (
   await seeMap.click()
   const mapViewMap = page.getByTestId('places-map-view-map')
   await expect(mapViewMap).toBeVisible()
-  await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())
+  // 2026-10-06: no spacer to remove — the toggle helper no longer inflates the document.
+  await waitForEntryScrollToSettle(page)
 
   // AC (the trap): the map view REPLACED the band — the old test id is gone, so
   // no spec in the suite can match two maps at once.
@@ -858,6 +932,11 @@ test('entering the map view frames the focused place, in the middle of the pane 
 
   // (2) The map pane, at the centre of the viewport — and the focused pin with
   // it, since (1) puts it at the pane's centre.
+  //
+  // 2026-10-06: `openMapView` has already waited for the entry scroll to stop, so this
+  // reads the layout the app settled in rather than one frame of the animation
+  // that got it there. The tolerance below is unchanged at 12px — the drift this
+  // spec exists to catch is what made the spacer come out.
   const offsets = await page.evaluate(() => {
     const pane = document.querySelector('[data-testid="places-map-view-map"]')
     const pin = document.querySelector('[data-focused-marker]')
