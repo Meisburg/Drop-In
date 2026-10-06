@@ -369,6 +369,14 @@ Assets below were read from Google's own
   two fixes held, and the count went 195/4 → 197/2. The remaining red is ONLY the
   two map races below.
   **STILL OPEN, and now with a sharper diagnosis than "a race":**
+  ⚠️ **AND THE COMPOSITION MOVED, which is worth knowing rather than hiding:**
+  the same run traded `#1` for a DIFFERENT pin test —
+  `places.e2e.ts:2886` *"a tapped feed pin names the drop-in happening there"* —
+  failing with `expect(locator).toBeVisible()` → **element(s) not found**. That
+  spec taps EVERY indigo pin and collects the popups naming its own seeded
+  drop-ins, so it does not share the wrong-pin cause; it is a seeding/timing
+  question in the feed lane and **has not been diagnosed. It is NOT guessed at
+  here** — the count stayed at 2 across three runs, but WHICH two moved.
   - **#2 `places-map-view.e2e.ts:801`** — the spec writes `strip.scrollLeft =
     clientWidth` and then asserts `places-map-card-0` still has
     `aria-current="true"`, i.e. the stated invariant "the FOCUS does not move on a
