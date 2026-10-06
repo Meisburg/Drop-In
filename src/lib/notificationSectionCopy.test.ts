@@ -15,6 +15,17 @@
  *  - **native copy must say what is true**, and must not contain the claims the
  *    browser sentences make.
  *
+ * ⚠️ AND "TRUE" MEANS SCOPED, NOT PROMISED (fix round 1). The first native
+ * wording said the controls "apply to browser alerts", which reads as a promise
+ * that a toggle flipped in the shell silences browser alerts. It does not — the
+ * prefs live in the WebView's own storage, the service worker is their only
+ * reader, and it never runs in the shell — so the shell's controls govern no
+ * alert at all, browser included. A parent relying on that sentence gets the 6am
+ * browser alert anyway. The first version of THIS test passed it, because it
+ * only required the words "browser alerts"; the assertions below now require the
+ * scope clause that makes the sentence true, which is the class of claim the
+ * test exists to catch.
+ *
  * The native VARIANT cannot be driven on this machine (no Android device, no
  * `FCM_SERVICE_ACCOUNT_JSON`), so the device behaviour itself is UNPROVEN; what
  * is proven here is the copy the shell renders.
@@ -60,10 +71,20 @@ describe('notificationSectionCopy (which channel this section is talking about)'
     }
   })
 
-  it('scopes both preference notes to browser alerts, and says app alerts are not filtered yet', () => {
+  it('scopes both preference notes to browser alerts WITHOUT promising the shell reaches them', () => {
     for (const key of ['muteNote', 'quietHoursNote'] as const) {
       const text = NOTIFICATION_COPY_NATIVE[key]
       expect(text).toContain('browser alerts')
+      // THE CLAUSE THAT MAKES IT TRUE (fix round 1). The first version of this
+      // test only required the words "browser alerts", and the wording it
+      // shipped then promised that a toggle flipped IN THE SHELL silences
+      // browser alerts. It does not: the prefs go to the WebView's own
+      // localStorage + Cache Storage (pushClient.ts:74-80, 260-276), the only
+      // reader is the service worker (sw.ts:111 → 141-143), and the service
+      // worker never runs in the shell. So "where they are set separately" is
+      // load-bearing — it states the control's SCOPE without promising
+      // propagation, and a sentence that drops it is the defect again.
+      expect(text).toMatch(/browser alerts where they are set separately/)
       // The safe direction, said out loud: an app alert is NOT filtered on this
       // phone. Without this clause the sentence could read as a promise again.
       expect(text).toMatch(/app alerts on this phone are not (filtered|paused)[^.]*yet/)

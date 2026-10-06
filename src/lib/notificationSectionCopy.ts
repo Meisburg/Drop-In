@@ -62,8 +62,23 @@ export const NOTIFICATION_COPY_WEB: NotificationSectionCopy = {
 
 /**
  * THE NATIVE COPY — the same three places, saying what is true inside the shell.
- * Short, plain, and a statement of current behaviour rather than an error: the
- * controls are not broken, they are scoped to the browser channel.
+ * Short, plain, and a statement of current behaviour rather than an error.
+ *
+ * ⚠️ IN THE SHELL THE CONTROLS ARE SCOPED TO **NOTHING** — fix round 1, and the
+ * over-claim was this module's own. The first native wording said they "apply to
+ * browser alerts", which is the same lie moved one channel over: the prefs are
+ * written to the WebView's own `window.localStorage` (`pushClient.ts:74-80`) and
+ * mirrored into Cache Storage (`pushClient.ts:260-276`), and the ONLY reader is
+ * the service worker (`readPrefs`, `sw.ts:111`, used at `sw.ts:141-143`). The
+ * service worker does not run in the shell and there is no
+ * `pushNotificationReceived` listener anywhere in `src/`, so a toggle flipped
+ * here is read by nothing and reaches no browser — a browser has its own
+ * storage. A parent who believed "these apply to browser alerts" would still be
+ * woken by a browser alert at 6am.
+ *
+ * So the notes state each control's SCOPE ("where they are set separately")
+ * without promising propagation, which also restores the true "saved on this
+ * device only" sense the browser variant carries.
  *
  * Two honest facts the browser words got wrong here:
  *  1. neither control filters an app alert — the OS renders it and never runs
@@ -75,8 +90,10 @@ export const NOTIFICATION_COPY_WEB: NotificationSectionCopy = {
  *     browser registration survives, and turning both off needs both places.
  */
 export const NOTIFICATION_COPY_NATIVE: NotificationSectionCopy = {
-  muteNote: 'These choices apply to browser alerts; app alerts on this phone are not filtered by them yet.',
-  quietHoursNote: 'Quiet hours apply to browser alerts; app alerts on this phone are not paused yet.',
+  muteNote:
+    'These choices apply to browser alerts where they are set separately; app alerts on this phone are not filtered by them yet.',
+  quietHoursNote:
+    'Quiet hours apply to browser alerts where they are set separately; app alerts on this phone are not paused yet.',
   turnOffNote:
     "Turning them off removes your account's app alerts; browser alerts are turned off in your browser. You can turn them back on here any time.",
 }
