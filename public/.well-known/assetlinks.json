@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.dropin.playdate",
+      "sha256_cert_fingerprints": [
+        "95:D0:0B:EF:A5:15:5C:23:5B:3F:2B:DB:EA:FD:70:D9:AD:B6:37:2D:23:46:8E:43:8E:27:E6:66:75:91:29:B4"
+      ]
+    }
+  }
+]

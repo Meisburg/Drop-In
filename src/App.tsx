@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router'
+import { subscribeAppLinks } from './lib/appLinks'
 import { DropInMark } from './components/DropInMark'
 import { NAV_ICONS, NAV_ICONS_FILLED } from './components/icons'
 import { LightboxProvider } from './components/ImageLightbox'
@@ -818,9 +819,39 @@ function NavIcon({ path, filled = false }: { path: string; filled?: boolean }) {
   )
 }
 
+/**
+ * SLICE 3 — a SHARED https link (`https://drop-in-mu.vercel.app/playdate/<id>`)
+ * opens the app on the screen it names, cold start included.
+ *
+ * ⚠️ NOT SLICE 2c. That is the custom scheme's OAuth return, subscribed by
+ * /login (lib/db.ts's `subscribeNativeOAuthReturn`); this is a web link a parent
+ * taps or shares, and `lib/appLinks.ts` explains at length why the two must not
+ * be conflated — registering a second `appUrlOpen` listener is what would break
+ * 2c's cold start, so the subscription there declines to register for a launch
+ * that belongs to the OAuth return.
+ *
+ * A NAVIGATION, NOT A ROUTE: the link's path is handed to the router, which
+ * already owns `/playdate/:id` (and its signed-out bounce) and whose `*`
+ * catch-all sends anything unrecognised home — so a link to a stale or
+ * hand-edited id lands on a real screen, never a blank one. The decision about
+ * which URLs are ours lives in the pure `appLinkPath`; this component only
+ * carries the answer to `<Navigate>`.
+ *
+ * The state setter is the subscription's callback because React guarantees it
+ * is stable, so the effect runs ONCE — `useNavigate`'s function is rebuilt on
+ * every route change (react-router's `useNavigateUnstable`), which would
+ * resubscribe the native listener on every navigation.
+ */
+function AppLinks() {
+  const [target, setTarget] = useState<string | null>(null)
+  useEffect(() => subscribeAppLinks(setTarget), [])
+  return target === null ? null : <Navigate to={target} />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <AppLinks />
       <SessionProvider>
         {/* V27 slice 3: one shared unread total for the Inbox nav badge. Inside
             SessionProvider so it reads the shared session; the shell below

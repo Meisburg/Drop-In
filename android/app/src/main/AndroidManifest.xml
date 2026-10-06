@@ -51,6 +51,57 @@
                 <data android:scheme="app.dropin.playdate" />
             </intent-filter>
 
+            <!--
+                Slice 3 — the SHARED link: `https://drop-in-mu.vercel.app/playdate/<id>`
+                opens THIS app when installed and the web page when not.
+
+                ⚠️ A SECOND filter, never a merged one. The scheme filter above is
+                slice 2c's OAuth return and is proven working on hardware; its
+                `<data android:scheme=…/>` must stay a tag with exactly ONE
+                attribute, because `src/lib/oauth.test.ts` matches it with
+                /<data\s+android:scheme="([^"]+)"\s*\/>/ and asserts the result
+                equals the appId — an attribute added to that tag makes the match
+                fail and the pin red (measured, not inferred).
+
+                Order does NOT matter to that pin, and this was measured too:
+                oauth.test.ts scans `/<intent-filter>…<\/intent-filter>/`, which
+                requires an attribute-less opening tag, and this filter cannot be
+                attribute-less (autoVerify is on it) — so the two never compete
+                for its `.find()`. This one sits second for reading order.
+
+                android:autoVerify="true" is what makes the OS fetch
+                `https://drop-in-mu.vercel.app/.well-known/assetlinks.json` at
+                install time and verify our signature against it (public/…
+                ships that file). Without it Android opens the chooser or the
+                browser instead — the silent failure this slice exists to fix.
+
+                android:pathPrefix is deliberately NARROW: `/playdate/` is the
+                shape `buildShareUrl` (src/lib/trust.ts) produces and the only
+                thing this slice claims. The consequence, named rather than
+                implied: an emailed password-reset link points at
+                `/reset-password` (lib/passwordReset.ts's RESET_PATH), so it is
+                NOT claimed here and keeps landing in the browser — which is
+                correct today, because that token has to reach Supabase inside
+                the WebView. Claiming the whole host would capture it.
+
+                Host and prefix have ONE home in code — APP_LINK_HOST and
+                APP_LINK_PATH_PREFIX in src/lib/appLinks.ts — and
+                src/lib/appLinks.test.ts fails if this file drifts from them.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- scheme + host + pathPrefix in ONE tag: the three attributes
+                     are ANDed, which is the intent. (A separate tag per
+                     attribute is the documented way to OR values, not to
+                     combine them.) -->
+                <data
+                    android:scheme="https"
+                    android:host="drop-in-mu.vercel.app"
+                    android:pathPrefix="/playdate/" />
+            </intent-filter>
+
         </activity>
 
         <provider
