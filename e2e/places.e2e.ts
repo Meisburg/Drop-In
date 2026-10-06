@@ -2985,6 +2985,32 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
       let foundIndex = -1
       for (let index = 0; index < count; index += 1) {
         count = Math.max(count, await pins.count())
+        /**
+         * ⚠️ SKIP A PIN THE CLICK CANNOT REACH (nightly 2026-10-06).
+         *
+         * `force: true` dispatches at the element's centre WHATEVER is on top of
+         * it, so an overlapped pin hands its click to the NEIGHBOUR: no popup
+         * opens for either, the probe collects nothing for it, and the spec later
+         * fails on `place-marker-info` being absent — a panel that was never
+         * asked for, with no product reason behind it. That is the SAME
+         * wrong-target class as the marker-bubble flake fixed next door, and the
+         * same answer applies: a pin whose centre is not its own is not a pin a
+         * parent can press, so it is not a pin this probe should click.
+         *
+         * `force` STAYS, deliberately: it is what keeps a probe of every pin from
+         * hanging on one that is momentarily unactionable. The hit test decides
+         * WHETHER to click; `force` only decides that the click cannot block.
+         */
+        const pinBox = await pins.nth(index).boundingBox()
+        if (pinBox === null) continue
+        const reachable = await pins.nth(index).evaluate(
+          (el, pt) => {
+            const top = document.elementFromPoint(pt.x, pt.y)
+            return top !== null && (top === el || el.contains(top) || top.contains(el))
+          },
+          { x: pinBox.x + pinBox.width / 2, y: pinBox.y + pinBox.height / 2 },
+        )
+        if (!reachable) continue
         await pins.nth(index).click({ force: true })
         const probePanel = page.getByTestId('place-marker-info')
         // A marker whose click opened no popup, or a popup with no event payload

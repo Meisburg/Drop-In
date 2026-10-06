@@ -369,14 +369,20 @@ Assets below were read from Google's own
   two fixes held, and the count went 195/4 → 197/2. The remaining red is ONLY the
   two map races below.
   **STILL OPEN, and now with a sharper diagnosis than "a race":**
-  ⚠️ **AND THE COMPOSITION MOVED, which is worth knowing rather than hiding:**
-  the same run traded `#1` for a DIFFERENT pin test —
-  `places.e2e.ts:2886` *"a tapped feed pin names the drop-in happening there"* —
-  failing with `expect(locator).toBeVisible()` → **element(s) not found**. That
-  spec taps EVERY indigo pin and collects the popups naming its own seeded
-  drop-ins, so it does not share the wrong-pin cause; it is a seeding/timing
-  question in the feed lane and **has not been diagnosed. It is NOT guessed at
-  here** — the count stayed at 2 across three runs, but WHICH two moved.
+  ⚠️ **AND THE COMPOSITION MOVED — and this one IS the same class, diagnosed.**
+  The run traded `#1` for `places.e2e.ts:2886` *"a tapped feed pin names the
+  drop-in happening there"*: `place-marker-info` was **"element(s) not found"**, a
+  panel nothing had asked for. Its probe clicks every indigo pin with
+  **`{ force: true }`**, which dispatches at the centre WHATEVER is on top — so an
+  overlapped pin hands its click to the NEIGHBOUR and no popup opens for either.
+  That is the marker-bubble defect next door, in a second place. **FIXED the same
+  way**: the probe hit-tests each pin's centre and skips the ones that are not
+  their own (`force` stays, so a probe of every pin still cannot hang; the hit
+  test decides WHETHER, `force` decides that it cannot block). Green locally:
+  `places.e2e.ts` **24 passed (1.8m)**, whole file.
+  **The count has stayed at 2 across four runs while WHICH two moved — that is the
+  signal that this is one class in several places, and the follow-up worth doing
+  is ONE shared "reachable pin" helper rather than a third copy of this guard.**
   - **#2 `places-map-view.e2e.ts:801`** — the spec writes `strip.scrollLeft =
     clientWidth` and then asserts `places-map-card-0` still has
     `aria-current="true"`, i.e. the stated invariant "the FOCUS does not move on a
