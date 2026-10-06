@@ -15,6 +15,39 @@
 
 ---
 
+## 📍 WHERE THIS ACTUALLY STANDS (2026-10-05, and the checkboxes agree)
+
+**YOUR MOVE — one word clears the most: "sweep it".** It covers **1.1 and 7.5**,
+which are the same action, plus five duplicate place rows found on the way
+(measured: every one has **zero** references, so nothing needs repointing).
+801 accounts / 1620 rows, `founder_overlap: 0`, dry run first, read-back after.
+
+**THEN, RANKED BY WHAT UNBLOCKS THE MOST:**
+
+1. **An FCM Firebase project** (→ slices 2.5): drop `google-services.json` into
+   `android/app/` and a service-account JSON into the Edge Function's secrets.
+   Nothing else blocks native push.
+2. **The upload keystore path** (→ slice 2.6): it lives in the gitignored
+   `android/keystore.properties`; `assetlinks.json` needs its SHA-256.
+3. **The 0.2 child-data posture** — one sentence, and it gates the store
+   descriptions (4.4), the Data safety form (5.1) and 5.3.
+4. **Confirm `appId: app.dropin.playdate`**, then install
+   `android/app/build/outputs/apk/debug/app-debug.apk` and say whether it stays
+   open. That answers 2.3's "Done when", the only part of it left.
+5. **Rotate the Exa API key** (7.2) — it was pasted into a chat on 2026-10-03.
+
+⚠️ **ONE PRODUCT DECISION, NOT A BUG FIX** (7.3): on a programmatic scroll of the
+places strip, should the selection follow the settled snap point, or never move?
+The app's comment says never; its behaviour says it follows. Decide the rule and
+the fix is obvious; guess and it will flip back.
+
+**ALREADY DONE, verified — do not redo:** grounding (2.2), the rot table (2.1),
+the four browser-origin hazards (2.4), the legal pages + a live policy URL
+(1.6 / 4.5), the icon (4.1), and the whole shell except the device run
+(built, branded, signed — 2.3). `npm run verify` is green on every commit.
+
+---
+
 ## ⏰ The timing fact that drives this whole plan
 
 **Google requires a closed test with 12 testers opted in continuously for 14
@@ -161,13 +194,22 @@ apps. There is no `android/` directory, no Capacitor project, no TWA config toda
 slices, acceptance criteria, and verification commands. It is parked deliberately;
 this phase is where it unparks.
 
-- [ ] **2.1 — Re-verify the handoff's "what will have rotted" table.**
+- [x] **2.1 — DONE 2026-10-05 (`f1213b0`).** The four facts it names were
+  re-checked against the tree: Capacitor **8.5.2**, the next free migration
+  **0065** (0064 applied), **8** notification kinds, and the repo **PUBLIC**
+  (`isPrivate: false`, which reverses §2.7's macOS-minutes note).
+  ~~Re-verify the handoff's "what will have rotted" table.~~
   It was written against `62c996a`; the tree has moved far past it. Check the
   Capacitor version, the next free migration number, the notification kind count,
   and the repo visibility. **Do not skip this** — it is the whole reason that
   section exists. *Time: 20 min.*
 
-- [ ] **2.2 — Slice 0: grounding.** Pin current Capacitor conventions, APNs/FCM
+- [x] **2.2 — DONE 2026-10-05 (`608bd13`).**
+  `research/native-apps/2026-10-05-capacitor-grounding.md`, 284 lines, **42
+  primary-source URLs**, and its deltas are now appended to slices 2–3 of
+  `.scratch/native-apps/plan.md` so a builder cannot get the FCM v1 shape or the
+  Capacitor 8.5 UIScene change wrong at the point of need.
+  ~~Slice 0: grounding.~~ Pin current Capacitor conventions, APNs/FCM
   request shapes, and what Apple's guideline 4.2 rejects *today*, from primary
   sources. Both move. *Time: ~1 hour.*
 
@@ -177,8 +219,23 @@ this phase is where it unparks.
   Java 26 and `~/Android/Sdk` are installed on this box — the whole loop is
   testable locally today.
   *Done when: a debug build installs and launches on a real Android device.*
+  **STATE 2026-10-05 — the build half is DONE, the "done when" is NOT.** The
+  shell exists (`9420465`), wears the app's own icon and splash (`a0c628d`), names
+  the public web app in its outbound links (`01da1aa`), and **the release bundle
+  is SIGNED** (`ce3da9e`). The APK is at
+  `android/app/build/outputs/apk/debug/app-debug.apk`. On the emulator it
+  installed and `MainActivity` resumed at t+5s/t+15s with Capacitor serving the
+  bundled assets, then the process was gone by ~t+45s **on an emulator whose own
+  `android.hardwar` was SIGABRT-ing every 5s** — so which side is at fault is NOT
+  established, and only a real phone answers it. **This is a founder step.**
 
-- [ ] **2.4 — Fix the four browser-origin hazards as part of slice 1.**
+- [x] **2.4 — DONE 2026-10-05 (`01da1aa`).** `src/lib/publicUrl.ts` exists with
+  its sibling test; `currentPublicOrigin()` is the single source of the outward
+  origin and is used at **5 sites in `src/lib/db.ts`** (OAuth `redirectTo`, share
+  URLs, password reset) and **2 in `src/lib/email.ts`**, with a loud warning when
+  a native build lacks `VITE_PUBLIC_BASE_URL` — which is what stops a shipped app
+  from handing out `https://localhost` links.
+  ~~Fix the four browser-origin hazards as part of slice 1.~~
   Already found, with line numbers — do not rediscover them during submission:
 
   | Where | What breaks in a shell |
@@ -233,15 +290,19 @@ this phase is where it unparks.
 Assets below were read from Google's own
 [store listing docs](https://support.google.com/googleplay/android-developer/answer/9866151):
 
-- [ ] **4.1 — App icon:** 512×512, 32-bit PNG **with alpha**, max 1024KB, no
-  badges or ranking text.
+- [x] **4.1 — VERIFIED 2026-10-05 against the real file:** `store/icon-512.png`
+  measures **512x512, srgba (4 channels = alpha), 16,968 bytes** — spec is
+  512×512, 32-bit PNG with alpha, ≤1024KB. No badges or ranking text in the art.
+  ~~App icon.~~
 - [ ] **4.2 — Feature graphic:** 1024×500, **JPEG or 24-bit PNG (no alpha)**.
   Keep the focal point centered — the edges get cropped on some surfaces.
 - [ ] **4.3 — Screenshots:** minimum 2, up to 8 per device type. Phone is
   required. Use the real app with real (seeded) content — not mockups.
 - [ ] **4.4 — Short description** (the first thing users read) and **full
   description.** ⚠️ Both must match the child-data posture from 0.2.
-- [ ] **4.5 — Privacy policy URL** from 1.6.
+- [x] **4.5 — LIVE, checked 2026-10-05:** `https://drop-in-mu.vercel.app/privacy`
+  returns **HTTP 200** (terms at `/terms`), from item 1.6.
+  ~~Privacy policy URL from 1.6.~~
 - [ ] **4.6 — App category, contact email, and content rating questionnaire.**
 
 ---
@@ -327,9 +388,21 @@ Assets below were read from Google's own
   see. That is fixed (`19c4722`), `e2e/` is now TYPE-CHECKED inside `verify`
   (`npm run typecheck:e2e`), and this is the run that proves it: ~20 failures
   before, 4 after, with none of the four mentioning the constant.
-- [ ] **7.4 — "ping" → "going" terminology pass.** Real user-visible copy
-  inconsistency. Not a launch blocker. Scoped in `.scratch/next-batch-brief.md`.
-- [ ] **7.5 — Retire the 352 test accounts' residue** if 1.2 was deferred.
+- [~] **7.4 — ~95% DONE, one string BLOCKED (2026-10-05).** The push and email
+  halves already say "going" (`ping_received` renders as `${actor} is going`), and
+  most `grep` hits are comments or identifiers, which the item's own scope rule
+  excludes. The ONE remaining user-visible string is
+  `src/pages/FeedPage.tsx:195` — **another session's in-flight file** — and the
+  item's acceptance is "no user-visible string on ANY screen", so finishing the
+  rest would ship BOTH vocabularies. One-line change once that file is free; the
+  full classification is in `.scratch/next-batch-brief.md`.
+  ~~"ping" → "going" terminology pass.~~
+- [ ] **7.5 — THE SAME ACTION AS 1.1**, and 1.2 WAS deferred (no scratch project),
+  so this is live: the residue is **801 accounts / 1620 rows**, measured
+  2026-10-05 with `founder_overlap: 0`, and the sweep tool supports
+  `select` / `delete` / `verify` with a dry run first. **It is the same single
+  "sweep it" the founder owes 1.1** — not a second decision.
+  ~~Retire the 352 test accounts' residue.~~
 
 ---
 
