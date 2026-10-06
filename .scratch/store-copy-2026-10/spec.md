@@ -135,6 +135,9 @@ type: collected? shared? optional? purpose?
    same.
 3. **Screenshots (4.3)** — need seeded content and a phone; the framing rule is in
    item 4 above.
-4. **Feature graphic (4.2)** — 1024×500, no alpha. **Deliberately NOT drafted
-   here**: it is a visual composition and this model cannot see images, so a
-   blind one would be worse than none.
+4. ~~Feature graphic (4.2)~~ — **BUILT 2026-10-06.** See the checklist's 4.2: it
+   is composed from the app's own mark, its own font (embedded as a data URL after
+   a `file://` load was found to be silently falling back), and its own tagline, at
+   exactly 1024×500 with no alpha, and it is verified structurally. ⚠️ Still worth a
+   human's single glance — the checks prove it is complete and correctly placed,
+   not that it is good.

@@ -343,8 +343,19 @@ Assets below were read from Google's own
   measures **512x512, srgba (4 channels = alpha), 16,968 bytes** — spec is
   512×512, 32-bit PNG with alpha, ≤1024KB. No badges or ranking text in the art.
   ~~App icon.~~
-- [ ] **4.2 — Feature graphic:** 1024×500, **JPEG or 24-bit PNG (no alpha)**.
-  Keep the focal point centered — the edges get cropped on some surfaces.
+- [x] **4.2 — BUILT 2026-10-06** at `store/feature-graphic-1024x500.png`, by
+  `scripts/build-store-feature-graphic.mjs` (the script is the tracked half; the
+  PNG sits untracked beside the icon, like `store/icon-512.png`). **It is composed
+  from the app's OWN approved art** — the mark extracted from
+  `assets/drop-in-icon.svg`, the Bricolage Grotesque the app ships embedded as a
+  data URL, and the tagline already on the login screen — rather than invented,
+  because the model that built it **cannot see images**. Verified without eyes:
+  **exactly 1024×500, no alpha channel** (`channels=srgb`, PNG24), the brand plate
+  and white ink both rasterise, the ink sits at `+154+178` with margins
+  L154/R109/T178/B167 — **well inside the crop zone** — and both halves are present
+  (mark 260px, text 461px). ⚠️ **A HUMAN SHOULD STILL LOOK AT IT ONCE.** What the
+  checks cannot judge is whether it is *good*, only that it is complete and
+  correctly placed; treat it as a starting point, not a finished asset.
 - [ ] **4.3 — Screenshots:** minimum 2, up to 8 per device type. Phone is
   required. Use the real app with real (seeded) content — not mockups.
 - [x] **4.4 — DRAFTED 2026-10-06** in `.scratch/store-copy-2026-10/spec.md`, with
