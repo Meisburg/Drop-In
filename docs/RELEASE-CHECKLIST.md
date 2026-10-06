@@ -279,10 +279,30 @@ Assets below were read from Google's own
 - [ ] **7.2 — Rotate the Exa API key** pasted into a chat on 2026-10-03. It is in
   an old session file in plaintext and in `.env`. **Do this regardless of
   everything else.**
-- [ ] **7.3 — Two known e2e flakes**, proven pre-existing and neither a product
-  bug: `the marker bubble stays open` (overlapping Leaflet markers) and
-  `list view is FILTERS FIRST` (fails only under full-suite load). Fix when they
-  annoy you.
+- [x] **7.3 — MEASURED 2026-10-05, and the count was wrong.** The nightly was
+  dispatched by hand on `19c4722` (`gh workflow run e2e-scheduled`) rather than
+  assumed: **195 passed, 4 failed, 2 skipped, 18.8m**. It is FOUR, not two, and
+  the two extra ones are also CI-environment only — **all four pass on a dev
+  machine**, which is the property that makes them flakes rather than defects:
+  1. `places.e2e.ts:918` `the marker bubble stays open` — the recorded one
+     (overlapping Leaflet markers).
+  2. `places-map-view.e2e.ts:801` `aria-current` came back `""` instead of
+     `"true"` — the recorded intermittent; it passed 3/3 locally.
+  3. `card-circles.e2e.ts:215` `expect(Math.abs(circleMidY - labelMidY))
+     .toBeLessThan(4)` got **128** — passes locally; the size of the miss says
+     the CI renderer laid the card out differently (webfont-dependent geometry),
+     not that the circle drifted.
+  4. `post-fast.e2e.ts:768` `expect(measured.controls.length)
+     .toBeGreaterThanOrEqual(8)` got **0** — passes locally; zero controls means
+     the page had not rendered when the measure ran, i.e. a wait, not a layout.
+  **Still to fix when they annoy you**, and the useful diagnosis is now on
+  record: two are waits/timing (2, 4) and two are map/geometry races (1, 3).
+  ⚠️ The same dispatch found and fixed something bigger: **a real regression from
+  the `E2E_BASE_URL` centralisation** — seven specs had lost the import and threw
+  `ReferenceError: E2E_BASE_URL is not defined` at RUN time, which `--list` cannot
+  see. That is fixed (`19c4722`), `e2e/` is now TYPE-CHECKED inside `verify`
+  (`npm run typecheck:e2e`), and this is the run that proves it: ~20 failures
+  before, 4 after, with none of the four mentioning the constant.
 - [ ] **7.4 — "ping" → "going" terminology pass.** Real user-visible copy
   inconsistency. Not a launch blocker. Scoped in `.scratch/next-batch-brief.md`.
 - [ ] **7.5 — Retire the 352 test accounts' residue** if 1.2 was deferred.
