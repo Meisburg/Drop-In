@@ -1,8 +1,10 @@
 # What to look at — the launch verification list (2026-10-05)
 
 **Written for the founder, by the orchestrator.** Everything below is either
-something only you can do, or something to check once the 16 unpushed commits are
-live. Every number here was measured on this tree today; where a measurement has a
+something only you can do, or something to check once the unpushed commits are
+live (`git rev-list --count origin/master..HEAD` is the count, and it moves with
+every commit this session makes — a number written here would be stale by the time
+you read it). Every number here was measured on this tree today; where a measurement has a
 method, the method is named so you (or the next agent) can repeat it.
 
 ---
@@ -27,7 +29,9 @@ the work is done and you cannot see it.
 
 ## 1. WHAT TO CHECK ON THE DEPLOYED APP, AFTER A PUSH
 
-Nothing below is live yet: `origin/master` is **16 commits behind** this tree.
+Nothing below is live yet: **`origin/master` is behind this tree by every commit
+from `026d77a` on** — read the real count with
+`git rev-list --count origin/master..HEAD` rather than trusting a number in prose.
 After a push (and a hard refresh, or after clearing the PWA cache if it looks
 stale — the served bundle is the test, not the filename):
 
