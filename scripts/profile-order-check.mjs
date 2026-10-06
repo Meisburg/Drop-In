@@ -25,6 +25,35 @@
  * the shared blocks is the pure profileBlurbOrder seam (src/lib/photoStorage.ts);
  * this script keeps the rendered DOM honest against it.
  *
+ * V28 CORRECTION — THE CROSS-SURFACE FORM OF THE PHOTO ASSERTION WAS
+ * UNSATISFIABLE, AND THAT WAS THE CHECK'S DEFECT, NOT THE APP'S. From d7b41c1
+ * (V23: "the profile block order is single-sourced across the read view and the
+ * editor") onward, the seam deliberately pushes the edit surface's
+ * always-rendered parent cards AFTER the family photo
+ * (src/lib/photoStorage.ts:387-392, "The edit surface ALWAYS carries the parent
+ * cards — their empty states are still rendered cards"), and the seam's own
+ * sibling test pins exactly that (src/lib/photoStorage.test.ts:364-371). An
+ * expectation that the photo sits after the parents region on BOTH surfaces
+ * therefore contradicted the very contract this script exists to police: it was
+ * unsatisfiable from V23 until this fix, and simply never updated when the
+ * single-sourcing landed. The assertion now states the contract the seam
+ * actually pins — the family photo is the CLOSER OF THE OPTIONAL BLOCKS: on the
+ * read surface nothing may follow it, and on the edit surface only the
+ * always-rendered parent cards may. The RENDERED DOM is still what is measured,
+ * so the assertion keeps its teeth; the constant is not restated. Do NOT "fix"
+ * this back into a cross-surface same-position claim — that is the defect.
+ *
+ * AND NOTE WHAT THIS LANE CAN AND CANNOT SEE, because it explains the drift's
+ * survival: `profileBlurbOrder`'s ARRAY IS CONSUMED AS MEMBERSHIP, not as an
+ * order (`blurb.includes(...)` at src/components/ProfileView.tsx:513-514), and
+ * the EDIT surface does not import the seam at all — its DOM order is the
+ * hand-written JSX in src/pages/ProfilePage.tsx. A reorder of the constant alone
+ * therefore changes NO rendered heading (verified by mutating the seam's edit
+ * branch and watching this lane still pass), which is precisely why the stale
+ * expectation below could sit here unnoticed from V23 through V28. Asserting
+ * over the RENDERED DOM is what gives this check its teeth; do not replace that
+ * with a re-read of the constant.
+ *
  * HEADING -> KEY MAPPING (documented so a future reorderer knows what each
  * heading means):
  *   /photo & name/i          -> 'user'    the identity card ("Your photo & name")
@@ -510,8 +539,10 @@ check(
 // comparison is made on the PROJECTION: the read surface's shorter list is
 // legal only when every block it shows sits where the editor's does. Concretely:
 // the read projection must be a SUBSEQUENCE of the edit projection (same
-// relative order, no block out of place) AND the family photo must sit in the
-// same RELATIVE position on both surfaces (after the parents region on each).
+// relative order, no block out of place) AND the family photo must be the
+// closer of the OPTIONAL blocks on each surface — which, because the editor's
+// parent cards are themselves an always-rendered block placed after the photo,
+// means NOT the same ordinal on both (see the V28 correction in the docblock).
 //
 // V23 REVIEW — THE VACUITY THIS CHECK USED TO HAVE, AND HOW IT WAS PROVEN.
 // The marker account has no bio, kids, or family photo, so the read view
@@ -575,9 +606,8 @@ check(
     : `read view showed ${readShared.length} shared block(s)`,
 )
 
-// The family photo's RELATIVE position: it must sit AFTER the parents region
-// ('parents' first occurrence) on BOTH surfaces — the exact mismatch this slice
-// fixes.
+// The family photo's RELATIVE position: it must be the CLOSER OF THE OPTIONAL
+// BLOCKS.
 // When the read view does NOT show the photo, that is legal ONLY because the
 // profile has none (the marker account's state, asserted by the vacuity floor
 // above); the check no longer silently returns true on `-1` alone, it reports
@@ -594,22 +624,54 @@ const editPhotoIdx = editShared.indexOf('familyPhoto')
 // the moment seeding let the photo render for the first time. The absolute-index
 // form would only ever have "passed" on the vacuous empty read side.
 //
-// So the assertion is now the PROPERTY, stated twice, once per surface: the
-// photo must exist on both and sit after 'parents' on each.
-const readPhotoAfterParents =
-  readPhotoIdx !== -1 && readShared.indexOf('parents') !== -1 && readPhotoIdx > readShared.indexOf('parents')
-const editPhotoAfterParents =
-  editPhotoIdx !== -1 && editShared.indexOf('parents') !== -1 && editPhotoIdx > editShared.indexOf('parents')
+// V28 — AND THE REPLACEMENT WAS STILL WRONG, IN THE OTHER DIRECTION. "After the
+// parents region on BOTH surfaces" contradicted the seam from d7b41c1 (V23)
+// onward, because the seam single-sources the edit surface by pushing its
+// ALWAYS-rendered parent cards after the family photo
+// (src/lib/photoStorage.ts:387-392; pinned by
+// src/lib/photoStorage.test.ts:364-371). On the marker account the edit DOM is
+// legitimately `user, kids, familyPhoto, parents`, so the old expectation failed
+// against a correct page — an assertion that had drifted from the constant it
+// polices, the mirror image of the "constant that nothing checks" defect this
+// file's own docblock argues against. It had been unsatisfiable since V23; it
+// was never updated because nothing ran this lane in `verify`.
+//
+// The assertion is therefore the property the seam actually pins, measured over
+// the DOM order already observed above: the photo must exist on both surfaces
+// (when the read view shows one at all), and what follows it must respect each
+// surface's contract — NOTHING on the read surface, only the always-rendered
+// parent cards (which the heading vocabulary maps to 'parents') on the edit
+// surface.
+const ALLOWED_AFTER_PHOTO = {
+  read: [], // the seam pushes no block after the photo for the read surface
+  edit: ['parents'], // 'The parents' — the always-rendered parent cards (V23)
+}
+/** The blocks a surface renders AFTER its family photo, or null when it shows
+ *  no photo. `shared` is the projected DOM order, not the constant. */
+function blocksAfterPhoto(shared) {
+  const idx = shared.indexOf('familyPhoto')
+  return idx === -1 ? null : shared.slice(idx + 1)
+}
+const readTail = blocksAfterPhoto(readShared)
+const editTail = blocksAfterPhoto(editShared)
+const tailRespects = (tail, allowed) => tail !== null && tail.every((key) => allowed.includes(key))
+// The edit surface's tail must also be NON-EMPTY: those cards render on every
+// edit view (which is why the seam may place them last), so an editor that
+// stopped drawing them would be a different defect, not a legal order.
+const readPhotoOk = readTail === null || tailRespects(readTail, ALLOWED_AFTER_PHOTO.read)
+const editPhotoOk =
+  editTail !== null && editTail.length > 0 && tailRespects(editTail, ALLOWED_AFTER_PHOTO.edit)
 check(
-  'the family photo sits AFTER the parents region on both surfaces',
+  'the family photo is the CLOSER of the optional blocks (read: nothing after it; edit: only the always-rendered parent cards)',
   readPhotoIdx === -1
     ? // Absent on the read side is legal ONLY when the profile has no photo —
       // which is why the editor's own photo control is what keeps the block
       // reachable. A photo PRESENT but not rendering would be caught by the
       // vacuity floor above, and the seeding now makes that case real.
       readShared.length === 0 || !readFamilyPhotoPresent
-    : readPhotoAfterParents && editPhotoAfterParents,
-  `read index ${readPhotoIdx} (of ${readShared.length}), edit index ${editPhotoIdx} (of ${editShared.length})`,
+    : readPhotoOk && editPhotoOk,
+  `read index ${readPhotoIdx} (of ${readShared.length}) tail ${JSON.stringify(readTail)}, ` +
+    `edit index ${editPhotoIdx} (of ${editShared.length}) tail ${JSON.stringify(editTail)}`,
 )
 
 if (failures.length > 0) {
