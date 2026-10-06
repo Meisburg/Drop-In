@@ -365,9 +365,10 @@ Assets below were read from Google's own
     **with the number** instead of appearing later as a 128px geometry mystery.
     Both changes re-run green locally (card-circles 2 passed, post-fast 2 passed)
     and the next nightly is the referee.
-  **✅ CONFIRMED BY THE LANE (nightly on `06d168d`): 197 passed, 2 failed** — the
-  two fixes held, and the count went 195/4 → 197/2. The remaining red is ONLY the
-  two map races below.
+  **✅ CONFIRMED BY THE LANE, run by run, rather than assumed:**
+  `19c4722` **195 / 4** → `06d168d` **197 / 2** → `32ad265` **197 / 2** (which two
+  moved) → `30465ac` **198 / 1**. Every fix above held, and **the ONLY failure left
+  in the entire suite is the product question below** — not a flake.
   **STILL OPEN, and now with a sharper diagnosis than "a race":**
   ⚠️ **AND THE COMPOSITION MOVED — and this one IS the same class, diagnosed.**
   The run traded `#1` for `places.e2e.ts:2886` *"a tapped feed pin names the
