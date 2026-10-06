@@ -117,8 +117,19 @@ whole-app regression check this repo has.
   `node scripts/signed-in-audit.mjs` therefore measures an hours-old build and
   reports failures that do not exist in this tree — which it did, once, to me.
   Always pass `E2E_BASE_URL=http://localhost:4191` with your own preview.
-- **A filtered e2e run never refreshes the marker token.** Name
-  `e2e/auth.setup.ts` in the filter or the run drives the app with the last full
-  run's session, whose Supabase access token expired after **3,600 s** — and the
-  failures read as product bugs (`HTTP 401 PGRST303 "JWT expired"`). Full write-up
-  and the spec that would fix it: `.scratch/e2e-marker-token/spec.md`.
+- **An e2e run that skips the `setup` project drives the app with an expired
+  session.** ⚠️ **Corrected 2026-10-05 late, by measurement — this bullet first
+  said "a filtered e2e run", and that is FALSE on Playwright 1.63:** a project
+  dependency runs in full and unfiltered, so `npx playwright test e2e/foo.e2e.ts`
+  DOES run the setup project and refreshes the marker (verified with a deliberately
+  stale token: the plain filtered run refreshed it and passed 4/4). What breaks it
+  is **`--no-deps`**, which deletes the dependency edge, **or any second config
+  that pins chromium's storageState and drops the setup project** (the old
+  `playwright.private.config.ts` recipe). Either way the app is driven with the
+  last full run's session, whose Supabase access token expired after **3,600 s**,
+  and the failures read as product bugs (`HTTP 401 PGRST303 "JWT expired"`).
+  **As of `7045b98` the harness refuses to let that happen:** a `beforeEach` in
+  `e2e/fixtures.ts` (backed by the pure, 29-test `src/lib/markerToken.ts`) throws
+  before the first navigation with *"marker session expired … This is a HARNESS
+  failure, not a product one… re-run with `e2e/auth.setup.ts` named"*. Naming
+  `e2e/auth.setup.ts` in the filter remains the remedy, and is harmless either way.
