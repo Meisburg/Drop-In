@@ -1685,13 +1685,16 @@ export function PlacePickerMap({
     if (map === null || markers.length === 0) return
     const group = L.layerGroup(
       entries.map(({ place, coords }) => {
-        const marker = L.circleMarker([coords.lat, coords.lng], {
-          radius: 8,
-          color: '#4f46e5',
-          weight: 2,
-          fillColor: '#4f46e5',
-          fillOpacity: 0.35,
-        })
+        // ⚠️ `PLACE_MARKER_STYLE`, NOT A SECOND LITERAL. This effect used to
+        // re-type the whole style object here — radius 8, `#4f46e5`, weight 2,
+        // the same fill — while the constant was ALREADY imported at the top of
+        // this file and is the one `lib/mapStrip.ts` documents, tests, and hands
+        // to `marker.setStyle` when a pin becomes focused. Two copies of the
+        // picker's style is how the picker's pins and the list's pins drift into
+        // two different blues (the repo's build law calls this the one-copy
+        // rule; `design-detect` found it as an "undocumented colour", which was
+        // the symptom rather than the problem).
+        const marker = L.circleMarker([coords.lat, coords.lng], PLACE_MARKER_STYLE)
         marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
         // V25 t02: ONE TAP DOES BOTH — the write (`onPick`, the page's one pick
         // path) and the visible confirmation (`setSelectedId`, the panel below
