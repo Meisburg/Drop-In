@@ -75,26 +75,37 @@ for (const width of WIDTHS) {
   })
 
   const isDesktop = width >= MD
-  const rail = m.navHeight !== null && m.navHeight > m.navWidth
   const label = `${String(width).padStart(4)}px`
 
   // No horizontal overflow at any width.
   check(`${label} no horizontal overflow`, m.overflowX <= 0, `overflow ${m.overflowX}px`)
 
-  if (isDesktop) {
-    check(`${label} left rail (not a bottom bar)`, rail, `nav ${m.navWidth}x${m.navHeight} ${m.navPosition}`)
-    check(`${label} content wider than the phone measure`, (m.mainWidth ?? 0) > 448, `${m.mainWidth}px`)
-    check(`${label} nav has an accessible name`, !!m.navLabel, String(m.navLabel))
-    check(`${label} nav targets >= 44px`, (m.minTarget ?? 0) >= 44, `${m.minTarget}px`)
-  } else {
-    check(`${label} phone layout: nav spans the bottom`, !rail, `nav ${m.navWidth}x${m.navHeight}`)
-    check(
-      `${label} content column <= 448px (phone measure preserved)`,
-      (m.mainWidth ?? 9999) <= 448,
-      `${m.mainWidth}px`,
-    )
-    check(`${label} nav targets >= 44px`, (m.minTarget ?? 0) >= 44, `${m.minTarget}px`)
-  }
+  // ⚠️ WHAT THIS LANE DOES NOT CHECK ANY MORE, AND WHY (2026-10-05).
+  //
+  // It used to assert the nav here — bottom bar below `md`, left rail at `md` and
+  // up, an accessible name, 44px targets. **Every one of those checks failed on
+  // every run**, and they had to: this lane visits a SIGNED-OUT route (its own
+  // header says so — "the signed-out shell is what is measurable without
+  // credentials") and the nav lives in the SIGNED-IN shell. A route with no nav
+  // cannot satisfy an assertion about the nav, so ten checks were red 10 times
+  // out of 10 and the lane read as broken.
+  //
+  // The SHELL is now measured by `scripts/signed-in-audit.mjs`, which has the
+  // credentials this lane lacks and asserts exactly these properties — nav
+  // present, named, ≥44px targets, bottom bar below `md`, left rail at `md` and
+  // up — on the feed, AND is proven able to fail (a forced 20px nav target fails
+  // it; see that script's header).
+  //
+  // What remains here is what a signed-out page can honestly answer: overflow at
+  // seven widths, and the content column's phone measure.
+  const contentColumnOk = isDesktop ? (m.mainWidth ?? 0) > 448 : (m.mainWidth ?? 9999) <= 448
+  check(
+    isDesktop
+      ? `${label} content wider than the phone measure`
+      : `${label} content column <= 448px (phone measure preserved)`,
+    contentColumnOk,
+    `${m.mainWidth}px`,
+  )
 
   await context.close()
 }
@@ -105,4 +116,8 @@ if (failures.length > 0) {
   console.log(`\nFAIL — ${failures.length} check(s) failed`)
   process.exit(1)
 }
-console.log('\nPASS — phone layout preserved below 768px; rail + wide content at 768px and up')
+console.log(
+  '\nPASS — overflow clear at 7 widths; the content column keeps its phone measure below 768px ' +
+    'and widens above it. THE SHELL (nav, rail, targets) is measured by scripts/signed-in-audit.mjs, ' +
+    'which is where it can actually be seen.',
+)

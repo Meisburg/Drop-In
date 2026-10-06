@@ -22,6 +22,26 @@ theirs — leave it alone).
 of real CPU. Run it ONCE per batch, when the human is away, and say so in the
 report.
 
+### Which audit sees which half
+
+The two audit lanes split on **credentials**, and the split is the thing to
+remember, because a check on the wrong half is a check that can never pass:
+
+| Lane | Sees | Measures |
+|---|---|---|
+| `scripts/mobile-audit.mjs` | signed OUT | 7 phone/landscape viewports × `/login`, `/reset-password`, `/playdate/:id`, `/browse`; overflow, text controls, 44px targets, contrast, the one-screen fold |
+| `scripts/layout-width-check.mjs` | signed OUT | 7 widths on one route; overflow + the content column's phone measure. **Not the nav** — a signed-out route has none |
+| `scripts/signed-in-audit.mjs` | signed IN | feed, post form, profile, settings × 3 widths; overflow, real sub-44 targets, missing `alt`, console errors, **and the shell**: nav present, named, ≥44px, bottom bar below `md` / left rail at `md` up |
+
+`signed-in-audit.mjs` needs `e2e/.auth/marker-state.json` (the e2e suite's own
+`auth.setup` writes it; run the suite once). **Without it the lane exits 2 saying
+`NOT MEASURED`** — it does not quietly measure nothing and call it a pass. It
+prints every sub-44 element it EXCUSED, with the reason, so an over-broad
+exemption is visible rather than green.
+
+Both audits are proven able to fail: forcing the theme radio's label to 20px and
+a nav target to 20px each turn `signed-in-audit` red.
+
 ## 3. During a slice, run TARGETED specs only
 
 Name the files the change can reach:
