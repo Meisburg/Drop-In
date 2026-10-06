@@ -57,14 +57,18 @@
  *   (6b) the Past row's title LINK on /profile — HEAD rendered a plain <p>, so
  *        the host could not open their own past post from the archive at all;
  *   (6c) the `opacity-60` mute on a Past row — `renderPostRow` took no `muted`
- *        argument at HEAD and Past/Upcoming rows looked identical.
+ *        argument at HEAD and Past/Upcoming rows looked identical. (That mute is
+ *        itself GONE as of the profile-archive slice, 2026-10-05 — the Past row
+ *        is a compact link now, see (8). This bullet is this ticket's record,
+ *        not a claim about what the app renders today.)
  * Those three are pivots of the ProfilePage half this ticket also carries.
  *
  * THE GENUINELY "GREEN EITHER WAY" HALF is (7)-(9): V8/04's Past list existing
  * and being split correctly, V8/09's "Same time next week" for the host, and the
- * muted archive CARD with no "I'm going" toggle on /u/:handle. They assert
- * shipped behaviour this ticket must not change — written down because the
- * ticket's archive AC ("reachable from the feed", muted, no toggle, the next-week
+ * archive row carrying no "I'm going" toggle on /u/:handle — (8) rewritten to
+ * the compact row's anatomy by the profile-archive slice. They assert shipped
+ * behaviour this ticket must not change — written down because the
+ * ticket's archive AC ("reachable from the feed", no toggle, the next-week
  * affordance) has to be pinned somewhere, and a spec that could only ever go red
  * would not notice the archive breaking.
  *
@@ -435,10 +439,13 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   // --- (6) V16 t04 MOVED THIS BLOCK'S ARCHIVE OFF /profile. The feed's own door
   // ("See past drop-ins") still navigates to /profile, but /profile no longer
   // renders the "Hosted drop-ins" list (the founder removed it; the load went
-  // with it). The archive lists this block pins — the Past/Upcoming split, the
-  // row-is-a-door link, the opacity-60 mute — are all still asserted, on the
-  // surface that still renders them and always did: /u/<handle> (block 8
-  // below, which is why block 6's assertions are now made there).
+  // with it). The archive lists this block pins — the Past/Upcoming split and
+  // the row-is-a-door link — are all still asserted, on the surface that still
+  // renders them and always did: /u/<handle> (block 8 below, which is why block
+  // 6's assertions are now made there). The opacity-60 mute is NO LONGER one of
+  // them: the profile-archive slice (2026-10-05) replaced the Past card with a
+  // compact row, so block 8 carries the new anatomy and the mute is gone by
+  // design.
   // (6a)
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toBeVisible()
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
@@ -475,30 +482,54 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   await expect(page.getByText('Same time next week?')).toBeVisible()
   await expect(page.getByTestId('same-time-next-week-action')).toBeVisible()
 
-  // --- (8) The archive CARD's rules, on the surface that renders cards
+  // --- (8) The archive ROW's rules, on the surface that renders the archive
   // (/u/:handle — V8/04's Past section). GREEN EITHER WAY. ---
+  //
+  // ⚠️ REWRITTEN BY THE PROFILE-ARCHIVE SLICE (2026-10-05,
+  // .scratch/profile-archive/spec.md). This block used to assert the FURNITURE
+  // OF A DropInCard on this surface: the `opacity-60` mute, an "Ended" line on
+  // every past row, the "More info ›" affordance, and that the card carried no
+  // buttons. Three of those four are now false BY DESIGN and are deleted with
+  // this note rather than weakened — history stopped wearing the card of an
+  // invitation. (The fourth, the status chip, survives NARROWER: an EXPLICIT
+  // 'ended' / 'cancelled' status still labels the row, which is what the V12 t03
+  // test below asserts; a row that is past only because its clock ran out no
+  // longer says "Ended" — this section is headed "Past" and, once long, grouped
+  // by month.) The Past row is ONE compact link (ProfileView's `PastDropInRow`):
+  // no avatar, no "@handle", no "No one's going yet", no "More info" label and
+  // no maps row. What survives is asserted below, plus the compactness the slice
+  // exists for.
+  // The MUTING assertion has no successor on purpose: every row in this section
+  // has ended, so a uniform opacity-60 over the whole list is not information.
   await page.goto(`/u/${encodeURIComponent(marker.displayName)}`)
-  // V25 ticket 05: the CARD, not its anchor. The card's box is the element that
-  // carries `opacity-60` and the border/radius — the body <Link> inside it is
-  // only the tap target now (the address's Maps row is the box's second child,
-  // and it must mute with the card). Every assertion below is about the card,
-  // and the muted class is only findable on the box, so this reads the box.
-  const pastCard = section(page, 'Past')
+  // V25 ticket 05's lesson still holds: the element the specs address is the
+  // CARD (here: the row) and not its inner anchor. The archive slice put
+  // `data-testid="dropin-card"` ON the one link, so the row addressed is also
+  // the tap target — which is what AC 4 keeps the test id for.
+  const archiveRow = section(page, 'Past')
     .getByTestId('dropin-card')
     .filter({ hasText: endedTitle })
-  await expect(pastCard).toBeVisible()
-  // Muted, with the "Ended" chip: DropInCard's `isEnded` styling — the SAME
-  // signal the archive rows on /profile now carry.
-  await expect(pastCard).toHaveClass(/opacity-60/)
-  await expect(pastCard).toContainText('Ended')
-  // The card is a real card (the tap target + its "More info" affordance), so
-  // the next assertion is about a DropInCard and not about some plain row.
-  await expect(pastCard).toContainText('More info')
+  await expect(archiveRow).toBeVisible()
+  await expect(archiveRow).toHaveAttribute('href', `/playdate/${endedId}`)
+  // The row keeps the date and the place, with their stable test ids inside it
+  // (AC 4): the specs and the e2e helpers select on those two.
+  await expect(archiveRow.getByTestId('card-when')).toBeVisible()
+  await expect(archiveRow.getByTestId('card-place')).toHaveText('E2E ended-out lot, not a real place')
+  // …and the invitation's furniture is gone from it.
+  await expect(archiveRow.getByTestId('card-maps-link')).toHaveCount(0)
+  await expect(archiveRow).not.toContainText('More info')
   // (9) …and it carries NO controls: the feed's "I'm going" toggle is the FEED's
   // control (the page passes `pingToggle`; no archive list does). The control
   // for "a card of this shape CAN carry one" lives where the toggle does —
   // e2e/card-circles.e2e.ts asserts it on the feed for a non-host viewer.
-  await expect(pastCard.getByRole('button')).toHaveCount(0)
+  await expect(archiveRow.getByRole('button')).toHaveCount(0)
+  // The compact height is the point of the slice: the full card measured ~111px
+  // each, so up to 50 past rows was 5548px of scroll. Bounded rather than
+  // pinned to a pixel — font rendering varies by machine, and the OLD shape
+  // cannot fit under 80px (title + when + place + age + More info + maps row).
+  const archiveRowBox = await archiveRow.boundingBox()
+  expect(archiveRowBox, 'the archive row must have a measurable box').not.toBeNull()
+  expect(archiveRowBox?.height ?? 0).toBeLessThan(80)
 
   // --- (10) The archive is PER HOST, not per attendance — the limitation of the
   // AC's own placement ("the archive is /profile's Past list"), pinned so a

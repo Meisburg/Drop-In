@@ -33,6 +33,14 @@
  * list) and the drop-in host panel's Duplicate button. The /u/:handle half of
  * this spec is unchanged — that page keeps its lists (t05's surface).
  *
+ * PROFILE-ARCHIVE SLICE (2026-10-05, .scratch/profile-archive/spec.md): the
+ * Past row is now the COMPACT row (ProfileView's PastDropInRow) and the list is
+ * paged (5, then +20). This spec pins that row's date/place test ids, the
+ * ABSENCE of the maps row and the "More info" label on it, and that a one-row
+ * archive shows NO "Show more" button. The row keeps its own title line, which
+ * is why the selectors above still identify the row THIS spec created rather
+ * than any other family's history.
+ *
  * LIVE-DATA DISCIPLINE: every assertion is about the two rows THIS spec
  * created (its own `e2e-<epoch>` titles). Nothing here asserts a count, or the
  * presence/absence, of live project data it did not create — leftover rows
@@ -128,6 +136,19 @@ test('the host’s real posts: Upcoming + Past on /u/:handle and /profile, with 
   await expect(
     section(page, 'Past').locator('a[href^="/playdate/"]').filter({ hasText: pastTitle }),
   ).toBeVisible()
+
+  // (1b) The archive row is the COMPACT row (profile-archive slice, 2026-10-05,
+  // .scratch/profile-archive/spec.md): one link carrying the date and the place
+  // and none of an invitation's furniture — and, because this host has ONE past
+  // drop-in, no "Show more" button at all (the empty-button failure AC 5 names).
+  const pastArchiveRow = section(page, 'Past')
+    .getByTestId('dropin-card')
+    .filter({ hasText: pastTitle })
+  await expect(pastArchiveRow.getByTestId('card-when')).toBeVisible()
+  await expect(pastArchiveRow.getByTestId('card-place')).toHaveText('E2E profile-posts lot')
+  await expect(pastArchiveRow.getByTestId('card-maps-link')).toHaveCount(0)
+  await expect(pastArchiveRow).not.toContainText('More info')
+  await expect(page.getByTestId('past-show-more')).toHaveCount(0)
 
   // The sections are NOT crossed: the past post is in Past only, the upcoming
   // post in Upcoming only (the ticket's split, not just "both somewhere").

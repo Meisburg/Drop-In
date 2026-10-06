@@ -31,6 +31,7 @@ import {
   formatDayLabel,
   formatDistanceLabel,
   formatGuestLine,
+  formatMonthLabel,
   formatStartDayLabel,
   formatTimeLabel,
   formatTimeWindow,
@@ -45,6 +46,7 @@ import {
   haversineMiles,
   hostCommonGroundLine,
   hostDistanceMiles,
+  instantDayLabel,
   isDuration,
   isEnded,
   isHappeningNow,
@@ -59,6 +61,7 @@ import {
   KID_AGE_MIN,
   lastOwnPlaydateFrom,
   localDayKey,
+  localMonthKey,
   mapsHref,
   MORE_OPTIONS_FIELDS,
   moreOptionsHoldsError,
@@ -266,6 +269,48 @@ describe('localDayKey (the day-section key, DST-agnostic local day)', () => {
   it('never shifts with the machine timezone (fixed local date)', () => {
     // Local 2026-01-15 23:59, whatever the machine timezone / DST state.
     expect(localDayKey(new Date(2026, 0, 15, 23, 59).toISOString())).toBe('2026-01-15')
+  })
+})
+
+describe('instantDayLabel (the bare date both the card and the archive row print)', () => {
+  it('is the always-the-date wording, never "Today"/"Tomorrow"', () => {
+    expect(instantDayLabel(at(1200))).toBe('Fri, Sep 4') // same local day as NOW_ISO
+    expect(instantDayLabel(new Date(2026, 8, 12, 15, 0).toISOString())).toBe('Sat, Sep 12')
+    expect(instantDayLabel(new Date(2026, 11, 25, 9, 0).toISOString())).toBe('Fri, Dec 25')
+  })
+
+  it('is the day half of the card’s when line (one expression, two surfaces)', () => {
+    const start = new Date(2026, 8, 12, 18, 30).toISOString()
+    const end = new Date(2026, 8, 12, 19, 30).toISOString()
+    expect(cardWhenLabel(start, end).startsWith(instantDayLabel(start))).toBe(true)
+  })
+
+  it('is empty for an instant that does not parse (no invented day)', () => {
+    expect(instantDayLabel('not-a-date')).toBe('')
+  })
+})
+
+describe('localMonthKey / formatMonthLabel (the profile archive’s month anchors)', () => {
+  it('is the device-local YYYY-MM of the instant', () => {
+    expect(localMonthKey(NOW_ISO)).toBe('2026-09')
+    expect(localMonthKey(new Date(2026, 0, 15, 23, 59).toISOString())).toBe('2026-01')
+    expect(localMonthKey(new Date(2026, 11, 31, 23, 59).toISOString())).toBe('2026-12')
+  })
+
+  it('rolls at the local month boundary, not before it', () => {
+    expect(localMonthKey(new Date(2026, 8, 30, 23, 59).toISOString())).toBe('2026-09')
+    expect(localMonthKey(new Date(2026, 9, 1, 0, 0).toISOString())).toBe('2026-10')
+  })
+
+  it('labels a month with the app’s own short month words', () => {
+    expect(formatMonthLabel(NOW_ISO)).toBe('Sep 2026')
+    expect(formatMonthLabel(new Date(2026, 11, 25, 9, 0).toISOString())).toBe('Dec 2026')
+    expect(formatMonthLabel(new Date(2027, 0, 2, 9, 0).toISOString())).toBe('Jan 2027')
+  })
+
+  it('invents no month for an instant that does not parse', () => {
+    expect(localMonthKey('not-a-date')).toBe('')
+    expect(formatMonthLabel('not-a-date')).toBe('')
   })
 })
 
@@ -3227,11 +3272,11 @@ describe('partitionPostsByTime (V8 ticket 04: the Upcoming / Past split)', () =>
 interface HostPostsMockConfig {
   /** The upcoming section's rows. */
   upcomingRows?: unknown[]
-  /** The upcoming query's exact count (nothing renders it — the past tail is the "+N older"). */
+  /** The upcoming query's exact count (nothing renders it — only the past cap has a tail). */
   upcomingCount?: number | null
   /** The past section's rows. */
   pastRows?: unknown[]
-  /** The past query's exact count — the "+N older" source. */
+  /** The past query's exact count — the honest older-rows line's source. */
   pastCount?: number | null
   /** Models a failing playdates query (the designed error line). */
   queryError?: { code: string; message: string }
@@ -3360,7 +3405,7 @@ describe('listPostsByHostWithClient (V8 ticket 04: one host’s posts)', () => {
     expect(result.olderCount).toBe(0)
   })
 
-  it('reports the past rows beyond the cap as a plain count ("+N older")', async () => {
+  it('reports the past rows beyond the cap as an honest count (profileArchive.olderPastNote)', async () => {
     const pastRows = Array.from({ length: HOST_POSTS_LIMIT }, (_, i) => ({ id: `p${i}` }))
     const { client } = makeHostPostsMockClient({
       pastRows,

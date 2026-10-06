@@ -2019,15 +2019,34 @@ export async function listMyPingedPosts(): Promise<WhileAwayPingedPostRow[]> {
 // embed (so /u/:handle can render the existing DropInCard) and the cap.
 
 /**
- * How many rows each of the host-post queries reads (V8 ticket 04 pin).
+ * How many rows each of the host-post queries reads (V8 ticket 04's pin,
+ * RAISED 50 → 200 by the profile-archive slice, 2026-10-05).
  *
  * Per SECTION, not per request: the two sections carry different orders, so they
  * are two queries — and an old host's history is the pile that grows, which is
- * why the past section's overflow is reported as a plain count
- * (HostPosts.olderCount → "+N older") instead of paginating. 50 is far past any
- * real host's data volume; the point is that the fetch is never unbounded.
+ * why the cap needs a door. The profile's Past list now pages LOCALLY through
+ * the rows this fetch returns (5 on first paint, then +20 per "Show more",
+ * src/lib/profileArchive.ts), so the fetch's job is to hold enough history for
+ * that paging to reach a real host's whole archive.
+ *
+ * WHY 200 AND NOT 50 (`.scratch/profile-archive/spec.md` §1, option A, the
+ * brief's default): at 50 the list ran out while the profile still had rows, so
+ * its tail was "+N older" — a promise with no door, which is the defect the
+ * slice exists to remove. 200 covers years of weekly drop-ins for one family;
+ * the cost is a larger first read, and the benefit is that the dead text
+ * disappears for every real host. What is STILL beyond 200 keeps an honest
+ * one-line count (`HostPosts.olderCount` → profileArchive.olderPastNote, which
+ * names this limit rather than promising the rows) — never a silent drop.
+ *
+ * The number is bounded, not unbounded: this is the query's cap, and the
+ * remainder is reported rather than invented.
+ *
+ * ONE NUMBER FOR BOTH SECTIONS, so the Upcoming query's cap rises with the
+ * past's. That costs nothing it can notice — a host with more than a handful of
+ * drop-ins ahead is not the case this pin is about — and keeping one constant
+ * is what stops the two sections' caps from drifting apart.
  */
-export const HOST_POSTS_LIMIT = 50
+export const HOST_POSTS_LIMIT = 200
 
 /**
  * The card-shaped SELECT for a host's posts (V8 ticket 04): the same shape the
@@ -2052,8 +2071,10 @@ export interface HostPosts {
   /** Upcoming (starts_at ascending) then past (starts_at descending). */
   posts: PlaydateWithNeighborhood[]
   /**
-   * Past rows beyond HOST_POSTS_LIMIT — the plain "+N older" count the page
-   * renders. 0 = nothing was truncated.
+   * Past rows beyond HOST_POSTS_LIMIT — the count of rows no query, column or
+   * door reaches today. The page renders it as profileArchive.olderPastNote's
+   * honest line (which names the limit), never as a promise. 0 = the fetch
+   * reached the end of the archive.
    */
   olderCount: number
 }
@@ -2071,8 +2092,9 @@ export interface HostPosts {
  *   AC). The caller resolves the ids with the existing listBlockedHostIds.
  * - TWO queries, because the sections' orders differ and the cap is per section:
  *   upcoming ordered `starts_at` ascending, past ordered descending, each
- *   `limit(HOST_POSTS_LIMIT)` with an exact COUNT so the truncated past rows can
- *   be reported as a plain number (never a second unbounded fetch).
+ *   `limit(HOST_POSTS_LIMIT)` with an exact COUNT so the rows beyond the cap can
+ *   be reported as an honest number (never a second unbounded fetch). The Past
+ *   list pages through the rows this returns; `olderCount` is what is left over.
  * - The bucket split is `ends_at > nowIso` / `ends_at <= nowIso` — the same
  *   boundary the pure feed.partitionPostsByTime re-partitions these rows with, so
  *   the query's buckets and the render can never disagree. A drop-in happening

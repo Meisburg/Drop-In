@@ -12,6 +12,7 @@ import {
   getBlockState,
   getFollowState,
   getLinkedPartnerForProfile,
+  HOST_POSTS_LIMIT,
   kidAgesByPostForPosts,
   listParentCards,
   listPingsForPosts,
@@ -20,7 +21,15 @@ import {
   toggleFollowProfile,
   type PingForPost,
 } from '../lib/db'
-import { cardAgeRangeLabel, goingPingsByPost, kidHeading, partitionPostsByTime } from '../lib/feed'
+import {
+  cardAgeRangeLabel,
+  goingPingsByPost,
+  instantDayLabel,
+  kidHeading,
+  partitionPostsByTime,
+  pastPostStatusLabel,
+} from '../lib/feed'
+import { PAST_FIRST_PAGE, nextPastVisible, planPastArchive } from '../lib/profileArchive'
 import { linkedNameTargetForViewer } from '../lib/links'
 import { parentNameRows } from '../lib/parentCards'
 import { profileBlurbOrder } from '../lib/photoStorage'
@@ -112,9 +121,10 @@ export function ProfileView({
   // unsettled (the line is hidden); a failed load degrades to hidden
   // (zero-pressure soul, never a crash).
   const [hostedCount, setHostedCount] = useState<number | null>(null)
-  // V8 ticket 04: the host's real posts (null = still loading) + the
-  // truncated past rows behind the cap ("+N older"). A failed load surfaces
-  // the designed error line, never a crash.
+  // V8 ticket 04: the host's real posts (null = still loading) + the count of
+  // past rows beyond the fetch's cap (HOST_POSTS_LIMIT — raised to 200 by the
+  // profile-archive slice, which pages the rows in hand locally). A failed load
+  // surfaces the designed error line, never a crash.
   const [posts, setPosts] = useState<PlaydateWithNeighborhood[] | null>(null)
   /**
    * V9 ticket 05: post id -> the ages of the kids that post's host is bringing
@@ -137,6 +147,16 @@ export function ProfileView({
     null,
   )
   const [olderCount, setOlderCount] = useState(0)
+  /**
+   * The profile-archive slice: HOW MANY past rows the reader has paged to. The
+   * INITIAL value is the first page (5) rather than the archive's size, so the
+   * first paint of a long history is finite; `planPastArchive` clamps it against
+   * the rows in hand, so a shorter profile renders all of its rows with no
+   * button (AC 5's "no empty button" for a host with exactly 5). Reset with the
+   * posts whenever the profile changes (the effect below), or a longer archive's
+   * page count would leak into the next profile's render.
+   */
+  const [pastVisible, setPastVisible] = useState(PAST_FIRST_PAGE)
   const [postsError, setPostsError] = useState<string | null>(null)
   /**
    * V24 slice 11A: THE FAMILY'S PARENT CARDS — the names the "About the
@@ -263,6 +283,7 @@ export function ProfileView({
     let cancelled = false
     setPosts(null)
     setOlderCount(0)
+    setPastVisible(PAST_FIRST_PAGE)
     setPostsError(null)
     listPostsByHost(profileId)
       .then((result) => {
@@ -499,6 +520,14 @@ export function ProfileView({
   // so a card can never sit in a section its own styling contradicts.
   const nowIso = new Date().toISOString()
   const { upcoming, past } = partitionPostsByTime(posts ?? [], nowIso)
+  /**
+   * The profile-archive slice: the Past section's whole render decided purely
+   * (`profileArchive.planPastArchive`) — which rows are visible at this page
+   * state, the month groups once the archive is long enough to need anchors,
+   * the tail button's label (null = no button) and the honest line for rows
+   * beyond the fetch's cap. The JSX below only draws what this returns.
+   */
+  const pastArchive = planPastArchive(past, pastVisible, olderCount, HOST_POSTS_LIMIT)
 
   return (
     <div className="flex flex-col gap-4">
@@ -1055,22 +1084,50 @@ export function ProfileView({
               <div ref={pastSectionRef}>
                 <section className="flex flex-col gap-2">
                   <h3 className="text-sm font-semibold text-slate-700">Past</h3>
-                  <div className="flex flex-col gap-3">
-                    {past.map((post) => (
-                      <DropInCard
-                        key={post.id}
-                        playdate={post}
-                        nowIso={nowIso}
-                        ageRangeLabel={buildCardAgeRangeLabel(post)}
-                        goingPings={goingPingsByPostId?.[post.id] ?? []}
-                        goingPingsLoaded={goingPingsByPostId !== null}
-                      />
-                    ))}
-                  </div>
-                  {/* The cap's honest tail (never pagination at this volume):
-                      a plain count of the past rows the 50-row fetch left out. */}
-                  {olderCount > 0 ? (
-                    <p className="text-xs text-slate-500">+{olderCount} older</p>
+                  {/* THE ARCHIVE (profile-archive slice, 2026-10-05). History
+                      is a line, not an invitation card: each row is ONE compact
+                      link (PastDropInRow below) and the list is BOUNDED — the
+                      first paint shows `PAST_FIRST_PAGE` rows and one real
+                      button brings the next page, replacing the flat run of up
+                      to 50 full cards (~5548px) and the DEAD "+N older"
+                      paragraph that promised rows nothing could reach. The
+                      month headings (and their counts) appear once the archive
+                      is long enough to need anchors; a short archive renders
+                      one group with a null label, i.e. no extra chrome at all.
+                      Every decision above is `pastArchive`'s
+                      (src/lib/profileArchive.ts) — this JSX only draws it. */}
+                  {pastArchive.groups.map((group) => (
+                    <div key={group.key} className="flex flex-col gap-2">
+                      {group.label !== null ? (
+                        <h4 className="text-xs text-slate-500">
+                          {group.label} · {group.count}
+                        </h4>
+                      ) : null}
+                      <div className="flex flex-col gap-2">
+                        {group.rows.map((post) => (
+                          <PastDropInRow key={post.id} post={post} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {pastArchive.showMore !== null ? (
+                    <button
+                      type="button"
+                      data-testid="past-show-more"
+                      onClick={() =>
+                        setPastVisible((visible) => nextPastVisible(visible, past.length))
+                      }
+                      className="flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-indigo-600 transition-colors motion-reduce:transition-none hover:border-indigo-300"
+                    >
+                      {pastArchive.showMore}
+                    </button>
+                  ) : null}
+                  {/* The cap's SECOND number, said honestly: rows beyond
+                      HOST_POSTS_LIMIT are reachable by no query, so this line
+                      names the limit instead of promising them (the dead end
+                      this slice removes was the promise). */}
+                  {pastArchive.olderNote !== null ? (
+                    <p className="text-xs text-slate-500">{pastArchive.olderNote}</p>
                   ) : null}
                 </section>
               </div>
@@ -1087,6 +1144,68 @@ export function ProfileView({
         />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * ONE PAST ROW — history as a line, not an invitation card (profile-archive
+ * slice, `.scratch/profile-archive/spec.md` §2.2).
+ *
+ * The whole row is ONE link to the drop-in, ~56px tall (measured: 56px under
+ * the app's own type scale — `--text-sm` 17px over `--text-xs` 14px, so the
+ * content is 46px and `py-1`'s 8px puts the box exactly on the `min-h-14`
+ * floor), carrying what the archive is for (which drop-in, when, where) and
+ * nothing an invitation needs:
+ * NO avatar or "@handle" (this is the host's own history, and the profile above
+ * already says who they are), NO "No one's going yet" (nobody went — the
+ * section is "Past" and the month heading dates it), NO "More info ›" label
+ * (the row IS the link) and NO `card-maps-link` (a park visited last month is
+ * not a destination to navigate to). DropInCard itself is untouched: the feed
+ * and a profile's Upcoming list are still where an actionable card belongs.
+ *
+ * WHAT MUST SURVIVE (AC 4), because the specs and the e2e helpers select on
+ * it: `data-testid="dropin-card"` marks every row, and `card-when` (the bare
+ * date — `instantDayLabel`, never "Today") and `card-place` live inside this
+ * link. The title keeps its own line so the unique `e2e-<epoch>` title a spec
+ * created still identifies ITS row (the live-data discipline: an assertion may
+ * only be about the rows the spec made).
+ *
+ * NO `isEnded` MUTING HERE, on purpose: every row in this section has ended,
+ * the heading says "Past", and the month heading dates it — `opacity-60` would
+ * mute the whole list uniformly, which is not information.
+ *
+ * THE STATUS CHIP STAYS, and only for an EXPLICIT status ('ended' / 'cancelled'
+ * — the shared `pastPostStatusLabel` seam). It is what explains a row that a
+ * plain "Past" heading cannot: a post the host ENDED EARLY sits here with a
+ * date that has not arrived yet (V12 t03), and a cancelled one is history only
+ * because the host called it off. A row that is past simply because its clock
+ * ran out carries no chip — the section already says so.
+ */
+function PastDropInRow({ post }: { post: PlaydateWithNeighborhood }) {
+  const statusLabel = pastPostStatusLabel(post.status)
+  return (
+    <Link
+      to={`/playdate/${post.id}`}
+      data-testid="dropin-card"
+      className="flex min-h-14 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-1 transition-colors motion-reduce:transition-none hover:border-indigo-300"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-slate-900">{post.title}</p>
+        <p className="truncate text-xs text-slate-600">
+          <span data-testid="card-when">{instantDayLabel(post.starts_at)}</span>
+          <span aria-hidden="true"> · </span>
+          <span data-testid="card-place">{post.place}</span>
+        </p>
+      </div>
+      {statusLabel !== null ? (
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+          {statusLabel}
+        </span>
+      ) : null}
+      <span aria-hidden="true" className="shrink-0 text-lg text-slate-400">
+        ›
+      </span>
+    </Link>
   )
 }
 

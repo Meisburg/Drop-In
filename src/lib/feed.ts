@@ -294,6 +294,38 @@ export function localDayKey(iso: string): string {
 }
 
 /**
+ * The local calendar month key (YYYY-MM in the device's timezone) of an ISO
+ * instant — `localDayKey`'s coarser sibling, and the key the profile's Past
+ * archive groups its month headings on (src/lib/profileArchive.ts).
+ *
+ * LOCAL, not UTC, for `localDayKey`'s reason: a drop-in is remembered on the
+ * device's calendar, so the month a parent scrolls back to is the month the
+ * evening was in where the family lives.
+ *
+ * An instant that does not parse yields '' — the same "never invent a
+ * calendar claim" answer `formatStartDayLabel` gives an unparseable date, so
+ * the caller renders no heading rather than a made-up month.
+ */
+export function localMonthKey(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  return `${d.getFullYear()}-${month}`
+}
+
+/**
+ * The month heading label for a grouped list: "Sep 2026" — short month plus
+ * year, from the SAME MONTHS_SHORT table `formatDayLabel` /
+ * `formatStartDayLabel` use, so the app has one set of month words. An
+ * unparseable instant yields '' (the caller shows no heading).
+ */
+export function formatMonthLabel(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`
+}
+
+/**
  * The day section header label (V3 ticket 01): "Today" when startIso falls
  * on the same local calendar day as nowIso, "Tomorrow" when it falls on the
  * NEXT local day, otherwise a locale-independent "Sat, Sep 12" label
@@ -1061,6 +1093,19 @@ export function formatTimeWindow(startIso: string, endIso: string): string {
 }
 
 /**
+ * The day of an ISO instant, always as a DATE ("Sat, Sep 26") and never
+ * "Today"/"Tomorrow": `formatStartDayLabel` over the same local calendar day
+ * `localDayKey` hands `formatDayLabel`, so the app's two day-wordings share ONE
+ * expression. Both callers print a bare date and neither may say "Today" — the
+ * card (cardWhenLabel, which is not always under a day header) and the profile
+ * archive's compact past row (profileArchive / ProfileView), where a row that
+ * has already ended is remembered by its day.
+ */
+export function instantDayLabel(iso: string): string {
+  return formatStartDayLabel(localDayKey(iso))
+}
+
+/**
  * The card's WHEN line (V25 ticket 05): the day, then the window —
  * "Sat, Sep 26 · 6:30 PM–7:30 PM" — the compact form the founder's own
  * reference screenshot shows ("Sat, Sep 26 · 5:00 PM PDT").
@@ -1077,10 +1122,10 @@ export function formatTimeWindow(startIso: string, endIso: string): string {
  * WHY THE DATE AND NEVER "Today"/"Tomorrow": the card is not always under a day
  * header (browse, both place pages and a profile's Upcoming/Past lists render
  * bare cards), and what the founder asked for is the day it is happening — a
- * DATE. So this runs the app's existing always-the-date wording —
+ * DATE. So this runs `instantDayLabel` (the app's one always-the-date wording:
  * `formatStartDayLabel`, the documented sibling of `formatDayLabel` that skips
- * the today/tomorrow branch — over the same local calendar day `localDayKey`
- * hands `formatDayLabel`, i.e. the same day, the same WEEKDAYS_SHORT /
+ * the today/tomorrow branch, over the same local calendar day `localDayKey`
+ * hands `formatDayLabel`) — the same day, the same WEEKDAYS_SHORT /
  * MONTHS_SHORT tables, and NO second today/tomorrow rule.
  *
  * ONE LINE, TWO FACTS: day and time are joined here so the card renders a single
@@ -1090,7 +1135,7 @@ export function formatTimeWindow(startIso: string, endIso: string): string {
  * the window alone (no dangling " · ").
  */
 export function cardWhenLabel(startIso: string, endIso: string): string {
-  const day = formatStartDayLabel(localDayKey(startIso))
+  const day = instantDayLabel(startIso)
   const window = formatTimeWindow(startIso, endIso)
   return day === '' ? window : `${day} · ${window}`
 }
