@@ -75,8 +75,31 @@ whole-app regression check this repo has.
    confirms them. Live counts right now: **239 places, 152 confirmed, 25
    unreviewed, 62 with no photo**. `git log` and `docs/RELEASE-CHECKLIST.md` say 26;
    **25** is what the database says as of today.
-3. **The 62 blank places** — no free photo exists anywhere; the sourcing report
-   lists them (`.scratch/place-photo-sourcing/`).
+   They are, in full (name · kind), so you can work the list without opening the
+   moderator tool to find them:
+   Bayview-Kinnear Park · playground · Beacon Hill Playground · playground ·
+   Benefit Playground · playground · Delridge Community Center · other ·
+   Delridge Playfield Wading Pool · splash_pad · Dr. Blanche Lavizzo Park ·
+   playground · E Queen Anne Playground · playground · Flo Ware Park · playground ·
+   Froula Playground · playground · Gilman Playground · playground · Hoa Mai Park ·
+   playground · International Childrens Park · playground ·
+   International District Community Center · other · Madison Pool · pool ·
+   Meadowbrook Community Center · other · Rainier Beach Pool · pool ·
+   Rainier Community Center · playground · Rainier Playfield · playground ·
+   Rogers Playground · playground · Ross Playground · playground ·
+   South Park Community Center · other · South Park Playground · playground ·
+   Van Asselt Playground · playground · Victory Heights Playground · playground ·
+   Westcrest Park · playground.
+   ⚠️ **ONE THING TO DECIDE WHILE YOU LOOK: two of them share ONE SOURCE PHOTO.**
+   `Delridge Community Center` and `Delridge Playfield Wading Pool` both point at
+   `flickr.com/photos/29056926@N02/4604211764` — the same picture would appear on
+   two different place pages. They are adjacent facilities in one park, so one
+   photo may well be right; it is flagged because you are the one who can decide it,
+   and confirming both silently ships the same image twice.
+3. **The 62 blank places** — no free photo exists anywhere, and the worklist is
+   still exact: the report's 62 names and the database's 62 blanks are the **same
+   set** (compared name by name today, zero in either direction). The sourcing
+   report lists them (`.scratch/place-photo-sourcing/report.md`, §"No candidate").
 4. **Rotate the old GitHub token** — it is already out of `.git/config` (origin is
    SSH; re-read today, zero credential material) and the transport no longer uses
    it. Only the revoke remains, and only you can do it.
