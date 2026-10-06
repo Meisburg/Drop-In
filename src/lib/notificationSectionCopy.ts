@@ -8,11 +8,16 @@
  *    enforces both controls before it shows anything (`src/sw.ts:141-143`:
  *    `isKindMuted` then `shouldSuppressForQuietHours`). So in a browser every
  *    word here is true, and it must not change.
- *  - A NATIVE (FCM) alert is rendered by the OPERATING SYSTEM. Our service
- *    worker does not run in the shell at all — Capacitor's WebView has no
- *    `PushManager`, the sender addresses a `device_tokens` row, and the OS draws
- *    the alert. Nothing on this device filters it, so both controls currently
- *    DO NOTHING there while the browser's copy promised they did.
+ *  - A NATIVE (FCM) alert is drawn by the OPERATING SYSTEM and never reaches our
+ *    service worker's suppression check. The worker very likely DOES run in the
+ *    shell (the shell ships an unconditional registration), but the shell's
+ *    WebView has no `PushManager` at all (`docs/push-setup.md:287`), so no Web
+ *    Push subscription can exist there, so no `push` event ever fires, so the
+ *    handler that consults the mutes and quiet hours (`src/sw.ts:141-143`) never
+ *    runs for an app alert. These prefs are still read to RENDER the toggles
+ *    (`NotificationsSection.tsx:126`) and by nothing that can SUPPRESS them — so
+ *    both controls currently DO NOTHING there while the browser's copy promised
+ *    they did.
  *
  * THE DIRECTION THAT MATTERS: a parent who relies on the Quiet hours sentence
  * can be woken at 6am by an app that told them they would not be. That is the
@@ -71,22 +76,18 @@ export const NOTIFICATION_COPY_WEB: NotificationSectionCopy = {
  * mirrored into Cache Storage (`pushClient.ts:260-276`), and a browser has its
  * own storage — so a toggle flipped here reaches no browser. A parent who
  * believed "these apply to browser alerts" would still be woken by a browser
- * alert at 6am.
+ * alert at 6am. WHY nothing suppresses an app alert is stated once, at the top of
+ * this file: no `PushManager`, so no subscription, so no `push` event.
  *
- * ⚠️ AND THE REASON THE SHELL'S CONTROLS SUPPRESS NOTHING IS NOT THAT THE WORKER
- * IS ABSENT — fix round 2, which caught the earlier header claiming the service
- * worker "does not run in the shell". That is UNSUPPORTED (and probably false):
- * the shell ships the same UNCONDITIONAL registration
- * (`android/app/src/main/assets/public/registerSW.js`, from `dist/index.html`'s
- * `/registerSW.js`) and is served from `https://localhost` (`capacitor.config.ts:24`),
- * a secure context — so the worker very likely does run there. The real reason
- * is narrower and is the one `.scratch/native-apps/device-runbook.md` states:
- * the worker never RECEIVES the alert. An FCM message is drawn by the OS, the
- * shell holds no Web Push subscription, and the `push` handler that reads these
- * prefs therefore never fires for it. Nor is the prefs read absent: they are
- * read to RENDER the toggles (`NotificationsSection.tsx:126`) and, for
- * SUPPRESSION, only by that handler (`readPrefs`, `sw.ts:111` → `sw.ts:141-143`).
- * The slice's conclusion is unchanged; only this reason is the real one.
+ * The record, so neither wrong account comes back — both were the same class of
+ * claim this slice exists to end. The service worker does NOT "fail to run" in
+ * the shell: the shell ships the same UNCONDITIONAL registration
+ * (`android/app/src/main/assets/public/registerSW.js`, pulled in from
+ * `dist/index.html`), and it is served from Capacitor's Android default
+ * `https://localhost` — a secure context, and the config deliberately sets no
+ * `server.url` — so the worker very likely registers and runs. And the prefs are
+ * not "read by nothing": they are read to render the toggles. What is absent is
+ * the `push` EVENT, not the worker.
  *
  * So the notes state each control's SCOPE ("where they are set separately")
  * without promising propagation, which also restores the true "saved on this

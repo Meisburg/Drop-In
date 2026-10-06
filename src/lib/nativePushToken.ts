@@ -539,9 +539,16 @@ export type NativePushFailureOutcome =
 
 /** The FRAME and the fallback for each native action, named once. */
 const NATIVE_PUSH_FAILURE_COPY = {
-  // The frames match the existing web sentences in NotificationsSection
-  // (`Couldn't turn notifications off (…)`), apostrophe and all, so a parent
-  // reads the same shape whichever channel failed.
+  // The TURN-OFF frame matches its web sentence in NotificationsSection —
+  // `Couldn't turn notifications off (…)`, apostrophe and all
+  // (NotificationsSection.tsx:413) — so for THAT action a parent reads the same
+  // shape whichever channel failed.
+  //
+  // TURN-ON DOES NOT MATCH, and this comment claimed it did until slice 2b-iii's
+  // fix round 3: the web path says `Couldn't finish turning on notifications (…)`
+  // (pushClient.ts:541) while this one says `Couldn't turn on notifications`. The
+  // mismatch is RECORDED here, not corrected — that slice is a copy-honesty fix
+  // and parent-facing wording is not its call.
   'turn-on': {
     frame: "Couldn't turn on notifications",
     fallback: NATIVE_PUSH_REGISTRATION_FAILED_REASON,
