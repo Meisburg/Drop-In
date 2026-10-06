@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  INLINE_REVIEW_LIMIT,
   REVIEW_BODY_MAX_LENGTH,
   REVIEW_SCORE_MAX,
   REVIEW_SCORE_MIN,
+  hasReviewed,
+  inlineReviewHighlights,
+  inlineReviewsEmptyLine,
   isCommentedReview,
   rankTopRated,
+  reviewComposeLabel,
   reviewRatingLine,
   summarizeReviews,
   validateReviewBody,
@@ -292,5 +297,143 @@ describe('rankTopRated', () => {
     const ranked = rankTopRated([a, b])
     expect(ranked.map((r) => r.summary.hasReviews)).toEqual([false, false])
     expect(ranked.map((r) => r.summary.displayAverage)).toEqual([null, null])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The place page's inline block (the reviews-inline slice).
+//
+// Four seams, each pinned on the boundary the page depends on: the button's
+// label in both states, who counts as the viewer's own review, how many
+// commented reviews the projection keeps (and that it does NOT re-order them),
+// and the honest sentence when there is no body to show.
+// ---------------------------------------------------------------------------
+
+describe('reviewComposeLabel', () => {
+  it('invites a review when the viewer has none', () => {
+    expect(reviewComposeLabel(false)).toBe('Add your review')
+  })
+
+  it('offers the edit when the viewer already reviewed this place', () => {
+    expect(reviewComposeLabel(true)).toBe('Edit your review')
+  })
+})
+
+describe('INLINE_REVIEW_LIMIT', () => {
+  it('is 3 — the place page shows three bodies and the wall holds the rest', () => {
+    expect(INLINE_REVIEW_LIMIT).toBe(3)
+  })
+})
+
+describe('hasReviewed', () => {
+  const rows = [
+    { authorProfileId: 'parent-a' },
+    { authorProfileId: 'parent-b' },
+  ]
+
+  it('is true when the profile wrote one of these rows', () => {
+    expect(hasReviewed(rows, 'parent-b')).toBe(true)
+  })
+
+  it('is false for a signed-in parent who has not reviewed this place', () => {
+    expect(hasReviewed(rows, 'parent-c')).toBe(false)
+  })
+
+  it('is false for an unknown viewer — a settling profile is not an author', () => {
+    expect(hasReviewed(rows, null)).toBe(false)
+    expect(hasReviewed(rows, undefined)).toBe(false)
+    expect(hasReviewed(rows, '')).toBe(false)
+  })
+
+  it('is false for an empty row set (the zero case)', () => {
+    expect(hasReviewed([], 'parent-a')).toBe(false)
+  })
+})
+
+describe('inlineReviewHighlights', () => {
+  function withAuthor(id: string, body: string | null, score = 5): Review {
+    return { ...review('park-a', score, body), authorProfileId: id }
+  }
+
+  it('keeps at most `limit` bodies and drops the rest', () => {
+    const rows = [
+      withAuthor('a', 'first'),
+      withAuthor('b', 'second'),
+      withAuthor('c', 'third'),
+      withAuthor('d', 'fourth'),
+      withAuthor('e', 'fifth'),
+    ]
+    const highlights = inlineReviewHighlights(rows, INLINE_REVIEW_LIMIT)
+    expect(highlights.map((r) => r.body)).toEqual(['first', 'second', 'third'])
+  })
+
+  it('preserves the incoming order rather than sorting (the wall read owns the order)', () => {
+    // Deliberately NOT newest-first: if this function sorted, the order would
+    // change here and the inline block would disagree with the wall.
+    const rows = [
+      { ...review('park-a', 4, 'older'), createdAt: '2026-08-01T10:00:00.000Z' },
+      { ...review('park-a', 5, 'newer'), createdAt: '2026-09-01T10:00:00.000Z' },
+    ]
+    expect(inlineReviewHighlights(rows, INLINE_REVIEW_LIMIT).map((r) => r.body)).toEqual([
+      'older',
+      'newer',
+    ])
+  })
+
+  it('skips stars-only reviews — a row with no words has nothing to show', () => {
+    const rows = [
+      withAuthor('a', null),
+      withAuthor('b', '   '),
+      withAuthor('c', 'the only words'),
+    ]
+    const highlights = inlineReviewHighlights(rows, INLINE_REVIEW_LIMIT)
+    expect(highlights).toHaveLength(1)
+    expect(highlights[0].body).toBe('the only words')
+  })
+
+  it('returns nothing for a zero or negative limit, and nothing for no rows', () => {
+    expect(inlineReviewHighlights([withAuthor('a', 'words')], 0)).toEqual([])
+    expect(inlineReviewHighlights([withAuthor('a', 'words')], -1)).toEqual([])
+    expect(inlineReviewHighlights([], INLINE_REVIEW_LIMIT)).toEqual([])
+  })
+
+  it('returns the author-carrying row type unchanged (the read shape flows through)', () => {
+    const rows = [{ ...withAuthor('a', 'words'), authorDisplayName: 'Sam R.' }]
+    expect(inlineReviewHighlights(rows, INLINE_REVIEW_LIMIT)[0].authorDisplayName).toBe('Sam R.')
+  })
+
+  it('does not mutate its input', () => {
+    const rows = [withAuthor('a', 'first'), withAuthor('b', 'second')]
+    inlineReviewHighlights(rows, 1)
+    expect(rows.map((r) => r.body)).toEqual(['first', 'second'])
+  })
+})
+
+describe('inlineReviewsEmptyLine', () => {
+  it('names the place when nobody has reviewed it', () => {
+    expect(inlineReviewsEmptyLine(0, 'Green Lake Park')).toBe(
+      'No one has reviewed Green Lake Park yet.',
+    )
+  })
+
+  it('falls back to "this place" rather than a dangling sentence', () => {
+    expect(inlineReviewsEmptyLine(0, '   ')).toBe('No one has reviewed this place yet.')
+  })
+
+  it('reports ratings without words honestly, never "no reviews"', () => {
+    // The rating line above this sentence shows "3 reviews"; a "no reviews"
+    // sentence under it would contradict the number the parent just read.
+    expect(inlineReviewsEmptyLine(1, 'Green Lake Park')).toBe(
+      'One rating so far, with no comment.',
+    )
+    expect(inlineReviewsEmptyLine(3, 'Green Lake Park')).toBe(
+      '3 ratings so far, with no comments.',
+    )
+  })
+
+  it('treats a negative count as the zero case (an unread count is not a review)', () => {
+    expect(inlineReviewsEmptyLine(-1, 'Green Lake Park')).toBe(
+      'No one has reviewed Green Lake Park yet.',
+    )
   })
 })

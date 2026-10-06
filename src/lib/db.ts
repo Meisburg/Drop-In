@@ -100,6 +100,10 @@ import { issueModeratorUpdate, isProfileBanned } from './moderation'
 import { placePhotoObjectPath, type PlacePhotoType } from './placePhotoAdmin'
 import { oauthRedirectTo, probeOAuthProvider, type OAuthProvider } from './oauth'
 import { currentPublicOrigin } from './publicUrl'
+// The reviews-inline slice: the place page's inline block and the details page's
+// wall read the SAME rows, so the row shape is the pure module's
+// (`ReviewWithAuthor`) rather than a second interface spelled here.
+import type { ReviewWithAuthor } from './reviews'
 // V8 ticket 08: the notification kind guard + the fallback list's page size.
 // The push RULES themselves (payload copy, dedupe key, iOS detection, the
 // permission memory) live in ./push and are not duplicated here — db.ts only
@@ -6397,6 +6401,26 @@ export interface ReviewSummaryRow {
  * pattern — mockable). A failed RPC THROWS: the caller swallows it into
  * "no rating line" rather than rendering a 0.0 or an error card (a failed
  * read must never read as "this place is bad").
+ *
+ * ⚠️ THE ROW ARRIVES IN AN ARRAY, AND READING IT OFF `data` IS A FIX, NOT A
+ * STYLE CHOICE (reviews-inline slice, 2026-10-06). `review_summary` is declared
+ * `returns table (review_count int, display_average numeric)` — a SET-returning
+ * function — and PostgREST answers one of those with an array of rows even when
+ * there is exactly one:
+ *
+ *     POST /rest/v1/rpc/review_summary {"p_place_id": "…"} →
+ *     [{"review_count":1,"display_average":5}]
+ *
+ * This function used to read `data.review_count` / `data.display_average`
+ * directly, so both were `undefined`, `?? 0` turned the count into a
+ * convincing zero and the average stayed null — the HONEST-LOOKING ZERO CASE.
+ * Every rating line in the app therefore said "Be the first to rate …" for a
+ * place with reviews: measured on the place page's new inline block, and the
+ * same defect was live on `/place/:id/details` and the browse directory's
+ * cards, invisible because almost no seeded place carries a review and no spec
+ * ever asserted a rated line. The array form is what this call actually
+ * receives; the object form is accepted too so a future PostgREST that unwraps
+ * a single row cannot silently break it again.
  */
 export async function getReviewSummaryWithClient(
   client: SupabaseClient,
@@ -6404,7 +6428,7 @@ export async function getReviewSummaryWithClient(
 ): Promise<ReviewSummaryRow> {
   const { data, error } = await client.rpc('review_summary', { p_place_id: placeId })
   if (error) throw error
-  const row = (data ?? {}) as unknown as {
+  const row = ((Array.isArray(data) ? data[0] : data) ?? {}) as unknown as {
     review_count?: number | string | null
     display_average?: number | string | null
   }
@@ -6421,6 +6445,67 @@ export async function getReviewSummaryWithClient(
 /** The default-client wrapper (the details page's rating line read). */
 export async function getReviewSummary(placeId: string): Promise<ReviewSummaryRow> {
   return getReviewSummaryWithClient(supabase, placeId)
+}
+
+// ---------------------------------------------------------------------------
+// The reviews-inline slice: THE PLACE PAGE'S OWN REVIEW READ.
+//
+// The founder's ask on /place/:id — *"wouldn't you see what parents say about
+// this place and they're rating right here?"* — needs the ROWS, not only the
+// aggregate: the inline block shows a few bodies with their author. This is the
+// same read the review wall is built on, against an injected client (the house
+// pattern — mockable), ordered exactly as the browse directory's highlight read
+// orders (`created_at` descending), so the inline projection and the wall cannot
+// disagree about which review came first.
+//
+// 0052's SELECT policy lets any signed-in parent read every review for a place,
+// so this runs from inside the ProtectedShell like every other call here. The
+// author's name arrives through the FK-embedded `profiles` row — the same
+// PostgREST embed `listPlaceReviewHighlightsWithClient` uses, so there is no
+// second join shape to drift.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every review for one place, newest first, with the author's display name.
+ *
+ * A failed read THROWS: the caller swallows it into "no inline block rows"
+ * rather than rendering the empty state, because a failed read is not the
+ * claim "nobody has reviewed this place" (the house no-false-zero rule).
+ */
+export async function listPlaceReviewsWithClient(
+  client: SupabaseClient,
+  placeId: string,
+): Promise<ReviewWithAuthor[]> {
+  const { data, error } = await client
+    .from('reviews')
+    .select(
+      'place_id, author_profile_id, score, body, created_at, ' +
+        'author:profiles!reviews_author_profile_id_fkey ( display_name )',
+    )
+    .eq('place_id', placeId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const rows = (data ?? []) as unknown as Array<{
+    place_id: string
+    author_profile_id: string
+    score: number
+    body: string | null
+    created_at: string
+    author: { display_name: string } | null
+  }>
+  return rows.map((row) => ({
+    placeId: row.place_id,
+    authorProfileId: row.author_profile_id,
+    score: row.score,
+    body: row.body,
+    createdAt: row.created_at,
+    authorDisplayName: row.author?.display_name ?? '',
+  }))
+}
+
+/** The default-client wrapper (the place page's inline review block). */
+export async function listPlaceReviews(placeId: string): Promise<ReviewWithAuthor[]> {
+  return listPlaceReviewsWithClient(supabase, placeId)
 }
 
 // ---------------------------------------------------------------------------

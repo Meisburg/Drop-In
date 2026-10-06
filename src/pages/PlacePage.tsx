@@ -4,8 +4,10 @@ import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
 import { PlaceMap } from '../components/PlaceMapLazy'
 import { PlaceKindArt } from '../components/PlaceKindArt'
+import { PlaceRatingLine } from '../components/PlaceRatingLine'
 import { ModalShell } from '../components/ModalShell'
 import { PlacePhotoAdmin } from '../components/PlacePhotoAdmin'
+import { ReviewForm } from '../components/ReviewForm'
 import { useSessionContext } from '../components/SessionProvider'
 import { usePrefersReducedMotion } from '../components/usePrefersReducedMotion'
 import { NAV_ICONS } from '../components/icons'
@@ -14,12 +16,15 @@ import {
   countPlaceFollowers,
   getPlaceById,
   getPlaceFollowState,
+  getReviewSummary,
   kidAgesByPostForPosts,
   listPingsForPosts,
   listPlaceFeed,
+  listPlaceReviews,
   loadZipCodes,
   toggleFollowPlace,
   type PingForPost,
+  type ReviewSummaryRow,
 } from '../lib/db'
 import { cardAgeRangeLabel, formatDistanceLabel, goingPingsByPost } from '../lib/feed'
 import type { ZipCoords } from '../lib/feed'
@@ -40,6 +45,17 @@ import {
   sortPlaceUpcoming,
 } from '../lib/places'
 import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types'
+// reviews-inline: every decision the inline block makes is a pure seam here —
+// the compose button's label, whether the viewer has already reviewed this
+// place, which rows show, and the honest sentence when there is nothing to show.
+import {
+  INLINE_REVIEW_LIMIT,
+  hasReviewed,
+  inlineReviewHighlights,
+  inlineReviewsEmptyLine,
+  reviewComposeLabel,
+  type ReviewWithAuthor,
+} from '../lib/reviews'
 
 /**
  * /place/:id — one place in the directory (V8 ticket 07, migration 0029).
@@ -58,9 +74,12 @@ import type { Place, PlacePrefill, PlaydateWithNeighborhood } from '../lib/types
  * this page owns everything but the picture (V20 t01 removed it on purpose and
  * NO planned ticket restores one — ticket 16 is research-only, "no product code,
  * no migration, no schema change, no DB write" — so a photo's return is
- * currently unowned; see the V20 note at the photo slot) and the rating/comments
- * (they live on the research page, `PlaceDetailsPage.tsx`, reached from the link
- * at the bottom of this page — deliberately NOT duplicated here). He also
+ * currently unowned; see the V20 note at the photo slot). The rating and a few
+ * review bodies NOW LIVE HERE TOO (the reviews-inline slice; see the block's
+ * own note above the section) — his annotation on the old "What parents say
+ * about this place →" link asked for exactly that — and the FULL wall and the
+ * comment thread stay on the research page, which the link at the bottom of
+ * this page still reaches (relabelled to name what it adds). He also
  * flagged the control that used to sit BELOW the map: *"This doesn't really make
  * sense to me because I can see the map above this button. So I already have
  * found it on a map. Really it should be like get directions … I guess if you
@@ -200,6 +219,33 @@ export function PlacePage() {
   const [followerCount, setFollowerCount] = useState<number | null>(null)
   const [followBusy, setFollowBusy] = useState(false)
   const [followError, setFollowError] = useState<string | null>(null)
+
+  /**
+   * reviews-inline — WHAT PARENTS SAY, ON THIS PAGE.
+   *
+   * The founder, annotated on the link this page used to send parents away on:
+   * *"Why would this link to a separate page? Like, wouldn't you see what
+   * parents say about this place and they're rating right here? And then you
+   * have the option to click on something to leave a review And I think that
+   * review should be like a modal that gets light boxed in where you just
+   * leave the review"*. So the block below renders the aggregate (the 0052
+   * review_summary RPC — the same read the details page does) plus up to
+   * INLINE_REVIEW_LIMIT bodies from the same `reviews` rows the wall reads, and
+   * ONE button opens the existing ReviewForm inside ModalShell.
+   *
+   * `reviewRows === null` means NOT READ or the read failed, and the two are
+   * deliberately the same rendering (nothing): a failed read must never be
+   * shown as "no one has reviewed this place", which is a claim about the
+   * world. The empty state therefore keys on a SETTLED read (`reviewRows !==
+   * null`) with no bodies to show, and its sentence takes the aggregate count
+   * so a place with ratings-but-no-words is not told it has no reviews.
+   */
+  const [reviewRows, setReviewRows] = useState<ReviewWithAuthor[] | null>(null)
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummaryRow | null>(null)
+  /** Keyed by place id, not a boolean — a same-mount A → B navigation closes it (the photo editor's lesson). */
+  const [composeForId, setComposeForId] = useState<string | null>(null)
+  /** Bumped after a save: the page re-reads its own rows rather than patching a copy. */
+  const [reviewsReloadTick, setReviewsReloadTick] = useState(0)
 
   useEffect(() => {
     if (id === undefined) return
@@ -382,6 +428,43 @@ export function PlacePage() {
   }, [loading, session, id])
 
   /**
+   * reviews-inline — the page's OWN review read: the rows the inline block
+   * shows and the aggregate the rating line prints. Two independent reads, both
+   * best-effort and both contained here (the details page's discipline): a
+   * failure leaves its own value null, so a 0052-not-applied state renders no
+   * rating line and no empty sentence rather than a 0.0 or an error card.
+   *
+   * Re-read on `reviewsReloadTick` (the page's photo re-read precedent) rather
+   * than patched locally: after a save the row we render is the row the
+   * database returned.
+   */
+  useEffect(() => {
+    if (loading || session === null || id === undefined) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listPlaceReviews(id)
+        if (!cancelled) setReviewRows(rows)
+      } catch {
+        // Not read ≠ nobody reviewed it: render no rows and no empty sentence.
+        if (!cancelled) setReviewRows(null)
+      }
+    })()
+    ;(async () => {
+      try {
+        const summary = await getReviewSummary(id)
+        if (!cancelled) setReviewSummary(summary)
+      } catch {
+        // Pre-0052-apply / transient: no rating line at all (never "0.0 out of 5").
+        if (!cancelled) setReviewSummary(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, loading, session, reviewsReloadTick])
+
+  /**
    * Save / unsave THIS place (the owner-only 0033 row). The DECISION is the
    * pure `planSaveToggle` seam — save or unsave? Execution below goes through
    * db.toggleFollowPlace, never a re-implemented toggle. Saving keeps a place
@@ -508,6 +591,19 @@ export function PlacePage() {
     photoFailedUrl !== placePhotoUrl
   const photoNeedsReview = placePhotoNeedsReview(place)
   const placePhotoCredit = photoCreditLine(place)
+
+  // reviews-inline — the block's decisions, ALL from the pure seams (no `if`
+  // above the JSX decides a rule): who counts as "you have reviewed this", the
+  // button's one label, which bodies show and how many, and the honest sentence
+  // when none do. The modal is open only for THIS place id, so navigating to
+  // another place closes it instead of re-opening over the new one.
+  const composeOpen = composeForId !== null && composeForId === place.id
+  const hasMine = hasReviewed(reviewRows ?? [], profile === null ? null : profile.id)
+  const composeLabel = reviewComposeLabel(hasMine)
+  const reviewHighlights =
+    reviewRows === null ? [] : inlineReviewHighlights(reviewRows, INLINE_REVIEW_LIMIT)
+  const reviewCount = reviewSummary?.review_count ?? reviewRows?.length ?? 0
+  const reviewsEmptyLine = inlineReviewsEmptyLine(reviewCount, place.name)
 
   return (
     <div className="flex flex-col gap-4">
@@ -830,6 +926,103 @@ export function PlacePage() {
         ) : null}
       </div>
 
+      {/* reviews-inline — WHAT PARENTS SAY, RIGHT HERE, with ONE compose door.
+          The founder's annotation on the link this page used to send parents
+          away on is the spec: *"wouldn't you see what parents say about this
+          place and they're rating right here? And then you have the option to
+          click on something to leave a review And I think that review should be
+          like a modal that gets light boxed in"*.
+
+          It sits between the save row and "Start here" — after the parent has
+          seen the place's own facts, before the one action this page exists to
+          offer. The rating line is the SAME element the research page renders
+          (components/PlaceRatingLine.tsx); the rows are the SAME `reviews` rows
+          the wall reads (db.listPlaceReviews, newest first), projected by the
+          pure inlineReviewHighlights, so the two surfaces cannot disagree about
+          a parent's own review.
+
+          SIGNED OUT: the section keeps the page's own posture (the save row and
+          the drop-in list both do this) — an honest prompt and a sign-in link,
+          no aggregate, no rows and NO compose control. `/place/:id` is a PUBLIC
+          route (V8 ticket 07: `isPublicPlacePath` in lib/auth.ts), so a
+          signed-out visitor really does reach this page, and the V24 ruling
+          covers a SIGNED-IN parent reading other parents' words. An anon read
+          would be a different product decision and a migration, so the review
+          reads are not even issued without a session (the effect above returns
+          early) and nothing about them renders here. A compose button that
+          could only ever say "Sign in to leave a review" is the dead control the
+          page's other sections deliberately do not offer. */}
+      <section data-testid="place-reviews" className="flex flex-col gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+          What parents say
+        </h2>
+
+        {session === null ? (
+          <>
+            <p className="text-sm text-slate-600">Reviews are for signed-in parents.</p>
+            <Link
+              to="/login"
+              className="mt-1 inline-flex min-h-11 items-center text-sm font-medium text-indigo-600"
+            >
+              Sign in to read them
+            </Link>
+          </>
+        ) : (
+          <>
+            {/* The aggregate, from the DATABASE (the 0052 review_summary RPC). A
+                failed/absent summary renders nothing — never a 0.0. */}
+            {reviewSummary !== null ? (
+              <PlaceRatingLine
+                summary={reviewSummary}
+                placeName={place.name}
+                className="flex items-center gap-2"
+              />
+            ) : null}
+
+            {reviewHighlights.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {reviewHighlights.map((review) => (
+                  <li
+                    key={review.authorProfileId}
+                    data-testid={`place-review-row-${review.authorProfileId}`}
+                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                  >
+                    {/* A commented review: the row only exists because there are
+                        words (the pure projection drops stars-only rows). */}
+                    <p className="text-sm text-slate-800">{review.body?.trim()}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {review.authorDisplayName === '' ? 'A parent' : review.authorDisplayName}
+                      {' · '}
+                      {review.score} star{review.score === 1 ? '' : 's'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : reviewRows !== null ? (
+              // Only a SETTLED read may say nobody has written anything — and the
+              // sentence takes the aggregate count, so ratings-without-words are
+              // reported as exactly that (the pure inlineReviewsEmptyLine).
+              <p data-testid="place-reviews-empty" className="text-sm text-slate-600">
+                {reviewsEmptyLine}
+              </p>
+            ) : null}
+
+            {/* ONE compose control, one label, 44px, opening the lightboxed
+                modal. Outlined rather than filled: this page's one primary
+                action is "Start a drop-in here" below. */}
+            <button
+              type="button"
+              data-testid="place-review-compose-btn"
+              aria-haspopup="dialog"
+              onClick={() => setComposeForId(place.id)}
+              className="inline-flex min-h-11 items-center justify-center self-start rounded-xl border border-indigo-300 bg-white px-4 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              {composeLabel}
+            </button>
+          </>
+        )}
+      </section>
+
       <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
         <button
           type="button"
@@ -849,18 +1042,30 @@ export function PlacePage() {
             `placeDetailsPath` so this surface, the map popup and the picker's
             selection panel cannot drift to different destinations.
 
+            reviews-inline slice: THE LABEL STOPPED PROMISING WHAT IS NOW
+            INLINE. It read "What parents say about this place →", which became
+            a lie the moment the block above started showing what parents say —
+            it sent a parent away to read something they were already looking
+            at, which is precisely the confusion the founder's annotation
+            expressed ("Why would this link to a separate page?"). The RULING is
+            to keep the door and relabel it to name what the research page
+            ADDS: the full review wall, the comment thread, hours and the web
+            search. The test id is kept byte-for-byte (nothing selected it
+            before this slice, so keeping it costs nothing and dropping it would
+            break the one handle a spec could adopt). The MAP POPUP's
+            `placeDetailsPath` link is deliberately NOT touched: the popup has
+            no inline summary, so that door is still its only one.
+
             It sits INSIDE this card rather than as a peer full-width button:
             "Start a drop-in" is the one action this page exists to offer, and an
-            equal-weight button beside it would split that choice. The label says
-            what the page HOLDS rather than "Details" — a bare "Details" on a
-            page that is itself a place's detail page reads as a link to nowhere.
+            equal-weight button beside it would split that choice.
             min-h-11 keeps it at the 44px tap floor even though it is a link. */}
         <Link
           to={placeDetailsPath(place.id)}
           data-testid="place-more-details"
           className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 underline-offset-2 hover:underline"
         >
-          What parents say about this place →
+          All reviews and comments →
         </Link>
       </div>
 
@@ -904,6 +1109,42 @@ export function PlacePage() {
           </div>
         )}
       </section>
+
+      {/* reviews-inline — the ONE compose door, lightboxed on the shell the
+          whole app uses. It contains the EXISTING ReviewForm (one review per
+          parent per place; the form loads the parent's own row and the same
+          submit replaces it) and nothing about that form's logic is rewritten:
+          the only addition is `onSaved`, which closes this modal and makes the
+          page re-read its own rows, so the new review appears inline without a
+          reload. There is no second `review-form` anywhere on this page — the
+          modal is its only mount here, which is what a spec's `toHaveCount(1)`
+          pins.
+
+          `place-review-modal-close` is pinned explicitly (the shell otherwise
+          derives `${testId}-dismiss`) because this is the way OUT of the
+          lightbox and the id the spec asks for by name. The Leaflet z-class is
+          the same one the photo editor passes: this page draws a map, and a
+          dialog under it is the defect lib/stacking.ts records. */}
+      {composeOpen ? (
+        <ModalShell
+          title={composeLabel}
+          testId="place-review-modal"
+          dismissTestId="place-review-modal-close"
+          zClass={MODAL_OVER_LEAFLET_Z_CLASS}
+          onDismiss={() => setComposeForId(null)}
+          dismissLabel="Close"
+        >
+          <div data-testid="review-form" className="mt-3">
+            <ReviewForm
+              placeId={place.id}
+              onSaved={() => {
+                setComposeForId(null)
+                setReviewsReloadTick((tick) => tick + 1)
+              }}
+            />
+          </div>
+        </ModalShell>
+      ) : null}
 
       {/* v30-9 — the SHARED editor, opened from this page's picture. Same
           ModalShell and same PlacePhotoAdmin the directory card and /mod mount:

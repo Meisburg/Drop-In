@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
 import { DropInCard } from '../components/DropInCard'
+import { PlaceRatingLine } from '../components/PlaceRatingLine'
 import { ReviewForm } from '../components/ReviewForm'
 import { useSessionContext } from '../components/SessionProvider'
 import { NAV_ICONS } from '../components/icons'
@@ -27,7 +28,6 @@ import type { ZipCoords } from '../lib/feed'
 import { placeFollowerLine, planSaveToggle } from '../lib/follows'
 import { hoursSourceNote, hoursStatus } from '../lib/placeHours'
 import { dropInProofLine, type PlaceDropInProof } from '../lib/placeSocial'
-import { reviewRatingLine, REVIEW_SCORE_MAX } from '../lib/reviews'
 import {
   placeAgeFitLabel,
   placeIndoorLabel,
@@ -600,38 +600,14 @@ export function PlaceDetailsPage() {
             pure reviews.reviewRatingLine rule. A null summary (not read yet or
             a failed read) renders NO line at all — no 0.0, no error card. The
             zero case names the place and invites the first review, in the same
-            tone as the wall's count line below (placeCommentCountLabel). */}
+            tone as the wall's count line below (placeCommentCountLabel).
+
+            reviews-inline slice: the SAME element now renders on /place/:id
+            too (the founder asked for the rating "right here"), so it lives in
+            components/PlaceRatingLine.tsx — one definition, two mount sites,
+            no second copy of the rounding or the sentence. */}
         {reviewSummary !== null ? (
-          <div data-testid="place-rating-line" className="mt-1 flex items-center gap-2">
-            {reviewSummary.display_average !== null && reviewSummary.review_count > 0 ? (
-              <>
-                <span className="text-base font-semibold text-slate-900">
-                  {Number(reviewSummary.display_average).toFixed(1)}
-                </span>
-                <span aria-hidden="true" className="flex items-center gap-0.5 text-amber-700">
-                  {Array.from({ length: REVIEW_SCORE_MAX }, (_, i) => (
-                    <StarGlyph key={i} filled={i + 1 <= Math.round(Number(reviewSummary.display_average ?? 0))} />
-                  ))}
-                </span>
-                <span className="sr-only">
-                  {reviewRatingLine(
-                    reviewSummary.review_count,
-                    reviewSummary.display_average,
-                    place.name,
-                  )}
-                </span>
-                <span aria-hidden="true" className="text-sm text-slate-600">
-                  {reviewSummary.review_count === 1
-                    ? '1 review'
-                    : `${reviewSummary.review_count} reviews`}
-                </span>
-              </>
-            ) : (
-              <p className="text-sm text-slate-600">
-                {reviewRatingLine(reviewSummary.review_count, reviewSummary.display_average, place.name)}
-              </p>
-            )}
-          </div>
+          <PlaceRatingLine summary={reviewSummary} placeName={place.name} />
         ) : null}
 
         {/* V24 ticket 06: the review form (stars + optional comment, one review
@@ -765,29 +741,6 @@ function relativeDay(iso: string): string {
   if (days === 1) return 'yesterday'
   if (days < 30) return `${days} days ago`
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-/**
- * A 24px star glyph, stroked like the app's icon family (24px viewBox, stroke
- * 1.8, currentColor). Filled when lit, outlined otherwise — a decorative
- * companion to the rating line's text value (the screen reader reads the
- * sr-only sentence, never five glyphs with no alternative).
- */
-function StarGlyph({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3Z" />
-    </svg>
-  )
 }
 
 export default PlaceDetailsPage

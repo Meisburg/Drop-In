@@ -81,6 +81,7 @@ export function ModalShell({
   onDismiss,
   busy = false,
   dismissLabel,
+  dismissTestId,
   describedBy,
   zClass = 'z-50',
   initialFocusRef,
@@ -99,6 +100,15 @@ export function ModalShell({
    * dialog that already offers its own way out (ConfirmDialog's Cancel).
    */
   dismissLabel?: string
+  /**
+   * The dismiss control's own `data-testid`, defaulting to `${testId}-dismiss`.
+   *
+   * It exists because a caller may pin the way out under a name that says what
+   * it does rather than how the shell derives it (the place page's compose
+   * modal pins `place-review-modal-close`): the default is unchanged, so every
+   * existing caller and spec keeps the derived name.
+   */
+  dismissTestId?: string
   /** The id of a body paragraph that describes the dialog, when there is one. */
   describedBy?: string
   /**
@@ -191,7 +201,7 @@ export function ModalShell({
               disabled={busy}
               onClick={onDismiss}
               aria-label={dismissLabel}
-              data-testid={`${testId}-dismiss`}
+              data-testid={dismissTestId ?? `${testId}-dismiss`}
               className="-mr-1 -mt-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 disabled:opacity-50"
             >
               {/* The glyph is decoration: the accessible name is `dismissLabel`. */}

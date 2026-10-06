@@ -33,8 +33,21 @@ import {
  * Build law: no domain rules live here. Score/body validation is delegated to
  * src/lib/reviews.ts (validateReviewScore / validateReviewBody); this component
  * only renders and emits callbacks.
+ *
+ * `onSaved` (the reviews-inline slice) is emitted ONCE a save has landed AND
+ * the row has been read back, so a caller that mounts this form inside a modal
+ * can close it and re-read its own list. The details page passes nothing and is
+ * unchanged. It is the write's outcome, not an optimistic guess: a save that
+ * failed emits nothing, so the modal stays open with the error line visible.
  */
-export function ReviewForm({ placeId }: { placeId: string }) {
+export function ReviewForm({
+  placeId,
+  onSaved,
+}: {
+  placeId: string
+  /** Called after a successful save, once the saved row has been read back. */
+  onSaved?: () => void
+}) {
   const { session, profile, profileLoading } = useSessionContext()
   const [existing, setExisting] = useState<ReviewRow | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -94,6 +107,9 @@ export function ReviewForm({ placeId }: { placeId: string }) {
       const row = await getMyReview(placeId)
       setSaved(row)
       setExisting(row)
+      // The save landed and the row is real: the caller may now close its
+      // modal and re-read the list it renders (the reviews-inline slice).
+      onSaved?.()
     } catch {
       setSaveError('That did not save. Try again.')
     } finally {

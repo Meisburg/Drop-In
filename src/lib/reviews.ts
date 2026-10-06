@@ -266,3 +266,107 @@ export function rankTopRated(places: readonly PlaceRating[]): RankedPlace[] {
       summary,
     }))
 }
+
+// ---------------------------------------------------------------------------
+// The place page's inline block (the reviews-inline slice) — what parents say
+// is READ on /place/:id, and the compose door is a lightboxed modal.
+//
+// The founder, annotated on the place page's old "What parents say about this
+// place →" link: *"Why would this link to a separate page? Like, wouldn't you
+// see what parents say about this place and they're rating right here? And then
+// you have the option to click on something to leave a review And I think that
+// review should be like a modal that gets light boxed in where you just leave
+// the review"*. So the place page renders the aggregate rating line and a few
+// review bodies inline, and ONE button opens the compose modal. Every decision
+// those two need — the button's label, whether the viewer has already reviewed
+// this place, which rows are worth showing, and the honest sentence when there
+// is nothing to show — is a pure function here, never an `if` in the page.
+// ---------------------------------------------------------------------------
+
+/**
+ * The compose button's ONE label, decided purely (the caller renders it).
+ *
+ * "Add your review" when the viewer has not reviewed this place, "Edit your
+ * review" when they have — one review per parent per place (0052's composite
+ * primary key), so the verb is the form's real behaviour: the ReviewForm loads
+ * the existing row and the same submit replaces it.
+ */
+export function reviewComposeLabel(hasMine: boolean): 'Add your review' | 'Edit your review' {
+  return hasMine ? 'Edit your review' : 'Add your review'
+}
+
+/**
+ * How many review bodies the place page's inline block shows. Three, because
+ * the block sits above "Start here" on a phone and the full wall lives on
+ * `/place/:id/details` (spec §7's default).
+ */
+export const INLINE_REVIEW_LIMIT = 3
+
+/**
+ * A review plus the author's display name — the shape the wall's own read
+ * returns (`db.listPlaceReviews`), so the inline block renders the SAME rows
+ * the details page reads rather than a second projection of the table.
+ */
+export interface ReviewWithAuthor extends Review {
+  /** The author's `profiles.display_name`; '' when the profile row carries none. */
+  authorDisplayName: string
+}
+
+/**
+ * Whether the viewer is among these rows' authors — the `hasMine` input to
+ * `reviewComposeLabel`.
+ *
+ * A missing/blank profile id is NOT the author of anything: the protected
+ * shell guarantees a session, but the profile row can still be settling, and
+ * treating "unknown viewer" as "has a review" would label the button "Edit
+ * your review" for a parent who has never written one.
+ */
+export function hasReviewed(
+  rows: readonly Pick<Review, 'authorProfileId'>[],
+  profileId: string | null | undefined,
+): boolean {
+  if (profileId === null || profileId === undefined || profileId === '') return false
+  return rows.some((row) => row.authorProfileId === profileId)
+}
+
+/**
+ * The inline projection: at most `limit` COMMENTED reviews, in the order given.
+ *
+ * THE ORDER IS THE READER'S, NOT THIS FUNCTION'S. It does not sort: the caller
+ * passes the rows exactly as the wall's read returns them (newest first,
+ * `order('created_at', { ascending: false })` — the same order the browse
+ * directory's highlight read uses), and this takes the first `limit` of them.
+ * A second ordering here is how the inline block and the wall would start
+ * disagreeing about which review is "first".
+ *
+ * A stars-only review is deliberately NOT a highlight, matching
+ * `listPlaceReviewHighlightsWithClient`: a row with no words has nothing to
+ * show in a block whose whole job is "what parents SAY". It still counts in
+ * the aggregate the rating line renders, which is why the honest empty line
+ * below takes the count rather than the row length.
+ */
+export function inlineReviewHighlights<T extends Pick<Review, 'body'>>(
+  rows: readonly T[],
+  limit: number,
+): T[] {
+  if (limit <= 0) return []
+  return rows.filter((row) => isCommentedReview(row)).slice(0, limit)
+}
+
+/**
+ * The honest sentence the inline block shows when it has no review BODY to
+ * show, keyed on the aggregate count so a place with ratings-but-no-words is
+ * never told it has no reviews.
+ *
+ * Same discipline as `reviewRatingLine`: it names the place when it has a name
+ * ("No one has reviewed Green Lake Park yet."), falls back to "this place"
+ * rather than a dangling sentence, and reports the count it was given instead
+ * of inventing one.
+ */
+export function inlineReviewsEmptyLine(count: number, placeName: string): string {
+  const name = placeName.trim()
+  const subject = name === '' ? 'this place' : name
+  if (count <= 0) return `No one has reviewed ${subject} yet.`
+  if (count === 1) return 'One rating so far, with no comment.'
+  return `${count} ratings so far, with no comments.`
+}
