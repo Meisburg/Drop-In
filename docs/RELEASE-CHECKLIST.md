@@ -347,23 +347,46 @@ Assets below were read from Google's own
   Keep the focal point centered — the edges get cropped on some surfaces.
 - [ ] **4.3 — Screenshots:** minimum 2, up to 8 per device type. Phone is
   required. Use the real app with real (seeded) content — not mockups.
-- [ ] **4.4 — Short description** (the first thing users read) and **full
-  description.** ⚠️ Both must match the child-data posture from 0.2.
+- [x] **4.4 — DRAFTED 2026-10-06** in `.scratch/store-copy-2026-10/spec.md`, with
+  the character counts MEASURED rather than estimated: **short description 69**
+  (limit 80) and **full description 1,722** (limit 4,000). Every claim in the copy
+  is traced to a line of the shipped privacy policy, so the listing cannot promise
+  something the policy does not say. ⚠️ It is drafted under the **recommended
+  posture (NOT child-directed, adults)** and is final the moment that sentence is
+  confirmed.
+  ~~Short description and full description.~~
 - [x] **4.5 — LIVE, checked 2026-10-05:** `https://drop-in-mu.vercel.app/privacy`
   returns **HTTP 200** (terms at `/terms`), from item 1.6.
   ~~Privacy policy URL from 1.6.~~
-- [ ] **4.6 — App category, contact email, and content rating questionnaire.**
+- [x] **4.6 — DRAFTED 2026-10-06** (`.scratch/store-copy-2026-10/spec.md` §6): the
+  expected content-rating answers, with **user-generated content / interaction =
+  YES** called out as the one honest "yes" (comments and messages exist). The
+  contact email still needs the founder's pick — the policy uses
+  `jonmeisburg@gmail.com`.
 
 ---
 
 ## Phase 5 — Policy declarations (Console forms — be precise)
 
-- [ ] **5.1 — Data safety form.** Must declare what you actually collect: kid
+- [x] **5.1 — ANSWERED ON PAPER 2026-10-06** (`.scratch/store-copy-2026-10/spec.md`
+  §5): a row per Play data type with collected / shared / optional / purpose, and
+  each row names the policy line it rests on. The global answers are **not shared
+  with third parties** (the four processors act on our behalf — ⚠️ read Play's own
+  definition of "shared" on the form before submitting), **encrypted in transit**,
+  **deletion available by email as the policy states**, **nothing sold**, **no
+  analytics**. Still needs a human to type it into the console.
+  Original item: must declare what you actually collect: kid
   first names and ages, parent email, approximate location, photos, and messages.
   ⚠️ **It must match the privacy policy from 1.6 exactly.** A mismatch between the
   two is a common rejection cause. *Time: 1 hour, and read each question twice.*
 - [ ] **5.2 — Ads declaration.** Declare "no ads" — there are none.
-- [ ] **5.3 — Target audience and content.** This is where the 0.2 decision gets
+- [x] **5.3 — DRAFTED 2026-10-06** (`.scratch/store-copy-2026-10/spec.md` §4):
+  **adults only, NOT designed for Families**, with user interaction declared
+  honestly (comments + messages exist) and the location answer reasoned from the
+  policy ("an area, not a position"). ⚠️ One judgement call is flagged there:
+  screenshots showing children's faces could invite a reviewer to answer "appeals
+  to children" — so the screenshots should show the interface and places instead.
+  Original: This is where the 0.2 decision gets
   committed. Answer consistently with the listing and the Data safety form.
 - [ ] **5.4 — Government apps / news / financial declarations** — all "no."
 
