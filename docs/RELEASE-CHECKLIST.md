@@ -45,6 +45,14 @@ which are the same action, plus five duplicate place rows found on the way
 > table list at all**: 22 marker-owned messages sit there today and the sweep will
 > leave them (the DM spec's cleanup was fixed to stop GROWING that pile by
 > migration 0064, not to empty it).
+>
+> ✅ **AND THE FIVE DUPLICATE PLACE PAIRS WERE RE-VERIFIED SAFE AT THE SAME TIME**
+> (2026-10-05 22:30), because that half of the word "sweep it" is DESTRUCTIVE and
+> its safety was measured hours earlier. All five still have exactly two rows, and
+> across all ten ids there are **0 playdates, 0 `reviews`, 0 `place_comments` and
+> 0 `follows`** — re-counted in one query over the four tables that reference
+> `places.id` (`reviews` is the table's real name; `place_reviews` does not
+> exist). So removing the extra row of each pair still has nothing to repoint.
 
 **THEN, RANKED BY WHAT UNBLOCKS THE MOST:**
 
