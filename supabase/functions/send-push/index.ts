@@ -47,7 +47,9 @@
  *     answers 404/410 for (the endpoint is dead: the browser unsubscribed, the
  *     app was deleted, or the subscription was rotated) — and, on the native
  *     branch, DELETE the `device_tokens` row when the provider says the token is
- *     dead (UNREGISTERED / 404 / 410), counted in the same `pruned` counter. A
+ *     dead (UNREGISTERED, or 410 Gone — a CODELESS 404 is a project/credential
+ *     fault and does NOT prune; `classifyNativePushFailure` owns that rule),
+ *     counted in the same `pruned` counter. A
  *     row whose recipient has NO device on either channel is handed to the email
  *     fallback: configured and addressable → send the email; otherwise stamp it
  *     exactly as before.
@@ -165,6 +167,17 @@ const FCM = fcmConfigFrom({
  * parent with a registered install still gets web push, then email.
  */
 const FCM_TRANSPORT = FCM.kind === 'fcm' ? createFcmTransport({ fetch }, FCM.config) : null
+
+/**
+ * Say WHY the native channel is off, once per isolate. The email side stamps
+ * `TRANSPORT.reason` into the row it fails on, but a disabled FCM never reaches
+ * a row of its own — those rows are handled by the web/email path — so without
+ * this line a missing or malformed `FCM_SERVICE_ACCOUNT_JSON` is completely
+ * invisible behind successful web sends. ONE line, no logging abstraction.
+ */
+if (FCM.kind === 'disabled') {
+  console.warn(`send-push: native push disabled — ${FCM.reason}`)
+}
 
 /** Links are built against the configured origin, else the pinned deployment
  *  fallback — a relative link in an inbox is a dead link. */
@@ -752,16 +765,20 @@ async function drain(admin: SupabaseClient): Promise<{
         }
 
         if (outcome === 'prune') {
-          // The same automated delete a 404/410 performs on a
-          // `push_subscriptions` row, for the same fact: the token is gone
-          // (the app was uninstalled, or the token rotated). Counted in the
-          // existing `pruned` counter — never silently dropped.
+          // The same automated delete a 410 performs on a
+          // `push_subscriptions` row, for the same fact: the token is gone (the
+          // app was uninstalled, or the token rotated) and the provider said so
+          // with token-specific evidence. Counted in the existing `pruned`
+          // counter — never silently dropped.
           await admin.from('device_tokens').delete().eq('id', device.id)
           pruned += 1
           nativeErrors.push('token gone (pruned)')
           continue
         }
 
+        // INFORMATIONAL, exactly as in the web path: this queue is attempt-once
+        // by design (no attempt counter in 0032), so "come back later" is the
+        // reason on a stamped row rather than a retry.
         failed += 1
         nativeErrors.push(result.ok ? 'unknown' : result.error)
       }

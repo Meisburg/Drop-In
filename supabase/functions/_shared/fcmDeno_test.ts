@@ -284,6 +284,52 @@ Deno.test('a token whose whole life is inside the refresh margin is re-minted, n
   assertEquals(network.calls.length, 4)
 })
 
+Deno.test('concurrent sends share ONE token mint (single-flight)', async () => {
+  const { account } = await makeAccount()
+  let mints = 0
+  const network = fakeNetwork((call) => {
+    if (call.url === FCM_TOKEN_ENDPOINT) {
+      mints += 1
+      return tokenReply(`access-${mints}`)
+    }
+    return { status: 200, body: '{}' }
+  })
+  const transport = createFcmTransport({ fetch: network.fetch }, account)
+
+  const results = await Promise.all([
+    transport.send(fcmRequest()),
+    transport.send(fcmRequest({ token: 'device-token-2' })),
+    transport.send(fcmRequest({ token: 'device-token-3' })),
+  ])
+
+  assertEquals(mints, 1, 'three concurrent sends must pay for ONE mint, not three')
+  assertEquals(network.calls.length, 4, 'one token call + three sends')
+  for (const result of results) assertEquals(result.ok, true)
+})
+
+Deno.test('a FAILED mint is not cached, and concurrent sends share it too', async () => {
+  const { account } = await makeAccount()
+  let mints = 0
+  const network = fakeNetwork((call) => {
+    if (call.url === FCM_TOKEN_ENDPOINT) {
+      mints += 1
+      return mints === 1 ? { status: 500, body: 'Internal error' } : tokenReply('access-2')
+    }
+    return { status: 200, body: '{}' }
+  })
+  const transport = createFcmTransport({ fetch: network.fetch }, account)
+
+  const first = await transport.send(fcmRequest())
+  if (first.ok) throw new Error('unreachable')
+  assertEquals(first.retryable, true)
+
+  // The failed attempt must not have poisoned the cache: the next sends mint
+  // again, and the TWO of them share that one mint.
+  const results = await Promise.all([transport.send(fcmRequest()), transport.send(fcmRequest())])
+  assertEquals(mints, 2)
+  for (const result of results) assertEquals(result.ok, true)
+})
+
 Deno.test('a dead token (404 / UNREGISTERED) is terminal, dead, and PRUNED', async () => {
   const { account } = await makeAccount()
   const network = fakeNetwork((_call, index) =>
@@ -312,6 +358,34 @@ Deno.test('a dead token (404 / UNREGISTERED) is terminal, dead, and PRUNED', asy
   assertStringIncludes(result.error, 'Requested entity was not found')
   // The one line the drain actually acts on.
   assertStrictEquals(nativePushOutcome(result), 'prune')
+})
+
+Deno.test('a codeless 404 (a wrong project_id) keeps the device — it must not wipe every install', async () => {
+  const { account } = await makeAccount()
+  const network = fakeNetwork((call) =>
+    call.url === FCM_TOKEN_ENDPOINT
+      ? tokenReply('access-token-1')
+      : {
+          status: 404,
+          body: JSON.stringify({
+            error: {
+              code: 404,
+              message: 'Requested entity was not found.',
+              // The gRPC name of the 404, and NOT a dead-token fact: a wrong
+              // project id (or a proxy) answers exactly this.
+              status: 'NOT_FOUND',
+            },
+          }),
+        },
+  )
+  const transport = createFcmTransport({ fetch: network.fetch }, account)
+
+  const result = await transport.send(fcmRequest())
+
+  if (result.ok) throw new Error('unreachable')
+  assertEquals(result.deadToken, false, 'a 404 without UNREGISTERED is not proof the device is gone')
+  assertEquals(result.errorCode, 'NOT_FOUND')
+  assertStrictEquals(nativePushOutcome(result), 'failed')
 })
 
 Deno.test('a 503 UNAVAILABLE is retryable and NEVER prunes the device', async () => {

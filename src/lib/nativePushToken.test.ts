@@ -21,6 +21,7 @@ import {
   DEVICE_TOKEN_CONFLICT_KEY,
   NATIVE_PUSH_DENIED_REASON,
   NATIVE_PUSH_EMPTY_TOKEN_REASON,
+  NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON,
   deviceTokenRow,
   planNativePushRegistration,
   registerNativePushToken,
@@ -209,6 +210,29 @@ describe('registerNativePushToken — the order is the rule', () => {
     expect(calls[0]).toBe('checkPermissions')
     expect(calls[1]).toBe('requestPermissions')
     expect(calls).toContain('register')
+  })
+
+  // FIX ROUND 1, finding 3 — THE SECOND READING IS THE ONE THAT DECIDES. The
+  // first reading may legitimately be `prompt`; if it is STILL `prompt` after
+  // the ask (a dismissed dialog), or the state is unreadable, registering would
+  // store a token that can never show an alert. These pin the guard.
+  for (const state of ['prompt', 'prompt-with-rationale', '']) {
+    it(`never registers when the permission is still "${state}" AFTER the ask`, async () => {
+      const { calls, saved, outcome } = await run({ check: 'prompt', afterRequest: state })
+
+      expect(outcome).toEqual({ status: 'blocked', reason: NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON })
+      expect(calls).toContain('requestPermissions')
+      expect(calls).not.toContain('register')
+      expect(saved).toEqual([])
+    })
+  }
+
+  it('never registers when the FIRST reading is already unreadable and the ask changes nothing', async () => {
+    const { calls, saved, outcome } = await run({ check: 'unknown', afterRequest: 'unknown' })
+
+    expect(outcome.status).toBe('blocked')
+    expect(calls).not.toContain('register')
+    expect(saved).toEqual([])
   })
 })
 

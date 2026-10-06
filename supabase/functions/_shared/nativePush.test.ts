@@ -115,7 +115,10 @@ describe('buildFcmMessage — the HTTP v1 body', () => {
 
 describe('classifyNativePushFailure — a dead token is TERMINAL and is pruned', () => {
   const dead: Array<[string, NativePushFailure]> = [
-    ['HTTP 404', { status: 404, message: 'Requested entity was not found.' }],
+    [
+      'HTTP 404 + UNREGISTERED (the shape FCM uses for a dead token)',
+      { status: 404, errorCode: 'UNREGISTERED', message: 'Requested entity was not found.' },
+    ],
     ['HTTP 410', { status: 410, message: 'Gone' }],
     ['UNREGISTERED', { status: 400, errorCode: 'UNREGISTERED', message: 'Requested entity was not found.' }],
     [
@@ -168,6 +171,19 @@ describe('classifyNativePushFailure — permanent, but the DEVICE is not the pro
       { status: 400, errorCode: 'INVALID_ARGUMENT', message: 'Invalid JSON payload received. Unknown name "foo"' },
     ],
     ['some other 4xx', { status: 418, message: 'teapot' }],
+    // ── the two shapes that must NOT delete a device ──────────────────────
+    [
+      'a CODELESS 404 (a wrong project_id, or a proxy in front of Google)',
+      { status: 404, message: 'Requested entity was not found.' },
+    ],
+    [
+      'a 404 carrying only the gRPC status name NOT_FOUND',
+      { status: 404, errorCode: 'NOT_FOUND', message: 'Requested entity was not found.' },
+    ],
+    [
+      'a 400 whose prose says "token" but not "registration token"',
+      { status: 400, errorCode: 'INVALID_ARGUMENT', message: 'The auth token is malformed.' },
+    ],
   ]
 
   it.each(keepTheDevice)('%s → terminal, deadToken false, the row is KEPT', (_label, failure) => {
@@ -189,21 +205,24 @@ describe('classifyNativePushFailure — permanent, but the DEVICE is not the pro
 })
 
 describe('nativePushCredentialFailure — the sender’s own fault never condemns a device', () => {
-  it('does not prune, and does not claim a prune, even when the prose names a token', () => {
-    // The trap: a 400 whose description happens to mention a token satisfies
-    // the dead-token rule for a MESSAGE send. A credential failure must not.
+  it('does not prune, and does not claim a prune, when the prose names the registration token', () => {
+    // THE CONTRAST: as a MESSAGE failure this exact shape prunes (the provider
+    // said the REGISTRATION token is invalid); as a CREDENTIAL failure it must
+    // not. (This fixture used to be a message that merely said "token" — it no
+    // longer prunes at all under the tightened `namesTheToken`, which is the
+    // point of that fix; the real FCM wording is what exercises the fork.)
     const shape = {
       status: 400,
-      errorCode: 'invalid_grant',
-      message: 'Invalid JWT Signature for this token request.',
+      errorCode: 'INVALID_ARGUMENT',
+      message: 'The registration token is not a valid FCM registration token.',
     }
     expect(classifyNativePushFailure(shape).deadToken).toBe(true)
 
-    const result = nativePushCredentialFailure({ ...shape, message: '' })
+    const result = nativePushCredentialFailure(shape)
     if (result.ok) throw new Error('unreachable')
     expect(result.deadToken).toBe(false)
     expect(nativePushOutcome(result)).toBe('failed')
-    // The recorded reason must not tell a human the device was deleted.
+    // The recorded error must not tell a human the device was deleted.
     expect(result.error).not.toContain('pruned')
   })
 
@@ -212,6 +231,57 @@ describe('nativePushCredentialFailure — the sender’s own fault never condemn
     if (result.ok) throw new Error('unreachable')
     expect(result.retryable).toBe(true)
     expect(result.deadToken).toBe(false)
+  })
+
+  // THE OVERRIDE IS ABSOLUTE, over EVERY shape a token endpoint (or a proxy in
+  // front of it) can answer with — including the statuses and codes the
+  // dead-token branches below used to claim before they were gated. Each of
+  // these, routed as a MESSAGE failure, would prune; as a CREDENTIAL failure it
+  // must not. One drain with a moved OAuth endpoint would otherwise delete every
+  // live `device_tokens` row at once.
+  const credentialShapes: Array<[string, NativePushFailure]> = [
+    ['404', { status: 404, message: 'Not Found' }],
+    ['404 + NOT_FOUND', { status: 404, errorCode: 'NOT_FOUND', message: 'Not Found' }],
+    ['404 + UNREGISTERED', { status: 404, errorCode: 'UNREGISTERED', message: 'gone' }],
+    ['410', { status: 410, message: 'Gone' }],
+    ['410 + UNREGISTERED', { status: 410, errorCode: 'UNREGISTERED', message: 'gone' }],
+    ['400 + UNREGISTERED', { status: 400, errorCode: 'UNREGISTERED', message: 'gone' }],
+    ['400 + INVALID_ARGUMENT naming the registration token', {
+      status: 400,
+      errorCode: 'INVALID_ARGUMENT',
+      message: 'The registration token is not valid',
+    }],
+    ['400 + invalid_grant', { status: 400, errorCode: 'invalid_grant', message: 'Invalid JWT Signature.' }],
+    ['401', { status: 401, message: 'Unauthorized' }],
+    ['403', { status: 403, errorCode: 'PERMISSION_DENIED', message: 'Denied' }],
+    ['429', { status: 429, errorCode: 'QUOTA_EXCEEDED', message: 'Quota' }],
+    ['500', { status: 500, message: 'Internal' }],
+    ['no status at all (a thrown fetch)', { status: null, message: 'fetch failed' }],
+  ]
+
+  it.each(credentialShapes)(
+    'a credential failure with %s never prunes and never claims a prune',
+    (_label, failure) => {
+      const verdict = classifyNativePushFailure({ ...failure, aboutTheDeviceToken: false })
+      expect(verdict.deadToken).toBe(false)
+      expect(verdict.reason).not.toContain('pruned')
+
+      const result = nativePushCredentialFailure(failure)
+      if (result.ok) throw new Error('unreachable')
+      expect(result.deadToken).toBe(false)
+      expect(nativePushOutcome(result)).toBe('failed')
+    },
+  )
+
+  it('is the flag — not the status — that decides: the same 410 prunes a MESSAGE failure', () => {
+    const asMessage = classifyNativePushFailure({ status: 410, message: 'Gone' })
+    expect(asMessage.deadToken).toBe(true)
+    const asCredential = classifyNativePushFailure({
+      status: 410,
+      message: 'Gone',
+      aboutTheDeviceToken: false,
+    })
+    expect(asCredential.deadToken).toBe(false)
   })
 })
 

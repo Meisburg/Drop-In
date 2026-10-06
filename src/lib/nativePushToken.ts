@@ -77,6 +77,16 @@ export const NATIVE_PUSH_DENIED_REASON =
 export const NATIVE_PUSH_WEB_REASON =
   'Native notifications are only available in the installed app.'
 
+/**
+ * The sentence for a permission that is STILL not granted after we asked (a
+ * dialog dismissed without an answer, or a state we could not read). Registering
+ * anyway is trap #1: on Android 13+ it returns a token that can never produce a
+ * visible alert, and the parent believes notifications are on. So this is a
+ * blocked outcome, not a registration.
+ */
+export const NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON =
+  'Drop In could not confirm that notifications are allowed on this device, so it did not register. Allow notifications for Drop In in your phone’s settings, then reopen the app.'
+
 /** Why an empty `Token.value` is refused rather than stored. */
 export const NATIVE_PUSH_EMPTY_TOKEN_REASON =
   'the notification plugin reported an empty registration token, so there is nothing to send to'
@@ -105,7 +115,10 @@ export type NativePushRegistrationPlan =
  *                              we do not understand.
  *
  * The caller re-plans with the answer to `requestPermissions()` — see
- * `registerNativePushToken` — so "request" is never a terminal decision.
+ * `registerNativePushToken` — and a SECOND `request` after the ask is a BLOCKED
+ * outcome there: the OS was given the chance to grant and did not, so
+ * registering now would only store a token nothing can show. `request` is a
+ * request to ASK, never a licence to register.
  */
 export function planNativePushRegistration(permission: string): NativePushRegistrationPlan {
   if (permission === 'granted') return { action: 'register' }
@@ -176,10 +189,14 @@ export interface NativePushRegistrationDeps {
   plugin: NativePushPlugin
   platform: NativePushPlatform
   profileId: string
+  /**
+   * The build's version string, recorded in `device_tokens.app_version` so a
+   * human can tell "the new build registers, the old one does not" apart.
+   */
   appVersion?: string | null
   /** The persistence seam: the caller runs the `device_tokens` upsert. */
   saveToken(row: DeviceTokenRow): Promise<void>
-  /** The app version to record; injected so the spec pins the row. */
+  /** The clock, injected so the spec pins `last_seen_at` instead of reading it. */
   now?: () => Date
 }
 
@@ -254,6 +271,16 @@ export async function registerNativePushToken(
   }
 
   if (plan.action === 'blocked') return { status: 'blocked', reason: plan.reason }
+
+  // Still asking AFTER the ask: the OS did not grant (a dismissed dialog, or a
+  // state we could not read). This is the trap-#1 guard, and it is checked on
+  // the SECOND plan on purpose — the first reading is allowed to be `prompt`.
+  // Registering here would store a token that can never produce a visible
+  // alert while the parent believes notifications are on, which is exactly the
+  // outcome this module exists to prevent.
+  if (plan.action === 'request') {
+    return { status: 'blocked', reason: NATIVE_PUSH_UNCONFIRMED_PERMISSION_REASON }
+  }
 
   // The listeners come first (step 2). Both are awaited so each is registered
   // before `register()` is called.

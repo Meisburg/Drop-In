@@ -25,19 +25,25 @@
  * THE CLASSIFICATION IS THE PART THAT MUST NOT BE GOT BACKWARDS.
  *
  *   TERMINAL, DEAD TOKEN (`deadToken: true`) — the token will NEVER work again,
- *   so the sender DELETES the `device_tokens` row, exactly as a 404/410 prunes a
- *   `push_subscriptions` row today:
- *     - HTTP 404 / 410;
+ *   so the sender DELETES the `device_tokens` row, exactly as a 410 prunes a
+ *   `push_subscriptions` row today. EVERY branch here needs TOKEN-SPECIFIC
+ *   evidence, because the sender acts on this flag by deleting:
+ *     - HTTP 410 Gone (unambiguous: the registration is gone for good);
  *     - errorCode `UNREGISTERED` (the app was uninstalled, or the token
- *       rotated);
- *     - errorCode `INVALID_ARGUMENT` / HTTP 400 whose message actually names the
- *       registration token (a malformed token is dead forever). The message is
+ *       rotated) — FCM reports it with HTTP 404;
+ *     - errorCode `INVALID_ARGUMENT` / HTTP 400 whose message names the
+ *       REGISTRATION token (a malformed token is dead forever). The message is
  *       read because FCM returns the SAME 400 for a bad PAYLOAD, and deleting a
  *       live device because our own JSON was wrong is the expensive direction.
  *
  *   TERMINAL, LIVE DEVICE (`deadToken: false`, `retryable: false`) — the
  *   request will fail identically until a human changes something, but the
  *   DEVICE is not the problem, so the row is NOT deleted:
+ *     - a 404 with NO token-specific code. A wrong `project_id` in
+ *       `FCM_SERVICE_ACCOUNT_JSON`, or any proxy in front of Google, answers
+ *       404 too — and pruning on the bare status would delete EVERY live
+ *       device on one misconfiguration. (`error.status: "NOT_FOUND"` does not
+ *       count as token evidence; it is only the gRPC name of that 404.)
  *     - `UNAUTHENTICATED` / `PERMISSION_DENIED` / `SENDER_ID_MISMATCH` /
  *       `THIRD_PARTY_AUTH_ERROR` (a sender credential or project fault), and
  *       HTTP 401/403.
@@ -194,8 +200,14 @@ export interface NativePushVerdict {
   reason: string
 }
 
-/** Provider codes that mean "this token will never work again". */
-const DEAD_TOKEN_CODES: readonly string[] = ['UNREGISTERED', 'NOT_FOUND', 'INVALID_REGISTRATION']
+/**
+ * Provider codes that mean "THIS TOKEN will never work again", and nothing
+ * else. `NOT_FOUND` is deliberately absent: it is the gRPC name of any 404
+ * (including one for a project the sender is not configured for), so treating
+ * it as token evidence is what would delete every live device on a wrong
+ * `project_id`.
+ */
+const DEAD_TOKEN_CODES: readonly string[] = ['UNREGISTERED', 'INVALID_REGISTRATION']
 
 /** Provider codes that mean "try again later". */
 const RETRYABLE_CODES: readonly string[] = [
@@ -218,12 +230,21 @@ const SENDER_FAULT_CODES: readonly string[] = [
 ]
 
 /**
- * Whether a provider message is complaining about the TOKEN (as opposed to the
- * payload). FCM reports both as `INVALID_ARGUMENT`/400, and only the token case
- * is a reason to delete the row.
+ * Whether a provider message is complaining about the REGISTRATION token, as
+ * opposed to the payload (or anything else that happens to contain the word
+ * "token" — an auth token, an ID token). FCM reports both as
+ * `INVALID_ARGUMENT`/400, and only the registration-token case is a reason to
+ * delete the row.
+ *
+ * THE ASYMMETRY IS DELIBERATE: this requires the phrase "registration token",
+ * so a genuine bad-token 400 whose prose words it differently is KEPT rather
+ * than pruned. That is the safe direction — a kept row costs one failed send
+ * per drain; a wrongly deleted row costs the parent every future alert until
+ * they reinstall. The rule only ever needs to be *able* to fire, and FCM's own
+ * 400 for a malformed token says "registration token" verbatim.
  */
 function namesTheToken(message: string): boolean {
-  return /registration[\s_-]*token|token/i.test(message)
+  return /registration[\s_-]*token/i.test(message)
 }
 
 /**
@@ -235,6 +256,19 @@ export function classifyNativePushFailure(failure: NativePushFailure): NativePus
     typeof failure.status === 'number' && Number.isFinite(failure.status) ? failure.status : null
   const code = (failure.errorCode ?? '').trim().toUpperCase()
   const message = (failure.message ?? '').trim()
+
+  /**
+   * THE ABSOLUTE OVERRIDE — the guard the whole dead-token section below hangs
+   * on. `false` means the failure is the SENDER's own (the OAuth2 token mint in
+   * `fcmDeno.ts`, routed through `nativePushCredentialFailure`), so the DEVICE
+   * is not the subject and nothing the endpoint answered can condemn it. Every
+   * dead-token branch is gated on this, which is what makes
+   * "`deadToken` is ALWAYS false for a credential failure" true for ANY status
+   * and ANY code — including 404, 410 and `UNREGISTERED`, which a moved or
+   * proxied token endpoint can produce and which an ungated classifier would
+   * read as a dead device and delete EVERY live row on one drain.
+   */
+  const tokenIsTheSubject = failure.aboutTheDeviceToken !== false
 
   // No response at all: a network failure, a timeout, a dropped connection.
   // Nothing was rejected — come back later. (The SMTP classifier's null-code
@@ -249,30 +283,41 @@ export function classifyNativePushFailure(failure: NativePushFailure): NativePus
     }
   }
 
-  // 1. The token is dead. 404/410 is the provider saying "no such
-  //    registration"; UNREGISTERED is the same fact as an errorCode.
-  if (status === 404 || status === 410) {
+  // 1a. 410 Gone is unambiguous: the registration is gone and will not come
+  //     back. This is the ONE status that prunes on its own.
+  if (tokenIsTheSubject && status === 410) {
     return {
       retryable: false,
       deadToken: true,
-      reason: `the push provider answered ${status}: the registration token is not registered any more (the app was uninstalled or the token rotated) — the device row is pruned`,
+      reason: 'the push provider answered 410: the registration token is gone for good — the device row is pruned',
     }
   }
-  if (DEAD_TOKEN_CODES.includes(code)) {
+  // 1b. The provider's own token-specific codes. FCM reports a dead token as
+  //     404 + `UNREGISTERED`.
+  if (tokenIsTheSubject && DEAD_TOKEN_CODES.includes(code)) {
     return {
       retryable: false,
       deadToken: true,
       reason: `the push provider said ${code}: the registration token is dead — the device row is pruned`,
     }
   }
+  // 1c. A 404 with NO token-specific code is a SENDER/PROJECT fault, not a dead
+  //     device: a wrong `project_id` in FCM_SERVICE_ACCOUNT_JSON (or anything
+  //     proxying Google) answers 404 the same way, and the drain deletes on
+  //     `deadToken`, so pruning here would wipe every live device at once.
+  if (status === 404) {
+    return {
+      retryable: false,
+      deadToken: false,
+      reason: `the push provider answered 404 with no dead-token code${
+        code === '' ? '' : ` (${code})`
+      } — that is a project/credential fault, not proof the device is gone, so the device row is KEPT`,
+    }
+  }
   //    A malformed token is also dead, but FCM returns the same 400 for a bad
   //    PAYLOAD. Delete only when the provider's message says the token is the
   //    problem; otherwise the device stays and the sender's request is the bug.
-  if (
-    failure.aboutTheDeviceToken !== false &&
-    (code === 'INVALID_ARGUMENT' || status === 400) &&
-    namesTheToken(message)
-  ) {
+  if (tokenIsTheSubject && (code === 'INVALID_ARGUMENT' || status === 400) && namesTheToken(message)) {
     return {
       retryable: false,
       deadToken: true,
@@ -351,7 +396,8 @@ export type NativePushResult =
  *
  *  * `sent`   — count it and bump the device's `last_seen_at`.
  *  * `prune`  — the token is dead: DELETE the `device_tokens` row (the same
- *               effect a 404/410 has on a `push_subscriptions` row).
+ *               effect a 410, or an `UNREGISTERED` 404, has on a
+ *               `push_subscriptions` row).
  *  * `failed` — record the reason; the row is NOT deleted. A retryable failure
  *               must never prune, and a sender-fault failure must never prune
  *               either — that is the whole classification, in one line.

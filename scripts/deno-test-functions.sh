@@ -55,10 +55,18 @@ printf '{\n  "nodeModulesDir": "auto"\n}\n' > "$TMP/deno.json"
 
 cd "$TMP" || { echo "FAIL — could not enter the staged tree"; exit 1; }
 
-# One entrypoint per Deno-only adapter, named explicitly (not a glob): a test
-# that silently stops running is worse evidence than one that fails, so a
-# missing file is a FAIL rather than a smaller run.
-for entry in _shared/smtpDeno_test.ts _shared/fcmDeno_test.ts; do
+# ONE SOURCE OF TRUTH for the entrypoints: one line per Deno-only adapter,
+# named explicitly (not a glob) and used for BOTH the existence check and the
+# `deno test` invocation. Adding a third adapter here is one edit; the failure
+# this shape prevents is the same one twice-stated lists always produce — the
+# new test is added to the run but not to the check (or the reverse), and a test
+# that silently stops running looks exactly like a passing one.
+ENTRYPOINTS=(
+  _shared/smtpDeno_test.ts
+  _shared/fcmDeno_test.ts
+)
+
+for entry in "${ENTRYPOINTS[@]}"; do
   if [ ! -f "$entry" ]; then
     echo "FAIL — $entry is missing from the staged tree."
     exit 1
@@ -77,8 +85,7 @@ done
 #                the Supabase Edge runtime grants env anyway.
 # `--no-lock`: this run must not write a lockfile even inside the scratch dir.
 # nice: this shares a box with a human, and a cold `npm:` graph is not urgent.
-nice -n 19 deno test --allow-net --allow-sys --allow-env --no-lock \
-  _shared/smtpDeno_test.ts _shared/fcmDeno_test.ts
+nice -n 19 deno test --allow-net --allow-sys --allow-env --no-lock "${ENTRYPOINTS[@]}"
 status=$?
 
 echo

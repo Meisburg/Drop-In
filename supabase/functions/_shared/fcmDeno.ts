@@ -251,6 +251,9 @@ interface MintFailure {
   reason: string
 }
 
+/** What a mint attempt resolves to: an access token, or the reason there is none. */
+type AccessTokenResult = { ok: true; token: string } | MintFailure
+
 /**
  * Build the FCM transport for one service account. `deps` carries the network
  * and the clock, so the test can drive both and count the token mints.
@@ -263,13 +266,30 @@ export function createFcmTransport(deps: FcmDeps, account: FcmServiceAccount): F
   const now = deps.now ?? (() => Date.now())
   /** The cached access token, with the instant it stops being usable. */
   let cached: { token: string; usableUntil: number } | null = null
+  /**
+   * The mint currently in flight, so CONCURRENT sends share one RSA sign and one
+   * token POST. Without it two sends that both observe an empty cache each pay
+   * for a mint — harmless for correctness, but it defeats the whole point of
+   * the cache on the busiest path (a drain sends many messages back to back on
+   * one warm isolate). Cleared when it settles, success or failure, so a failed
+   * mint is not cached as a failure.
+   */
+  let inFlight: Promise<AccessTokenResult> | null = null
 
-  async function accessToken(): Promise<{ ok: true; token: string } | MintFailure> {
+  async function accessToken(): Promise<AccessTokenResult> {
     const nowMs = now()
     if (cached !== null && nowMs < cached.usableUntil) {
       return { ok: true, token: cached.token }
     }
+    if (inFlight !== null) return inFlight
 
+    inFlight = mintAccessToken(nowMs).finally(() => {
+      inFlight = null
+    })
+    return inFlight
+  }
+
+  async function mintAccessToken(nowMs: number): Promise<AccessTokenResult> {
     const assertion = await signAssertion(account, Math.floor(nowMs / 1000))
 
     const response = await deps.fetch(FCM_TOKEN_ENDPOINT, {
