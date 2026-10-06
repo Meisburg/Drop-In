@@ -16,6 +16,9 @@
  */
 import {
   CASCADE_HAZARDS,
+  schemaCascadePairsQuery,
+  schemaRefusals,
+  MIN_LIVE_CASCADE_PAIRS,
   collateralProbeQuery,
   collateralRefusals,
   deleteStatements,
@@ -27,6 +30,7 @@ import {
   countsQuery,
   verificationProblems,
 } from './sweep-e2e.mjs'
+import { readFileSync } from 'node:fs'
 
 const failures = []
 
@@ -208,7 +212,86 @@ console.log('===========================================================')
   // is a Postgres 42883 ERROR, so a probe that got this wrong would crash
   // instead of guarding — and a crash is not a guard.
   const probe = collateralProbeQuery()
-  check('the collateral probe selects the parent uuid, never `select 1`',
+  // ---------------------------------------------------------------------------
+// AND IT MUST ACTUALLY BE WIRED IN (added 2026-10-06).
+//
+// A gate function that behaves perfectly and is never CALLED is the exact failure
+// this repo keeps finding: a rule that exists in a file rather than in a path.
+// Verified by BREAKING it — un-wiring `schemaRefusals` from the delete path left
+// every check above green, which is why this one reads the runner's source.
+// ---------------------------------------------------------------------------
+{
+  const runner = readFileSync(new URL('../sweep-e2e-markers.mjs', import.meta.url), 'utf8')
+  const calls = (runner.match(/schemaRefusals\(/g) ?? []).length
+  check('the runner actually CALLS schemaRefusals on both of its paths',
+    calls >= 2, `${calls} call(s)`)
+  check('and it reads the live cascade list it checks against',
+    runner.includes('schemaCascadePairsQuery()'), 'the query is never run')
+}
+
+// ---------------------------------------------------------------------------
+// THE PROBE MUST PROVE IT MODELS THE LIVE SCHEMA (added 2026-10-06).
+//
+// The hazard list is hand-written and was blind to half the schema while printing
+// "Safe". These are the failure shapes of the fix: a live edge the model does not
+// name, a read that came back broken, and a read that could not happen at all.
+// ---------------------------------------------------------------------------
+{
+  // A believable live set: the pairs this schema really has, all modelled.
+  const live = [
+    { parent: 'profiles', child: 'messages' },
+    { parent: 'profiles', child: 'follows' },
+    { parent: 'playdates', child: 'going_pings' },
+    { parent: 'playdates', child: 'comments' },
+    { parent: 'playdates', child: 'playdate_kids' },
+    { parent: 'kids', child: 'playdate_kids' },
+    { parent: 'comments', child: 'comments' },
+    { parent: 'profiles', child: 'going_pings' },
+    { parent: 'profiles', child: 'comments' },
+    { parent: 'profiles', child: 'reports' },
+    { parent: 'profiles', child: 'memberships' },
+    { parent: 'profiles', child: 'push_subscriptions' },
+    { parent: 'profiles', child: 'playdates' },
+    { parent: 'profiles', child: 'playdate_series' },
+    { parent: 'profiles', child: 'kids' },
+    { parent: 'profiles', child: 'blocks' },
+    { parent: 'profiles', child: 'conversation_reads' },
+    { parent: 'profiles', child: 'message_recipients' },
+    { parent: 'profiles', child: 'message_reactions' },
+    { parent: 'profiles', child: 'notification_log' },
+    { parent: 'profiles', child: 'direct_conversation_reads' },
+    { parent: 'profiles', child: 'account_links' },
+    { parent: 'profiles', child: 'parent_cards' },
+    { parent: 'profiles', child: 'place_comments' },
+    { parent: 'profiles', child: 'reviews' },
+    { parent: 'playdates', child: 'messages' },
+    { parent: 'playdates', child: 'conversation_reads' },
+    { parent: 'kids', child: 'ping_kids' },
+    { parent: 'going_pings', child: 'ping_kids' },
+  ]
+  check('a live schema the model fully covers raises no refusal',
+    schemaRefusals(live).length === 0, JSON.stringify(schemaRefusals(live)))
+
+  const withNewTable = [...live, { parent: 'profiles', child: 'some_table_added_later' }]
+  const unmodelled = schemaRefusals(withNewTable)
+  check('a live cascade the model does NOT name refuses the sweep',
+    unmodelled.length === 1, JSON.stringify(unmodelled))
+  check('and the refusal NAMES the unmodelled edge, not just a count',
+    unmodelled[0].includes('profiles|some_table_added_later'), unmodelled[0])
+
+  check('an UNREADABLE live cascade list refuses rather than assuming completeness',
+    schemaRefusals(null).length === 1 && schemaRefusals(null)[0].startsWith('REFUSING'))
+  check('a BROKEN live read (fewer pairs than the schema has) refuses',
+    schemaRefusals(live.slice(0, MIN_LIVE_CASCADE_PAIRS - 1)).length === 1)
+  check('an EMPTY live read refuses',
+    schemaRefusals([]).length === 1)
+  check('the live query derives its parent set from MARKER_ROWS, not a retyped list',
+    schemaCascadePairsQuery().includes("'profiles'") &&
+      schemaCascadePairsQuery().includes("'playdates'") &&
+      !schemaCascadePairsQuery().includes("'auth.users'"))
+}
+
+check('the collateral probe selects the parent uuid, never `select 1`',
     probe.includes('select p.id from') && !probe.includes('select 1 from'),
     probe.slice(0, 120))
   check('the collateral probe reads a blocker count per cascade edge',

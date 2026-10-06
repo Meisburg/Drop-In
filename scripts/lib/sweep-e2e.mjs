@@ -299,6 +299,74 @@ export function parseCollateral(rawRow) {
  * light. "The rule did not run" must never resolve to "go ahead and delete" —
  * the same principle the founder-overlap gate already follows.
  */
+/**
+ * ⚠️ THE PROBE VERIFIES ITS OWN COMPLETENESS AGAINST THE LIVE SCHEMA (2026-10-06).
+ *
+ * WHY THIS EXISTS. `CASCADE_HAZARDS` is a hand-written model, and on 2026-10-06 it
+ * turned out to name 17 of the schema's 34 cascade edges — blind to whole tables
+ * added since it was written — while printing "Safe". A static list cannot notice a
+ * table it has never heard of, and the assertion guarding it (`length === 17`)
+ * pinned a NUMBER rather than checking the model, so it stayed green throughout.
+ *
+ * THE FIX IS TO ASK THE DATABASE. These two functions read every `ON DELETE
+ * CASCADE` foreign key that points at a table the sweep deletes from, and compare
+ * that live set with the modelled one. A live edge the model does not name is a
+ * REFUSAL — the sweep will not delete while it can be surprised.
+ *
+ * IT FAILS CLOSED. An unreadable or implausibly empty schema read refuses, exactly
+ * like every other gate here: "the rule did not run" must never resolve to "go
+ * ahead and delete".
+ */
+export function schemaCascadePairsQuery() {
+  // Derived from MARKER_ROWS, never retyped, so the parent set cannot drift from
+  // what the sweep actually deletes. `auth.users` is excluded on purpose: it is not
+  // a `public` table, and its cascade into `profiles` is the INTENDED removal the
+  // marker predicate on `profiles` already accounts for.
+  const parents = MARKER_ROWS.map((r) => r.table)
+    .filter((name) => name !== 'auth.users')
+    .map((name) => `'${name}'`)
+    .join(',')
+  return (
+    `select distinct ccu.table_name as parent, tc.table_name as child ` +
+    `from information_schema.table_constraints tc ` +
+    `join information_schema.key_column_usage kcu on kcu.constraint_name = tc.constraint_name ` +
+    `join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name ` +
+    `join information_schema.referential_constraints rc on rc.constraint_name = tc.constraint_name ` +
+    `where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public' ` +
+    `and rc.delete_rule = 'CASCADE' and ccu.table_name in (${parents})`
+  )
+}
+
+/** How many live pairs make an empty read believable? Measured: 29. Anything less is a broken read. */
+export const MIN_LIVE_CASCADE_PAIRS = 20
+
+export function schemaRefusals(rows) {
+  if (!Array.isArray(rows)) {
+    return [
+      'REFUSING: the live cascade list could not be read — the probe cannot prove ' +
+        'it models the schema, so nothing was deleted.',
+    ]
+  }
+  const pairs = rows
+    .map((r) => `${r?.parent}|${r?.child}`)
+    .filter((p) => !p.includes('undefined'))
+  if (pairs.length < MIN_LIVE_CASCADE_PAIRS) {
+    return [
+      `REFUSING: the live cascade list came back with ${pairs.length} pair(s), fewer ` +
+        `than the ${MIN_LIVE_CASCADE_PAIRS} this schema is known to have — the read is ` +
+        'broken, not the schema, and nothing was deleted.',
+    ]
+  }
+  const modelled = new Set(CASCADE_HAZARDS.map((h) => `${h.parent}|${h.child}`))
+  const unmodelled = [...new Set(pairs)].filter((p) => !modelled.has(p)).sort()
+  if (unmodelled.length === 0) return []
+  return [
+    `REFUSING: ${unmodelled.length} live cascade edge(s) are NOT modelled by the probe, ` +
+      `so it cannot report on them: ${unmodelled.join(', ')}. Add each to ` +
+      'CASCADE_HAZARDS (with its marker clause) before deleting anything.',
+  ]
+}
+
 export function collateralRefusals(collateral) {
   if (!Array.isArray(collateral) || collateral.length === 0) {
     return ['REFUSING: the collateral probe returned nothing — nothing was deleted.']

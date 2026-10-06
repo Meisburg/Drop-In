@@ -526,10 +526,25 @@ Assets below were read from Google's own
   running it rather than reading it: a duplicate edge, `id in VICTIMS` on tables
   with no `id` column (the probe refused with 42703 — a crash, not a guard), and
   `select p.id` on `going_pings`, whose key is `(playdate_id, profile_id)`.
-  **KNOWN LIMIT, written down rather than implied:** a new edge on an
-  already-named table cannot be detected from a static list; the composite
-  `ping_kids`→`going_pings` key is modelled per-column and **over-counts on
-  purpose**, because a false refusal is survivable and a false "safe" is not., and 1.2 WAS deferred (no scratch project),
+  ✅ **AND THE LIMIT IS NOW CLOSED (2026-10-06, same day).** The probe no longer
+  trusts its own list: `schemaCascadePairsQuery()` reads every `ON DELETE CASCADE`
+  edge out of the LIVE schema and `schemaRefusals()` refuses when the model does
+  not name one — so a table added tomorrow stops the sweep instead of being
+  silently ignored. The parent set is derived from `MARKER_ROWS`, never retyped, so
+  it cannot drift from what the sweep deletes; `auth.users` is excluded on purpose
+  (its cascade into `profiles` is the intended removal the marker predicate already
+  covers). It **fails closed** like every other gate: an unreadable read, an empty
+  read, or a read with fewer pairs than the schema is known to have all REFUSE.
+  Live proof: `collateral` now prints *"the model names 34 edge(s); the live schema
+  has 29 parent->child pair(s)"* and still reports Safe.
+  **The remaining limit is only the composite key**: `ping_kids`→`going_pings` is
+  modelled per-column and **over-counts on purpose**, because a false refusal is
+  survivable and a false "safe" is not.
+  ⚠️ **AND THE WIRING IS ITSELF CHECKED, because a gate nobody calls is the failure
+  this repo keeps finding**: un-wiring `schemaRefusals` from the delete path left
+  every behavioural check above green, so a check now reads the runner's source and
+  fails if the call disappears. Verified by breaking it — un-wired, the check goes
+  red; restored, it passes. **The sweep's checker is now 50 assertions.**, and 1.2 WAS deferred (no scratch project),
   so this is live: the residue is **801 accounts / 1620 rows**, measured
   2026-10-05 with `founder_overlap: 0`, and the sweep tool supports
   `select` / `delete` / `verify` with a dry run first. **It is the same single

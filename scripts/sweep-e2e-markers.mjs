@@ -64,6 +64,8 @@ import { chromium } from '@playwright/test'
 import {
   collateralProbeQuery,
   collateralRefusals,
+  schemaCascadePairsQuery,
+  schemaRefusals,
   countsQuery,
   deleteStatements,
   gateRefusal,
@@ -209,7 +211,15 @@ if (mode === 'select') {
   //
   // It fails CLOSED and it is not skippable: there is no flag that bypasses it.
   const collateral = parseCollateral((await sql(collateralProbeQuery()))[0])
-  const collateralProblems = collateralRefusals(collateral)
+  // ⚠️ AND THE PROBE MUST BE ABLE TO SEE THE WHOLE SCHEMA. The modelled hazard list
+  // is hand-written, so it can be blind to a table added after it was written —
+  // measured on 2026-10-06, when it named 17 of 34 edges and still said "Safe".
+  // This asks the DATABASE and refuses if the model is missing anything.
+  const liveCascades = await sql(schemaCascadePairsQuery())
+  const collateralProblems = [
+    ...schemaRefusals(liveCascades),
+    ...collateralRefusals(collateral),
+  ]
   if (collateralProblems.length > 0) {
     console.error(
       '\nREFUSING — this sweep would destroy rows it did not identify as e2e-owned:',
@@ -254,8 +264,13 @@ if (mode === 'select') {
   // READ-ONLY. The same probe `delete` runs before it is willing to touch
   // anything, exposed on its own so the gate can be checked without a delete.
   const collateral = parseCollateral((await sql(collateralProbeQuery()))[0])
-  const problems = collateralRefusals(collateral)
+  const liveCascades = await sql(schemaCascadePairsQuery())
+  const problems = [...schemaRefusals(liveCascades), ...collateralRefusals(collateral)]
   console.log('Cascade collateral probe — rows a delete would destroy WITHOUT naming them:')
+  console.log(
+    `  (the model names ${collateral.length} edge(s); the live schema has ` +
+      `${Array.isArray(liveCascades) ? liveCascades.length : '?'} parent->child pair(s))`,
+  )
   for (const row of collateral) {
     console.log(
       `  ${row.child}.${row.column} -> ${row.parent}`.padEnd(46) +
