@@ -57,8 +57,9 @@ async function patchMarkerRadius(radiusMiles: number): Promise<boolean> {
 }
 
 test("the marker's /settings edits distance but not the home ZIP (V27)", async ({ page }) => {
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // settings-restructure: the radius lives in the Near you category's own screen.
+  await page.goto('/settings/near-you')
+  await settleOnRoute(page, '/settings/near-you')
 
   // V15 T07 removed the location CARD (the ZIP editor) from /settings, and that
   // half stands: no zip input renders here and the onboarding "e.g. 98107"

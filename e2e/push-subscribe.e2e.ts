@@ -481,8 +481,10 @@ test('granting permission registers a push subscription row, and turning off is 
 
   await installPushStub(page, { permission: 'granted', endpoint })
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // settings-restructure: the whole notification surface is the Notifications
+  // category's own screen; /settings is the index and renders none of it.
+  await page.goto('/settings/notifications')
+  await settleOnRoute(page, '/settings/notifications')
 
   const section = page.getByTestId('notifications-section')
   await expect(section).toBeVisible()
@@ -520,7 +522,7 @@ test('granting permission registers a push subscription row, and turning off is 
   // no button anywhere. A COLD LOAD is the state a parent actually returns to,
   // so that is where the button has to be.
   await page.reload()
-  await settleOnRoute(page, '/settings')
+  await settleOnRoute(page, '/settings/notifications')
   await expect(page.getByTestId('push-status')).toContainText('Notifications are off')
   await expect(page.getByTestId('push-turn-on')).toBeVisible()
 
@@ -538,8 +540,10 @@ test('a denied permission registers nothing and points at the feed inbox', async
 
   await installPushStub(page, { permission: 'denied', endpoint })
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // settings-restructure: the whole notification surface is the Notifications
+  // category's own screen; /settings is the index and renders none of it.
+  await page.goto('/settings/notifications')
+  await settleOnRoute(page, '/settings/notifications')
   await expectPushSupported(page)
 
   await page.getByTestId('push-turn-on').click()
@@ -560,7 +564,7 @@ test('a denied permission registers nothing and points at the feed inbox', async
   // 'denied' from the first render, like a real browser that remembers.
   const before = (await stubState(page)).requests
   await page.reload()
-  await settleOnRoute(page, '/settings')
+  await settleOnRoute(page, '/settings/notifications')
   await expect(page.getByTestId('push-fallback-note')).toBeVisible()
   expect((await stubState(page)).requests).toBe(before)
   expect((await stubState(page)).permission).toBe('denied')
@@ -951,8 +955,10 @@ test('every notification kind has a labelled toggle, and toggling is reflected',
     'review_due',
   ] as const
 
-  await page.goto('/settings')
-  await settleOnRoute(page, '/settings')
+  // settings-restructure: the whole notification surface is the Notifications
+  // category's own screen; /settings is the index and renders none of it.
+  await page.goto('/settings/notifications')
+  await settleOnRoute(page, '/settings/notifications')
 
   const prefs = page.getByTestId('push-kind-prefs')
   await expect(prefs).toBeVisible()

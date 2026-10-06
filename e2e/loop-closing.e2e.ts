@@ -709,7 +709,8 @@ test('a follow is a bookmark: the card says who you met, and an ended post offer
   // family follow from step (4).
   expect(await selectWithToken('follows?select=id', tokenA)).toHaveLength(2)
 
-  await a.page.goto('/settings')
+  // settings-restructure: the Following & saved list is its own screen now.
+  await a.page.goto('/settings/saved')
   await expect(
     a.page.getByRole('heading', { name: 'Following & saved', exact: true }),
   ).toBeVisible()

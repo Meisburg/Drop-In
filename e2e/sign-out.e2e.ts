@@ -44,7 +44,8 @@ test('sign out is in Settings, not the header, and still lands on /login', async
   await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0)
   await expect(page.getByLabel('Settings')).toBeVisible()
 
-  await page.goto('/settings')
+  // settings-restructure: the Account category's own screen.
+  await page.goto('/settings/account')
   const control = page.getByTestId('account-sign-out')
   await expect(control).toBeVisible()
   await control.click()

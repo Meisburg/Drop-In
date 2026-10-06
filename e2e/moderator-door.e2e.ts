@@ -40,7 +40,9 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
   expect(preReset.ok, `the pre-flight reset must land: ${preReset.output}`).toBe(true)
 
   // --- HALF 1 — an ordinary parent sees no moderator control at all. ---
-  await page.goto('/settings')
+  // settings-restructure: sign out moved with the Account category, so this
+  // stands on that category's own screen rather than the settings index.
+  await page.goto('/settings/account')
   await expect(page.getByTestId('account-sign-out')).toBeVisible()
   await expect(door).toHaveCount(0)
 
@@ -71,7 +73,7 @@ test('the moderator door is there for a moderator and never for a parent (v30-7)
   if (originalFailure !== null) throw originalFailure
 
   // --- The restore is REAL: on a fresh load, the door is gone again. ---
-  await page.goto('/settings')
+  await page.goto('/settings/account')
   await expect(page.getByTestId('account-sign-out')).toBeVisible()
   await expect(door).toHaveCount(0)
 })

@@ -48,7 +48,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
 
-const SETTINGS_ROUTE = '/settings'
+/**
+ * The Notifications category's own screen (settings-restructure): the email
+ * opt-out lives in `NotificationsSection`, and `/settings` is now the INDEX —
+ * a bare `/settings` load would stand on a list of rows with no email control
+ * on it at all.
+ */
+const SETTINGS_ROUTE = '/settings/notifications'
 
 /**
  * The email toggle, once the FIRST read has settled.
@@ -65,7 +71,7 @@ async function settleToggle(page: Page): Promise<Locator> {
   return toggle
 }
 
-/** Cold-load /settings and wait until the email control is interactive. */
+/** Cold-load the Notifications category and wait until the email control is interactive. */
 async function openSettings(page: Page): Promise<void> {
   await page.goto(SETTINGS_ROUTE)
   await settleOnRoute(page, SETTINGS_ROUTE)

@@ -49,6 +49,14 @@ export const NAV_ICONS = {
   // V27: a small flame for the search overlay's suggestion rows — the reference
   // screenshot's "popular" mark, decorative beside the word.
   flame: 'M12 3c1 3 4 4.2 4 8a4 4 0 0 1-8 0c0-1.4.6-2.4 1.4-3.3C10.6 6 12 5 12 3Z M12 21a6 6 0 0 1-6-6c0-2 .8-3.6 2-5',
+  // settings-restructure: the /settings index's two new category marks — a
+  // shield for Privacy & safety and a half-lit disc for Appearance — drawn in
+  // the same stroked family (24px viewBox, stroke 1.8, currentColor) as the
+  // rest of NAV_ICONS, because `lib/settingsIndex.ts` names its rows' glyphs by
+  // KEY out of THIS table (it cannot import a component file). The other four
+  // rows reuse `inbox`, `nearby`, `bookmark` and `profile`.
+  shield: 'M12 3 5 6v5.5c0 4.3 2.9 7.6 7 9.5 4.1-1.9 7-5.2 7-9.5V6Z',
+  contrast: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z M12 4v16',
 } as const
 
 /**

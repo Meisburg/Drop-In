@@ -79,6 +79,14 @@ test('marker saves a parent card + kid row, sees them on /u/<handle>', async ({ 
   // V15 T07: the /settings nudge banner ("Finish your profile" / "Still to add:
   // a photo.") was removed — assert its ABSENCE as the flip of the old
   // persistence check.
+  //
+  // settings-restructure: this is one of the nine bare `/settings` navigations,
+  // and it is deliberately LEFT on the bare path. The others were retargeted to
+  // the category screen they actually exercise; this one asserts that a banner
+  // is absent from settings, and the index IS /settings's screen now. Pointing
+  // it at a category would narrow the claim from "settings does not carry this"
+  // to "one category does not carry this" — a WEAKER assertion, which is the one
+  // thing the restructure is not allowed to buy itself.
   await page.goto('/settings')
   await settleOnRoute(page, '/settings')
   await expect(page.getByText('Still to add: a photo.')).toHaveCount(0)

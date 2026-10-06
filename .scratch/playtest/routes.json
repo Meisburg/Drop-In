@@ -63,6 +63,42 @@
     ]
   },
   {
+    "path": "/settings/notifications",
+    "must_contain": [
+      "Sign in"
+    ]
+  },
+  {
+    "path": "/settings/near-you",
+    "must_contain": [
+      "Sign in"
+    ]
+  },
+  {
+    "path": "/settings/saved",
+    "must_contain": [
+      "Sign in"
+    ]
+  },
+  {
+    "path": "/settings/privacy",
+    "must_contain": [
+      "Sign in"
+    ]
+  },
+  {
+    "path": "/settings/appearance",
+    "must_contain": [
+      "Sign in"
+    ]
+  },
+  {
+    "path": "/settings/account",
+    "must_contain": [
+      "Sign in"
+    ]
+  },
+  {
     "path": "/place/:id/details",
     "must_contain": [
       "Sign in"

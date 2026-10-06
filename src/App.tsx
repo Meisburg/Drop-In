@@ -897,8 +897,16 @@ export default function App() {
             <Route path="/profile" element={<ProfilePage />} />
             {/* V11 ticket 06: the family's editor, split off the read-only
                 /profile (the header gear + /profile's "Edit profile" button
-                reach it). Signed-in-only via the shell gate above. */}
+                reach it). Signed-in-only via the shell gate above.
+                settings-restructure: /settings is the INDEX (six category
+                rows) and /settings/<category> is ONE category's screen. The
+                page owns which URL means which screen (`lib/settingsIndex.ts`),
+                including the legacy-hash redirect (/settings#privacy →
+                /settings/privacy), so both routes render the same component and
+                an unknown segment lands back on the index, never on an empty
+                screen. */}
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/:category" element={<SettingsPage />} />
             <Route path="/u/:handle" element={<UserPage />} />
             <Route path="/mod" element={<ModPage />} />
           </Route>
