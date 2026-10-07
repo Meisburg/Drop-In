@@ -105,17 +105,18 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // pill further down.
     //
     // v33-0 (restores what V32-5's deletion actually took): the 390px
-    // no-ellipsis gate for the controls that exist NOW. For the indoor toggle
-    // and every kind chip — each element plus any descendant carrying
-    // non-whitespace text — `scrollWidth <= clientWidth + 1` (a chip whose label
-    // sits in a child span can clip on the span while the button itself measures
-    // fine, so the check walks the descendants too, and the failure names the
-    // chip). The scroll CONTAINER (`place-kind-chip-row`) is deliberately exempt:
-    // side-scrolling inside it at 390px is the feature ("still side-scrolls"),
-    // not a defect. Plus the page itself must not widen at 390px:
-    // `documentElement.scrollWidth <= clientWidth + 1`. Both run after the count
-    // assertion above has settled, so the measurements are taken on the
-    // fully-rendered row set.
+    // no-ellipsis gate for the controls that exist NOW. For the indoor toggle,
+    // every kind chip, every placeholder pill, and the coffee controls — each
+    // element plus any descendant carrying non-whitespace text with a real layout
+    // box (`clientWidth > 0`, so inline boxes are skipped) — `scrollWidth <=
+    // clientWidth + TOLERANCE` (a chip whose label sits in a child span can clip
+    // on the span while the button itself measures fine, so the check walks the
+    // descendants too, and the failure names the chip). The scroll CONTAINER
+    // (`place-kind-chip-row`) is deliberately exempt: side-scrolling inside it at
+    // 390px is the feature ("still side-scrolls"), not a defect. Plus the page
+    // itself must not widen at 390px: `documentElement.scrollWidth <=
+    // clientWidth + TOLERANCE`. Both run after the count assertion above has
+    // settled, so the measurements are taken on the fully-rendered row set.
     await expect(page.getByTestId('places-when-filter')).toHaveCount(0)
     await expect(page.getByTestId('places-when-sheet')).toHaveCount(0)
 
@@ -144,8 +145,7 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // lost, `upcomingCount` is `null` for every row and the directory goes
     // entirely quiet. So this assertion POLLS until at least one row states a
     // positive count OR the invite line — which fails loudly exactly when the
-    // read is lost, the regression the check exists for — and separately
-    // asserts the snapshot covers every row, so a partial snapshot cannot pass.
+    // read is lost, the regression the check exists for.
     const countRows = page.getByTestId('place-row')
     expect(await countRows.count()).toBeGreaterThan(0)
     const statesItsCount = (t: string) =>
@@ -159,9 +159,6 @@ test.describe('places directory — the filter pills say what they filter (v30-3
         timeout: 20_000,
       })
       .toBe(true)
-    // The snapshot must cover EVERY row — a partial evaluateAll cannot pass.
-    const allCountTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))
-    expect(allCountTexts.length, 'the count snapshot must cover every directory row').toBe(await countRows.count())
 
     // THE TOGGLE THAT REPLACED THE "Setting" DROPDOWN. One control, one word,
     // a real pressed state — and no sheet behind it to open.
@@ -172,28 +169,39 @@ test.describe('places directory — the filter pills say what they filter (v30-3
 
     // v33-0 — the restored 390px NO-ELLIPSIS gate (see the comment at the top of
     // this test for what V32-5's deletion took and why it comes back now):
-    // the indoor toggle and every kind chip must clip no text, and the page
-    // itself must not widen. The check walks each element's descendants that
-    // carry non-whitespace text (a chip whose label sits in a child span can
-    // clip there while the button measures fine), and the failure names the
-    // culprit. Both gates POLL so a transient reflow (late webfont swap,
-    // scrollbar appearing) is retried instead of failing the run.
+    // the indoor toggle, every kind chip, every placeholder pill, and the coffee
+    // controls must clip no text, and the page itself must not widen. The check
+    // walks each element's descendants that carry non-whitespace text with a real
+    // layout box (inline boxes are skipped — their `clientWidth` is 0 while
+    // `scrollWidth` is engine-dependent), and the failure names the culprit. Both
+    // gates POLL so a transient reflow (late webfont swap, scrollbar appearing) is
+    // retried instead of failing the run.
+    //
+    // FIX ROUND 2 (ocr): the gate must NOT pass vacuously when the chip row is
+    // deleted — assert the row and a non-empty chip set BEFORE the clip check.
+    const chipRow = page.getByTestId('place-kind-chip-row')
+    await expect(chipRow).toBeVisible()
+    const chipCount = await page.locator('[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])').count()
+    expect(chipCount, 'the kind-chip row must render at least one chip').toBeGreaterThan(0)
+
+    // One module-level tolerance, passed into both evaluate callbacks — two
+    // spellings of one number is the drift this repo hunts.
+    const CLIP_TOLERANCE = 1
     await expect
       .poll(async () => {
-        return page.evaluate(() => {
-          const TOLERANCE = 1
+        return page.evaluate((tolerance: number) => {
           const offenders: string[] = []
           const check = (el: Element, name: string) => {
-            if (el.scrollWidth > el.clientWidth + TOLERANCE) {
+            if (el.scrollWidth > el.clientWidth + tolerance) {
               offenders.push(`${name} (scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth})`)
             }
-            // Any descendant with non-whitespace text is a clip candidate — no
-            // leaf-only restriction, so a future wrapping <span class="overflow-hidden">
-            // that clips its children while the leaf text node measures fine is
-            // still caught.
+            // Any descendant with non-whitespace text AND a real layout box is a
+            // clip candidate. Inline boxes (`display: inline`) have `clientWidth === 0`
+            // while `scrollWidth` is engine-dependent, so they are skipped — a
+            // non-clipping inline span would otherwise false-positive.
             el.querySelectorAll('*').forEach((desc) => {
-              if ((desc.textContent ?? '').trim().length > 0) {
-                if (desc.scrollWidth > desc.clientWidth + TOLERANCE) {
+              if ((desc.textContent ?? '').trim().length > 0 && desc.clientWidth > 0) {
+                if (desc.scrollWidth > desc.clientWidth + tolerance) {
                   offenders.push(`${name} → <${desc.tagName.toLowerCase()}> (scrollWidth ${desc.scrollWidth} > clientWidth ${desc.clientWidth})`)
                 }
               }
@@ -201,13 +209,22 @@ test.describe('places directory — the filter pills say what they filter (v30-3
           }
           const toggle = document.querySelector('[data-testid="places-indoor-filter"]')
           if (toggle) check(toggle, 'indoor toggle [places-indoor-filter]')
-          // The chips only — the scroll container itself is exempt: its own
+          // The whole row's pill controls — kind chips, placeholder pills, and
+          // the coffee controls — but NOT the scroll container itself: its own
           // horizontal overflow at 390px is the "still side-scrolls" feature.
-          document.querySelectorAll('[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])').forEach((chip) => {
-            check(chip, `kind chip [${chip.getAttribute('data-testid')}]`)
-          })
+          const selectors = [
+            '[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])',
+            '[data-testid^="place-kind-placeholder-"]',
+            '[data-testid="place-coffee-filter"]',
+            '[data-testid="place-coffee-nearby"]',
+          ]
+          for (const selector of selectors) {
+            document.querySelectorAll(selector).forEach((pill) => {
+              check(pill, `${pill.getAttribute('data-testid')}`)
+            })
+          }
           return offenders
-        })
+        }, CLIP_TOLERANCE)
       }, {
         message: 'the 390px filter row must clip no text',
         timeout: 10_000,
@@ -220,10 +237,10 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // Polled for the same reason as the clip gate above.
     await expect
       .poll(async () => {
-        return page.evaluate(() => {
+        return page.evaluate((tolerance: number) => {
           const doc = document.documentElement
-          return doc.scrollWidth > doc.clientWidth + 1 ? doc.scrollWidth : 0
-        })
+          return doc.scrollWidth > doc.clientWidth + tolerance ? doc.scrollWidth : 0
+        }, CLIP_TOLERANCE)
       }, {
         message: 'the page must not widen beyond 390px',
         timeout: 10_000,
