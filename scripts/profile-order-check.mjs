@@ -101,10 +101,15 @@ import { chromium } from '@playwright/test'
 
 const BASE = process.env.E2E_BASE_URL ?? process.argv[2] ?? 'http://localhost:4173'
 const MARKER_STATE = new URL('../e2e/.auth/marker-state.json', import.meta.url).pathname
-// The pinned order, copied from src/lib/profileSections.ts:42 (a script under
+// The pinned order, copied from src/lib/profileSections.ts (a script under
 // scripts/ is plain JS and cannot import the TS module; re-implemented here so
 // the check stays self-contained).
-const PINNED = ['user', 'kids', 'parents', 'dropins']
+//
+// V32-6 (A6a, founder ruling Q2): PARENTS now precede KIDS. The read view has
+// opened with "About the parents" since 473d35b, and the editor now matches it
+// rather than the other way round, so the two surfaces finally declare the same
+// sequence: user → parents → kids → dropins.
+const PINNED = ['user', 'parents', 'kids', 'dropins']
 // The COMMON BLOCK VOCABULARY for the cross-surface comparison (V23 s16). It is
 // the six-block order of the pure profileBlurbOrder seam (src/lib/photoStorage.ts)
 // minus the read-only 'dropins' tail, with the family photo named as its OWN
@@ -140,7 +145,16 @@ function keyForHeading(text) {
 function isSubsequence(keys) {
   let i = 0
   for (const key of keys) {
-    const pinnedKey = key === 'familyPhoto' ? 'parents' : key
+    // V32-6 (A6a): `familyPhoto` is NOT one of the four PINNED section keys, so
+    // it has to project onto something to be checked at all. It used to project
+    // onto 'parents', because the read view folded the photo into its "About the
+    // parents" card and it therefore sat in that slot. After the ruling the
+    // photo is the LAST block on both surfaces — i.e. in the 'dropins' slot, the
+    // tail the editor omits. Projecting it onto 'parents' now makes
+    // `[user, parents, kids, familyPhoto]` unsatisfiable, because `i` is already
+    // past 'parents' when the photo arrives; that was the failure this line
+    // caused, not a real ordering defect.
+    const pinnedKey = key === 'familyPhoto' ? 'dropins' : key
     const found = PINNED.indexOf(pinnedKey, i)
     if (found === -1) return false
     // Do NOT advance past this key: the next heading may legally map to the
@@ -524,9 +538,15 @@ check(
   JSON.stringify(editKeys),
 )
 check(
-  'edit mode puts kids BEFORE the parents group (the pre-fix drift)',
-  editKeys.indexOf('kids') < editKeys.indexOf('parents'),
-  `kids@${editKeys.indexOf('kids')} parents@${editKeys.indexOf('parents')}`,
+  // V32-6 (A6a): this assertion is INVERTED from its original. It used to require
+  // kids before parents, because that was the editor's order and the pin existed
+  // to stop it drifting back to parents-first. The founder ruled the other way
+  // (Q2 / annotation A6a): the editor matches the READ view, which opens with
+  // "About the parents". The assertion's SUBJECT did not change — it still
+  // guards the relative order of these two groups — only which order is correct.
+  'edit mode puts the parents group BEFORE the kids (A6a, reversed by ruling)',
+  editKeys.indexOf('parents') < editKeys.indexOf('kids'),
+  `parents@${editKeys.indexOf('parents')} kids@${editKeys.indexOf('kids')}`,
 )
 
 // --- Cross-surface comparison (V23 s16): the TWO SURFACES AGAINST EACH OTHER.
@@ -639,12 +659,28 @@ const editPhotoIdx = editShared.indexOf('familyPhoto')
 // The assertion is therefore the property the seam actually pins, measured over
 // the DOM order already observed above: the photo must exist on both surfaces
 // (when the read view shows one at all), and what follows it must respect each
-// surface's contract — NOTHING on the read surface, only the always-rendered
-// parent cards (which the heading vocabulary maps to 'parents') on the edit
-// surface.
+// surface's contract — NOTHING on the read surface, nothing on the edit surface
+// either after V32-6.
+//
+// ⚠️ V32-6 (A6a): THIS IS A DELIBERATE CHANGE TO A FOUNDER RULE, not an
+// incidental test edit. The founder ruled (Q2): *Family photos* STAYS AFTER THE
+// KIDS, so the target edit order is user → parents → kids → family photos and
+// the family photo is now the LAST block in the editor. His OLDER ask — that the
+// photo be "the closer of the optional blocks", with the always-rendered parent
+// cards permitted after it — is what the previous `edit: ['parents']` allowance
+// encoded. That allowance is now EMPTY, and the non-empty-tail requirement it
+// carried is gone with it: the tail is legitimately [].
+//
+// KEEPING THE TEETH. Relaxing the tail must not leave a rule that fires on
+// nothing, so the property his older ask actually protects is restated as a
+// POSITIVE invariant below: the photo may not drift ABOVE the kids. That is
+// checked directly (`editShared.indexOf('familyPhoto') > editShared.indexOf('kids')`),
+// and it is mutation-proven — moving the block back above the kids turns this
+// guard RED (see V32-6's report). The read surface's unchanged "nothing follows
+// the photo" half is untouched.
 const ALLOWED_AFTER_PHOTO = {
   read: [], // the seam pushes no block after the photo for the read surface
-  edit: ['parents'], // 'The parents' — the always-rendered parent cards (V23)
+  edit: [], // V32-6: the photo is the LAST editor block; nothing follows it
 }
 /** The blocks a surface renders AFTER its family photo, or null when it shows
  *  no photo. `shared` is the projected DOM order, not the constant. */
@@ -655,23 +691,33 @@ function blocksAfterPhoto(shared) {
 const readTail = blocksAfterPhoto(readShared)
 const editTail = blocksAfterPhoto(editShared)
 const tailRespects = (tail, allowed) => tail !== null && tail.every((key) => allowed.includes(key))
-// The edit surface's tail must also be NON-EMPTY: those cards render on every
-// edit view (which is why the seam may place them last), so an editor that
-// stopped drawing them would be a different defect, not a legal order.
 const readPhotoOk = readTail === null || tailRespects(readTail, ALLOWED_AFTER_PHOTO.read)
-const editPhotoOk =
-  editTail !== null && editTail.length > 0 && tailRespects(editTail, ALLOWED_AFTER_PHOTO.edit)
+const editPhotoOk = editTail !== null && tailRespects(editTail, ALLOWED_AFTER_PHOTO.edit)
+// The surviving half of the founder's older ask, as a positive invariant: the
+// family photo must sit AFTER the kids on the editor. Without this the relaxed
+// tail would be a rule with no failure mode — the way a guard quietly stops
+// guarding. `-1` on either key (a block that did not render) fails it.
+const editPhotoAfterKids =
+  editShared.indexOf('familyPhoto') > editShared.indexOf('kids') &&
+  editShared.indexOf('kids') !== -1 &&
+  editShared.indexOf('familyPhoto') !== -1
 check(
-  'the family photo is the CLOSER of the optional blocks (read: nothing after it; edit: only the always-rendered parent cards)',
+  // V32-6 (A6a): the LABEL changed with the rule. The old wording ("the CLOSER of
+  // the optional blocks … edit: only the always-rendered parent cards") named the
+  // founder's OLDER ask, which Q2 superseded. The surviving teeth are stated in
+  // their own right: nothing follows the photo on EITHER surface, and the photo
+  // never drifts above the kids.
+  'the family photo is the LAST block (read: nothing after it; edit: nothing after it, and never above the kids)',
   readPhotoIdx === -1
     ? // Absent on the read side is legal ONLY when the profile has no photo —
       // which is why the editor's own photo control is what keeps the block
       // reachable. A photo PRESENT but not rendering would be caught by the
       // vacuity floor above, and the seeding now makes that case real.
       readShared.length === 0 || !readFamilyPhotoPresent
-    : readPhotoOk && editPhotoOk,
+    : readPhotoOk && editPhotoOk && editPhotoAfterKids,
   `read index ${readPhotoIdx} (of ${readShared.length}) tail ${JSON.stringify(readTail)}, ` +
-    `edit index ${editPhotoIdx} (of ${editShared.length}) tail ${JSON.stringify(editTail)}`,
+    `edit index ${editPhotoIdx} (of ${editShared.length}) tail ${JSON.stringify(editTail)}, ` +
+    `photoAfterKids=${editPhotoAfterKids}`,
 )
 
 if (failures.length > 0) {
@@ -679,7 +725,7 @@ if (failures.length > 0) {
   console.log(`offending edit-mode order: ${JSON.stringify(editHeadings)} -> ${JSON.stringify(editKeys)}`)
   process.exitCode = 1
 } else {
-  console.log('\nPASS — both surfaces render the shared blocks in the same order (user → kids → parents → family photo)')
+  console.log('\nPASS — both surfaces render the shared blocks in the same order (user → parents → kids → family photo)')
 }
 } finally {
   try {

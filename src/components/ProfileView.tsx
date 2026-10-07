@@ -47,8 +47,16 @@ import type { ProfileSectionKey } from '../lib/profileSections'
  */
 export const PROFILE_VIEW_SECTIONS: readonly ProfileSectionKey[] = [
   'user',
-  'kids',
+  // V32-6 (A6a): the declaration was a LIE. This component's JSX has rendered
+  // the identity block, then "About the parents", then "About the kids" since
+  // 473d35b moved the parent rows above the kids section — but the declared
+  // order here still said kids-first, and `profileSections.test.ts` asserted the
+  // declaration against the constant rather than against the DOM, so the two
+  // could disagree indefinitely. The brief for V32-6 allows this file to change
+  // only when a declared order here is a lie; this is that case. The JSX itself
+  // is untouched.
   'parents',
+  'kids',
   'dropins',
 ]
 

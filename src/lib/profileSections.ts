@@ -43,8 +43,11 @@
  * own shape of it in that slot.
  */
 
-/** The four profile sections, in the founder-pinned order. */
-export const PROFILE_SECTIONS = ['user', 'kids', 'parents', 'dropins'] as const
+/** The four profile sections, in the founder-pinned order.
+ *  V32-6 (A6a, ruling Q2): PARENTS precede KIDS — the editor was reordered to
+ *  match the READ view, which has opened with "About the parents" since
+ *  473d35b. */
+export const PROFILE_SECTIONS = ['user', 'parents', 'kids', 'dropins'] as const
 
 /** One profile section key. */
 export type ProfileSectionKey = (typeof PROFILE_SECTIONS)[number]

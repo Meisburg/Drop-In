@@ -361,12 +361,18 @@ describe('profileBlurbOrder (V9 ticket 11; V16 t05 re-pinned the order; V23 s16 
     ).toEqual(['user', 'kids', 'about', 'familyPhoto'])
   })
 
-  it('V23 s16: the edit surface appends the ALWAYS-present parent cards AFTER the shared sequence', () => {
-    // Their empty states are still rendered cards, so unlike the optional blocks
-    // they are not gated on content — an empty profile still gets them.
+  it('V23 s16 / V32-6: the edit surface puts the ALWAYS-present parent cards FIRST and the photo LAST', () => {
+    // V32-6 (A6a, ruling Q2) REVERSED this expectation. It used to read
+    // ['user','kids','familyPhoto','parentCards'] — parent cards appended after
+    // the shared sequence, photo in the middle. The founder ruled that the
+    // editor matches the READ view's opening (parents first) and that Family
+    // photos stays AFTER the kids, so the photo is now the editor's LAST block
+    // and the parent cards lead the optional ones. The SUBJECT did not change:
+    // the parent cards are still ALWAYS rendered, and the photo is still placed
+    // by this seam's intent.
     expect(
       profileBlurbOrder({ family_photo_url: `${UID}/family/photo.jpg` }, true, 'edit'),
-    ).toEqual(['user', 'kids', 'familyPhoto', 'parentCards'])
+    ).toEqual(['user', 'parentCards', 'kids', 'familyPhoto'])
     expect(profileBlurbOrder(null, false, 'edit')).toEqual(['user', 'parentCards'])
   })
 

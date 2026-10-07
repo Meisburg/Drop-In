@@ -81,8 +81,11 @@ import type { ProfileSectionKey } from '../lib/profileSections'
  */
 export const PROFILE_EDIT_SECTIONS: readonly ProfileSectionKey[] = [
   'user',
-  'kids',
+  // V32-6 (A6a, ruling Q2): parents BEFORE kids, matching the read view and the
+  // editor's own hand-written JSX below. This list is asserted against the
+  // rendered DOM by scripts/profile-order-check.mjs, so it cannot drift.
   'parents',
+  'kids',
 ]
 
 /**
@@ -1360,12 +1363,12 @@ export function ProfilePage() {
             - This page NEVER IMPORTS `profileBlurbOrder`. The edit surface's
               DOM order is the hand-written JSX here, and that is exactly why
               the two surfaces can drift.
-            - The MEASURED edit DOM is user → kids → familyPhoto → parents
-              ("Your photo & name", "About the kids", "Family photos", "The
-              parents" — scripts/profile-order-check.mjs), while the read view
-              closes its OPTIONAL blocks with the photo (user → kids → about →
-              familyPhoto). The photo is not at the same place on the two
-              surfaces.
+            - The MEASURED edit DOM is now user → parents → kids → familyPhoto
+              ("Your photo & name", "The parents", "About the kids", "Family
+              photos" — scripts/profile-order-check.mjs), matching the read
+              view, which opens with "About the parents" and closes its OPTIONAL
+              blocks with the photo. V32-6 (A6a, ruling Q2) is what aligned the
+              two; before it the editor read kids → familyPhoto → parents.
             - The seam's array is consumed as MEMBERSHIP, not order
               (`blurb.includes(...)`, src/components/ProfileView.tsx:513-514),
               and its 'edit' branch has NO production caller, so reordering the
@@ -1375,12 +1378,91 @@ export function ProfilePage() {
           rather than the constant. Do not restate the old claim: making the
           editor seam-driven is a change to the app, not to this comment. */}
 
+      {/* V19 t05 created this as "up to two parents, each with a name, a photo
+          and a few words about themselves". V27 (the founder's model) narrows it
+          to ONE parent: the account's own. You edit your card; your partner is
+          an account you LINK, and her info comes from her own profile. The card
+          carrying the accepted partner's handle renders READ-ONLY (name and
+          words are hers, not yours), and no empty "add a parent" slot is offered
+          — you cannot type a second person into your profile.
+          V32-6 (A6a): these sit BEFORE the kids card now (user → parents →
+          kids), matching the read view, which opens with this section. V21 t08
+          had them AFTER the kids (user → kids → parents); the founder's Q2
+          ruling reversed that.
+          V24 slice 11B: EACH CARD CARRIES ITS OWN ACCOUNT-LINK CONTROL (the
+          founder's annotation 9 — "an option to click on something to link an
+          account to that person's name"). The standalone "Linked parent"
+          section stays retired; the action lives with the person. */}
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-slate-900">The parents</h2>
+        <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
+
+        {parentCards === null ? (
+          <p className="mt-3 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-4">
+            {parentCardEditors.map((entry, index) => (
+              <ParentCardEditor
+                key={entry.card?.id ?? `new-${entry.slot}`}
+                card={entry.card}
+                position={entry.slot}
+                readOnly={entry.readOnly}
+                busy={parentCardBusy}
+                status={parentCardStatus}
+                error={parentCardError}
+                onSave={handleSaveParentCard}
+                onRemove={handleRemoveParentCard}
+                link={
+                  linkState === null
+                    ? null
+                    : {
+                        state: parentCardLinkState(linkState, index, linkOwnerIndex),
+                        open: entry.slot === activeLinkSlot,
+                        onOpen: () => setLinkOpenSlot(entry.slot),
+                        view: linkState,
+                        busy: linkBusy,
+                        error: linkError,
+                        nameQuery: linkNameQuery,
+                        onNameQueryChange: setLinkNameQuery,
+                        nameMatches: linkNameMatches,
+                        nameSearching: linkNameSearching,
+                        onSelectMatch: (match) => void handleSelectNameMatch(match),
+                        handleInput: linkHandleInput,
+                        onHandleInputChange: setLinkHandleInput,
+                        onRequestLink: () => void handleRequestLink(),
+                        onUnlink: (linkId) => void handleUnlink(linkId),
+                        onRespond: (linkId, response) =>
+                          void handleRespondToLink(linkId, response),
+                      }
+                }
+              />
+            ))}
+          </div>
+        )}
+
+        {parentCardError !== null ? (
+          <p className="mt-2 text-sm text-red-600">{parentCardError}</p>
+        ) : null}
+      </div>
+
+      {/* V24 slice 11B: THE "Linked parent" SECTION THAT STOOD HERE IS GONE —
+          heading, blurb ("If your partner has their own account, link them so
+          you both show on this profile.") and every state it rendered. The
+          account-link handshake now lives INSIDE each parent card above, where
+          the founder asked for it ("an option to click on something to link an
+          account to that person's name"), so there is exactly one entry point
+          to the action and it sits with the person it concerns. The MECHANISM
+          is unchanged: `linkView` still owns which state to render,
+          `linkView`'s helpers and the 0047 tables are still the only handshake,
+          and an accepted link still renders the partner's NAME as a link on the
+          read surface. */}
+
       {/* V21 t08: THE KIDS CARD MOVED HERE — before the parents group — so the
           edit surface's section order matches the read view's pinned sequence
-          (user → kids → parents → drop-ins; the edit surface omits drop-ins).
-          It used to sit LAST, after the parents group, which was the drift this
-          ticket kills. The card's contents are unchanged; only its position
-          moved. */}
+          (user → parents → kids → drop-ins; the edit surface omits drop-ins).
+          V32-6 (A6a, ruling Q2) moved it here — after the parents group and
+          BEFORE the family photo, which is now the editor's last block. The
+          card's contents are unchanged; only its position moved. */}
       <div className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold text-slate-900">About the kids</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -1594,11 +1676,11 @@ export function ProfilePage() {
 
       {/* "Family photos" — V23 s16 MOVED IT HERE, inside the parents region,
           ahead of "The parents" (it used to sit as the 2nd card, before the
-          kids). The measured edit DOM is user → kids → familyPhoto → parents;
-          that is NOT the read view's order, where the photo closes the optional
-          blocks (user → kids → about → familyPhoto). This DOM is hand-written
-          JSX, not the `profileBlurbOrder` seam's — see the corrected note above
-          the kids card. The card is unchanged: always present (add OR change),
+          kids, and LAST of all). V32-6 (A6a, ruling Q2) moved it to the end:
+          the measured edit DOM is user → parents → kids → familyPhoto, which
+          IS the read view's sequence, where the photo also closes the optional
+          blocks. This DOM is hand-written JSX, not the `profileBlurbOrder`
+          seam's — see the corrected note above the kids card. The card is unchanged: always present (add OR change),
           the signed URL arrives from the hook above, and without one there is
           simply no image yet, but the control is always there.
           V24: the heading is now "Family photos" on BOTH surfaces (the founder
@@ -1655,88 +1737,11 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* V19 t05 created this as "up to two parents, each with a name, a photo
-          and a few words about themselves". V27 (the founder's model) narrows it
-          to ONE parent: the account's own. You edit your card; your partner is
-          an account you LINK, and her info comes from her own profile. The card
-          carrying the accepted partner's handle renders READ-ONLY (name and
-          words are hers, not yours), and no empty "add a parent" slot is offered
-          — you cannot type a second person into your profile.
-          V21 t08: these sit AFTER the kids card (user → kids → parents),
-          matching the read view's pinned order.
-          V24 slice 11B: EACH CARD CARRIES ITS OWN ACCOUNT-LINK CONTROL (the
-          founder's annotation 9 — "an option to click on something to link an
-          account to that person's name"). The standalone "Linked parent"
-          section stays retired; the action lives with the person. */}
-      <div className="flex flex-col gap-3">
-        <h2 className="font-display text-lg font-semibold text-slate-900">The parents</h2>
-        <p className="mt-1 text-sm text-slate-600">{PARENT_CARDS_BLURB}</p>
-
-        {parentCards === null ? (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-4">
-            {parentCardEditors.map((entry, index) => (
-              <ParentCardEditor
-                key={entry.card?.id ?? `new-${entry.slot}`}
-                card={entry.card}
-                position={entry.slot}
-                readOnly={entry.readOnly}
-                busy={parentCardBusy}
-                status={parentCardStatus}
-                error={parentCardError}
-                onSave={handleSaveParentCard}
-                onRemove={handleRemoveParentCard}
-                link={
-                  linkState === null
-                    ? null
-                    : {
-                        state: parentCardLinkState(linkState, index, linkOwnerIndex),
-                        open: entry.slot === activeLinkSlot,
-                        onOpen: () => setLinkOpenSlot(entry.slot),
-                        view: linkState,
-                        busy: linkBusy,
-                        error: linkError,
-                        nameQuery: linkNameQuery,
-                        onNameQueryChange: setLinkNameQuery,
-                        nameMatches: linkNameMatches,
-                        nameSearching: linkNameSearching,
-                        onSelectMatch: (match) => void handleSelectNameMatch(match),
-                        handleInput: linkHandleInput,
-                        onHandleInputChange: setLinkHandleInput,
-                        onRequestLink: () => void handleRequestLink(),
-                        onUnlink: (linkId) => void handleUnlink(linkId),
-                        onRespond: (linkId, response) =>
-                          void handleRespondToLink(linkId, response),
-                      }
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {parentCardError !== null ? (
-          <p className="mt-2 text-sm text-red-600">{parentCardError}</p>
-        ) : null}
-      </div>
-
-      {/* V24 slice 11B: THE "Linked parent" SECTION THAT STOOD HERE IS GONE —
-          heading, blurb ("If your partner has their own account, link them so
-          you both show on this profile.") and every state it rendered. The
-          account-link handshake now lives INSIDE each parent card above, where
-          the founder asked for it ("an option to click on something to link an
-          account to that person's name"), so there is exactly one entry point
-          to the action and it sits with the person it concerns. The MECHANISM
-          is unchanged: `linkView` still owns which state to render,
-          `linkView`'s helpers and the 0047 tables are still the only handshake,
-          and an accepted link still renders the partner's NAME as a link on the
-          read surface. */}
-
       {/* V21 t08: the "About the kids" card sits BEFORE the parents group (bio +
           parent cards + linked parent) — this is now TRUE in the JSX, not just
           in a comment. It used to live here (last, after Linked parent); that
           was the drift between the edit surface and the read view's pinned order
-          (user → kids → parents). The move lives above, beside the card itself;
+          (user → parents → kids). The move lives above, beside the card itself;
           scripts/profile-order-check.mjs asserts the rendered DOM order so it
           cannot silently drift back. */}
 

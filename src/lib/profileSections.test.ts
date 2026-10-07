@@ -44,10 +44,13 @@ import { PROFILE_EDIT_SECTIONS } from '../pages/ProfilePage'
 // ---------------------------------------------------------------------------
 
 describe('the pinned profile section order (V21 t08)', () => {
-  it('pins the founder-asked sequence user → kids → parents → dropins', () => {
+  it('pins the founder-asked sequence user → parents → kids → dropins', () => {
     // The single source of truth. If this changes, every surface that derives
     // from it moves with it — and the per-surface assertions below re-check.
-    expect(PROFILE_SECTIONS).toEqual(['user', 'kids', 'parents', 'dropins'])
+    // V32-6 (A6a, ruling Q2): PARENTS first, KIDS second. The title and the
+    // expectation both inverted; the subject (the one pinned sequence) did not —
+    // the founder reordered the editor to match the read view's opening section.
+    expect(PROFILE_SECTIONS).toEqual(['user', 'parents', 'kids', 'dropins'])
   })
 
   it('the read view renders all four sections in the pinned order', () => {
@@ -78,7 +81,9 @@ describe('the pinned profile section order (V21 t08)', () => {
 
 describe('isInPinnedOrder (the anti-drift predicate)', () => {
   it('accepts the full pinned sequence', () => {
-    expect(isInPinnedOrder(['user', 'kids', 'parents', 'dropins'])).toBe(true)
+    // V32-6 (A6a): inverted with the pin — the legal full sequence is
+    // parents-first now.
+    expect(isInPinnedOrder(['user', 'parents', 'kids', 'dropins'])).toBe(true)
   })
 
   it('accepts a legal subsequence (a surface that omits sections)', () => {
@@ -87,20 +92,26 @@ describe('isInPinnedOrder (the anti-drift predicate)', () => {
     expect(isInPinnedOrder([])).toBe(true)
   })
 
-  it('rejects a reordered pair (the exact drift this ticket kills)', () => {
-    // Kids after parents — the pre-fix edit-surface shape. Must fail.
-    expect(isInPinnedOrder(['user', 'parents', 'kids'])).toBe(false)
+  it('rejects a reordered pair (the drift this ticket now kills in the other direction)', () => {
+    // V32-6 (A6a): this pair is INVERTED from its original. It used to require
+    // kids-after-parents to fail, because parents-after-kids was the pinned
+    // shape. The ruling reversed the pin, so the shape that must now fail is the
+    // one it previously required. Same predicate, same subject, opposite
+    // expectation.
+    expect(isInPinnedOrder(['user', 'kids', 'parents'])).toBe(false)
     // Drop-ins before the parents group. Must fail.
     expect(isInPinnedOrder(['user', 'kids', 'dropins', 'parents'])).toBe(false)
   })
 
   it('rejects an unknown section key', () => {
-    expect(isInPinnedOrder(['user', 'kids', 'parents', 'dropins', 'unknown'] as unknown as ProfileSectionKey[])).toBe(false)
+    expect(isInPinnedOrder(['user', 'parents', 'kids', 'dropins', 'unknown'] as unknown as ProfileSectionKey[])).toBe(false)
   })
 
   it('sectionsInPinnedOrder returns the corrected order for a drifted input', () => {
     // A drifted caller gets back the PINNED order of the same keys — the
     // comparison against its raw list is what the test uses to detect drift.
-    expect(sectionsInPinnedOrder(['user', 'parents', 'kids'])).toEqual(['user', 'kids', 'parents'])
+    // V32-6 (A6a): the drifted input is now the OLD shape (kids first), and the
+    // corrected output is parents-first. Inverted with the pin.
+    expect(sectionsInPinnedOrder(['user', 'kids', 'parents'])).toEqual(['user', 'parents', 'kids'])
   })
 })

@@ -403,19 +403,33 @@ export function profileBlurbOrder(
   surface: 'read' | 'edit' = 'read',
   parentNamesVisible = false,
 ): ProfileBlurbBlock[] {
+  // V32-6 (A6a, ruling Q2): the EDIT branch below now emits
+  // user → parentCards → kids → familyPhoto. The shared prefix here stays
+  // `user` (+ the optional read blocks), because the two surfaces genuinely
+  // differ: the read view folds the family photo INTO its "About the parents"
+  // card and has no parentCards block at all, while the editor renders them as
+  // separate cards with the photo last.
+  //
+  // ⚠️ WHAT POLICES THE EDIT DOM IS THE LANE, NOT THIS FUNCTION. Nothing in
+  // production consumes the 'edit' branch (the editor's DOM is hand-written JSX
+  // in ProfilePage.tsx); the branch exists so the INTENTED order has one
+  // written home, and scripts/profile-order-check.mjs is what measures the real
+  // rendered DOM on both surfaces. Reordering this constant alone changes no
+  // heading — which is exactly why the lane matters and why this slice moved the
+  // JSX and not just the array.
   const blocks: ProfileBlurbBlock[] = ['user']
+  // The edit surface's parent cards come FIRST among the optional blocks
+  // (A6a): the editor opens with "The parents", matching the read view's own
+  // opening section. They are ALWAYS rendered — their empty states are still
+  // cards — and each carries its own link control (the retired 'linkedParent'
+  // section became part of this block in V24 11B), so unlike the blocks below
+  // this is not gated on content.
+  if (surface === 'edit') blocks.push('parentCards')
   if (kidsVisible) blocks.push('kids')
   // V28: the bio is retired — "About the parents" on both surfaces is now
   // driven by parentNamesVisible alone. The edit surface's parent cards block
   // carries the "About me" editor.
   if (parentNamesVisible) blocks.push('about')
   if (familyPhotoObjectPath(profile?.family_photo_url) !== null) blocks.push('familyPhoto')
-  if (surface === 'edit') {
-    // The edit surface ALWAYS carries the parent cards — their empty states are
-    // still rendered cards — and each card carries its own link control (the
-    // retired 'linkedParent' section became part of this block in V24 11B), so
-    // unlike the optional blocks above it is not gated on content.
-    blocks.push('parentCards')
-  }
   return blocks
 }
