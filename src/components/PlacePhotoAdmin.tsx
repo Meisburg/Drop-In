@@ -23,11 +23,23 @@ import type { Place } from '../lib/types'
  * a time rather than a bulk gallery, because the failure that prompted it is
  * "I looked at this place and the picture is wrong".
  *
- * TWO WAYS IN, because they are genuinely different situations and the founder
- * asked for both: PASTE a link for an image found online, or UPLOAD a file
- * (their own photo of the park, or one saved from elsewhere). The pasted image
- * is previewed inline, because the moderator has to see it to judge whether it
- * needs framing.
+ * ONE STEP, UPLOADER FIRST (v33-2, founder annotation muyfsjwv): *"Clicking this
+ * button should just launch the image upload module. There shouldn't be an extra
+ * step. This should also be the priority option, so it should be shown first and
+ * then alternatively, it should be like 'or paste a link'. And instead of a
+ * button, you just have a place to paste it."* So there is no mode picker: the
+ * file picker renders first and picking a file opens the crop dialog directly;
+ * "Or paste a link" is a plain field below it, always visible, whose single
+ * control (`photo-save-btn`, "Save photo") is actionable only when a link is
+ * typed. A pasted image is previewed inline, because the moderator has to see it
+ * to judge whether it needs framing.
+ *
+ * EDIT PHOTO (v33-2, founder annotation muyfsxah: *"I would want an edit photo
+ * button somewhere"*): once a photo is stored, `photo-edit-current-btn` re-frames
+ * THAT stored image by running the SAME fetch path the link save uses
+ * (`fetchPlacePhotoFile` on `place.photo_url`) into the SAME crop step — no second
+ * fetch or a second save path. Confirming writes the row exactly as a fresh
+ * upload would.
  *
  * ONE FLOW, AND NO SEPARATE FRAMING DECISION (place-photo-crop slice 4,
  * 2026-10-05). The founder used slices 1–3 and ruled: *"I don't think we need a
@@ -83,10 +95,10 @@ import type { Place } from '../lib/types'
  * now it stores the link on the same tap, so a host we cannot copy from never
  * leaves the moderator with nothing.
  * `fetchPlacePhotoFile` (in `lib/placePhotoAdmin.ts`) is the app's only fetch
- * whose response is STORED, it is reached only from URL mode's one primary
- * action, and a host that refuses is reported with the way out ("save it to your
- * device and use Upload a file") rather than worked around: there is no
- * server-side fetch.
+ * whose response is STORED, it is reached only from the link path's one primary
+ * action and from `handleEditCurrent`, and a host that refuses is reported with
+ * the way out ("save it to your device and use Upload a file") rather than worked
+ * around: there is no server-side fetch.
  *
  * The accepted risks — re-hosting terms, and a hotlinked image that can rot or be
  * blocked later — are recorded in
@@ -114,7 +126,6 @@ export function PlacePhotoAdmin({
    */
   onSaved: (notice?: string) => void
 }) {
-  const [mode, setMode] = useState<'url' | 'upload'>('url')
   const [urlValue, setUrlValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -157,7 +168,7 @@ export function PlacePhotoAdmin({
   )
 
   /**
-   * Upload mode's only control is the file input: choosing a file OPENS the crop
+   * Upload's only control is the file input: choosing a file OPENS the crop
    * dialog, and the dialog's confirm IS the save. There is deliberately no
    * separate Save tap here — a file that has not been framed has nothing to
    * save, and a second step would only add a way to save the uncropped original
@@ -173,8 +184,8 @@ export function PlacePhotoAdmin({
   }
 
   /**
-   * URL MODE'S ONE PRIMARY ACTION (slice 4), and the ONLY caller of
-   * `fetchPlacePhotoFile`.
+   * THE LINK PATH'S ONE PRIMARY ACTION (slice 4), and the ONLY caller of
+   * `fetchPlacePhotoFile` besides `handleEditCurrent`.
    *
    * THE ORDER IS THE WHOLE DESIGN: copy first, and fall back to the link only
    * when the copy is impossible.
@@ -268,6 +279,36 @@ export function PlacePhotoAdmin({
   }
 
   /**
+   * THE "EDIT PHOTO" CONTROL'S ONE TAP (v33-2): re-frame the ALREADY-STORED photo.
+   * It runs the SAME fetch path `handleUrlPrimary` uses — `fetchPlacePhotoFile` on
+   * `place.photo_url` — and hands the decoded file to the SAME crop step, so there
+   * is no second fetch or a second save path: confirming the dialog writes the row
+   * exactly as a fresh upload would. A host that refuses the fetch leaves the
+   * stored URL in place and reports the refusal through the error line; nothing
+   * is written twice and Remove is never triggered.
+   */
+  async function handleEditCurrent() {
+    if (busy) return
+    setError(null)
+    const stored = place.photo_url
+    if (stored === null || stored === '') return
+    setBusy(true)
+    try {
+      const fetched = await fetchPlacePhotoFile(stored)
+      if (!fetched.ok) {
+        setError(fetched.error)
+        return
+      }
+      const message = await crop.beginCrop(fetched.file)
+      if (message !== null) setError(message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load that photo.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
    * The inline preview's src, or null when the input is empty or the value is not
    * a link this editor would store. It goes through `validatePhotoUrl` (the same
    * boundary the save path uses) rather than straight into an `<img src>`: a
@@ -275,6 +316,7 @@ export function PlacePhotoAdmin({
    */
   const previewCheck = validatePhotoUrl(urlValue)
   const preview = 'url' in previewCheck ? previewCheck.url : null
+  const hasStoredPhoto = place.photo_url !== null && place.photo_url !== ''
 
   return (
     <div
@@ -304,83 +346,57 @@ export function PlacePhotoAdmin({
         </div>
       </div>
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          data-testid="photo-mode-url"
-          onClick={() => setMode('url')}
-          className={`min-h-11 flex-1 rounded-xl border px-3 text-sm font-medium ${
-            mode === 'url'
-              ? 'border-indigo-500 bg-white text-indigo-700'
-              : 'border-slate-300 bg-white text-slate-600'
-          }`}
-        >
-          Paste a link
-        </button>
-        <button
-          type="button"
-          data-testid="photo-mode-upload"
-          onClick={() => setMode('upload')}
-          className={`min-h-11 flex-1 rounded-xl border px-3 text-sm font-medium ${
-            mode === 'upload'
-              ? 'border-indigo-500 bg-white text-indigo-700'
-              : 'border-slate-300 bg-white text-slate-600'
-          }`}
-        >
-          Upload a file
-        </button>
-      </div>
+      {/* v33-2 — ONE STEP, UPLOADER FIRST (founder annotation muyfsjwv): no mode
+          picker. The file picker is the priority option and sits first; "or paste
+          a link" is a plain field below it, always rendered. */}
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-slate-700">Upload a photo (JPEG, PNG, or WebP)</span>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          data-testid="photo-file-input"
+          onChange={(e) => {
+            const picked = e.target.files?.[0] ?? null
+            // Cleared so picking the SAME file twice opens the dialog twice —
+            // an input keeps its value otherwise and a second change never
+            // fires (the avatar inputs' convention).
+            e.target.value = ''
+            if (picked !== null) void handlePickFile(picked)
+          }}
+          className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+      </label>
 
-      {mode === 'url' ? (
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Image link</span>
-          <input
-            type="url"
-            data-testid="photo-url-input"
-            value={urlValue}
-            onChange={(e) => setUrlValue(e.target.value)}
-            placeholder="https://…"
-            className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-slate-700">Or paste a link</span>
+        <input
+          type="url"
+          data-testid="photo-url-input"
+          value={urlValue}
+          onChange={(e) => setUrlValue(e.target.value)}
+          placeholder="https://…"
+          className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+        />
+        {/* PREVIEW AS YOU TYPE, but only through `validatePhotoUrl` — the
+            same security boundary the SAVE path uses, so this never renders a
+            `javascript:` or `data:` value into an `<img src>` that the stored
+            column would not have accepted either. A preview that fails to load
+            stays broken on purpose: the moderator is about to decide whether
+            the link works in the app at all. */}
+        {preview !== null ? (
+          <img
+            src={preview}
+            alt=""
+            referrerPolicy="no-referrer"
+            data-testid="photo-url-preview"
+            className="mt-1 h-32 w-full rounded-xl border border-slate-200 bg-slate-100 object-cover"
           />
-          {/* PREVIEW AS YOU TYPE, but only through `validatePhotoUrl` — the
-              same security boundary the SAVE path uses, so this never renders a
-              `javascript:` or `data:` value into an `<img src>` that the stored
-              column would not have accepted either. A preview that fails to load
-              stays broken on purpose: the moderator is about to decide whether
-              the link works in the app at all. */}
-          {preview !== null ? (
-            <img
-              src={preview}
-              alt=""
-              referrerPolicy="no-referrer"
-              data-testid="photo-url-preview"
-              className="mt-1 h-32 w-full rounded-xl border border-slate-200 bg-slate-100 object-cover"
-            />
-          ) : null}
-        </label>
-      ) : (
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Image file (JPEG, PNG, or WebP)</span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            data-testid="photo-file-input"
-            onChange={(e) => {
-              const picked = e.target.files?.[0] ?? null
-              // Cleared so picking the SAME file twice opens the dialog twice —
-              // an input keeps its value otherwise and a second change never
-              // fires (the avatar inputs' convention).
-              e.target.value = ''
-              if (picked !== null) void handlePickFile(picked)
-            }}
-            className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-          />
-        </label>
-      )}
+        ) : null}
+      </label>
 
-      {/* The crop step's portal, in both modes: a picked file opens it here, and
-          URL mode's one primary action opens it on the fetched image. It renders
-          nothing until there is a decoded bitmap to frame. */}
+      {/* The crop step's portal: a picked file opens it here, and the save button
+          opens it on the fetched image. It renders nothing until there is a
+          decoded bitmap to frame. */}
       {crop.dialog}
 
       {error !== null ? (
@@ -389,22 +405,34 @@ export function PlacePhotoAdmin({
         </p>
       ) : null}
 
-      {/* URL mode's ONE control (slice 4). It fetches the pasted image and opens
-          the crop step; a host that refuses has its link stored instead by
+      {/* THE LINK PATH'S ONE CONTROL (slice 4). It fetches the pasted image and
+          opens the crop step; a host that refuses has its link stored instead by
           `handleUrlPrimary`, and the sentence explaining that comes from the host
-          because this component is gone by then. Upload mode has no button at all
-          — its file input opens the crop step directly, and the dialog's confirm
-          IS its save. Remove photo sits in its own row below, so a 320px phone
-          never has to fit two controls on one line. */}
-      {mode === 'url' ? (
+          because this component is gone by then. It is actionable ONLY when a
+          link is typed — `validatePhotoUrl` rejects an empty value, so the button
+          is disabled rather than live-with-nothing-to-save. */}
+      <button
+        type="button"
+        data-testid="photo-save-btn"
+        disabled={busy || urlValue.trim() === ''}
+        onClick={() => void handleUrlPrimary()}
+        className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {busy ? 'Saving…' : 'Save photo'}
+      </button>
+
+      {/* v33-2 (founder annotation muyfsxah): re-frame the ALREADY-STORED photo
+          through the existing fetch path — no second fetch, no second save path.
+          Rendered exactly when a photo is set, and kept distinct from Remove. */}
+      {hasStoredPhoto ? (
         <button
           type="button"
-          data-testid="photo-save-btn"
+          data-testid="photo-edit-current-btn"
           disabled={busy}
-          onClick={() => void handleUrlPrimary()}
-          className="min-h-11 w-full rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+          onClick={() => void handleEditCurrent()}
+          className="min-h-11 w-full rounded-xl border border-indigo-500 bg-white px-3 text-sm font-medium text-indigo-700 disabled:opacity-50"
         >
-          {busy ? 'Saving…' : 'Save photo'}
+          Edit photo
         </button>
       ) : null}
 

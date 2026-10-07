@@ -24,6 +24,14 @@ import {
  *   - a moderator sees one on the card, it opens the SHIPPED editor, and saving
  *     updates the card.
  *
+ * v33-2 — THE PANEL IS ONE STEP NOW: the mode picker is gone, the file picker
+ * renders first and opens the crop dialog directly, "or paste a link" is a plain
+ * field, and `photo-edit-current-btn` re-frames the stored photo through the
+ * existing fetch path. This file's flows were updated in the same diff: the
+ * upload test no longer clicks a mode button, and the new tests below prove the
+ * one-step panel and the Edit photo control end to end (each reading the row
+ * back from the live DB).
+ *
  * THE LIVE-DATA DISCIPLINE. The directory is the founder's real directory, so
  * this spec SNAPSHOTS the row's five photo columns before the edit and RESTORES
  * them in a `finally`, asserting the restore. The donor URL is another seeded
@@ -47,6 +55,15 @@ async function readTarget(): Promise<PlacePhotoRow> {
   return readPlaceByName(PLACE_NAME)
 }
 
+/** The donor row's own stored photo URL, fetched through the app's fetch path. */
+async function readDonorUrl(): Promise<string> {
+  const donor = await readPlaceByName(DONOR_PLACE)
+  if (donor.photo_url === null) {
+    throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
+  }
+  return donor.photo_url
+}
+
 /**
  * Land on /browse with the radius widened and the target row on screen.
  *
@@ -67,15 +84,6 @@ async function openDirectoryAt(
   await setDirectoryRadius(page)
   await page.getByTestId('places-search').fill(search)
   await expect(page.getByTestId('places-list')).toBeVisible()
-}
-
-/** The donor photo: another seeded row's own image (known to load, already public). */
-async function readDonorUrl(): Promise<string> {
-  const donor = await readPlaceByName(DONOR_PLACE)
-  if (donor.photo_url === null) {
-    throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
-  }
-  return donor.photo_url
 }
 
 test('a moderator replaces a place photo from its card, and the card updates (v30-8)', async ({
@@ -314,10 +322,10 @@ test('a moderator uploads a file, frames it, and the card shows our stored copy 
 
     const editor = page.getByTestId('place-photo-editor')
     await expect(editor).toBeVisible()
-    await editor.getByTestId('photo-mode-upload').click()
 
-    // --- CANCEL FIRST (criterion 2): the dialog opens, the moderator backs out,
-    // and the row is left exactly as it was — no upload, no URL, no error. ---
+    // --- CANCEL FIRST (criterion 2): the file picker opens the crop dialog
+    // DIRECTLY (v33-2: no mode step), the moderator backs out, and the row is
+    // left exactly as it was — no upload, no URL, no error. ---
     await editor.getByTestId('photo-file-input').setInputFiles('public/pwa-192x192.png')
     const cancelled = page.getByTestId('crop-photo-dialog')
     await expect(cancelled).toBeVisible()
@@ -623,6 +631,152 @@ test('a refused copy stores the remote link, closes the editor, and says why (pl
   expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
   expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
   expect((await readTarget()).photo_url).toBe(snapshot.photo_url)
+})
+
+/**
+ * v33-2 — THE ONE-STEP PANEL: file picker first, link as a field, no mode step.
+ *
+ * Founder annotation muyfsjwv: *"Clicking this button should just launch the
+ * image upload module. There shouldn't be an extra step. This should also be the
+ * priority option, so it should be shown first and then alternatively, it should
+ * be like 'or paste a link'. And instead of a button, you just have a place to
+ * paste it."* So opening the panel shows the file picker FIRST (it sits above the
+ * link field in the DOM), the mode buttons are GONE from the DOM entirely, and
+ * "Or paste a link" is an input visible without any prior interaction.
+ */
+test('the photo panel is one step: file picker first, link as a field, no mode step (v33-2)', async ({
+  page,
+}) => {
+  const { userId } = readMarkerSession()
+  const snapshot = await readTarget()
+
+  const editControl = page.getByTestId(`place-edit-photo-${snapshot.id}`)
+
+  // --- SELF-HEAL, same discipline as every test in this file. ---
+  const preReset = await setPlacePhotos(snapshot)
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = await setModerator(userId, false)
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(true)
+
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
+  try {
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
+    await page.reload()
+    await openDirectoryAt(page)
+    await expect(editControl).toBeVisible()
+    await editControl.click()
+
+    const editor = page.getByTestId('place-photo-editor')
+    await expect(editor).toBeVisible()
+
+    // NO MODE SELECTION STEP ANYWHERE: both old controls are gone from the DOM.
+    await expect(editor.getByTestId('photo-mode-url')).toHaveCount(0)
+    await expect(editor.getByTestId('photo-mode-upload')).toHaveCount(0)
+
+    // THE FILE PICKER IS FIRST AND PRESENTED AS THE PRIORITY: it renders before
+    // the link field in the panel's own column order.
+    const fileInput = editor.getByTestId('photo-file-input')
+    const urlInput = editor.getByTestId('photo-url-input')
+    await expect(fileInput).toBeVisible()
+    await expect(urlInput).toBeVisible()
+    const fileBox = await fileInput.boundingBox()
+    const urlBox = await urlInput.boundingBox()
+    expect(fileBox, 'the file picker must render a box').not.toBeNull()
+    expect(urlBox, 'the link field must render a box').not.toBeNull()
+    expect(
+      fileBox!.y,
+      'the file picker must sit ABOVE the link field',
+    ).toBeLessThan(urlBox!.y)
+
+    // "OR PASTE A LINK" IS A FIELD, NOT A BUTTON: an <input>, visible without
+    // any prior interaction.
+    await expect(urlInput).toHaveAttribute('type', 'url')
+  } finally {
+    restoreEnvelope = await setPlacePhotos(snapshot)
+    unmoderateEnvelope = await setModerator(userId, false)
+  }
+  expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
+  expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
+})
+
+/**
+ * v33-2 — EDIT PHOTO RE-FRAMES THE STORED IMAGE THROUGH THE EXISTING FETCH PATH.
+ *
+ * Founder annotation muyfsxah: *"I would want an edit photo button somewhere."*
+ * The control exists inside the panel exactly when a photo is already stored:
+ * `photo-edit-current-btn`, labelled "Edit photo", opens the crop dialog on the
+ * CURRENT stored photo by running the SAME fetch path the link save uses
+ * (`fetchPlacePhotoFile` on `place.photo_url`) — no second fetch, no second save
+ * path. Confirming writes the row; its click must not trigger Remove.
+ *
+ * THE DONOR ROW CARRIES A PHOTO ALREADY, so the panel opens with the control
+ * present — no write needed to reach the state.
+ */
+test('Edit photo re-crops the stored photo through the existing fetch path (v33-2)', async ({
+  page,
+}) => {
+  const { userId } = readMarkerSession()
+  const donor = await readPlaceByName(DONOR_PLACE)
+  if (donor.photo_url === null) {
+    throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
+  }
+
+  const editControl = page.getByTestId(`place-edit-photo-${donor.id}`)
+
+  const preReset = await setPlacePhotos(donor)
+  expect(preReset.ok, `the pre-flight row reset must land: ${preReset.output}`).toBe(true)
+  const preUnmoderate = await setModerator(userId, false)
+  expect(preUnmoderate.ok, `the pre-flight un-elevate must land: ${preUnmoderate.output}`).toBe(true)
+
+  let restoreEnvelope: AdminResult | null = null
+  let unmoderateEnvelope: AdminResult | null = null
+  try {
+    const elevate = await setModerator(userId, true)
+    expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
+    await page.goto('/browse')
+    await setDirectoryRadius(page)
+    await page.getByTestId('places-search').fill(DONOR_PLACE)
+    await expect(page.getByTestId('places-list')).toBeVisible()
+    await expect(editControl).toBeVisible()
+    await editControl.click()
+
+    const editor = page.getByTestId('place-photo-editor')
+    await expect(editor).toBeVisible()
+
+    // THE CONTROL EXISTS BECAUSE A PHOTO IS STORED, IS LABELLED "EDIT PHOTO",
+    // AND IS DISTINCT FROM REMOVE.
+    const editBtn = editor.getByTestId('photo-edit-current-btn')
+    await expect(editBtn).toBeVisible()
+    await expect(editBtn).toHaveText('Edit photo')
+    await expect(editor.getByTestId('photo-clear-btn')).toBeVisible()
+
+    // OPENING THE CROP DIALOG ON THE STORED IMAGE: the same fetch path the link
+    // save uses, so the dialog appears on the decoded stored photo.
+    await editBtn.click()
+    const cropDialog = page.getByTestId('crop-photo-dialog')
+    await expect(cropDialog).toBeVisible()
+    await cropDialog.getByTestId('crop-confirm').click()
+
+    // CONFIRMING WRITES THE ROW: read it back from the live DB — the row now
+    // points at OUR OWN object, not at the donor's remote URL.
+    await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
+    const after = await readPlaceByName(DONOR_PLACE)
+    expect(after.photo_url, 'Edit photo must store our own framed copy').toContain(
+      '/storage/v1/object/public/place-photos/',
+    )
+    expect(after.photo_url).not.toBe(donor.photo_url)
+
+    // ITS CLICK DID NOT TRIGGER REMOVE: the row still carries a photo.
+    expect(after.photo_url).not.toBeNull()
+  } finally {
+    restoreEnvelope = await setPlacePhotos(donor)
+    unmoderateEnvelope = await setModerator(userId, false)
+  }
+  expect(restoreEnvelope.ok, `the restore MUST land: ${restoreEnvelope.output}`).toBe(true)
+  expect(unmoderateEnvelope.ok, `the un-elevate MUST land: ${unmoderateEnvelope.output}`).toBe(true)
+  expect((await readPlaceByName(DONOR_PLACE)).photo_url).toBe(donor.photo_url)
 })
 
 /**
