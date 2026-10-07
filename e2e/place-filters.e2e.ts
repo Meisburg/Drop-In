@@ -102,9 +102,19 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // VISIBLE with an accessible name. That was the LAST captioned dropdown, and
     // the founder had it removed (annotation A1) — so this file's own
     // pin-of-removal habit applies, exactly as it does for the deleted distance
-    // pill further down. The 390px no-ellipsis check is NOT lost with it: the
-    // indoor toggle and the kind chips carry that assertion now, and both are
-    // real controls on the surface.
+    // pill further down.
+    //
+    // v33-0 (restores what V32-5's deletion actually took): the 390px
+    // no-ellipsis gate for the controls that exist NOW. For the indoor toggle
+    // and every kind chip — each element plus its text-bearing descendants —
+    // `scrollWidth <= clientWidth + 1` (a chip whose text sits in a child span
+    // can clip on the span while the button itself measures fine, so the check
+    // walks the descendants too, and the failure names the chip). The scroll
+    // CONTAINER (`place-kind-chip-row`) is deliberately exempt: side-scrolling
+    // inside it at 390px is the feature ("still side-scrolls"), not a defect.
+    // Plus the page itself must not widen at 390px: `documentElement.scrollWidth
+    // <= clientWidth + 1`. Both run after the count assertion above has settled,
+    // so the measurements are taken on the fully-rendered row set.
     await expect(page.getByTestId('places-when-filter')).toHaveCount(0)
     await expect(page.getByTestId('places-when-sheet')).toHaveCount(0)
 
@@ -120,15 +130,27 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // means the read was lost. Asserting the DISJUNCTION is what makes this a
     // real check rather than a string guess — the seeded directory's counts vary
     // with live data, so pinning one literal would have been flaky by design.
+    //
+    // v33-0 (fixes the one-shot snapshot race): `settleOnRoute` settles the
+    // ROUTE, not the data — if `upcomingStartTimesByPlace` has not resolved yet,
+    // every row's `upcomingCount` is still null, the row renders neither string
+    // the disjunction expects, and a single evaluateAll fails with no retry. So
+    // the assertion POLLS the same disjunction until it holds; the testid and
+    // the disjunction are unchanged, only the timing is fixed. It must hold for
+    // EVERY row — never weakened to "at least one row states its count".
     const countRows = page.getByTestId('place-row')
     expect(await countRows.count()).toBeGreaterThan(0)
-    const countTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))
     const statesItsCount = (t: string) =>
       /\d+ drop-ins? planned here/.test(t) || /Be the first to start a drop-in here/.test(t)
-    expect(
-      countTexts.filter(statesItsCount).length,
-      'every directory row must still state its upcoming count (or its honest zero)',
-    ).toBe(countTexts.length)
+    await expect
+      .poll(async () => {
+        const countTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))
+        return countTexts.filter(statesItsCount).length
+      }, {
+        message: 'every directory row must still state its upcoming count (or its honest zero)',
+        timeout: 20_000,
+      })
+      .toBe(await countRows.count())
 
     // THE TOGGLE THAT REPLACED THE "Setting" DROPDOWN. One control, one word,
     // a real pressed state — and no sheet behind it to open.
@@ -136,6 +158,49 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     await expect(indoorToggle).toBeVisible()
     await expect(indoorToggle).toHaveAccessibleName(/Indoor/)
     await expect(indoorToggle).toHaveAttribute('aria-pressed', 'false')
+
+    // v33-0 — the restored 390px NO-ELLIPSIS gate (see the comment at the top of
+    // this test for what V32-5's deletion took and why it comes back now):
+    // the indoor toggle and every kind chip must clip no text, and the page
+    // itself must not widen. The check walks each element's text-bearing
+    // descendants too (a chip whose label sits in a child span can clip there
+    // while the button measures fine), and the failure names the culprit.
+    const clipped = await page.evaluate(() => {
+      const TOLERANCE = 1
+      const offenders: string[] = []
+      const check = (el: Element, name: string) => {
+        if (el.scrollWidth > el.clientWidth + TOLERANCE) {
+          offenders.push(`${name} (scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth})`)
+        }
+        // Text-bearing descendants: any descendant with non-whitespace text of
+        // its own is where clipping would actually show up.
+        el.querySelectorAll('*').forEach((desc) => {
+          if ((desc.textContent ?? '').trim().length > 0 && desc.children.length === 0) {
+            if (desc.scrollWidth > desc.clientWidth + TOLERANCE) {
+              offenders.push(`${name} → <${desc.tagName.toLowerCase()}> (scrollWidth ${desc.scrollWidth} > clientWidth ${desc.clientWidth})`)
+            }
+          }
+        })
+      }
+      const toggle = document.querySelector('[data-testid="places-indoor-filter"]')
+      if (toggle) check(toggle, 'indoor toggle [places-indoor-filter]')
+      // The chips only — the scroll container itself is exempt: its own
+      // horizontal overflow at 390px is the "still side-scrolls" feature.
+      document.querySelectorAll('[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])').forEach((chip) => {
+        check(chip, `kind chip [${chip.getAttribute('data-testid')}]`)
+      })
+      return offenders
+    })
+    expect(clipped, 'the 390px filter row must clip no text (and the page must not widen)').toEqual([])
+
+    // The other half of the same acceptance criterion — "/browse still
+    // side-scrolls at 390px WITHOUT WIDENING THE PAGE": the scroll container
+    // (the kind-chip row) may overflow horizontally; the document must not.
+    const widened = await page.evaluate(() => {
+      const doc = document.documentElement
+      return doc.scrollWidth > doc.clientWidth + 1 ? doc.scrollWidth : 0
+    })
+    expect(widened, 'the page must not widen beyond 390px').toBe(0)
 
     // THE DELETED CONTROL IS REALLY GONE (V31 map-and-distance), and the radius
     // it used to state is still reachable — on the location control, beside the
