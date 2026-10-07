@@ -135,6 +135,17 @@ function measure() {
 
   const small = []
   const exempt = []
+  /**
+   * HOW MANY CANDIDATES THIS ROW ACTUALLY LOOKED AT. `small` and `exempt` record
+   * only the SUB-44 offenders, so before this counter a row that rendered nothing
+   * worth measuring was indistinguishable from a clean row — and the lane printed
+   * `PASS — 12 page/viewport measurements, 0 failure(s)` over a feed whose only
+   * 44px-relevant link was not on the page at all. An element counts as
+   * CONSIDERED once it survives the zero-size and hidden filters below; a skipped
+   * element does not. Compliant elements count too — the point is coverage, not
+   * offenders.
+   */
+  let considered = 0
   for (const el of document.querySelectorAll(
     'a[href],button,input,select,textarea,[role="button"],[role="tab"]',
   )) {
@@ -142,6 +153,7 @@ function measure() {
     if (r.width === 0 || r.height === 0) continue
     const style = getComputedStyle(el)
     if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue
+    considered += 1
     if (r.width >= 44 && r.height >= 44) continue
     const entry = {
       tag: el.tagName.toLowerCase(),
@@ -173,6 +185,7 @@ function measure() {
       : null,
     small,
     exempt,
+    considered,
     imagesMissingAlt: images.filter((i) => !i.hasAttribute('alt')).length,
     h1: document.querySelectorAll('h1').length,
   }
@@ -320,6 +333,18 @@ for (const vp of VIEWPORTS) {
     const label = `${vp.name} ${name}`
     if (m.overflowX > 0) check(`${label} no horizontal overflow`, false, `${m.overflowX}px`)
 
+    // COVERAGE, PRINTED PER ROW. A green run must show what it LOOKED AT, not
+    // only what it found, so every row states its candidate count even when the
+    // count is good.
+    console.log(`  ·    ${label} considered ${m.considered} target candidate(s)`)
+
+    // A ZERO IS NOT A PASS. A row that evaluated no candidates measured nothing
+    // — the same finding as a scan that read no file — so it joins the NOT
+    // MEASURED list rather than passing silently.
+    if (m.considered === 0) {
+      unmeasuredSurfaces.push(`${label} considered 0 target candidates (nothing worth measuring rendered)`)
+    }
+
     // The shell: present, named, and reachable by thumb, with the md switch.
     if (m.nav === null) {
       unmeasuredSurfaces.push(`${label} shell (no nav on this surface)`)
@@ -360,8 +385,17 @@ if (exempted.length > 0) {
   for (const e of exempted.slice(0, 12)) console.log(`   ${e}`)
   if (exempted.length > 12) console.log(`   … and ${exempted.length - 12} more in ${OUT}/results.json`)
 }
+const consideredTotal = rows.reduce((n, r) => n + r.considered, 0)
+console.log(`\nTARGET CANDIDATES CONSIDERED (per row — what the run actually looked at):`)
+for (const r of rows) console.log(`   ${r.viewport} ${r.name}: ${r.considered}`)
+console.log(`   total: ${consideredTotal} across ${rows.length} row(s)`)
+// NOT MEASURED OUTRANKS PASS. The verdict may only claim PASS when the app was
+// measured AND nothing was invisible to the lane; a surface it could not see
+// makes the run at best a partial statement, which is what "NOT MEASURED" says.
+const verdict =
+  unmeasuredSurfaces.length > 0 ? 'NOT MEASURED' : failures.length === 0 ? 'PASS' : 'FAIL'
 console.log(
-  `\n${failures.length === 0 ? 'PASS' : 'FAIL'} — ${rows.length} page/viewport measurements, ` +
+  `\n${verdict} — ${rows.length} page/viewport measurements, ` +
     `${failures.length} failure(s), ${unmeasuredSurfaces.length} not measured.`,
 )
 if (consoleErrors.length > 0) {
@@ -370,4 +404,7 @@ if (consoleErrors.length > 0) {
 }
 for (const n of unmeasuredSurfaces) console.log(`   NOT MEASURED: ${n}`)
 console.log(`   screenshots + results: ${OUT}/`)
-process.exit(failures.length === 0 ? 0 : 1)
+// 1 is "the app was measured and it is wrong"; 2 is "cannot see". They are not
+// collapsed: an unmeasurable surface is not evidence that the app is broken, and
+// a real failure is not a coverage problem.
+process.exit(unmeasuredSurfaces.length > 0 ? 2 : failures.length > 0 ? 1 : 0)
