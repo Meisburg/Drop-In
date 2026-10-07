@@ -50,17 +50,30 @@ import {
 const PLACE_NAME = 'Green Lake Park'
 const DONOR_PLACE = 'Green Lake Park (East)'
 
+/**
+ * The public-URL prefix every stored place photo carries: the app builds the URL
+ * at runtime, so this literal has no shared constant to import — it lives here,
+ * once, and every assertion in this file uses it.
+ */
+const PLACE_PHOTOS_PUBLIC_PREFIX = '/storage/v1/object/public/place-photos/'
+
 /** The seeded row this spec edits (it currently carries NO photo). */
 async function readTarget(): Promise<PlacePhotoRow> {
   return readPlaceByName(PLACE_NAME)
 }
 
-/** The donor row's own stored photo URL, fetched through the app's fetch path. */
-async function readDonorUrl(): Promise<string> {
+/** The donor row's own stored photo (one read, one guard, one error string). */
+async function readDonor(): Promise<PlacePhotoRow> {
   const donor = await readPlaceByName(DONOR_PLACE)
   if (donor.photo_url === null) {
     throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
   }
+  return donor
+}
+
+/** The donor row's own stored photo URL, fetched through the app's fetch path. */
+async function readDonorUrl(): Promise<string> {
+  const donor = await readDonor()
   return donor.photo_url
 }
 
@@ -144,7 +157,7 @@ test('a moderator replaces a place photo from its card, and the card updates (v3
     // THE COPY IS OURS: the row no longer points at the donor's URL.
     const after = await readTarget()
     expect(after.photo_url, 'the crop must store our own object').toContain(
-      '/storage/v1/object/public/place-photos/',
+      PLACE_PHOTOS_PUBLIC_PREFIX,
     )
     expect(after.photo_url).not.toBe(donorUrl)
 
@@ -718,10 +731,7 @@ test('Edit photo re-crops the stored photo through the existing fetch path (v33-
   page,
 }) => {
   const { userId } = readMarkerSession()
-  const donor = await readPlaceByName(DONOR_PLACE)
-  if (donor.photo_url === null) {
-    throw new Error(`the donor row ${DONOR_PLACE} must carry a seeded photo`)
-  }
+  const donor = await readDonor()
 
   const editControl = page.getByTestId(`place-edit-photo-${donor.id}`)
 
@@ -735,10 +745,7 @@ test('Edit photo re-crops the stored photo through the existing fetch path (v33-
   try {
     const elevate = await setModerator(userId, true)
     expect(elevate.ok, `the elevate call must land: ${elevate.output}`).toBe(true)
-    await page.goto('/browse')
-    await setDirectoryRadius(page)
-    await page.getByTestId('places-search').fill(DONOR_PLACE)
-    await expect(page.getByTestId('places-list')).toBeVisible()
+    await openDirectoryAt(page, DONOR_PLACE)
     await expect(editControl).toBeVisible()
     await editControl.click()
 
@@ -764,7 +771,7 @@ test('Edit photo re-crops the stored photo through the existing fetch path (v33-
     await expect(page.getByTestId('place-photo-editor')).toHaveCount(0)
     const after = await readPlaceByName(DONOR_PLACE)
     expect(after.photo_url, 'Edit photo must store our own framed copy').toContain(
-      '/storage/v1/object/public/place-photos/',
+      PLACE_PHOTOS_PUBLIC_PREFIX,
     )
     expect(after.photo_url).not.toBe(donor.photo_url)
 

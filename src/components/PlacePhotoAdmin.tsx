@@ -176,8 +176,15 @@ export function PlacePhotoAdmin({
    *
    * `beginCrop` runs the injected gate (`validatePlacePhotoCropFile`) BEFORE the
    * decode and before the dialog, and returns the message to show, or null.
+   *
+   * REFUSES EARLY WHILE A SAVE IS IN FLIGHT (the same guard every other handler
+   * carries): a pick during an in-flight link save or Edit-photo fetch would open
+   * the crop step on a different file mid-flight — a double-action the moderator
+   * cannot see. The input's `disabled={busy}` is the visible half; this guard is
+   * the one that holds if the attribute is ever lost.
    */
   async function handlePickFile(file: File) {
+    if (busy) return
     setError(null)
     const message = await crop.beginCrop(file)
     if (message !== null) setError(message)
@@ -355,6 +362,7 @@ export function PlacePhotoAdmin({
           type="file"
           accept="image/jpeg,image/png,image/webp"
           data-testid="photo-file-input"
+          disabled={busy}
           onChange={(e) => {
             const picked = e.target.files?.[0] ?? null
             // Cleared so picking the SAME file twice opens the dialog twice —
@@ -363,7 +371,7 @@ export function PlacePhotoAdmin({
             e.target.value = ''
             if (picked !== null) void handlePickFile(picked)
           }}
-          className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base"
         />
       </label>
 
