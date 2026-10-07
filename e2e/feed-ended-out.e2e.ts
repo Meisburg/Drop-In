@@ -448,6 +448,24 @@ test('an ended drop-in leaves the feed, a live one stays, and the archive still 
   // design.
   // (6a)
   await expect(page.getByRole('link', { name: PAST_DROP_INS_LABEL })).toBeVisible()
+  // S8: the launch audit measured this door at 133x19, under the repo's 44px
+  // floor, and nothing caught it. Pin the floor (and the name) here, on the
+  // link itself — measured BEFORE the click below navigates away from it.
+  const pastDoor = page.getByRole('link', { name: PAST_DROP_INS_LABEL })
+  const pastDoorBox = await pastDoor.boundingBox()
+  expect(pastDoorBox, 'the past drop-ins door must have a box').not.toBeNull()
+  expect(
+    pastDoorBox!.height,
+    'the past drop-ins door must be at least 44px tall (the launch audit measured 19)',
+  ).toBeGreaterThanOrEqual(44)
+  expect(
+    pastDoorBox!.width,
+    'the past drop-ins door must be at least 44px wide',
+  ).toBeGreaterThanOrEqual(44)
+  await expect(
+    pastDoor,
+    'the fix must not rename the control',
+  ).toHaveAccessibleName(PAST_DROP_INS_LABEL)
   await page.getByRole('link', { name: PAST_DROP_INS_LABEL }).click()
   // V16 t04 moved the door's DESTINATION. It used to land on /profile, whose
   // "Hosted drop-ins" card held the Past list; that card is gone, so the door

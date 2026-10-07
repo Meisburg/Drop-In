@@ -1560,11 +1560,16 @@ export function FeedPage() {
               the day sections (the ticket's placement) as a quiet line, not a
               card and not a button: it is navigation to the viewer's own
               history, never a claim that the history is interesting. The label
-              is a shared constant so this line and any future empty-state usage cannot drift. V13 ticket 05 (A1): this is now the ONLY "past drop-ins" link in the app — the empty-radius state no longer carries one. */}
+              is a shared constant so this line and any future empty-state usage cannot drift. V13 ticket 05 (A1): this is now the ONLY "past drop-ins" link in the app — the empty-radius state no longer carries one.
+
+              The row is a 44px target (`inline-flex min-h-11`) because the
+              launch audit measured it at 133x19 at all three viewports, and
+              WCAG 2.5.8's inline exemption cannot rescue a link with no sibling
+              text. It stays a quiet line: no background, no border, no card. */}
           <p className="text-center text-sm">
             <Link
               to={pastDropInsHref(profile?.display_name)}
-              className="font-medium text-indigo-600 underline-offset-2 hover:underline"
+              className="inline-flex min-h-11 items-center font-medium text-indigo-600 underline-offset-2 hover:underline"
             >
               {PAST_DROP_INS_LABEL}
             </Link>
