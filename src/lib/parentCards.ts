@@ -168,6 +168,18 @@ export interface ParentNameRow {
    * A card carrying its own photo always keeps it.
    */
   photo: string | null
+  /**
+   * V32 v32-8 (A6b): what this parent is INTO — the founder's *"Interest
+   * section so that other parents can see what interests they have to see if
+   * they would get along"*. Trimmed; null when the card carries none, so the row
+   * renders no empty `Interests:` line (the same discipline `about` follows).
+   *
+   * It comes from the CARD only. Unlike `about` there is no account-level
+   * fallback: `profiles.interests` is the viewer's OWN interests for their own
+   * /profile, not a statement about this parent, and borrowing it here would
+   * attribute the owner's words to a different person.
+   */
+  interests: string | null
 }
 
 /**
@@ -210,6 +222,25 @@ export function parentCardPhotoSrc(stored: string | null | undefined): string | 
 
 /** A card's `about`, trimmed, or null when it carries no words. */
 export function parentCardAboutText(stored: string | null | undefined): string | null {
+  if (stored === null || stored === undefined) return null
+  const value = stored.trim()
+  return value === '' ? null : value
+}
+
+/**
+ * V32 v32-8 (A6b): a card's `interests`, trimmed, or null when it carries none.
+ *
+ * A SIBLING of `parentCardAboutText`, not a change to it — the two fields render
+ * the same way (a muted line under the name, absent when empty) but they are
+ * different facts, and folding them together would make "has words" and "has
+ * interests" a single branch that could not disagree with the data.
+ *
+ * Returning null for blank/absent input is what makes "empty renders nothing" a
+ * `lib/` rule rather than a render branch: the component asks this function and
+ * renders what it returns, so a stored `''` or `'   '` can never produce an empty
+ * `Interests:` line — which is the defect this shape exists to prevent.
+ */
+export function parentCardInterestsText(stored: string | null | undefined): string | null {
   if (stored === null || stored === undefined) return null
   const value = stored.trim()
   return value === '' ? null : value
@@ -272,6 +303,7 @@ export function parentNameRows(
           : null,
       about: cardAbout ?? (isLinked ? linkedAbout : null),
       photo: ownPhoto ?? (isLinked ? linkedAvatar : isOwner ? ownerAvatar : null),
+      interests: parentCardInterestsText(card.interests),
     }
   })
   // V27: a linked partner who has no card on THIS profile still gets her row —
@@ -288,6 +320,10 @@ export function parentNameRows(
       handle: linked.handle,
       about: linkedAbout,
       photo: linkedAvatar,
+      // No card exists for this row, so there is no per-parent interests text to
+      // read — and the account-level field is a different fact (see the row
+      // type). Null, deliberately.
+      interests: null,
     })
   }
   return rows

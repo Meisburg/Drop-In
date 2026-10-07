@@ -949,6 +949,9 @@ test('each parent is its own row — photo, name, description — and no link wi
   const PHOTO_DATA_URL =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
   const FIRST = 'e2e-plink Row One'
+  // V32-8 (A6b): the per-parent interests. Slot 1 HAS them, slot 2 DOES NOT —
+  // the pair is what proves the line renders only when non-empty.
+  const FIRST_INTERESTS = 'Trail running, board games'
   const FIRST_ABOUT = 'Loves the beach and the long way home.'
   const SECOND = 'e2e-plink Row Two'
 
@@ -956,14 +959,14 @@ test('each parent is its own row — photo, name, description — and no link wi
     // A deterministic starting point: no link state, no leftover cards.
     await clearMarkerLinks()
     await clearMarkerCards()
-    for (const [position, name, about, photo] of [
-      [1, FIRST, FIRST_ABOUT, PHOTO_DATA_URL],
-      [2, SECOND, null, null],
+    for (const [position, name, about, photo, interests] of [
+      [1, FIRST, FIRST_ABOUT, PHOTO_DATA_URL, FIRST_INTERESTS],
+      [2, SECOND, null, null, null],
     ] as const) {
       const res = await fetchWithTimeout(`${restUrl}/rest/v1/parent_cards`, {
         method: 'POST',
         headers: { ...authed(markerToken), Prefer: 'return=representation' },
-        body: JSON.stringify({ profile_id: markerId, name, about, photo_url: photo, position }),
+        body: JSON.stringify({ profile_id: markerId, name, about, photo_url: photo, position, interests }),
       })
       if (!res.ok) {
         throw new Error(`parent_cards insert (slot ${position}) HTTP ${res.status} ${await res.text()}`)
@@ -1000,8 +1003,26 @@ test('each parent is its own row — photo, name, description — and no link wi
     await expect(rowOne).toContainText(FIRST_ABOUT)
     // The card WITH words renders a description paragraph; the card WITHOUT one
     // renders none — no empty paragraph standing in for a description.
-    await expect(rowOne.locator('p')).toHaveCount(1)
+    // V32-8 (A6b): row one now carries TWO paragraphs — its `about` AND its
+    // `Interests:` line. Row two carries neither field at all, so it still
+    // renders none; that unchanged zero is what proves the interests line does
+    // not stand in for an empty value.
+    await expect(rowOne.locator('p')).toHaveCount(2)
     await expect(rowTwo.locator('p')).toHaveCount(0)
+
+    // ---- (a2) THE INTERESTS LINE RENDERS ONLY WHEN NON-EMPTY ---------------
+    // The founder's ask (A6b): *"each parent … an Interest section so that other
+    // parents can see what interests they have"*. Asserted on the RENDERED page
+    // in both states, because "empty renders nothing" is the half that silently
+    // breaks into an `Interests:` label with nothing after it.
+    await expect(rowOne.getByTestId('parent-interests')).toHaveCount(1)
+    await expect(rowOne.getByTestId('parent-interests')).toHaveText(
+      `Interests: ${FIRST_INTERESTS}`,
+    )
+    await expect(rowTwo.getByTestId('parent-interests')).toHaveCount(0)
+    // ...and the page as a whole carries exactly one such line, so no second
+    // (empty) one is hiding elsewhere.
+    await expect(page.getByTestId('parent-interests')).toHaveCount(1)
 
     // ---- (b) it is ONE row: the pieces share a horizontal band -------------
     async function bandOf(locator: ReturnType<typeof page.getByTestId>) {
@@ -1011,7 +1032,14 @@ test('each parent is its own row — photo, name, description — and no link wi
     }
     const photoBox = await bandOf(rowOne.getByTestId('parent-card-photo'))
     const nameOneBox = await bandOf(rowOne.getByTestId('parent-name'))
-    const aboutBox = await bandOf(rowOne.locator('p'))
+    // V32-8 (A6b): scoped to the card's DESCRIPTION paragraph. The row now
+    // carries a second `<p>` (the interests line), so the bare `locator('p')`
+    // this geometry check used would be ambiguous — a strict-mode violation, not
+    // an ordering defect. The band rule is unchanged: it is about where the
+    // card's own words sit, and the interests line is a different fact.
+    const aboutBox = await bandOf(
+      rowOne.locator('p:not([data-testid="parent-interests"])'),
+    )
     expect(
       photoBox.y < nameOneBox.y + nameOneBox.height && nameOneBox.y < photoBox.y + photoBox.height,
       'the photo and the name must sit in the SAME horizontal band (a row, not a stack)',
@@ -1072,5 +1100,125 @@ test('each parent is its own row — photo, name, description — and no link wi
     // crash lands here.
     await clearMarkerCards()
     await clearMarkerLinks().catch(() => {})
+  }
+})
+
+/**
+ * V32 v32-8 (A6b) — THE INTERESTS LINE'S TWO EDGES, AND THE UPSERT TRAP.
+ *
+ * `saveParentCard` is an UPSERT on `(profile_id, position)`, so the payload
+ * decides what the row holds afterwards: a key that is ABSENT preserves the
+ * stored value, while an explicit `null` clears it. The editor therefore always
+ * passes the parent's draft — never `undefined` as a way of saying "empty" — and
+ * this test proves the property that keeps that honest: a save that does not
+ * intend to change interests does NOT clear them.
+ *
+ * It also drives the render edge the other way round: with the value cleared the
+ * line must be ABSENT, not an empty label.
+ */
+test('parent interests: cleared renders nothing, and a name-only save preserves them (V32-8)', async ({
+  page,
+}) => {
+  test.setTimeout(180_000)
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken: markerToken, userId: markerId } = readMarkerSession()
+  const authed = (token: string): Record<string, string> => ({
+    apikey: anonKey,
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  })
+
+  const KEPT = 'Sea kayaking, sourdough'
+  const NAME = 'e2e-v328 Interests Parent'
+
+  // Reads slot 1 by scoping on `profile_id` ALONE and selecting `position` —
+  // rather than filtering on `position`, which the fixture-marker guard treats
+  // as a non-owner column (it is not one of the known row/owner keys). This
+  // spec only ever writes slot 1, so the row it finds is the row it made.
+  const readRow = async (): Promise<{ name: string; interests: string | null } | null> => {
+    const res = await fetch(
+      `${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}&select=name,interests,position`,
+      { headers: authed(markerToken) },
+    )
+    const rows = res.ok
+      ? ((await res.json()) as Array<{ name: string; interests: string | null; position: number }>)
+      : []
+    return rows.find((r) => r.position === 1) ?? null
+  }
+
+  try {
+    // Slot 1 seeded with interests and a name. The delete scopes by
+    // `profile_id` ALONE — the fixture-marker guard requires every DELETE filter
+    // to be a known owner/row column, because `position` is not one and a query
+    // narrowed by it alone could in principle reach another parent's row. This
+    // reaches the marker's own rows only, which is all this spec created.
+    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    })
+    const seeded = await fetch(`${restUrl}/rest/v1/parent_cards`, {
+      method: 'POST',
+      headers: { ...authed(markerToken), Prefer: 'return=representation' },
+      body: JSON.stringify({
+        profile_id: markerId,
+        position: 1,
+        name: NAME,
+        about: null,
+        interests: KEPT,
+      }),
+    })
+    if (!seeded.ok) throw new Error(`seed HTTP ${seeded.status} ${await seeded.text()}`)
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/profile')
+    const row = page.getByTestId('parent-row').filter({ hasText: NAME })
+    await expect(row).toHaveCount(1, { timeout: 20_000 })
+    await expect(row.getByTestId('parent-interests')).toHaveText(`Interests: ${KEPT}`)
+
+    // ---- THE NULL TRAP: a save that does not touch interests ----------------
+    // The editor writes through the app's own UI, so this drives the real save
+    // path rather than a hand-built payload: open the editor, change ONLY the
+    // name, save, and confirm interests survive.
+    await page.getByTestId('edit-profile').click()
+    await expect(page.getByTestId('done-editing-profile')).toBeVisible()
+    const nameInput = page.getByTestId('parent-name-1')
+    await expect(nameInput).toBeVisible()
+    // The interests input shows the STORED value (the draft is seeded from it).
+    await expect(page.getByTestId('parent-card-interests-1')).toHaveValue(KEPT)
+    await nameInput.fill(`${NAME} renamed`)
+    await page.getByTestId('parent-save-1').click()
+    await expect
+      .poll(async () => (await readRow())?.name ?? '', { timeout: 15_000 })
+      .toBe(`${NAME} renamed`)
+    expect(
+      (await readRow())?.interests,
+      'a name-only save must PRESERVE the stored interests (the upsert trap)',
+    ).toBe(KEPT)
+
+    // ---- CLEARED RENDERS NOTHING -------------------------------------------
+    // Now empty the field deliberately and save: the line must disappear, not
+    // render as an empty `Interests:` label.
+    await page.getByTestId('parent-card-interests-1').fill('')
+    await page.getByTestId('parent-save-1').click()
+    await expect
+      .poll(async () => (await readRow())?.interests ?? 'NOT-NULL', { timeout: 15_000 })
+      .toBe('NOT-NULL')
+    expect((await readRow())?.interests, 'an emptied field must clear the column').toBeNull()
+
+    await page.getByTestId('done-editing-profile').click()
+    const renamed = page.getByTestId('parent-row').filter({ hasText: `${NAME} renamed` })
+    await expect(renamed).toHaveCount(1)
+    await expect(
+      renamed.getByTestId('parent-interests'),
+      'a cleared value must render NO Interests line at all',
+    ).toHaveCount(0)
+    await expect(page.getByTestId('parent-interests')).toHaveCount(0)
+  } finally {
+    // Best-effort, scoped to the marker's own rows (`profile_id` alone — see
+    // the note on the seed delete above).
+    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    }).catch(() => {})
   }
 })

@@ -594,7 +594,12 @@ export function ProfilePage() {
    * Save one parent card from its own inputs. The caller passes the slot and
    * the values, so the same handler serves both cards.
    */
-  async function handleSaveParentCard(position: number, name: string, about: string) {
+  async function handleSaveParentCard(
+    position: number,
+    name: string,
+    about: string,
+    interests: string,
+  ) {
     if (userId === null) return
     if (name.trim() === '') {
       setParentCardError('A parent needs a name.')
@@ -616,6 +621,11 @@ export function ProfilePage() {
         position,
         name: name.trim(),
         about: about.trim() === '' ? null : about.trim(),
+        // V32 v32-8 (A6b): the DRAFT value, always. An explicit null clears;
+        // `undefined` would preserve, and passing it here would make "the parent
+        // emptied the field" indistinguishable from "this save has nothing to
+        // say about interests" — see saveParentCard's own note.
+        interests: interests.trim() === '' ? null : interests.trim(),
       })
       await reloadParentCards()
       setParentCardStatus('saved')
@@ -1902,7 +1912,7 @@ function ParentCardEditor({
   status: 'idle' | 'saving' | 'saved' | 'error'
   /** The error message to surface beside the button (the label seam renders it). */
   error: string | null
-  onSave: (position: number, name: string, about: string) => void | Promise<void>
+  onSave: (position: number, name: string, about: string, interests: string) => void | Promise<void>
   onRemove: ((position: number) => void | Promise<void>) | null
   /** V24 slice 11B: this card's account-link control, or null while the link
       rows are still loading (no control renders in that beat). The editor
@@ -1912,6 +1922,8 @@ function ParentCardEditor({
   const slot = card?.position ?? position ?? 1
   const [name, setName] = useState(card?.name ?? '')
   const [about, setAbout] = useState(card?.about ?? '')
+  // V32 v32-8 (A6b): the per-parent interests draft.
+  const [interests, setInterests] = useState(card?.interests ?? '')
   const seedRef = useRef<string>(card?.id ?? `new-${slot}`)
   const seed = card?.id ?? `new-${slot}`
   if (seedRef.current !== seed) {
@@ -1976,12 +1988,30 @@ function ParentCardEditor({
           disabled={busy}
         />
       </label>
+      {/* V32 v32-8 (A6b): what this parent is INTO, for other signed-in parents
+          to read. Mirrors the two inputs above exactly — same classes, a visible
+          label, `text-base` (the >=16px input rule), and the cap taken from the
+          CONSTANT rather than inlined. The `.tsx` performs no length check: the
+          lib seam is the rule. */}
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-slate-700">Interests</span>
+        <input
+          type="text"
+          data-testid={`parent-card-interests-${slot}`}
+          value={interests}
+          onChange={(e) => setInterests(e.target.value)}
+          maxLength={INTERESTS_MAX_LENGTH}
+          placeholder="e.g. Trail running, board games, baking (optional)"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
+          disabled={busy}
+        />
+      </label>
       <div className="flex gap-2">
         <button
           type="button"
           data-testid={`parent-save-${slot}`}
           disabled={busy}
-          onClick={() => void onSave(slot, name, about)}
+          onClick={() => void onSave(slot, name, about, interests)}
           className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
         >
           {parentCardSaveLabel(status, card === null, error)}

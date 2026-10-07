@@ -447,6 +447,14 @@ export interface ParentCard {
   /** A private-bucket path, not a public URL. Null when there is no picture. */
   photo_url: string | null
   about: string | null
+  /**
+   * V32 v32-8 (A6b, migration 0067): what this PARENT is into, for other
+   * signed-in parents to read. Plain nullable text with no DB CHECK — the cap is
+   * the UI's (`INTERESTS_MAX_LENGTH`), matching `profiles.interests` and
+   * `kids.likes`. NOT `profiles.interests`, which is a different column on a
+   * different table for the owner's own /profile.
+   */
+  interests: string | null
   /** 1 or 2: the render order, and the hard cap on "up to two parents". */
   position: number
   created_at?: string

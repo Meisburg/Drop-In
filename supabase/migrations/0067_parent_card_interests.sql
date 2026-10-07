@@ -1,0 +1,45 @@
+-- ===========================================================================
+-- V32 v32-8 (migration 0067, annotation A6b): a parent card can say what its
+-- parent is into.
+-- ===========================================================================
+--
+-- What this adds: ONE nullable column, `public.parent_cards.interests text`.
+-- No column is dropped or renamed, no row's data is touched, no constraint is
+-- added, no policy changes. It is a LIVE-DATABASE migration (the project holds
+-- real family data), so it is strictly additive and re-paste-safe.
+--
+-- Why: the founder's ask (V32, annotation A6b) — *"Each parent should have like
+-- an Interest section so that other parents can see what interests they have to
+-- see if they would get along and have a good conversation while their kids
+-- played together."* The AUDIENCE is the point: `parent_cards` is one row per
+-- parent per slot (`0047:90-110`), which is exactly his "each parent", and it is
+-- what another signed-in parent reads when they open this profile.
+--
+-- ⚠️ NOT `profiles.interests`. That column is the VIEWER'S OWN interests, on a
+-- different table, restored by v32-2 (`b30dfb4`), and it renders on `/profile`
+-- for the owner. This is a NEW column for a DIFFERENT audience — other parents.
+-- The two are deliberately separate and neither replaces the other.
+--
+-- THE CAP CONVENTION: plain `text`, NO DB CHECK. This matches the two existing
+-- fields of this kind — `profiles.interests` (`0022_kids_v3.sql:162`) and
+-- `kids.likes` (`0022:161`), whose own header pins them as "UI pin, NO DB
+-- CHECK". The length cap is the UI's (`INTERESTS_MAX_LENGTH`, consumed from
+-- `src/lib/db.ts`). The schema has NO array and NO join-table precedent, so this
+-- introduces neither: one nullable text column on the row that already exists.
+--
+-- WHY NO POLICY CHANGE IS NEEDED, OR MADE. RLS is ROW-level, not column-level,
+-- so a new column on a table a reader can already select is visible to them
+-- immediately. The read policy `parent_cards_select_authenticated`
+-- (`0047:121-139`) is `for select to authenticated using (true)` — every
+-- signed-in parent reads every card, which is precisely the stated purpose.
+-- `anon` holds NO policy at all, so a signed-out visitor still reads zero rows.
+-- Writes stay owner-only on every verb (`..._insert_own`, `..._update_own`,
+-- `..._delete_own`, `0047:150-180`, each gated on `profile_id = auth.uid()`).
+-- This migration therefore touches NO policy in either direction.
+--
+-- `add column if not exists` is inherently re-runnable and converges: the second
+-- application is a no-op. There is deliberately no `do $$` guard, because a guard
+-- is one more thing that can itself drift from the statement it wraps.
+-- ===========================================================================
+
+alter table public.parent_cards add column if not exists interests text;

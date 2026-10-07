@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_PARENT_CARDS, nextParentPosition, parentCardAboutText, parentCardList, parentCardPhotoSrc, parentCardSaveLabel, parentNameRows } from './parentCards'
+import { MAX_PARENT_CARDS, nextParentPosition, parentCardAboutText, parentCardInterestsText, parentCardList, parentCardPhotoSrc, parentCardSaveLabel, parentNameRows } from './parentCards'
 import type { ParentCard } from './types'
 
 /**
@@ -18,6 +18,9 @@ function card(over: Partial<ParentCard>): ParentCard {
     name: 'Jon',
     photo_url: null,
     about: null,
+    // V32 v32-8 (A6b): the new column's fixture default is null, so every
+    // pre-existing case keeps its exact meaning — a card with no interests.
+    interests: null,
     position: 1,
     ...over,
   }
@@ -133,8 +136,10 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
 
   it('returns every card as a plain name when there is no linked account', () => {
     expect(parentNameRows([card({}), card({ id: 'c2', name: 'Nicole', position: 2 })], null)).toEqual([
-      { key: 'c1', name: 'Jon', handle: null, about: null, photo: null },
-      { key: 'c2', name: 'Nicole', handle: null, about: null, photo: null },
+      // V32-8 (A6b): the row gained `interests`; the fixture's card carries
+      // none, so it is null here — the rest of the shape is unchanged.
+      { key: 'c1', name: 'Jon', handle: null, about: null, photo: null, interests: null },
+      { key: 'c2', name: 'Nicole', handle: null, about: null, photo: null, interests: null },
     ])
   })
 
@@ -144,8 +149,8 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
       { handle: 'Nicole' },
     )
     expect(rows).toEqual([
-      { key: 'c1', name: 'Jon', handle: null, about: null, photo: null },
-      { key: 'c2', name: 'Nicole', handle: 'Nicole', about: null, photo: null },
+      { key: 'c1', name: 'Jon', handle: null, about: null, photo: null, interests: null },
+      { key: 'c2', name: 'Nicole', handle: 'Nicole', about: null, photo: null, interests: null },
     ])
   })
 
@@ -167,6 +172,31 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
       { about: 'Loves the beach', photo: null },
       { about: null, photo: 'https://example.test/nicole.jpg' },
     ])
+  })
+
+  it('V32-8: carries each card’s own INTERESTS, trimmed, and null when absent', () => {
+    // A6b: the row's interests come from the CARD, never from the account — so a
+    // card with none answers null and the read surface renders no line, while a
+    // card with one carries it trimmed. The two cards below also prove the fields
+    // are INDEPENDENT: one has words and no interests, the other the reverse.
+    const rows = parentNameRows(
+      [
+        card({ about: 'Loves the beach', interests: '  Trail running  ' }),
+        card({ id: 'c2', name: 'Nicole', position: 2, about: null, interests: null }),
+      ],
+      null,
+    )
+    expect(rows.map((row) => ({ about: row.about, interests: row.interests }))).toEqual([
+      { about: 'Loves the beach', interests: 'Trail running' },
+      { about: null, interests: null },
+    ])
+  })
+
+  it('V32-8: a blank stored interests is null on the row, so no empty line renders', () => {
+    // The silent defect: '   ' stored is not "has interests" — it must render
+    // nothing rather than an `Interests:` label with nothing after it.
+    const rows = parentNameRows([card({ interests: '   ' })], null)
+    expect(rows[0].interests).toBeNull()
   })
 
   it('V27: the account avatar fills the picture slot on the card whose name IS the account', () => {
@@ -315,7 +345,17 @@ describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V2
     // settled; while that read is still in flight (`null`) there is no row yet,
     // so a slow load cannot flash a duplicate.
     expect(parentNameRows([], { handle: 'Nicole', about: 'Hi' })).toEqual([
-      { key: 'linked-Nicole', name: 'Nicole', handle: 'Nicole', about: 'Hi', photo: null },
+      // V32-8 (A6b): `interests` is null on the SYNTHESIZED row deliberately —
+      // there is no card to read it from, and the account-level
+      // `profiles.interests` is a different fact about a different person.
+      {
+        key: 'linked-Nicole',
+        name: 'Nicole',
+        handle: 'Nicole',
+        about: 'Hi',
+        photo: null,
+        interests: null,
+      },
     ])
     expect(parentNameRows(null, { handle: 'Nicole' })).toEqual([])
   })
@@ -347,6 +387,35 @@ describe('parentCardAboutText (V25 t09 — the row’s description half)', () =>
     expect(parentCardAboutText(undefined)).toBeNull()
     expect(parentCardAboutText('')).toBeNull()
     expect(parentCardAboutText('   \n ')).toBeNull()
+  })
+})
+
+/**
+ * V32 v32-8 (A6b) — the per-parent interests seam.
+ *
+ * A SIBLING of `parentCardAboutText` above, and each case names the defect it
+ * detects. The dangerous one is silent: a stored blank would render an
+ * `Interests:` line with nothing after it, which reads as a bug on a parent's
+ * card rather than as "they did not fill it in".
+ */
+describe('parentCardInterestsText (V32 v32-8 — what a parent is into)', () => {
+  it('trims the stored value', () => {
+    // Untrimmed storage would render with stray padding, and the trim is what
+    // makes the blank check below meaningful.
+    expect(parentCardInterestsText('  Trail running, board games  ')).toBe('Trail running, board games')
+  })
+
+  it('answers null for absent and blank values, so no empty Interests line renders', () => {
+    // The defect: an `Interests:` label with nothing after it. Every one of these
+    // must render NOTHING, not an empty line.
+    expect(parentCardInterestsText(null)).toBeNull()
+    expect(parentCardInterestsText(undefined)).toBeNull()
+    expect(parentCardInterestsText('')).toBeNull()
+    expect(parentCardInterestsText('   \n ')).toBeNull()
+  })
+
+  it('passes a value through unchanged when it is already clean', () => {
+    expect(parentCardInterestsText('Baking')).toBe('Baking')
   })
 })
 

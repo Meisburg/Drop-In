@@ -6272,7 +6272,7 @@ export async function listMyAccountLinksWithHandles(): Promise<LinkRowForView[]>
  */
 
 /** A card's columns, shared by every read. */
-const PARENT_CARD_COLUMNS = 'id, profile_id, name, photo_url, about, position, created_at'
+const PARENT_CARD_COLUMNS = 'id, profile_id, name, photo_url, about, interests, position, created_at'
 
 /** Every card for one account, in render order. Empty when there are none. */
 export async function listParentCardsWithClient(
@@ -6305,6 +6305,15 @@ export async function saveParentCard(input: {
   position: number
   name: string
   about: string | null
+  /**
+   * V32 v32-8 (A6b): the parent's own interests. ⚠️ `undefined` and `null` are
+   * NOT the same here. This is an UPSERT on `(profile_id, position)`, so the
+   * payload decides what the row ends up holding: an explicit `null` CLEARS the
+   * stored value, while `undefined` (the key absent from the payload) leaves it
+   * untouched. Callers pass whatever the parent's draft holds — never
+   * `undefined` as a way of saying "empty".
+   */
+  interests: string | null
 }): Promise<void> {
   const { error } = await supabase.from('parent_cards').upsert(
     {
@@ -6312,6 +6321,7 @@ export async function saveParentCard(input: {
       position: input.position,
       name: input.name,
       about: input.about,
+      interests: input.interests,
     },
     { onConflict: 'profile_id,position' },
   )

@@ -675,6 +675,23 @@ export function ProfileView({
                         {row.about}
                       </p>
                     ) : null}
+                    {/* V32 v32-8 (A6b): what this parent is into, for other
+                        signed-in parents — the founder's *"Interest section so
+                        that other parents can see what interests they have to
+                        see if they would get along"*. The `row.interests` value
+                        is the lib seam's decision (`parentCardInterestsText`),
+                        so a blank or absent field renders NOTHING rather than an
+                        empty `Interests:` label. Rendered under `about` because
+                        the words about the person read first and the topics
+                        second. */}
+                    {row.interests !== null ? (
+                      <p
+                        data-testid="parent-interests"
+                        className="mt-0.5 text-sm text-slate-600 [overflow-wrap:anywhere]"
+                      >
+                        Interests: {row.interests}
+                      </p>
+                    ) : null}
                   </div>
                 </li>
               ))}
