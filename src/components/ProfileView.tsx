@@ -476,41 +476,34 @@ export function ProfileView({
   )
   // The pinned block order, single-sourced in the pure `profileBlurbOrder`
   // seam (src/lib/photoStorage.ts; V16 t05 re-pinned it, V23 s16 extended it to
-  // name EVERY block both surfaces show). This read surface consumes it with
-  // its default 'read' argument: identity → kids list → "About the parents" →
-  // family photo (the photo closes the about card), and the editor-only
-  // parent-cards block is omitted. All optional blocks are independent — an
-  // empty profile still shows the identity card. `kidsVisible` is this page's
-  // own rule — V25 t14 widened it from "the self view only" to "the database
-  // returned this viewer kid rows" (`profile.kids.length > 0`), which is the
-  // same RLS-filtered answer the pure seam is handed rather than a second gate
-  // invented here.
+  // name EVERY block both surfaces show). This read surface consumes it for
+  // MEMBERSHIP: the kids card and this card's contents are each gated on the
+  // seam's answer, and the editor-only parent-cards block is omitted. All
+  // optional blocks are independent — an empty profile still shows the identity
+  // card. `kidsVisible` is this page's own rule — V25 t14 widened it from "the
+  // self view only" to "the database returned this viewer kid rows"
+  // (`profile.kids.length > 0`), which is the same RLS-filtered answer the pure
+  // seam is handed rather than a second gate invented here.
   //
-  // NOTE the JSX below consumes this seam in order: the kids card is emitted
-  // first, then the about-the-parents card (with the family photo as its
-  // closer), laid out in exactly the sequence the function emits. The family
-  // photo block now carries its OWN "Family photos" h2 inside that card (V24);
-  // the heading does not move the block's position — the seam still emits it
-  // last, and the cross-surface order guard sees the same block on each side.
+  // THE MASTHEAD (founder's live /profile change, 2026-10-06): `blurb`'s 'about'
+  // no longer drives a card of its own here — the parent rows moved UP into the
+  // identity block, so the read view's 'about' member is consumed by the
+  // masthead's own `parentRows.length > 0` gate rather than by a heading gate.
+  // The seam still emits 'about' (it is the shared contract with the edit
+  // surface, pinned by its sibling test); this surface just no longer keys a
+  // card on it. What remains below is the interests line and the family photo.
   //
-  // V24 slice 11B (finding N1): the seam IS told about the parent names now, so
-  // the ordering gate and the heading gate are the same call.
-  //
-  // V27 (the founder's /profile annotation): the read view's "About the parents"
-  // block is the PARENT ROWS ALONE. The bio is no longer its own block (the
-  // duplicate account avatar it carried is already drawn in the identity block
-  // above), so the seam pushes 'about' for `parentNamesVisible` only — a
-  // bio-only profile draws no about card at all rather than an empty one. The
-  // bio still reaches the screen as the account owner's ROW description when
-  // their card carries none (see `parentNameRows`).
+  // V27 (the founder's /profile annotation): the read view's parent rows are the
+  // PARENT ROWS ALONE — no bio block, because the duplicate account avatar it
+  // carried is already drawn in the identity block above. The bio still reaches
+  // the screen as the account owner's ROW description when their card carries
+  // none (see `parentNameRows`).
   const blurb = profileBlurbOrder(
     profile,
     profile.kids.length > 0,
     'read',
     parentRows.length > 0,
   )
-  /** The "About the parents" block renders (the parent rows; V27). */
-  const showsAbout = blurb.includes('about')
   const showsKids = blurb.includes('kids')
   // V20 t01: hoisted out of the JSX because the wrapper card's own existence is
   // the union of its contents (see the card's gate below).
@@ -545,9 +538,7 @@ export function ProfileView({
           {/* Slice 11 follow-up: this avatar sits ABOVE the fold at the top of a
               profile page, so it is eager. The slice's `eager` default is false
               (correct for list rows), but the /u/:handle identity photo is not a
-              list row — lazy-loading it can flash an empty circle on arrival.
-              NOTE: restored by the orchestrator after V22 slice 9's builder
-              reverted this file to HEAD to keep its own build green. */}
+              list row — lazy-loading it can flash an empty circle on arrival. */}
           <HostAvatar host={profile} size="lg" expandable eager />
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900">@{profile.display_name}</h2>
@@ -555,41 +546,133 @@ export function ProfileView({
             {/* V3 slice 9 (ticket 04): the "Hosted N drop-ins" line — hidden
                 when 0 or unsettled; singular "Hosted 1 drop-in" when N = 1.
                 V21 t06: now TAPABLE — tapping reveals + scrolls to the Past
-                section below (the bounded list of past events, most recent
-                first). This is a phone app, so the founder's "hover over and
-                see the past events" becomes a tap. The control only appears
-                when hostedCount > 0, so a parent with zero hosted drop-ins
-                never sees an empty expandable list. min-h-11 = 44px floor. */}
-              {hostedCount !== null && hostedCount > 0 ? (
-                <button
-                  type="button"
-                  data-testid="hosted-dropins-toggle"
-                  onClick={() => {
-                    // Scroll to the Past section after state settles.
-                    requestAnimationFrame(() => {
-                      pastSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    })
-                  }}
-                  className="flex min-h-11 flex-col text-left text-sm text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-800"
-                >
-                  {/* The COUNT is its own text node, unpolluted by any hint.
-                      Two existing specs (host-retention, profile-posts) match
-                      this line EXACTLY (`'Hosted 1 drop-in'` and
-                      `/^Hosted \d+ drop-ins?$/`), and folding the "tap" hint
-                      into the same text node silently broke both — a real
-                      regression caught by the full e2e suite, not by the unit
-                      gate. So the count stays alone: V25 t09 DELETED the
-                      sibling "tap to see past events" hint, because the count
-                      link above it does the same job on its own (the founder's
-                      annotation 2) and a control needs one affordance, not
-                      two. The tappable count is still the door. */}
-                  <span>
-                    Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
-                  </span>
-                </button>
-              ) : null}
+                section below. min-h-11 = 44px floor. V25 t09 removed the
+                sibling "tap to see past events" hint: the count is the door. */}
+            {hostedCount !== null && hostedCount > 0 ? (
+              <button
+                type="button"
+                data-testid="hosted-dropins-toggle"
+                onClick={() => {
+                  // Scroll to the Past section after state settles.
+                  requestAnimationFrame(() => {
+                    pastSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  })
+                }}
+                className="flex min-h-11 flex-col text-left text-sm text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-800"
+              >
+                <span>
+                  Hosted {hostedCount} {hostedCount === 1 ? 'drop-in' : 'drop-ins'}
+                </span>
+              </button>
+            ) : null}
           </div>
         </div>
+
+        {/* THE PAGE'S ONE ACTION (founder's live annotation, 2026-10-06).
+            A parent who opens this page has two questions — WHO are these
+            people, and how do I reach them. The identity block answers the
+            first; this answers the second, AT THE TOP, where the decision is
+            made rather than ~700px down in the Follow/Block/Report row it used
+            to live in (that duplicate is deleted — one action, one door).
+
+            The route is the app's OWN (`/inbox?dm=<profileId>`, the call the
+            old footer control made), so this opens the conversation the inbox
+            already knows how to start — no second mechanism, no local state.
+
+            Never on your own profile: a parent has nobody to message there, and
+            `isOwnProfile` is the same session-derived rule the rest of this file
+            gates on. Filled `indigo-600` is the ACTION tone (DESIGN.md's "Two
+            Tones Rule"); the label carries the handle the way `Follow @handle`
+            does, so the button names both the act and its object. */}
+        {isOwnProfile ? null : (
+          <button
+            type="button"
+            data-testid="message-profile"
+            onClick={() => navigate(`/inbox?dm=${profileId}`)}
+            className="inline-flex min-h-11 w-auto items-center justify-center self-start rounded-xl border border-transparent bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-700 focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:outline-none motion-reduce:transition-none"
+          >
+            Message
+          </button>
+        )}
+
+        {/* THE FAMILY MASTHEAD (founder's live /profile change, 2026-10-06).
+            The "About the parents" section is absorbed into the identity block,
+            because a profile's identity IS its family — the two were one thought
+            split across two cards, and the separate card redrew this account's
+            avatar to do it (V27's own finding: it "read as a person entry with no
+            name"). The parent rows keep the V27 rules unchanged — photo, the name
+            (a link when that name IS an account), and the card's own words — and
+            now wear the KID ROW's shape (44px face, semibold name, one muted line
+            beneath it) so a parent reads the way a child does.
+
+            The row's words are `parent_cards.about` (falling back to the
+            account's own bio, V27). There is deliberately NO per-parent "Likes"
+            line: `parent_cards` has no such column (migration 0047 —
+            name/photo_url/about/position), so faking one would invent data.
+            Per-parent interests is a schema decision, not a JSX one.
+
+            The two parents STACK (the list is a `flex flex-col`), one parent per
+            full-width row. Note the read-view heading order this
+            creates: identity → "About the parents" → "About the kids" → family
+            photo. That is a deliberate product order (the family opens the page),
+            and it is why `scripts/profile-order-check.mjs` reads 'parents' before
+            'kids' on this surface — see the note there. */}
+        {parentRows.length > 0 ? (
+          <div className="mt-0.5 border-t border-slate-200 pt-3">
+            <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
+            <ul data-testid="parent-names" className="mt-2 flex flex-col gap-3">
+              {parentRows.map((row) => (
+                <li
+                  key={row.key}
+                  data-testid="parent-row"
+                  className="flex w-full flex-wrap items-start gap-2"
+                >
+                  {/* The card's picture — its OWN when it has one the browser
+                      can fetch as given (`parentCardPhotoSrc`), otherwise the
+                      public account avatar V27 offers the linked/own row. Alt is
+                      the parent's NAME, not the account handle. */}
+                  {row.photo !== null ? (
+                    <PhotoButton
+                      src={row.photo}
+                      alt={`${row.name}’s photo`}
+                      className="block shrink-0 overflow-hidden rounded-full"
+                    >
+                      <img
+                        data-testid="parent-card-photo"
+                        src={row.photo}
+                        alt={`${row.name}’s photo`}
+                        className="h-11 w-11 rounded-full object-cover"
+                      />
+                    </PhotoButton>
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    {row.handle !== null ? (
+                      <Link
+                        data-testid="parent-name-link"
+                        to={`/u/${encodeURIComponent(row.handle)}`}
+                        className="inline-flex min-h-11 items-center text-base font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
+                      >
+                        {row.name}
+                      </Link>
+                    ) : (
+                      <span
+                        data-testid="parent-name"
+                        className="inline-flex min-h-11 items-center text-base font-semibold text-slate-900"
+                      >
+                        {row.name}
+                      </span>
+                    )}
+                    {row.about !== null ? (
+                      <p className="mt-0.5 text-sm text-slate-600 [overflow-wrap:anywhere]">
+                        {row.about}
+                      </p>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       {/* V16 t05: THE KIDS CARD COMES FIRST — the founder's reorder (kids →
@@ -759,24 +842,15 @@ export function ProfileView({
           same values they use so the card and its contents can never disagree.
           `showsInterests` is hoisted above rather than inlined below because the
           card's own existence now depends on it.
-          V24 slice 11A adds the fourth child, `parentRows`: a family with parent
-          cards shows its parents, under the "About the parents" heading — the
-          rows are the card's content. (V25 t09 gave each entry a photo and an
-          about; V27 dropped the bio block from the read surface, so this child
-          is now the heading's ONLY reason to exist.)
-          V24 slice 11B: `showsAbout` now comes from `profileBlurbOrder`, so this
-          gate and the heading's below are the same decision rather than two
-          conditions that could drift. V27 moved the seam's read-side 'about'
-          gate to `parentNamesVisible` alone to match. */}
-      {showsAbout || showsInterests || familyPhotoUrl !== null ? (
+          THE MASTHEAD CHANGE (founder's live /profile change, 2026-10-06) removed
+          the parent rows from this card, so the `showsAbout` term went with
+          them: the parents now open the page inside the identity block, and this
+          card is the interests line and the family photo. Leaving `showsAbout`
+          in the gate would have drawn an empty bordered box for a family whose
+          only content is parents. */}
+      {showsInterests || familyPhotoUrl !== null ? (
         <div className="flex flex-col gap-3">
-          {/* V13 ticket 01: the identity row (avatar + @handle + "Here since" +
-              "Hosted N drop-ins") is the page's identity block at the top (V15
-              ticket 06, A20). This card carries the "About the parents" block
-              (the parent rows, under a real heading) and, after it, the family
-              photo.
-
-              V9 ticket 11 (folded ticket 08) pinned these optional blocks; V16
+          {/* V9 ticket 11 (folded ticket 08) pinned these optional blocks; V16
               t05 RE-PINNED THE ORDER to kids → about → photo (the kids card now
               sits above this one, and the family photo is the page's closer).
               Every one of them is optional: a family with none of them gets the
@@ -787,127 +861,26 @@ export function ProfileView({
               to lead this card is GONE from the read surface. It drew the
               account's own avatar again (the identity block above already shows
               it) beside family-level text, so the card read as a person entry
-              with no name rather than as the two parents it is about. This card
-              is now exactly the parent rows, each modelled on a kid row: picture
-              on the left, the name as its heading (linked when the name IS the
-              linked account), and the parent's own words below. The bio stays
-              editable on the edit surface, where it is the "About the parents"
-              textarea — the read surface no longer draws it, so `showsAbout` is
-              the parent rows' gate and nothing else. */}
-          {showsAbout ? (
-          <div className="mt-3 first:mt-0">
-            <h2 className="text-base font-semibold text-slate-900">About the parents</h2>
-            {/* V25 t09 (annotation 4) + V27: THE FAMILY'S PARENTS as horizontal
-                ROWS — picture · name · their own words — on the owner's own
-                profile AND on /u/:handle, because "the family profile reflects
-                the family". V27 restyled and re-documented them to model the
-                kids rows: the picture leads on the left, the name is the row's
-                heading (semibold; a link when it IS an account), and the
-                description sits below it.
+              with no name rather than as the two parents it is about. The bio
+              stays editable on the edit surface, where it is the "About the
+              parents" textarea.
 
-                A name is a LINK when it IS an account the viewer may name — the
-                accepted linked account, or the ACCOUNT BEING VIEWED itself
-                (V27: the founder's "you could link my name to this profile", a
-                self-link to this page's public profile that reveals no
-                relationship). Both are matched by name, the only association the
-                schema holds — see `parentNameRows` in src/lib/parentCards.ts.
-                Every other parent renders as plain text: a card alone is not a
-                link, and the LINKED row itself is readable only by the two
-                parties (`account_links_select_parties`, migration 0047), so a
-                third account opening this page sees no link for the partner —
-                the relationship is not theirs to see. The link is a real
-                react-router Link to `/u/<handle>`: a real href, the parent's
-                name as its accessible name, and `min-h-11` (44px) as its
-                target.
-
-                V24 slice 11B (finding N4): when the READER is a party to the
-                link, the counterparty the database returns IS the reader, so
-                the partner's name is suppressed above
-                (`linkedNameTargetForViewer`). Nothing is lost: the reader is
-                already looking at the family they are linked to. V27 keeps that
-                for the linked row; the account's own self-link is unaffected.
-
-                V27: a row with no `about` of its own borrows the ACCOUNT's
-                personal `bio` — the linked account's on the partner's row, this
-                account's on the owner's row — and a row with no photo of its own
-                borrows a public account avatar (the linked account's, or this
-                account's). See `ParentNameRow` for why each source is the
-                honest one and when it refuses.
-
-                INTERESTS DO NOT APPEAR PER ROW, because the schema has no
-                per-parent interests column: `parent_cards` is
-                name/photo_url/about/position (migration 0047). The family's
-                one `profile.interests` line still renders below, once for the
-                family — faking a per-parent interests line would be inventing
-                data. Per-parent interests is a schema decision (a new column +
-                migration), not something this row may smuggle in. */}
-            {parentRows.length > 0 ? (
-              <ul data-testid="parent-names" className="mt-2 flex flex-col gap-2">
-                {parentRows.map((row) => (
-                  <li
-                    key={row.key}
-                    data-testid="parent-row"
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    {/* The card's picture — its OWN when it has one the browser
-                        can fetch as given (`parentCardPhotoSrc`: a private-bucket
-                        PATH is deliberately not rendered as a broken image, and
-                        the mint for that is its own schema decision), otherwise
-                        (V27) a public account avatar: the LINKED account's when
-                        this row's name IS the linked partner, else this ACCOUNT's
-                        own when the row's name IS the account. No source, no
-                        image: the rule answers null. Alt is the parent's NAME,
-                        not the account handle — this is the person's picture. */}
-                    {row.photo !== null ? (
-                      <PhotoButton
-                        src={row.photo}
-                        alt={`${row.name}’s photo`}
-                        className="block shrink-0 overflow-hidden rounded-full"
-                      >
-                        <img
-                          data-testid="parent-card-photo"
-                          src={row.photo}
-                          alt={`${row.name}’s photo`}
-                          className="h-12 w-12 rounded-full object-cover"
-                        />
-                      </PhotoButton>
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      {row.handle !== null ? (
-                        <Link
-                          data-testid="parent-name-link"
-                          to={`/u/${encodeURIComponent(row.handle)}`}
-                          className="inline-flex min-h-11 items-center text-base font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-indigo-800 motion-reduce:transition-none"
-                        >
-                          {row.name}
-                        </Link>
-                      ) : (
-                        <span
-                          data-testid="parent-name"
-                          className="inline-flex min-h-11 items-center text-base font-semibold text-slate-900"
-                        >
-                          {row.name}
-                        </span>
-                      )}
-                      {row.about !== null ? (
-                        <p className="whitespace-pre-line text-sm text-slate-700">{row.about}</p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
+              THE MASTHEAD (founder's live /profile change, 2026-10-06): the
+              parent ROWS left this card too — they now sit under the identity
+              block's own "About the parents" heading, each modelled on a kid row
+              (face on the left, the name as its heading, the parent's own words
+              beneath). What is left here is the account-level interests line and
+              the family photo. */}
         {/* V3 slice 6 (ticket 09, migration 0022): the family's interests line —
             hidden when empty/absent, and pre-0022-apply the column is undefined
             (the null-safe render, the pre-0016 discipline).
             V9 ticket 11 groups it with the parents region rather than leaving it
             up in the header — the interests stay ACCOUNT-level (the schema has
-            no per-parent interests column), and the ticket pins the three
-            optional blocks ahead of it. It is deliberately OUTSIDE the
-            `showsAbout` gate — a family that wrote interests and no parent rows
-            still shows its interests (which is what this page has always done). */}
+            no per-parent interests column, which is also why the parent rows
+            carry no per-parent "Likes" line), and the ticket pins the three
+            optional blocks ahead of it. It is deliberately OUTSIDE every other
+            block's gate — a family that wrote interests and no parent rows still
+            shows its interests (which is what this page has always done). */}
         {showsInterests ? (
           <p className="mt-2 text-sm text-slate-600">
             Interests: {profile.interests}
@@ -989,14 +962,6 @@ export function ProfileView({
                 : following
                   ? `Unfollow @${profile.display_name}`
                   : `Follow @${profile.display_name}`}
-            </button>
-            <button
-              type="button"
-              data-testid="message-profile"
-              onClick={() => navigate(`/inbox?dm=${profileId}`)}
-              className="inline-flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 py-2.5 text-base font-medium text-indigo-700"
-            >
-              Message
             </button>
             <button
               type="button"
