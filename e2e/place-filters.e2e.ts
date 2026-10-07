@@ -1,6 +1,17 @@
 import { expect, test } from '@playwright/test'
 import { readMarkerSession, readSupabaseEnv, setDirectoryRadius, settleOnRoute } from './fixtures'
 
+// One definition, shared by the Node-side guard and the browser-side evaluate —
+// two spellings of one selector is the drift this repo hunts. The `:not(...)`
+// exclusion keeps the scroll container out of the clip check: its own horizontal
+// overflow at 390px is the "still side-scrolls" feature, not a defect.
+const KIND_CHIP_SELECTOR = '[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])'
+
+// Module-level tolerance, passed into both evaluate callbacks as an argument.
+// Sibling specs that hardcode their own `scrollWidth <= clientWidth + 1` can
+// adopt this constant instead of spelling the number a second time.
+const CLIP_TOLERANCE = 1
+
 /**
  * V27 — the two quick gates the founder named on the places directory:
  * "is it open?" and "do other parents rate it?".
@@ -146,6 +157,11 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // entirely quiet. So this assertion POLLS until at least one row states a
     // positive count OR the invite line — which fails loudly exactly when the
     // read is lost, the regression the check exists for.
+    //
+    // PARKED LIMITATION (ocr round 3, ruled by the operator): the poll requires
+    // ≥1 upcoming-or-honest-zero row in the live directory; a directory where
+    // every place has hosted and has nothing upcoming would false-red here,
+    // which is the price of a text-only signal.
     const countRows = page.getByTestId('place-row')
     expect(await countRows.count()).toBeGreaterThan(0)
     const statesItsCount = (t: string) =>
@@ -181,15 +197,16 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // deleted — assert the row and a non-empty chip set BEFORE the clip check.
     const chipRow = page.getByTestId('place-kind-chip-row')
     await expect(chipRow).toBeVisible()
-    const chipCount = await page.locator('[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])').count()
+    const chipCount = await page.locator(KIND_CHIP_SELECTOR).count()
     expect(chipCount, 'the kind-chip row must render at least one chip').toBeGreaterThan(0)
 
-    // One module-level tolerance, passed into both evaluate callbacks — two
-    // spellings of one number is the drift this repo hunts.
-    const CLIP_TOLERANCE = 1
+    // PARKED LIMITATION (ocr round 3, ruled by the operator): no control here can
+    // clip today by construction (`shrink-0 whitespace-nowrap` inside an
+    // `overflow-x-auto` row); this gate pins that property, and its red is
+    // mutation-proven (round 1: `w-24 overflow-hidden` → red, naming every chip).
     await expect
       .poll(async () => {
-        return page.evaluate((tolerance: number) => {
+        return page.evaluate(({ tolerance, chipSelector }: { tolerance: number; chipSelector: string }) => {
           const offenders: string[] = []
           const check = (el: Element, name: string) => {
             if (el.scrollWidth > el.clientWidth + tolerance) {
@@ -213,7 +230,7 @@ test.describe('places directory — the filter pills say what they filter (v30-3
           // the coffee controls — but NOT the scroll container itself: its own
           // horizontal overflow at 390px is the "still side-scrolls" feature.
           const selectors = [
-            '[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])',
+            chipSelector,
             '[data-testid^="place-kind-placeholder-"]',
             '[data-testid="place-coffee-filter"]',
             '[data-testid="place-coffee-nearby"]',
@@ -224,7 +241,7 @@ test.describe('places directory — the filter pills say what they filter (v30-3
             })
           }
           return offenders
-        }, CLIP_TOLERANCE)
+        }, { tolerance: CLIP_TOLERANCE, chipSelector: KIND_CHIP_SELECTOR })
       }, {
         message: 'the 390px filter row must clip no text',
         timeout: 10_000,
