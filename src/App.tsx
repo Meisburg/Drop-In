@@ -47,6 +47,14 @@ import { PLAYDATE_RETURN_KEY, isPlaydateReturnTarget, playdateDetailPathFromEdit
 import type { DuplicatePrefill, PlacePrefill } from './lib/types'
 
 /**
+ * The dev-only annotation toolbar, or null in a production build. Kept as a
+ * module-scope conditional so the dynamic import is the ONLY reference to the
+ * package: with `DEV` false, Vite/Rollup eliminate the branch, the import and
+ * the chunk, and `agentation` never lands in `dist/`.
+ */
+const AgentationDev = import.meta.env.DEV ? lazy(() => import('./dev/AgentationDev')) : null
+
+/**
  * V22 slice 10: the /browse route is code-split. It is no longer a nav
  * destination (V21 t02 moved the directory into /new's "Where?" block) — it is
  * reachable by deep link only — so its page (and, through it, the places
@@ -852,6 +860,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppLinks />
+      {/* DEV-ONLY annotation toolbar (Agentation). `import.meta.env.DEV` is
+          replaced with `false` in a production build, so this branch — and the
+          dynamic import behind it — is eliminated: `agentation` never reaches
+          `dist/`. That was VERIFIED, not assumed, by grepping the built bundle
+          when it was added (2026-10-06). */}
+      {AgentationDev !== null ? (
+        <Suspense fallback={null}>
+          <AgentationDev />
+        </Suspense>
+      ) : null}
       <SessionProvider>
         {/* V27 slice 3: one shared unread total for the Inbox nav badge. Inside
             SessionProvider so it reads the shared session; the shell below
