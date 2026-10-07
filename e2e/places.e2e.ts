@@ -2175,16 +2175,19 @@ test('the Places tab filters by indoor and outdoor', async ({ page }) => {
   // need to expand the overflow door for this assertion.
 
   // Indoor: the indoor library branch stays, outdoor playgrounds go.
-  // V27: the type filter is a dropdown button + bottom sheet.
-  await page.getByTestId('places-type-filter').click()
-  await page.getByTestId('places-type-sheet-option-indoor').click()
+  // The type filter is a single TOGGLE now (founder, 2026-10-06): the default is
+  // everything, and one tap narrows to indoor — no dropdown, no sheet.
+  const indoorToggle = page.getByTestId('places-indoor-filter')
+  await indoorToggle.click()
+  await expect(indoorToggle).toHaveAttribute('aria-pressed', 'true')
   await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
 
-  // Outdoor: the reverse. (One choice at a time, so picking Outdoor does not
-  // mean "not Indoor" by accident.)
-  await page.getByTestId('places-type-filter').click()
-  await page.getByTestId('places-type-sheet-option-outdoor').click()
-  await expect(placeRow(page, INDOOR_PLACE)).toHaveCount(0)
+  // Tapping the same control is the way back to everything: there is no
+  // "outdoor only" state to get stuck in, because outdoor is the norm this
+  // directory is already showing.
+  await indoorToggle.click()
+  await expect(indoorToggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
 })
 
 test('the browse list defaults to alphabetical and the Filter & sort modal filters + sorts (V15 t03)', async ({

@@ -2797,26 +2797,24 @@ describe('savedPlacesEmptyCopy (V25 t08, the two honest empty messages)', () => 
 })
 
 describe('filterTriggerLabels (v30-3, the /browse filter pills)', () => {
-  // V31 map-and-distance: the distance pill is deleted, so the seam no longer
-  // takes a distanceChoice/viewerRadius pair and no longer returns a `distance`
-  // label. The two triggers that remain are the ones the row renders.
-  const base = { indoorFilter: null, dateWindow: 'upcoming' as const }
+  // V31 map-and-distance deleted the distance pill, and the indoor/outdoor
+  // DROPDOWN became a single inline toggle (2026-10-06), so `when` is the only
+  // trigger left for this seam to caption. The toggle's own labels are its
+  // text ("Indoor"), pinned by the component, not by a value string here.
+  const base = { dateWindow: 'upcoming' as const }
 
-  it('captions every trigger, so no pill is a bare value', () => {
-    const t = filterTriggerLabels(base)
-    expect(t.setting.caption).toBe('Setting')
-    expect(t.when.caption).toBe('When')
+  it('captions the one trigger that remains, so no pill is a bare value', () => {
+    expect(filterTriggerLabels(base).when.caption).toBe('When')
   })
 
-  it('shortens the unset state to "Any" on both', () => {
-    const t = filterTriggerLabels(base)
-    expect(t.setting.value).toBe('Any')
-    expect(t.when.value).toBe('Any')
+  it('has no setting trigger left to caption (the dropdown is gone)', () => {
+    // A future slice that re-adds the dropdown must re-derive its caption from
+    // somewhere; this pins that it is NOT quietly still here.
+    expect('setting' in filterTriggerLabels(base)).toBe(false)
   })
 
-  it('names the picked setting in one word', () => {
-    expect(filterTriggerLabels({ ...base, indoorFilter: true }).setting.value).toBe('Indoor')
-    expect(filterTriggerLabels({ ...base, indoorFilter: false }).setting.value).toBe('Outdoor')
+  it('shortens the unset window to "Any"', () => {
+    expect(filterTriggerLabels(base).when.value).toBe('Any')
   })
 
   it('has no distance trigger at all (the pill and its label are deleted)', () => {
@@ -2835,10 +2833,7 @@ describe('filterTriggerLabels (v30-3, the /browse filter pills)', () => {
   it('never emits a value long enough to need the pill to ellipsize', () => {
     const windows = ['upcoming', 'today', 'tomorrow', 'weekend'] as const
     for (const dateWindow of windows) {
-      const t = filterTriggerLabels({ ...base, dateWindow })
-      for (const label of [t.setting, t.when]) {
-        expect(label.value.length).toBeLessThanOrEqual(9)
-      }
+      expect(filterTriggerLabels({ ...base, dateWindow }).when.value.length).toBeLessThanOrEqual(9)
     }
   })
 })

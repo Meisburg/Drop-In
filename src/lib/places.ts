@@ -1338,7 +1338,7 @@ export interface FilterTriggerLabel {
  * and "within three…", so a parent could not tell what they filtered. The
  * caption names the purpose; the value shortens to fit.
  *
- * The SHEETS keep their long option labels (`Any setting`, `Any day`) — only the
+ * The SHEETS keep their own option labels (`Either`, `Any day`) — only the
  * trigger shortens, and the option lists are built from the same constants, so a
  * trigger and its sheet cannot disagree about what is selectable.
  *
@@ -1352,20 +1352,28 @@ export interface FilterTriggerLabel {
  * Pure, and deliberately statement-shaped rather than a chain of nested
  * ternaries (the review rules ban those).
  */
-export function filterTriggerLabels(input: {
-  /** null = both kinds; true = indoor only; false = outdoor only. */
-  indoorFilter: boolean | null
-  dateWindow: DateWindow
-}): { setting: FilterTriggerLabel; when: FilterTriggerLabel } {
-  let settingValue = 'Any'
-  if (input.indoorFilter === true) settingValue = 'Indoor'
-  else if (input.indoorFilter === false) settingValue = 'Outdoor'
-
+export function filterTriggerLabels(input: { dateWindow: DateWindow }): {
+  when: FilterTriggerLabel
+} {
   let whenValue = 'Any'
   if (input.dateWindow !== 'upcoming') whenValue = DATE_DROPDOWN_LABELS[input.dateWindow]
 
   return {
-    setting: { caption: 'Setting', value: settingValue },
+    // THE SETTING TRIGGER IS GONE (founder, 2026-10-06, over impeccable live on
+    // /browse). Two steers produced this: first the caption "Setting" was
+    // unreadable ("is anyone gonna know what setting means? Isn't it just, are
+    // we saying it's indoor or outdoor?"), and then the control itself —
+    // "maybe it doesn't even need to be a dropdown… the default is everything,
+    // and you just select something if you want it to be indoor."
+    //
+    // He is right, and the shape of the mistake is worth recording: the
+    // dropdown had three options (Any / Indoor / Outdoor) for a decision with
+    // ONE meaningful direction on this surface. "Any" is the default, and
+    // "Outdoor" is the directory's own norm, so two of the three options spent
+    // taps describing the state the list is already in. The narrowing is now a
+    // single inline toggle (`places-indoor-filter`) that is off by default and
+    // turns itself off when tapped again. Nothing here captions a control that
+    // no longer exists.
     when: { caption: 'When', value: whenValue },
   }
 }

@@ -1346,19 +1346,13 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // leave the map view with no card to open its entry control from. Sorting only
   // REORDERS, so the round trip is exercised against a live, non-empty list.
   //
-  // V27: the indoor toggle is now the type dropdown's "Indoor" option.
-  await page.getByTestId('places-type-filter').click()
-  await page.getByTestId('places-type-sheet-option-indoor').click()
+  // V27's dropdown + sheet is a single toggle now (founder, 2026-10-06), so the
+  // state is read straight off the control that owns it.
+  await page.getByTestId('places-indoor-filter').click()
   await page.getByTestId('filter-sort-btn').click()
   await page.getByTestId('filter-sort-select').selectOption('newest')
   await page.getByTestId('filter-apply-btn').click()
-  // The option carries the state; reopen the sheet to read it.
-  await page.getByTestId('places-type-filter').click()
-  await expect(page.getByTestId('places-type-sheet-option-indoor')).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await page.getByTestId('places-type-sheet-close').click()
+  await expect(page.getByTestId('places-indoor-filter')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
 
@@ -1446,18 +1440,13 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // not from the result count: a filter that silently reset could still leave a
   // same-sized list behind, and the control is the state itself.
   // V27: the query is readable from the inline input's value, and the type state
-  // lives in its sheet, so it is reopened and its option checked.
+  // is read straight off the toggle that owns it.
   // V31 map-and-distance: the RADIUS state is read from the location control —
   // the surface that now owns it — by reopening it and reading its slider. The
   // value asserted is the one this spec set at the top (`setAnyDistance` → the
   // widest the slider offers, read from the slider itself rather than copied).
   await expect(page.getByTestId('places-search')).toHaveValue('park')
-  await page.getByTestId('places-type-filter').click()
-  await expect(page.getByTestId('places-type-sheet-option-indoor')).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await page.getByTestId('places-type-sheet-close').click()
+  await expect(page.getByTestId('places-indoor-filter')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('set-location-btn').click()
   const radiusSlider = page.getByTestId('location-radius-slider')
   await expect(radiusSlider).toBeVisible()

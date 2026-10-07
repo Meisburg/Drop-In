@@ -414,7 +414,7 @@ export function PlaceDirectory({
    */
   const [comingSoonKind, setComingSoonKind] = useState<string | null>(null)
   /** Which of the prominent dropdowns is open (one at a time), or none. */
-  const [openDropdown, setOpenDropdown] = useState<'type' | 'when' | null>(null)
+  const [openDropdown, setOpenDropdown] = useState<'when' | null>(null)
   /**
    * The place-name shown on the pill / location row. The host may pass one
    * (the viewer's city); after a "Set location" geocode the typed address wins,
@@ -809,12 +809,7 @@ export function PlaceDirectory({
    * pill — and with it this seam's `distance` label — is gone; the radius is the
    * location control's and is stated on that control (`radiusMiles` below).
    */
-  const triggers = filterTriggerLabels({ indoorFilter, dateWindow })
-  const typeOptions = [
-    { value: 'any', label: 'Any setting' },
-    { value: 'indoor', label: 'Indoor' },
-    { value: 'outdoor', label: 'Outdoor' },
-  ] as const
+  const triggers = filterTriggerLabels({ dateWindow })
   const whenOptions = DATE_WINDOWS.map((window) => ({
     value: window,
     label: DATE_DROPDOWN_LABELS[window],
@@ -960,8 +955,8 @@ export function PlaceDirectory({
             filtered, which is the whole defect. The row therefore WRAPS
             (`flex-wrap`) with a real `basis` on each trigger, so a further
             control moves to a second line instead of squeezing the captions out
-            of the first. With the distance pill gone the remaining two captions
-            ("Setting", "When") have more room than they did, not less.
+            of the first. With the distance pill gone, the one caption that
+            remains ("When") has more room than it did, not less.
 
             V30 (2026-10-05, accepted over impeccable live on /browse): the gate
             itself was the next thing the founder could not read — a 44px
@@ -975,95 +970,119 @@ export function PlaceDirectory({
             question ("narrow what I am looking at"), so they are now one
             wrapping row and the card is a row shorter. The gates stay last,
             where the eye arrives after the filters. */}
-        <div className="flex flex-wrap items-center gap-2">
-          <DropdownTrigger
-            testId="places-type-filter"
-            caption={triggers.setting.caption}
-            label={triggers.setting.value}
-            iconPath={NAV_ICONS.tag}
-            onClick={() => setOpenDropdown('type')}
-          />
-          <DropdownTrigger
-            testId="places-when-filter"
-            caption={triggers.when.caption}
-            label={triggers.when.value}
-            iconPath={NAV_ICONS.clock}
-            onClick={() => setOpenDropdown('when')}
-          />
-          {savedToggleAvailable ? (
-            <button
-              type="button"
-              data-testid="places-saved-filter"
-              aria-pressed={savedOnly}
-              aria-label="Saved places"
-              onClick={() => {
-                setSavedOnly((prev) => !prev)
-              }}
-              className={
-                'flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                (savedOnly
-                  ? 'border-indigo-600 bg-indigo-600 text-white'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
-              }
-            >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                className="h-4 w-4 shrink-0"
-                fill={savedOnly ? 'currentColor' : 'none'}
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d={NAV_ICONS.bookmark} />
-              </svg>
-              Saved
-            </button>
-          ) : null}
-          <button
-            type="button"
-            data-testid="places-open-now-filter"
-            aria-pressed={openNowOnly}
-            onClick={() => setOpenNowOnly((prev) => !prev)}
-            className={
-              'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-              (openNowOnly
-                ? 'border-emerald-600 bg-emerald-600 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
-            }
-          >
-            <span
-              aria-hidden="true"
-              className={openNowOnly ? 'text-white' : 'text-emerald-500'}
-            >
-              ●
-            </span>
-            Open now
-          </button>
-          <button
-            type="button"
-            data-testid="places-top-rated-sort"
-            aria-pressed={sortMode === 'top-rated'}
-            onClick={() =>
-              setSortMode((prev) => (prev === 'top-rated' ? 'alpha' : 'top-rated'))
-            }
-            className={
-              'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-              (sortMode === 'top-rated'
-                ? 'border-amber-500 bg-amber-500 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
-            }
-          >
-            <span
-              aria-hidden="true"
-              className={sortMode === 'top-rated' ? 'text-white' : 'text-amber-500'}
-            >
-              ★
-            </span>
-            Top rated
-          </button>
-        </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="places-indoor-filter"
+                        aria-pressed={indoorFilter === true}
+                        onClick={() => {
+                          setIndoorFilter((prev) => (prev === true ? null : true))
+                        }}
+                        className={
+                          'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                          (indoorFilter === true
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+                        }
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          className={
+                            'h-4 w-4 shrink-0 ' +
+                            (indoorFilter === true ? 'text-white' : 'text-violet-500')
+                          }
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 10.5 12 4l9 6.5 M5 10.8V20h14v-9.2 M9.5 20v-5h5v5" />
+                        </svg>
+                        Indoor
+                      </button>
+                                    <DropdownTrigger
+                        testId="places-when-filter"
+                        caption={triggers.when.caption}
+                        label={triggers.when.value}
+                        iconPath={NAV_ICONS.clock}
+                        onClick={() => setOpenDropdown('when')}
+                      />
+        {savedToggleAvailable ? (
+                        <button
+                          type="button"
+                          data-testid="places-saved-filter"
+                          aria-pressed={savedOnly}
+                          aria-label="Saved places"
+                          onClick={() => {
+                            setSavedOnly((prev) => !prev)
+                          }}
+                          className={
+                            'flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                            (savedOnly
+                              ? 'border-indigo-600 bg-indigo-600 text-white'
+                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+                          }
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            className="h-4 w-4 shrink-0"
+                            fill={savedOnly ? 'currentColor' : 'none'}
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d={NAV_ICONS.bookmark} />
+                          </svg>
+                          Saved
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        data-testid="places-open-now-filter"
+                        aria-pressed={openNowOnly}
+                        onClick={() => setOpenNowOnly((prev) => !prev)}
+                        className={
+                          'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                          (openNowOnly
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+                        }
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={openNowOnly ? 'text-white' : 'text-emerald-500'}
+                        >
+                          ●
+                        </span>
+                        Open now
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="places-top-rated-sort"
+                        aria-pressed={sortMode === 'top-rated'}
+                        onClick={() =>
+                          setSortMode((prev) => (prev === 'top-rated' ? 'alpha' : 'top-rated'))
+                        }
+                        className={
+                          'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                          (sortMode === 'top-rated'
+                            ? 'border-amber-500 bg-amber-500 text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+                        }
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={sortMode === 'top-rated' ? 'text-white' : 'text-amber-500'}
+                        >
+                          ★
+                        </span>
+                        Top rated
+                      </button>
+                    </div>
 
         {/* V27 — THE INTENT PILLS. Padded capsule buttons rather than the old
             tight icon-above-word chips: easier to hit one-handed, and the
@@ -1606,17 +1625,6 @@ export function PlaceDirectory({
           controls above render — there is no separate "apply" step.
           V31 map-and-distance: two, not three — the distance sheet is deleted
           with its pill. */}
-      <PlaceFilterSheet
-        open={openDropdown === 'type'}
-        testId="places-type-sheet"
-        title="Setting"
-        options={typeOptions}
-        value={indoorFilter === true ? 'indoor' : indoorFilter === false ? 'outdoor' : 'any'}
-        onSelect={(value) => {
-          setIndoorFilter(value === 'any' ? null : value === 'indoor')
-        }}
-        onClose={() => setOpenDropdown(null)}
-      />
       <PlaceFilterSheet
         open={openDropdown === 'when'}
         testId="places-when-sheet"

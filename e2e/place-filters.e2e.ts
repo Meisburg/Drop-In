@@ -94,10 +94,10 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     await page.goto('/browse')
     await settleOnRoute(page, '/browse')
 
-    const triggers = [
-      { testId: 'places-type-filter', caption: 'Setting' },
-      { testId: 'places-when-filter', caption: 'When' },
-    ]
+    // The indoor/outdoor control is a single TOGGLE now (founder, 2026-10-06),
+    // not a captioned dropdown: its label is the whole story, so it is asserted
+    // below rather than in this captioned-trigger loop.
+    const triggers = [{ testId: 'places-when-filter', caption: 'When' }]
 
     for (const { testId, caption } of triggers) {
       const trigger = page.getByTestId(testId)
@@ -112,6 +112,13 @@ test.describe('places directory — the filter pills say what they filter (v30-3
       })
       expect(clipped, `${testId} must not ellipsize at 390px`).toBe(false)
     }
+
+    // THE TOGGLE THAT REPLACED THE "Setting" DROPDOWN. One control, one word,
+    // a real pressed state — and no sheet behind it to open.
+    const indoorToggle = page.getByTestId('places-indoor-filter')
+    await expect(indoorToggle).toBeVisible()
+    await expect(indoorToggle).toHaveAccessibleName(/Indoor/)
+    await expect(indoorToggle).toHaveAttribute('aria-pressed', 'false')
 
     // THE DELETED CONTROL IS REALLY GONE (V31 map-and-distance), and the radius
     // it used to state is still reachable — on the location control, beside the
