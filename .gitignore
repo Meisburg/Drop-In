@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Android release key material. The Play upload keystore and its passwords must
+# never enter git: an upload key in history cannot be rotated without a support
+# request to Google. `android/.gitignore` carries the same patterns for the
+# Android subtree; these cover a keystore dropped in the repo root.
+*.jks
+*.keystore
+keystore.properties
+
 # Environment (Supabase credentials — never commit)
 .env
 .env.*
