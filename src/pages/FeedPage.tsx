@@ -1348,7 +1348,7 @@ export function FeedPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
           Loading…
         </div>
-      ) : posts.length === 0 ? (
+      ) : posts.length === 0 && !(feedViewShowsMap(feedView) && homePinCoords !== null) ? (
         /* V8 ticket 02: the honest empty-radius state — the shared
            RadiusEmptyState (Browse renders the same component): the viewer's
            ACTUAL radius in the copy (never "today") plus the way out of an
@@ -1459,11 +1459,58 @@ export function FeedPage() {
                 </p>
               ) : null}
             </div>
+          ) : posts.length === 0 ? (
+            /* A MAP VIEW MUST PRODUCE A MAP (founder, 2026-10-05, live session
+               603cc8d3). The band used to render ONLY when at least one drop-in
+               had a real location — *"with zero pins there is nothing to show
+               on a map"* — so an empty radius drew a card instead. That card sat
+               under a List/Map toggle that had already flipped: the Map button
+               filled with the action tone, announced aria-pressed="true", and
+               changed nothing underneath, which reads as a broken control rather
+               than an empty one. It now draws the canvas the parent asked for,
+               framed by their OWN pin and their radius circle — both already in
+               hand (`homePinCoords`, `feedMapFrame`), so this adds no read. The
+               outer guard guarantees `homePinCoords !== null` on this path.
+
+               SCOPED TO THE EMPTY RADIUS. The case below — posts exist, none has
+               a location — keeps the card it was actually written for: there the
+               instruction is true and useful, and `e2e/places.e2e.ts` pins it. */
+            <div
+              data-testid="feed-map-band"
+              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">
+                  You are here — nothing in your radius yet
+                </span>
+              </div>
+              <PlacesMap
+                className="h-[60dvh] min-h-[320px]"
+                places={[]}
+                zipCoords={zipCoords}
+                homePin={homePinCoords}
+                radiusCircle={feedMapFrame}
+                placeActions={false}
+                pinEvents={feedPinEvents}
+              />
+            </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
               No drop-ins have a location yet — switch to List to see them all.
             </div>
           )}
+          {/* The empty radius keeps its honest count, its one-tap widen escapes
+              and its directory door UNDER the map (V27 slice 1 / V31 v31-1):
+              the map answers "where am I?", not "is it worth widening?".
+              Dropping the card would trade one dead end for another. */}
+          {posts.length === 0 ? (
+            <RadiusEmptyState
+              radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
+              showPostCta={false}
+              showBrowseCta
+              beyondRadiusCount={beyondRadiusCount}
+            />
+          ) : null}
         </div>
       ) : (
         <div className="flex flex-col gap-4 md:max-w-md">
