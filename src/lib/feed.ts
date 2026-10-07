@@ -68,12 +68,49 @@ export interface RadiusViewer {
  */
 export const RADIUS_MILES_OPTIONS = [1, 2, 5, 10, 20, 35] as const
 
-/** The default radius (pinned: 5 miles). */
-export const DEFAULT_RADIUS_MILES = 5
+/**
+ * The default radius (pinned: 1 mile) — V32 v32-3 (A3), founder decision Q3.
+ *
+ * This is the FALLBACK when a profile row stores nothing, and the value a
+ * brand-new parent starts at (the DB column default agrees — migration 0066).
+ * It is NOT retroactive: a stored radius always wins at the read site
+ * (`profile.radius_miles ?? DEFAULT_RADIUS_MILES`), so a parent who already
+ * chose 35 still sees 35.
+ */
+export const DEFAULT_RADIUS_MILES = 1
 
 /** The DB backstop bounds (migration 0045 CHECK: between 1 and 35). */
 export const RADIUS_MIN_MILES = 1
 export const RADIUS_MAX_MILES = 35
+
+/**
+ * The radius slider's ceiling (A3b).
+ *
+ * The shared "Set location" modal renders a 1–30 slider, deliberately narrower
+ * than the 1–35 CHECK (0045) and the feed's own ladder — that narrow range is
+ * the /browse control's shape and must not silently widen. But a stored radius
+ * can be 31–35, and a `<input type=range>` whose `value` exceeds its `max` pins
+ * its THUMB at `max` while the label reads the stored number: the founder saw
+ * "Radius: 35 miles" with the thumb stuck at 30. So the ceiling follows the
+ * caller's STORED radius when that radius is above the default ceiling — the
+ * control can always represent the value it reports.
+ *
+ * TWO RADIUS MAXIMA EXIST ON PURPOSE, and they are different jobs:
+ * `RADIUS_MAX_MILES` (35) is the DB/data ceiling — nothing may be stored above
+ * it; `RADIUS_SLIDER_CEILING_MILES` (30) is this one control's default reach,
+ * the range /browse offers everyone. Do not collapse them.
+ */
+export const RADIUS_SLIDER_CEILING_MILES = 30
+
+/**
+ * The slider's `max` for a given stored radius: never below this control's own
+ * ceiling, and never below the radius the label is reporting. The build law puts
+ * this in `lib/` rather than as an inlined `Math.max` in the `.tsx`, where it
+ * would be a conditional in a render.
+ */
+export function radiusSliderCeiling(storedRadiusMiles: number): number {
+  return Math.max(RADIUS_SLIDER_CEILING_MILES, storedRadiusMiles)
+}
 
 /**
  * The haversine distance in miles between two lat/lng points (plain math,
@@ -2312,7 +2349,7 @@ export function distanceChoiceFromValue(value: string): DistanceChoice {
  * the first one."): the list is not "today" (it is whatever has not ended
  * yet — V9 ticket 04 moved the feed's cutoff from start-of-today to now, and
  * `filterFeed` drops only ENDED posts either way), and it named no radius —
- * so a parent on the 5-mile default had no idea that 35 was even possible. N
+ * so a parent on the default radius had no idea that 35 was even possible. N
  * is the VIEWER's actual radius: the number the filter just used, which is
  * the only honest one to quote.
  *
@@ -2474,8 +2511,8 @@ export function emptyRadiusBeyondCopy(count: number): string | null {
 
 /**
  * The escape hatches an empty-radius state offers (V8 ticket 02, pure +
- * unit-tested; V11 ticket 01 added the narrow escape): "Back to 5 miles"
- * (only when the current radius is wider than the 5-mile default),
+ * unit-tested; V11 ticket 01 added the narrow escape): "Back to 1 mile"
+ * (only when the current radius is wider than the 1-mile default),
  * "Widen to 20 miles", and "See everything in Seattle" (35 mi, the max).
  *
  * All three call the EXISTING `updateHomeZipRadius` write path — this seam
@@ -2484,13 +2521,13 @@ export function emptyRadiusBeyondCopy(count: number): string | null {
  * A candidate equal to the viewer's current radius is dropped: at 20 miles,
  * "Widen to 20 miles" would be a no-op button, which is just a second dead
  * end wearing a control's clothes. The narrow escape is its mirror: it is
- * offered only strictly BETWEEN the default and the max (at 5 you are already
+ * offered only strictly BETWEEN the default and the max (at 1 you are already
  * there; at the 35-mile max the list is empty and the empty state is honestly
  * terminal — the radius ceiling is the whole discovery surface, and
  * narrowing can never surface what 35 already did not). The "Post a
  * drop-in" CTA remains either way.
  *
- * The list returns ascending (5, 20, 35) so narrow-first reads naturally.
+ * The list returns ascending (1, 20, 35) so narrow-first reads naturally.
  */
 export function radiusEscapes(radiusMiles: number): RadiusEscape[] {
   const escapes: RadiusEscape[] = []
@@ -2525,7 +2562,7 @@ export interface RadiusChoice {
  * for a surface that is ALWAYS on screen:
  *
  * - every radius in `RADIUS_MILES_OPTIONS`, ascending — so the 35-mile ceiling
- *   is one tap from the 5-mile default (the founder's actual ask: "widen"),
+ *   is one tap from the default radius (the founder's actual ask: "widen"),
  *   and every narrower option is one tap the other way;
  * - plus the viewer's own CURRENT radius when it is not already on that list,
  *   inserted in order. A `<select>` whose `value` matches no `<option>` renders

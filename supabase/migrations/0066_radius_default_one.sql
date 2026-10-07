@@ -1,0 +1,46 @@
+-- ===========================================================================
+-- V32 v32-3 (migration 0066, annotation A3): the radius default drops 5 → 1.
+-- ===========================================================================
+--
+-- What this does: ONE thing — it moves the `profiles.radius_miles` column
+-- DEFAULT from 5 to 1. No column is added or dropped, no existing row's data is
+-- touched, no constraint is re-validated, no policy changes. This is a
+-- LIVE-DATABASE migration (the project it applies to holds real family data), so
+-- it is strictly additive and re-paste-safe.
+--
+-- Why: the founder's ask (V32, annotation A3, founder decision Q3) — a brand-new
+-- parent should start close in, not at 5 miles. `createProfile`
+-- (src/lib/db.ts:550-570) inserts only `id` and `display_name` (plus an optional
+-- `avatar_url`) and deliberately omits `radius_miles`, so THIS column default is
+-- what every brand-new parent actually gets.
+--
+-- THE AGREEMENT THIS FILE MUST KEEP. Two bounds pairs exist and both must agree
+-- with the code:
+--   * this DEFAULT (1) must agree with `DEFAULT_RADIUS_MILES` in
+--     `src/lib/feed.ts` — the app's fallback when a profile row stores nothing.
+--     If the two disagree, a fresh row and a missing row mean different things.
+--   * the CHECK `profiles_radius_miles_chk` (1–35, migration 0045:65) must agree
+--     with `RADIUS_MIN_MILES` / `RADIUS_MAX_MILES` (`src/lib/feed.ts`).
+-- THIS MIGRATION DOES NOT TOUCH THE CHECK. 1 is already legal inside 1–35, so
+-- there is no constraint change, no re-validation, and no table scan under a
+-- share lock — an `alter column … set default` rewrites no rows.
+--
+-- ⚠️ THE HONEST CAVEAT: THE 35 THE FOUNDER SAW IS HIS OWN STORED ROW.
+-- `profiles.radius_miles` is 35 for him, and `/` reads
+-- `profile.radius_miles ?? DEFAULT_RADIUS_MILES` (src/pages/FeedPage.tsx:1334) —
+-- the stored value wins, so a default change is NOT retroactive and **his screen
+-- does not change.** "The default is now 1" and "the founder sees 1" are
+-- different claims; only the first is true. If he later wants his own row at 1,
+-- that is one `update`, not a slice.
+--
+-- NO DATA-LOSS EXCEPTION IS NEEDED (rule.json's data-loss rule): nothing is
+-- dropped, renamed, or rewritten — `set default` affects only rows inserted
+-- AFTER this statement.
+--
+-- An `alter column … set default` is inherently re-runnable and converges: the
+-- second application sets the same value. There is deliberately no `do $$` guard,
+-- because a guard is one more thing that can itself drift from the statement it
+-- wraps.
+-- ===========================================================================
+
+alter table public.profiles alter column radius_miles set default 1;

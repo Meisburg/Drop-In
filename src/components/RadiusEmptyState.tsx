@@ -18,13 +18,13 @@ import { LocationRequiredNotice } from './LocationRequiredNotice'
  *   far end either — the day sections render Tomorrow and beyond), so "today"
  *   was simply false — and the empty state was the one place a brand-new
  *   parent could not check it.
- * - It offered one action, a post. On the 5-mile default (`feed.ts`) that is
- *   the ceiling on everything else: with no posts inside 5 miles there is no
+ * - It offered one action, a post. On the default radius (`feed.ts`) that is
+ *   the ceiling on everything else: with no posts inside it there is no
  *   way to discover that 35 is possible, so the first visit ends.
  *
  * So: the honest count ("Nothing within N miles yet." — N is the radius the
- * filter just used) plus the escapes (`radiusEscapes`: back to 5, widen to 20,
- * or see everything at 35) plus the post CTA, which stays.
+ * filter just used) plus the escapes (`radiusEscapes`: back to the default,
+ * widen to 20, or see everything at 35) plus the post CTA, which stays.
  *
  * The escapes are ALWAYS rendered when they would actually change anything:
  * visibility is not conditional on the escape finding content, so an escape

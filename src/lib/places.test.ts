@@ -1717,10 +1717,20 @@ describe('MAP_FOCUS_RADIUS_MILES (V19 t01 — D1: the map frames the neighbourho
     expect(MAP_FOCUS_RADIUS_MILES).toBe(1)
   })
 
-  it('is strictly tighter than the DEFAULT radius, so the map opens nearer than the list', () => {
-    // The founder's own stored radius is 35 and the default is 5; the map must
-    // frame tighter than both. This is the whole observable change.
-    expect(MAP_FOCUS_RADIUS_MILES).toBeLessThan(DEFAULT_RADIUS_MILES)
+  it('is never wider than the default the list opens at', () => {
+    // V32 v32-3: this assertion was STRICTLY less-than, and that is now wrong.
+    // The old rule was "the map opens nearer than the list's default", which
+    // held while the default was 5. The default is now 1 — the same value as
+    // MAP_FOCUS_RADIUS_MILES — so a strict inequality is structurally
+    // unsatisfiable: there is no radius below the floor for the frame to sit at.
+    // Nothing about the map changed; the default moved to meet it.
+    //
+    // The surviving half of the rule is the NEXT test ("is never wider than any
+    // radius the user can PICK"), which is the real protection and is untouched:
+    // the frame must never be wider than a radius a parent could choose. That is
+    // what "always frames near home" means; "strictly finer than the default"
+    // was only ever one way to observe it.
+    expect(MAP_FOCUS_RADIUS_MILES).toBeLessThanOrEqual(DEFAULT_RADIUS_MILES)
   })
 
   it('is never wider than any radius the user can PICK for the list', () => {

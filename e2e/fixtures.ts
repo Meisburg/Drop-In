@@ -39,7 +39,7 @@ import {
 // The stepper's own pure math — imported so a spec's expectation is the same
 // rule the form applies, never a copy of it (feed.ts is pure: its only
 // imports are `import type`, erased at runtime).
-import { TIME_STEP_MINUTES, formatTimeLabel, stepTimeMinutes } from '../src/lib/feed'
+import { DEFAULT_RADIUS_MILES, TIME_STEP_MINUTES, formatTimeLabel, milesWord, stepTimeMinutes } from '../src/lib/feed'
 
 const CWD = process.cwd()
 
@@ -965,19 +965,21 @@ export async function finishSignup(
   // returned + this radius and renders the ending card).
   //
   // The radius only matters to specs that assert on distance; anything else
-  // takes the app's own default (5 mi) rather than restating it. The select's
-  // options are LABELS ("20 miles"), so the option may be given as one of
-  // those labels verbatim or as a number of miles; V28 slice 4a widens the
-  // type to `number | string` because zip-radius.e2e.ts has always passed
-  // the full label ('20 miles') and the number-form would have produced
-  // "20 miles miles" (a latent defect predating V28, surfaced when 4a ran
-  // the spec for the first time).
+  // takes the app's own default rather than restating it — V32 v32-3 moved the
+  // default to 1 mile, so this reads the CONSTANT (and `milesWord`, which exists
+  // for exactly the singular case) instead of a literal that would have
+  // silently kept signing parents up at 5. The select's options are LABELS
+  // ("20 miles"), so the option may be given as one of those labels verbatim or
+  // as a number of miles; V28 slice 4a widens the type to `number | string`
+  // because zip-radius.e2e.ts has always passed the full label ('20 miles') and
+  // the number-form would have produced "20 miles miles" (a latent defect
+  // predating V28, surfaced when 4a ran the spec for the first time).
   const radiusLabel =
     options.radiusMiles === undefined
-      ? '5 miles'
+      ? `${DEFAULT_RADIUS_MILES} ${milesWord(DEFAULT_RADIUS_MILES)}`
       : typeof options.radiusMiles === 'string'
         ? options.radiusMiles
-        : `${options.radiusMiles} miles`
+        : `${options.radiusMiles} ${milesWord(options.radiusMiles)}`
   await page
     .locator('select')
     .first()

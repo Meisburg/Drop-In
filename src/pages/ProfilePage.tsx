@@ -9,6 +9,7 @@ import { useCropStep } from '../components/useCropStep'
 import { FamilyPhotoBlock } from '../components/ImageLightbox'
 import { ProfileView } from '../components/ProfileView'
 import { hasAvatarUrl } from '../lib/avatarUrl'
+import { DEFAULT_RADIUS_MILES } from '../lib/feed'
 import { galleryPhotosFrom } from '../lib/photoGallery'
 import {
   addKid,
@@ -228,7 +229,11 @@ export function ProfilePage() {
   // seed-once guard is what keeps a refresh() from erasing an edit).
   useEffect(() => {
     if (draft !== null || profile === null) return
-    const seeded = seedProfileFormValues(profile, 5)
+    // V32 v32-3: the fallback is the CONSTANT, not a second `5` literal. A
+    // literal here was a second source of truth for the product default and
+    // would have silently disagreed with `DEFAULT_RADIUS_MILES` the moment the
+    // default moved.
+    const seeded = seedProfileFormValues(profile, DEFAULT_RADIUS_MILES)
     setDraft(seeded)
     setBaseline(seeded)
   }, [draft, profile])

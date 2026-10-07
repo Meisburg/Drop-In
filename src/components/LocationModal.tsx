@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFocusTrap } from './FocusTrap'
-import { milesWord } from '../lib/feed'
+import { milesWord, radiusSliderCeiling } from '../lib/feed'
 import { ADDRESS_LOOKUP_TIMEOUT_MS, addressFromCoordsBounded } from '../lib/geocode'
 import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
 import { deviceLocationNotes } from '../lib/locationCopy'
@@ -33,12 +33,20 @@ import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
  *   - Escape closes (backdrop tap already did);
  *   - the pinned prop set below — no other props.
  *
- * THE SLIDER RANGE IS 1–30, deliberately NOT the feed's 1–35 bounds: the
- * Places spec (`e2e/places.e2e.ts`) pins the slider's range as 1–30 ("THE
- * SLIDER'S RANGE IS 1–30"), and this component must not change PlaceDirectory's
- * behavior. The feed's radius ladder still reaches 35 through its own choices
- * (the "See everything in Seattle" option); the slider is a coarse dial, not
- * the ceiling. Documented decision, not an oversight.
+ * THE SLIDER RANGE IS 1–30 BY DEFAULT, deliberately NOT the feed's 1–35 bounds:
+ * the Places spec (`e2e/places.e2e.ts`) checks the slider's own range, and this
+ * component must not change PlaceDirectory's offered range for everyone. The
+ * feed's radius ladder still reaches 35 through its own choices (the "See
+ * everything in Seattle" option); the slider is a coarse dial, not the ceiling.
+ * Documented decision, not an oversight.
+ *
+ * A3b (V32 v32-3): the ceiling is that default UNLESS the caller's STORED radius
+ * is already above it, in which case it widens just enough to hold that value
+ * (`radiusSliderCeiling`, src/lib/feed.ts). A `<input type=range>` whose `value`
+ * exceeds its `max` pins its THUMB at `max` while the label keeps reporting the
+ * stored number — the founder saw "Radius: 35 miles" with the thumb stuck at 30.
+ * The places spec no longer pins the max literally; it reads the slider's own
+ * max (`e2e/places.e2e.ts:2591-2595`). The `min` floor stays 1.
  */
 export function LocationModal({
   open,
@@ -407,7 +415,7 @@ export function LocationModal({
             type="range"
             data-testid="location-radius-slider"
             min={1}
-            max={30}
+            max={radiusSliderCeiling(radiusMiles)}
             step={1}
             value={radius}
             onChange={(e) => {
