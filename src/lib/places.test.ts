@@ -38,6 +38,7 @@ import {
   placeOutboundLinks,
   coffeeNearbyEmptyCopy,
   coffeeNearbyGapReason,
+  normalizePlaceQuery,
   photoCreditLine,
   placePhotoForDropIn,
   radiusPreviewCircle,
@@ -123,7 +124,46 @@ describe('matchPlaces (case-insensitive; prefixes rank above substrings; no fuzz
   const greenLakeEast = place({ name: 'Green Lake Park (East)', address: '7201 E Green Lake Drive N' })
   const lakeCity = place({ name: 'Lake City Community Center', address: '12531 28th Ave NE' })
   const alki = place({ name: 'Alki Playground', address: '5817 SW Lander St' })
-  const directory = [greenLakePark, greenLakeEast, lakeCity, alki]
+  // V33-1: the five "Green Lake" rows the founder was trying to reach (the live
+  // directory carries Green Lake ×5 including variants), and a punctuation row
+  // for the apostrophe case.
+  const greenLakeWest = place({ name: 'Green Lake Park (West)', address: '7312 W Green Lake Drive N' })
+  const greenLakeWading = place({ name: 'Green Lake Park Wading Pool', address: '7201 East Green Lake Dr N' })
+  const greenLakeCommunity = place({
+    name: 'Green Lake Community Center',
+    address: '7201 E Green Lake Dr N',
+  })
+  const greenwood = place({ name: 'Greenwood Park', address: '602 N 87th St' })
+  const mcdonalds = place({ name: "McDonald's", address: '123 Main St' })
+  // THE FIVE the live directory actually carries (measured: `name ilike 'green%'`
+  // returns these five plus Greenwood Park), so the fixture mirrors the real set
+  // the founder was searching.
+  const greenLakeRows = [
+    greenLakePark,
+    greenLakeEast,
+    greenLakeWest,
+    greenLakeWading,
+    greenLakeCommunity,
+  ]
+  const directory = [
+    greenLakePark,
+    greenLakeEast,
+    greenLakeWest,
+    greenLakeWading,
+    greenLakeCommunity,
+    greenwood,
+    lakeCity,
+    alki,
+    mcdonalds,
+  ]
+
+  it('finds "Green Lake Park" when the parent types `greenlake` with no space (the founder, 11:19)', () => {
+    // THE DEFECT, first: this is the assertion that FAILED before the fix. The
+    // founder typed exactly `greenlake` and got nothing back, because no word in
+    // "Green Lake Park" starts with `greenlake` and the stored name has a space.
+    const names = matchPlaces('greenlake', directory, 10).map((p) => p.name)
+    expect(names).toContain('Green Lake Park')
+  })
 
   it('is case-insensitive', () => {
     expect(matchPlaces('GREEN LAKE', directory, 10).map((p) => p.name)).toContain('Green Lake Park')
@@ -191,6 +231,105 @@ describe('matchPlaces (case-insensitive; prefixes rank above substrings; no fuzz
 
   it('names the free-text escape row "Somewhere else"', () => {
     expect(SOMEWHERE_ELSE_LABEL).toBe('Somewhere else')
+  })
+
+  // ---- V33-1 acceptance: the fold ----------------------------------------
+
+  it('returns ALL FIVE Green Lake rows for `greenlake` — the five places he could not find', () => {
+    // The founder's own query. Before the fold this returned NOTHING, because no
+    // word in "Green Lake Park" starts with `greenlake` and the stored name has a
+    // space.
+    const names = matchPlaces('greenlake', directory, 10).map((p) => p.name)
+    for (const row of greenLakeRows) {
+      expect(names, `greenlake must find "${row.name}"`).toContain(row.name)
+    }
+    // A name that merely shares a prefix must NOT be dragged in by the fold.
+    expect(names).not.toContain('Greenwood Park')
+  })
+
+  it('orders the five Green Lake rows by the PINNED tie-break — name then id, NOT a special case', () => {
+    // ⚠️ A CONTRADICTION IN THE ACCEPTANCE CRITERIA, REPORTED RATHER THAN CODED
+    // AROUND. v33-1's criterion 1 says `greenlake` must rank "Green Lake Park"
+    // FIRST. The plan ALSO pins that "the tie-break stays name then id". Both
+    // cannot hold, and the measurement says which one the data decides:
+    //
+    //   All FIVE rows are rank 0 — every folded name starts with `greenlake`
+    //   (`greenlakecommunitycenter`, `greenlakepark`, …) — so the rank does not
+    //   separate them and the named tie-break does. Alphabetically,
+    //   "Green Lake Community Center" precedes "Green Lake Park".
+    //
+    // The plan's acceptance criteria win over the brief, and it requires the
+    // tie-break NOT to move, so the order asserted here is the pinned one. Making
+    // "Green Lake Park" lead would need a special case (shortest name wins, or a
+    // curated priority), which is a ranking change this slice has no mandate for
+    // and which would reshuffle other queries.
+    expect(matchPlaces('greenlake', directory, 10).map((p) => p.name)).toEqual([
+      'Green Lake Community Center',
+      'Green Lake Park',
+      'Green Lake Park (East)',
+      'Green Lake Park (West)',
+      'Green Lake Park Wading Pool',
+    ])
+    // The point of the slice stands regardless: the plain row is IN the result,
+    // second, where before the fold it was absent entirely.
+    expect(matchPlaces('greenlake', directory, 10).map((p) => p.name)).toContain('Green Lake Park')
+  })
+
+  it('finds "McDonald\'s" from BOTH `mcdonalds` and `mcdonald\'s` (the apostrophe is not typed)', () => {
+    // The same defect class: a person types the letters, not the punctuation.
+    expect(matchPlaces('mcdonalds', directory, 10).map((p) => p.name)).toContain("McDonald's")
+    expect(matchPlaces("mcdonald's", directory, 10).map((p) => p.name)).toContain("McDonald's")
+    // …and the typographic apostrophe a phone keyboard produces folds the same.
+    expect(matchPlaces('mcdonald\u2019s', directory, 10).map((p) => p.name)).toContain("McDonald's")
+  })
+
+  it('keeps the ORDER for a query that already worked (`green lake`) — the contract did not move', () => {
+    // Widening a matcher is exactly what could reshuffle a list that was already
+    // right, so the ordering is asserted rather than the membership.
+    expect(matchPlaces('green lake', directory, 10).map((p) => p.name)).toEqual([
+      'Green Lake Community Center',
+      'Green Lake Park',
+      'Green Lake Park (East)',
+      'Green Lake Park (West)',
+      'Green Lake Park Wading Pool',
+    ])
+    // The same rows, in the same order, as the folded query produces.
+    expect(matchPlaces('greenlake', directory, 10).map((p) => p.name)).toEqual(
+      matchPlaces('green lake', directory, 10).map((p) => p.name),
+    )
+  })
+
+  it('still finds Alki Playground by street address, and still ranks it as an ADDRESS match', () => {
+    expect(matchPlaces('5817 SW Lander', directory, 10).map((p) => p.name)).toEqual(['Alki Playground'])
+    // Address-only means LAST: a name match on the same query must beat it.
+    const withNameHit = [...directory, place({ name: 'Lander Park', address: '999 Elsewhere Ave' })]
+    const names = matchPlaces('5817 SW Lander', withNameHit, 10).map((p) => p.name)
+    expect(names).toEqual(['Alki Playground'])
+    const byWord = matchPlaces('lander', withNameHit, 10).map((p) => p.name)
+    expect(byWord[0], 'the NAME match leads the address-only match').toBe('Lander Park')
+    expect(byWord[byWord.length - 1]).toBe('Alki Playground')
+  })
+
+  it('a query that folds to NOTHING matches NOTHING — it is not a match-all', () => {
+    // ⚠️ THE NEW RULE THE FOLD MADE NECESSARY. `"---"`, `"'"` and `"  .  "` all
+    // fold to '', and `startsWith('')` is true for every string — so without this
+    // guard the matcher would return the whole directory (capped at `limit`),
+    // which is a different feature wearing this one's name.
+    for (const query of ['---', "'", '  .  ', '&', '...', ' , - ']) {
+      expect(matchPlaces(query, directory, 10), `"${query}" must match nothing`).toEqual([])
+      expect(matchPlaces(query, directory, 100), `"${query}" must not match by a blank address`).toEqual([])
+    }
+  })
+
+  it('the normalizer is exported and folds the documented set', () => {
+    expect(normalizePlaceQuery('Green Lake Park')).toBe('greenlakepark')
+    expect(normalizePlaceQuery("McDonald's")).toBe('mcdonalds')
+    expect(normalizePlaceQuery('McDonald\u2019s')).toBe('mcdonalds')
+    expect(normalizePlaceQuery('  A  B  ')).toBe('ab')
+    expect(normalizePlaceQuery('Bed & Bath')).toBe('bedbath')
+    expect(normalizePlaceQuery('---')).toBe('')
+    // NO synonym layer: `&` is stripped, not folded to "and".
+    expect(normalizePlaceQuery('bed & bath')).not.toBe(normalizePlaceQuery('bed and bath'))
   })
 })
 

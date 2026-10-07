@@ -752,32 +752,97 @@ export function resolvePlaceByName(
 }
 
 /**
- * The /new (and /browse) place matcher — case-insensitive, prefix matches
- * rank above substring matches, NO fuzzy library (pinned).
+ * V33-1 (muyfmog8) — THE ONE FOLD, applied to BOTH sides of every comparison.
  *
- * Ranks, in order: 0 = the NAME starts with the query; 1 = a WORD in the name
- * starts with it ("lake" finds "Green Lake Park"); 2 = the name contains it
- * anywhere; 3 = only the ADDRESS contains it (so a parent who types a street
- * still finds the playground on it). Ties break alphabetically by name, then
- * by id, so the order is STABLE — the same query over the same rows never
- * reshuffles between renders.
+ * WHY IT EXISTS, in the founder's own action: he typed **`greenlake`** into the
+ * /browse search at 11:19 and got nothing, because the matcher was a word-prefix
+ * comparison over the RAW lowercase string — no word in "Green Lake Park" starts
+ * with `greenlake`, and the stored name contains a space. Five places he was
+ * trying to find returned nothing. The same class covers `mcdonalds` vs
+ * "McDonald's".
  *
- * An empty or whitespace-only query matches NOTHING (returns []): "nothing is
- * typed, nothing is matched" is the caller's decision to render, and a matcher
- * that silently returned the whole directory capped at `limit` would be a
- * different feature wearing this one's name. A non-positive `limit` returns [].
+ * So the query and every candidate name/address are folded through THIS function
+ * before they are compared, and the fold is deliberately one-way: it removes
+ * everything a person might not type.
+ *
+ *   1. lowercase;
+ *   2. fold the typographic apostrophe `’` (U+2019) to `'`;
+ *   3. strip apostrophes and the separators `.` `,` `-` `'` `&`;
+ *   4. collapse every remaining run of NON-ALPHANUMERIC characters to nothing.
+ *
+ * Step 4 is what makes the fold total: `"McDonald's"` and `mcdonalds` share the
+ * key `mcdonalds`, and `"Green Lake Park"` and `greenlake` share `greenlakepark`,
+ * which is what lets one `startsWith` answer both.
+ *
+ * ⚠️ WHAT IT DELIBERATELY DOES NOT DO. There is NO synonym layer: an `&` is
+ * stripped, not folded to "and", so `"bed & bath"` and `"bed and bath"` are
+ * different keys. Inventing that equivalence is a product decision nobody asked
+ * for, and it is not fuzzy matching either — this is a deterministic fold, not a
+ * distance metric. NO fuzzy library (pinned).
+ *
+ * ⚠️ A QUERY CAN FOLD TO NOTHING. `"---"`, `"'"` and `"  .  "` all fold to `''`,
+ * and `matchPlaces` must then match NOTHING — a folded-empty needle would
+ * otherwise `startsWith('')` every name and address-contains every row, i.e. the
+ * matcher would silently return the whole directory. That rule is asserted.
+ */
+export function normalizePlaceQuery(value: string): string {
+  return value
+    .toLowerCase()
+    // 2. the typographic apostrophe a phone keyboard produces
+    .replace(/\u2019/g, "'")
+    // 3-4. apostrophes and separators, then any remaining non-alphanumeric run.
+    // `\p{L}\p{N}` keeps letters and digits from EVERY script, so an accented
+    // or non-Latin name is folded rather than erased.
+    .replace(/[',.&-]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+/**
+ * The /new (and /browse) place matcher — case- and PUNCTUATION-insensitive,
+ * prefix matches rank above substring matches, NO fuzzy library (pinned).
+ *
+ * BOTH SIDES ARE FOLDED through `normalizePlaceQuery` before comparing, so a
+ * parent can type `greenlake` for "Green Lake Park" or `mcdonalds` for
+ * "McDonald's" — see that function for what the fold removes and what it
+ * deliberately does not.
+ *
+ * Ranks, in order, over the FOLDED keys: 0 = the NAME starts with the query;
+ * 1 = a WORD in the name starts with it ("lake" finds "Green Lake Park");
+ * 2 = the name contains it anywhere; 3 = only the ADDRESS contains it (so a
+ * parent who types a street still finds the playground on it). The rank ORDER is
+ * unchanged from before the fold — an exact prefix still beats a word prefix —
+ * and ties break alphabetically by name, then by id, so the order is STABLE: the
+ * same query over the same rows never reshuffles between renders.
+ *
+ * An empty or whitespace-only query matches NOTHING (returns []), and so does a
+ * query that folds to NOTHING (`"---"`, `"'"`). "Nothing is typed, nothing is
+ * matched" is the caller's decision to render, and a matcher that silently
+ * returned the whole directory capped at `limit` would be a different feature
+ * wearing this one's name. That second rule matters MORE after the fold, not
+ * less: without it, `startsWith('')` would match every row. A non-positive
+ * `limit` returns [].
  */
 export function matchPlaces(query: string, places: readonly Place[], limit: number): Place[] {
-  const needle = query.trim().toLowerCase()
+  const needle = normalizePlaceQuery(query)
   if (needle === '' || limit <= 0) return []
   const scored: Array<{ rank: number; place: Place }> = []
   for (const place of places) {
-    const name = place.name.toLowerCase()
-    const address = (place.address ?? '').toLowerCase()
+    const name = normalizePlaceQuery(place.name)
+    const address = normalizePlaceQuery(place.address ?? '')
+    // ⚠️ THE WORDS ARE FOLDED SEPARATELY, from the UNFOLDED name. Folding the
+    // whole name first erases its spaces, so `foldedName.split(/\s+/)` would be a
+    // single token and rank 1 could only ever fire where rank 0 already had —
+    // silently collapsing two tiers of the contract into one. Splitting the
+    // ORIGINAL name and folding each word keeps rank 1 meaning what its name
+    // says: a word in the middle of a name that the whole string does not start
+    // with. (Measured both ways: with the whole-name split, `lake` still ranked
+    // Lake City first and Green Lake Park second — the same output — so this is
+    // about keeping the tier real rather than about changing a result.)
+    const foldedWords = place.name.split(/\s+/).map(normalizePlaceQuery).filter((w) => w !== '')
     let rank: number
     if (name.startsWith(needle)) {
       rank = 0
-    } else if (name.split(/\s+/).some((word) => word.startsWith(needle))) {
+    } else if (foldedWords.some((word) => word.startsWith(needle))) {
       rank = 1
     } else if (name.includes(needle)) {
       rank = 2
