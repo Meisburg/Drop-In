@@ -1088,11 +1088,41 @@ export function radiusPreviewCircle(input: {
  * took the illustration branch. Those two conditions are pinned together by a
  * unit test rather than by hope.
  */
-export function photoCreditLine(place: Place): string | null {
+export function photoCreditLine(
+  place: Pick<Place, 'photo_url' | 'photo_attribution'>,
+): string | null {
   const hasPhoto = hasPlacePhoto(place)
   if (!hasPhoto) return null
   const credit = (place.photo_attribution ?? '').trim()
   return credit === '' ? null : credit
+}
+
+/**
+ * V32 v32-4 (A7/A9): what a drop-in's place photo slot should show — the ONE
+ * decision all three surfaces (feed card, signed-in detail, signed-out public
+ * detail) take, so they cannot disagree.
+ *
+ * The moderation boundary is `placePhotoVisibleTo(..., 'parent')`: an
+ * `unreviewed` photo must NEVER reach a parent, and the slot then falls back to
+ * the per-kind illustration. A row with no photo at all — or no place — also
+ * takes the illustration, never a grey frame and never a broken image.
+ *
+ * Returns `null` when the ILLUSTRATION should render. The url and the credit
+ * come back together on purpose: a caller cannot show the picture and forget
+ * the credit, nor show a credit on a slot that took the illustration.
+ *
+ * Typed against the same `Pick` its two neighbours use, so a `place_ref` embed
+ * row (which is NOT a full `Place`) and a full `Place` both satisfy it.
+ */
+export function placePhotoForDropIn(
+  place:
+    | Pick<Place, 'photo_url' | 'photo_attribution' | 'photo_review_state'>
+    | null
+    | undefined,
+): { url: string; credit: string | null } | null {
+  if (place === null || place === undefined) return null
+  if (!placePhotoVisibleTo(place, 'parent')) return null
+  return { url: place.photo_url ?? '', credit: photoCreditLine(place) }
 }
 
 /**

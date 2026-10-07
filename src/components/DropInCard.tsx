@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { PhotoButton } from './ImageLightbox'
+import { PlaceKindArt } from './PlaceKindArt'
 import { WeatherChip } from './WeatherChip'
 // V9 ticket 01 (review cycle 1, F3): `formatTimeWindow` used to live at the
 // bottom of this file. It moved to feed.ts so e2e/post-location can assert the
@@ -20,7 +21,7 @@ import {
 } from '../lib/feed'
 // V27 slice 3: the place-trust line ("Playground · Outdoor") — the card only
 // renders the pure seam's decision.
-import { placeTrustLine } from '../lib/places'
+import { placePhotoForDropIn, placeTrustLine } from '../lib/places'
 import { weeklyMetaSuffix } from '../lib/series'
 import type { DailyForecast } from '../lib/weather'
 import type { PlaydateHost, PlaydateWithNeighborhood } from '../lib/types'
@@ -334,6 +335,10 @@ export function DropInCard({
     kidsGoingCount,
     kidsGoingAgeBand,
   )
+  // V32 v32-4 (A7/A9): the banner keyed by the url that failed. A url change
+  // must clear the failure, or a card that once failed would keep its
+  // illustration after the row gained a new photo (the PlaceDirectory rule).
+  const [photoFailedUrl, setPhotoFailedUrl] = useState<string | null>(null)
   const cardClasses = [
     // V22 slice 9: the feed's list column widens to max-w-3xl (768px) at md+,
     // but a single-card column reads best at the phone measure — so cards cap
@@ -368,6 +373,11 @@ export function DropInCard({
   // place (the ordinary typed-address post) or a degraded embed — and the card
   // then renders no trust line at all.
   const placeTrustLabel = placeTrustLine(playdate.place_ref)
+  // V32 v32-4 (A7/A9): the place PHOTO, decided by the one shared seam. The
+  // banner renders the picture when the rule hands one back and the illustration
+  // otherwise; the `placeKind` fallback below is what the illustration draws.
+  const dropInPhoto = placePhotoForDropIn(playdate.place_ref)
+  const placeKind = playdate.place_ref?.kind ?? 'other'
   return (
     <div data-testid="dropin-card" className={cardClasses}>
       {/* The card body: still ONE anchor, so the whole-card tap target, the
@@ -377,6 +387,52 @@ export function DropInCard({
           `data-testid="dropin-card"`: the specs need to address the CARD, not
           the anchor, now that the box holds two of them. */}
       <Link to={`/playdate/${playdate.id}`} className="block p-4">
+      {/* V32 v32-4 (A7/A9): THE PLACE PHOTO LEADS. The founder: *"a drop-in
+          should show the place's photo above its heading"* — the picture is what
+          decides whether a parent wants to go, so it comes before the title on
+          every drop-in surface, and all three take the SAME decision from
+          `placePhotoForDropIn` (lib/places) so they cannot disagree.
+
+          FULL-BLEED: the body anchor carries `p-4`, so the banner cancels it
+          (`-mx-4 -mt-4`) — a photo inset from the card's own edge reads as a
+          framed thumbnail, not a banner. It clips ITSELF with `rounded-t-xl`
+          because the card box deliberately does NOT clip (`overflow-hidden`
+          would eat focus rings, the box's own note below); the address row
+          mirrors this at the bottom with `rounded-b-xl`.
+
+          `aspect-[2/1]`, never `h-36`: the stored photos are 1400×700, and
+          PlacePage.tsx records why that ratio is the contract. `alt=""` because
+          the place name is already the adjacent text — a filled alt would say
+          the same thing twice to a screen reader. The `onError` falls back to
+          the per-kind illustration, keyed by the failed url so a later good url
+          still renders (the PlaceDirectory pattern). */}
+      <div className="-mx-4 -mt-4 mb-4 overflow-hidden rounded-t-xl">
+        {dropInPhoto !== null && photoFailedUrl !== dropInPhoto.url ? (
+          <div className="relative">
+            <img
+              data-testid="dropin-card-photo"
+              src={dropInPhoto.url}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setPhotoFailedUrl(dropInPhoto.url)}
+              className="aspect-[2/1] w-full object-cover"
+            />
+            {/* The Commons attribution travels with the card that shows the
+                image, not only with the place page — a photo shown without its
+                licence line is a compliance failure. */}
+            {dropInPhoto.credit !== null ? (
+              <span className="absolute bottom-1 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90">
+                {dropInPhoto.credit}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <div className="aspect-[2/1] w-full bg-slate-100">
+            <PlaceKindArt kind={placeKind} />
+          </div>
+        )}
+      </div>
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 className="text-base font-semibold text-slate-900">{playdate.title}</h3>

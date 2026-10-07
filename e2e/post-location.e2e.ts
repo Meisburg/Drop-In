@@ -77,8 +77,14 @@ const DETAILS_PLACEHOLDER =
   'Anything parents should know — what to bring, parking, weather plan…'
 
 /** A real seeded playground (0029's seed), with the street the city publishes. */
-const PLACE_NAME = 'Green Lake Park'
-const PLACE_ADDRESS = '7201 East Green Lake Dr N'
+// V32 v32-4: this is deliberately the place with the WIKIMEDIA-hosted photo and
+// a real credit, not the sibling "Green Lake Park" row. That sibling's photo_url
+// points at seattle.gov, which Chrome refuses with `net::ERR_BLOCKED_BY_ORB` —
+// the banner then correctly falls back to the illustration, so a photo
+// assertion against it could never pass. Naming a loadable row is what makes the
+// banner assertions below REAL rather than an assertion that the fallback works.
+const PLACE_NAME = 'Green Lake Park (West)'
+const PLACE_ADDRESS = '7312 W Green Lake Drive N'
 
 /** The exact 400 body's shape, pre-0035 (asserted only through its message). */
 const NOT_NULL_HINT = 'violates not-null constraint'
@@ -138,6 +144,36 @@ async function readMarkerPost(title: string): Promise<MarkerRow | null> {
   const res = await fetch(query, { headers: markerHeaders() })
   const rows = res.ok ? ((await res.json()) as MarkerRow[]) : []
   return rows[0] ?? null
+}
+
+/**
+ * V32 v32-4: the picked place's photo columns, read from the anon-readable
+ * `places` table (the same table and policy the app itself reads for the public
+ * surface). The spec asserts the RENDERED src against this read rather than
+ * against a hard-coded Commons URL: a URL that changes upstream must not turn
+ * this spec red, and a hard-coded one would silently stop proving anything if
+ * the row were re-imported.
+ */
+async function readPlacePhoto(placeId: string): Promise<{ photo_url: string | null } | null> {
+  const { url, anonKey } = readSupabaseEnv()
+  const res = await fetch(
+    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_url`,
+    { headers: { apikey: anonKey } },
+  )
+  const rows = res.ok ? ((await res.json()) as Array<{ photo_url: string | null }>) : []
+  return rows[0] ?? null
+}
+
+/** V32 v32-4: the same row's attribution, so the credit overlay is asserted
+ * against the stored value rather than a hard-coded licence string. */
+async function readPlaceCredit(placeId: string): Promise<string | null> {
+  const { url, anonKey } = readSupabaseEnv()
+  const res = await fetch(
+    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_attribution`,
+    { headers: { apikey: anonKey } },
+  )
+  const rows = res.ok ? ((await res.json()) as Array<{ photo_attribution: string | null }>) : []
+  return rows[0]?.photo_attribution ?? null
 }
 
 /**
@@ -396,6 +432,55 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   await expect(card.getByTestId('card-place-trust')).toBeVisible()
   await expect(card.getByTestId('card-place-trust')).toContainText('·')
   await expect(card).not.toContainText('null')
+
+  // V32 v32-4 (A7/A9): the card's photo banner LEADS the card and is
+  // FULL-BLEED — the img's left edge equals the card box's left edge within
+  // 1px. A photo inset by the body anchor's `p-4` reads as a framed thumbnail,
+  // which is the regression this geometry assertion exists to catch.
+  //
+  // The card for a JUST-POSTED row renders optimistically from the create's
+  // response — which carries no embed — and is then REPLACED by the feed's own
+  // refetch, which does carry `place_ref`. So the banner can be missing for a
+  // moment while that swap lands. Assert on a page-level locator scoped to the
+  // card, which re-resolves on every retry, rather than on a node captured
+  // before the swap.
+  const placePhoto = await readPlacePhoto((row?.place_id ?? '').trim())
+  expect(placePhoto?.photo_url, 'the picked place must carry a photo to prove the banner').toBeTruthy()
+  const expectedPhotoUrl = placePhoto!.photo_url!
+  const cardPhoto = page
+    .getByTestId('dropin-card')
+    .filter({ hasText: title })
+    .getByTestId('dropin-card-photo')
+  await expect(cardPhoto).toHaveCount(1, { timeout: 20_000 })
+  await expect(cardPhoto).toHaveAttribute('src', expectedPhotoUrl)
+  await expect(cardPhoto).toHaveAttribute('alt', '')
+  const cardBox = await page
+    .getByTestId('dropin-card')
+    .filter({ hasText: title })
+    .boundingBox()
+  const cardPhotoBox = await cardPhoto.boundingBox()
+  expect(cardBox, 'the card must have a box').not.toBeNull()
+  expect(cardPhotoBox, 'the card banner must have a box').not.toBeNull()
+  // Full-bleed means flush with the card's CONTENT box: the box paints a 1px
+  // border on each side, so the img is exactly 2px narrower than the border
+  // box and starts 1px inside it. The tolerance covers the border, not slop —
+  // the regression this catches is the body anchor's `p-4` (16px), which the
+  // banner cancels with `-mx-4`.
+  expect(
+    Math.abs(cardPhotoBox!.x - cardBox!.x),
+    `the card banner must be full-bleed to the card edge (card x ${cardBox!.x}, photo x ${cardPhotoBox!.x})`,
+  ).toBeLessThanOrEqual(2)
+  expect(
+    Math.abs(cardPhotoBox!.width - cardBox!.width),
+    `the card banner must span the card's width (card w ${cardBox!.width}, photo w ${cardPhotoBox!.width})`,
+  ).toBeLessThanOrEqual(2)
+  // …and it sits above the card's TITLE.
+  const cardTitleBox = await card.getByRole('heading', { level: 3 }).boundingBox()
+  expect(cardTitleBox, 'the card title must have a box').not.toBeNull()
+  expect(
+    cardPhotoBox!.y + cardPhotoBox!.height,
+    'the card photo must sit ABOVE the card title',
+  ).toBeLessThanOrEqual(cardTitleBox!.y)
   const windowLabel = collapseSpaces(formatTimeWindow(row?.starts_at ?? '', row?.ends_at ?? ''))
   // V25 ticket 05: the when line is its own `card-when` element now — read by
   // testid, never by a `p` index (the window moved out of the quiet meta line,
@@ -429,6 +514,39 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // "never an empty neighbourhood label" on the page that renders the place and
   // the window separately (`place · window`).
   await page.goto(`/playdate/${row?.id ?? ''}`)
+
+  // ---------------------------------------------------------------------
+  // V32 v32-4 (A7/A9): THE PLACE PHOTO LEADS, ON ALL THREE SURFACES.
+  //
+  // The picked place here is Green Lake Park
+  // (place_id 52e8e1ca-4cca-43ea-ba4a-902cfe9ed761), which is `confirmed`
+  // WITH a photo_url and NO attribution — so this run exercises the confirmed
+  // branch AND the credit-null branch on a real row, on the real path.
+  // ---------------------------------------------------------------------
+  const detailPhoto = page.getByTestId('detail-place-photo')
+  await expect(detailPhoto).toHaveCount(1)
+  await expect(detailPhoto).toHaveAttribute('src', expectedPhotoUrl)
+  // `alt=""` — the place name is the adjacent text, so a filled alt would say
+  // it twice to a screen reader; a missing alt is the rule.json defect.
+  await expect(detailPhoto).toHaveAttribute('alt', '')
+  // THE PHOTO IS ABOVE THE HEADING, by geometry rather than DOM order: the
+  // img's bottom edge sits above the h1's top edge.
+  const detailPhotoBox = await detailPhoto.boundingBox()
+  const detailH1Box = await page.getByRole('heading', { level: 1, name: title }).boundingBox()
+  expect(detailPhotoBox, 'the detail banner must have a box').not.toBeNull()
+  expect(detailH1Box, 'the detail h1 must have a box').not.toBeNull()
+  expect(
+    detailPhotoBox!.y + detailPhotoBox!.height,
+    'the place photo must sit ABOVE the h1 on the signed-in detail page',
+  ).toBeLessThanOrEqual(detailH1Box!.y)
+  // The credit DOES render for this row (it carries an attribution), as the
+  // overlay on the picture — licence compliance travels with the image.
+  const placeCredit = await readPlaceCredit((row?.place_id ?? '').trim())
+  expect(placeCredit, 'the picked place must carry a credit to prove the overlay').toBeTruthy()
+  await expect(
+    page.locator('span').filter({ hasText: placeCredit! }),
+  ).toBeVisible()
+
   const detailPlaceLink = page.getByRole('link', { name: PLACE_NAME, exact: true })
   await expect(detailPlaceLink).toBeVisible()
   await expect(page.locator('p').filter({ has: detailPlaceLink })).toHaveText(PLACE_NAME)
@@ -500,6 +618,24 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // string "null" appears nowhere.
   await expect(anonPage.getByRole('link', { name: PLACE_NAME, exact: true })).toBeVisible()
   await expect(anonPage.getByText('null')).toHaveCount(0)
+
+  // V32 v32-4 (A7/A9) — THE SIGNED-OUT SURFACE. The public payload crosses
+  // `place_id` as a bare id (no place columns reach anon); the client reads the
+  // anon-readable `places` row itself off `loadPlacesOrEmpty`. Same photo, same
+  // rule, same geometry — a visitor with no session sees the place picture
+  // above the heading exactly as a signed-in parent does.
+  const publicPhoto = anonPage.getByTestId('public-place-photo')
+  await expect(publicPhoto).toHaveCount(1)
+  await expect(publicPhoto).toHaveAttribute('src', expectedPhotoUrl)
+  await expect(publicPhoto).toHaveAttribute('alt', '')
+  const publicPhotoBox = await publicPhoto.boundingBox()
+  const publicH1Box = await anonPage.getByRole('heading', { level: 1, name: title }).boundingBox()
+  expect(publicPhotoBox, 'the public banner must have a box').not.toBeNull()
+  expect(publicH1Box, 'the public h1 must have a box').not.toBeNull()
+  expect(
+    publicPhotoBox!.y + publicPhotoBox!.height,
+    'the place photo must sit ABOVE the h1 on the signed-out page',
+  ).toBeLessThanOrEqual(publicH1Box!.y)
   await anonContext.close()
 })
 
@@ -702,4 +838,70 @@ test.afterEach(async () => {
       `[e2e cleanup] FAILED (logged, best-effort): ${err instanceof Error ? err.message : err}`,
     )
   }
+})
+
+/**
+ * V32 v32-4 (A7/A9) — THE MODERATION BOUNDARY, ON A REAL ROW.
+ *
+ * The acceptance criterion is that an `unreviewed` photo renders the per-kind
+ * illustration and NEVER the picture. The brief measured that this branch had
+ * ZERO live playdates, so an assertion here could have passed vacuously (no row
+ * → no img → "the img is absent" trivially true). This takes the brief's option
+ * (a): the marker POSTS a drop-in at a genuinely unreviewed place through the
+ * real `/new` path, so the branch is exercised on a real row rather than argued.
+ *
+ * The place is Bayview-Kinnear Park (c2baa3a0-e2a7-4d8f-8fa7-0b59a562a5fe): it
+ * is `unreviewed` and it DOES carry a Wikimedia photo_url, so the ONLY reason
+ * the picture is absent is the moderation rule — if `placePhotoVisibleTo` ever
+ * stopped withholding unreviewed photos, this test would render the img and go
+ * red. That is the mutation sensitivity, established by the row's own state.
+ */
+test('an UNREVIEWED place photo is withheld from a parent — the illustration renders instead', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} unreviewed place`
+  const UNREVIEWED_NAME = 'Bayview-Kinnear Park'
+
+  await page.goto('/new')
+  await settleOnRoute(page, '/new')
+  await editTitle(page)
+  await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+  await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(`@${UNREVIEWED_NAME}`)
+  const suggestion = page
+    .getByTestId('place-suggestions')
+    .getByText(UNREVIEWED_NAME, { exact: true })
+  await expect(suggestion).toBeVisible()
+  await suggestion.click()
+  await page.locator('input[type="date"]').fill(localDatePlusDays(1))
+  await submitAndLandOnFeed(page)
+
+  const row = await readMarkerPost(title)
+  expect(row?.place_id, 'the unreviewed place must be linked to the post').toBeTruthy()
+
+  // THE ROW'S OWN STATE IS THE PREMISE: it is unreviewed AND it has a photo.
+  // If either half were false, the assertions below would prove nothing.
+  const { url, anonKey } = readSupabaseEnv()
+  const stateRes = await fetch(
+    `${url}/rest/v1/places?id=eq.${row?.place_id}&select=photo_review_state,photo_url`,
+    { headers: { apikey: anonKey } },
+  )
+  const stateRows = stateRes.ok
+    ? ((await stateRes.json()) as Array<{ photo_review_state: string | null; photo_url: string | null }>)
+    : []
+  expect(
+    stateRows[0]?.photo_review_state,
+    'the premise: this place must still be unreviewed for the boundary to be exercised',
+  ).toBe('unreviewed')
+  expect(stateRows[0]?.photo_url, 'the premise: the withheld photo must actually exist').toBeTruthy()
+
+  // THE BOUNDARY: illustration yes, picture no.
+  const card = page.getByTestId('dropin-card').filter({ hasText: title })
+  await expect(card).toBeVisible()
+  await expect(
+    card.getByTestId('dropin-card-photo'),
+    'an unreviewed photo must NEVER reach a parent',
+  ).toHaveCount(0)
+  await expect(card.locator('svg').first()).toBeVisible()
+  await expect(card).not.toContainText('null')
 })

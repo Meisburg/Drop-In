@@ -1532,7 +1532,12 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
       // makes a NULL-neighbourhood post return NO ROW, which this function
       // reports as "not found": the detail page of a post that plainly exists
       // (its own host's, right after posting) would 404.
-      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip )',
+      // V32 v32-4 (A7/A9): the place embed joins the feed's own (same alias,
+      // same pinned FK hint for the PGRST201 lesson) so the signed-in detail
+      // page's photo banner reads the SAME row shape the card does. The photo
+      // columns are 0063's and all nullable, so a pre-0063 apply yields nulls
+      // and the banner takes the illustration — the correct failure direction.
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip ), place_ref:places!playdates_place_id_fkey ( id, kind, indoor, photo_url, photo_attribution, photo_review_state )',
     )
     .eq('id', id)
     .maybeSingle()

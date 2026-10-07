@@ -625,13 +625,36 @@ export interface PlaydateWithNeighborhood extends Playdate {
    */
   place_coords?: { lat: number | null; lng: number | null } | null
   /**
-   * V27 slice 3: the named place's directory row (kind + indoor), embedded by
-   * the feed query so the card can state what kind of place it is without a
-   * tap. Null/absent when the post names no directory place (the ordinary
-   * typed-address post) or the embed degraded — the card then renders no
-   * trust line. NOT `place`, which is the free-text string the parent typed.
+   * V27 slice 3: the named place's directory row, embedded by the feed query so
+   * the card can state what kind of place it is without a tap. Null/absent when
+   * the post names no directory place (the ordinary typed-address post) or the
+   * embed degraded — the card then renders no trust line. NOT `place`, which is
+   * the free-text string the parent typed.
+   *
+   * V32 v32-4 (A7/A9): the SAME row now also carries the picture's three
+   * columns, so all three drop-in surfaces (feed card, signed-in detail, and
+   * the signed-out public page) decide the photo question from ONE shape.
+   * `photo_attribution` is here because the CREDIT is what the acceptance
+   * criterion asks for and `photoCreditLine` reads that column;
+   * `photo_review_state` is the moderation boundary
+   * (`placePhotoVisibleTo`). All three are nullable — the photo columns are
+   * 0063's, so a pre-0063 row is simply null.
    */
-  place_ref?: { id: string; kind: string; indoor: boolean } | null
+  place_ref?: {
+    id: string
+    /**
+     * The same `places.kind` column the `Place` type narrows to `PlaceKind`
+     * (0029's CHECK). Typed as the union rather than `string` because the
+     * per-kind ILLUSTRATION (`PlaceKindArt`) keys off it, and an unvalidated
+     * string would push a cast into whichever `.tsx` renders the fallback —
+     * a render deciding something `lib/` already knows.
+     */
+    kind: PlaceKind
+    indoor: boolean
+    photo_url: string | null
+    photo_attribution: string | null
+    photo_review_state: 'confirmed' | 'unreviewed' | null
+  } | null
 }
 
 /**

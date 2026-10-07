@@ -42,6 +42,7 @@ import {
   placeLearnMoreLink,
   placeOutboundLinks,
   photoCreditLine,
+  placePhotoForDropIn,
   radiusPreviewCircle,
   savedPlacesEmptyCopy,
   zoomForRadius,
@@ -1690,6 +1691,97 @@ describe('photoCreditLine (V18 — the licence-compliance line)', () => {
     expect(
       photoCreditLine(place({ photo_url: 'https://x/y.jpg', photo_attribution: '  Someone / CC0  ' })),
     ).toBe('Someone / CC0')
+  })
+})
+
+/**
+ * V32 v32-4 (A7/A9) — the ONE place-photo decision three surfaces share.
+ *
+ * The feed card, the signed-in detail page and the signed-out public page all
+ * ask this function what to draw. Each case names the defect it detects,
+ * because the dangerous ones are SILENT: a moderation leak looks like a normal
+ * card, and a grey frame looks like a slow image.
+ */
+describe('placePhotoForDropIn (V32 v32-4 — the shared photo-slot decision)', () => {
+  function ref(overrides: Partial<{
+    photo_url: string | null
+    photo_attribution: string | null
+    photo_review_state: 'confirmed' | 'unreviewed' | null
+  }>) {
+    return {
+      photo_url: 'https://x/y.jpg',
+      photo_attribution: null,
+      photo_review_state: 'confirmed' as const,
+      ...overrides,
+    }
+  }
+
+  it('returns the url for a confirmed photo (the ordinary case)', () => {
+    expect(placePhotoForDropIn(ref({ photo_url: 'https://x/confirmed.jpg' }))).toEqual({
+      url: 'https://x/confirmed.jpg',
+      credit: null,
+    })
+  })
+
+  it('HIDES an unreviewed photo from a parent — the moderation boundary', () => {
+    // The defect: an unreviewed Commons import reaching a family. The whole
+    // point of `photo_review_state` is that a human has not seen this picture
+    // yet, so the slot must take the illustration instead.
+    expect(placePhotoForDropIn(ref({ photo_review_state: 'unreviewed' }))).toBeNull()
+  })
+
+  it('SHOWS a NULL review state — the pre-0063 population a human already reviewed', () => {
+    // The mirror defect: treating "no state recorded" as "rejected". 62 places
+    // carry NULL, and hiding them would blank photos that are perfectly fine.
+    expect(placePhotoForDropIn(ref({ photo_review_state: null }))?.url).toBe('https://x/y.jpg')
+  })
+
+  it('returns null for a blank url, so the slot never renders a grey frame', () => {
+    // `hasPlacePhoto`'s rule, inherited rather than restated: a `src=""` is a
+    // request to the page itself and renders as a broken/blank slot.
+    expect(placePhotoForDropIn(ref({ photo_url: '' }))).toBeNull()
+    expect(placePhotoForDropIn(ref({ photo_url: null }))).toBeNull()
+    // A whitespace-only url is deliberately NOT special-cased here: that is
+    // `hasPlacePhoto`'s pinned contract (`!== null && !== ''`, mirroring
+    // `PlacePhotoSlot`'s exact branch), and no live row carries one (measured:
+    // 0). Widening it inside this slice would change a shared seam's behaviour
+    // for a population that does not exist. The CREDIT half does trim, which is
+    // where whitespace-padding actually occurs.
+    expect(placePhotoForDropIn(ref({ photo_url: '   ' }))?.url).toBe('   ')
+  })
+
+  it('returns the credit when there is one, and credit: null when there is not', () => {
+    // The licence-compliance half: a photo shown without its attribution is a
+    // compliance failure, and a credit invented for an illustration is a lie.
+    expect(placePhotoForDropIn(ref({ photo_attribution: 'Des Blenkinsopp / CC BY-SA 2.0' }))).toEqual({
+      url: 'https://x/y.jpg',
+      credit: 'Des Blenkinsopp / CC BY-SA 2.0',
+    })
+    expect(placePhotoForDropIn(ref({ photo_attribution: null }))?.credit).toBeNull()
+    expect(placePhotoForDropIn(ref({ photo_attribution: '   ' }))?.credit).toBeNull()
+  })
+
+  it('returns null for a missing place, so a free-text post takes the illustration', () => {
+    // The 9 live posts with no `place_id`: the embed yields null and the card
+    // must not crash or draw a frame.
+    expect(placePhotoForDropIn(null)).toBeNull()
+    expect(placePhotoForDropIn(undefined)).toBeNull()
+  })
+
+  it('answers the same question for a place_ref EMBED row as for a full Place', () => {
+    // The narrowed parameter is the point: the feed embed and
+    // `getPlaydateDetail` hand over a `place_ref` (no lat/lng/name/...), and the
+    // public branch hands over a full `Place` from `loadPlacesOrEmpty`. If the
+    // two shapes answered differently, the three surfaces would drift.
+    const embedded = {
+      photo_url: 'https://x/y.jpg',
+      photo_attribution: 'Someone / CC0',
+      photo_review_state: 'confirmed' as const,
+    }
+    expect(placePhotoForDropIn(embedded)).toEqual({
+      url: 'https://x/y.jpg',
+      credit: 'Someone / CC0',
+    })
   })
 })
 

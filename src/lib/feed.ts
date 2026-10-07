@@ -898,7 +898,10 @@ export async function queryUpcomingFeedWithClient(
       // typed, which the directory does not always know); the `places!` hint
       // pins the `playdates_place_id_fkey` FK (the PGRST201 lesson), and the
       // embed is a LEFT JOIN, so a free-text post yields null (no trust line).
-      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles ), place_ref:places!playdates_place_id_fkey ( id, kind, indoor )',
+      // V32 v32-4 (A7/A9): the same embed now also carries the picture's three
+      // columns, so the card's photo banner decides from the SAME row the trust
+      // line reads — one payload, three surfaces, no second round trip.
+      '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip, radius_miles ), place_ref:places!playdates_place_id_fkey ( id, kind, indoor, photo_url, photo_attribution, photo_review_state )',
     )
     .gt('ends_at', cutoffIso)
     // V12 ticket 03 (0041): a host-early-ended post leaves the feed immediately.

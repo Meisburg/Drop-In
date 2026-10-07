@@ -6,6 +6,7 @@ import { HostAvatar } from '../components/DropInCard'
 import { PhotoButton } from '../components/ImageLightbox'
 import { KidsComingPicker } from '../components/KidsComingPicker'
 import { LocationRequiredNotice } from '../components/LocationRequiredNotice'
+import { PlaceKindArt } from '../components/PlaceKindArt'
 import { ReportDialog } from '../components/ReportDialog'
 import { RsvpConfirmationDialog } from '../components/RsvpConfirmationDialog'
 import { useSessionContext } from '../components/SessionProvider'
@@ -32,6 +33,7 @@ import {
   getPlaydateDetail,
   getPlaydateSeries,
   getPublicPlaydateDetail,
+  loadPlacesOrEmpty,
   getShareUrl,
   hasPinged,
   hideComment,
@@ -66,7 +68,7 @@ import { canModerate } from '../lib/moderation'
 // V8 ticket 07: the signed-in AND signed-out place lines link to /place/:id
 // (the 13th public field is a bare id; the place page reads the directory
 // itself).
-import { placePath } from '../lib/places'
+import { placePath, placePhotoForDropIn } from '../lib/places'
 // V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts) —
 // every presence test on this page goes through it, so a guard can never be
 // looser than the onboarding wall it replaces.
@@ -105,6 +107,7 @@ import {
 import type {
   CommentWithAuthor,
   Kid,
+  Place,
   PlaydateKid,
   PlaydateSeries,
   PlaydateStatus,
@@ -379,6 +382,21 @@ export function PlaydateDetailPage() {
   const navigate = useNavigate()
   const { session, loading: sessionLoading, profile } = useSessionContext()
   const [state, setState] = useState<DetailState>({ status: 'loading' })
+  /**
+   * V32 v32-4 (A7/A9): the signed-out page's place row, for the photo banner.
+   *
+   * The public RPC deliberately does NOT cross place columns to anon — it
+   * crosses `place_id` as a bare id and says so (`types.ts`, the 13th field).
+   * `places` is anon-readable (`places_select_public`, 0029:407-410, `to anon`),
+   * so the client reads the row ITSELF off the session-cached
+   * `loadPlacesOrEmpty()` seam. That seam degrades to an empty map on failure,
+   * and an empty map yields `undefined` here → the illustration, which is the
+   * correct failure direction. No schema change, no RPC change.
+   */
+  const [publicPlace, setPublicPlace] = useState<Place | null>(null)
+  /** V32 v32-4: the two banners' failed urls, keyed so a later good url renders. */
+  const [detailPhotoFailedUrl, setDetailPhotoFailedUrl] = useState<string | null>(null)
+  const [publicPhotoFailedUrl, setPublicPhotoFailedUrl] = useState<string | null>(null)
   const [reporting, setReporting] = useState(false)
   const [pingBusy, setPingBusy] = useState(false)
   const [pingError, setPingError] = useState<string | null>(null)
@@ -695,6 +713,16 @@ export function PlaydateDetailPage() {
           const pub = await getPublicPlaydateDetail(id)
           if (cancelled) return
           setState(pub === null ? { status: 'not-found' } : { status: 'public', detail: pub })
+          // V32 v32-4: the banner's data. Read the place row by id off the
+          // anon-readable table (the public payload carries only the id); a
+          // failed or degraded read leaves it null and the banner takes the
+          // illustration. Deliberately NOT awaited before `setState` — the page
+          // must not wait on a picture to render in a post's text.
+          if (pub?.place_id != null) {
+            const places = await loadPlacesOrEmpty()
+            if (cancelled) return
+            setPublicPlace(places.get(pub.place_id) ?? null)
+          }
         } catch (err) {
           if (cancelled) return
           setState({
@@ -1580,6 +1608,11 @@ export function PlaydateDetailPage() {
   }
 
   const { detail, count, going, kids, kidAges, guestNames } = state
+  // V32 v32-4 (A7/A9): the signed-in page's banner inputs, from the `place_ref`
+  // embed `getPlaydateDetail` now selects. One shape, one decision, shared with
+  // the card and the public page.
+  const detailBanner = detail.place_ref ?? null
+  const detailPhoto = detailBanner !== null ? placePhotoForDropIn(detailBanner) : null
   // V8 ticket 09: ONE "now" for this render — the "Same time next week"
   // block's day/time label reads the same clock it was offered under, so the
   // block can never be labelled with a day it is not actually offering.
@@ -1729,8 +1762,48 @@ export function PlaydateDetailPage() {
     // itself). Same tap-to-go affordance as the Maps link, one hop to the place's
     // address, notes, age line and — once signed in — the drop-ins there.
     const publicPlaceHref = d.place_id != null ? placePath(d.place_id) : null
+    // V32 v32-4 (A7/A9): the banner's inputs — the loaded place row (read by
+    // `place_id` off the anon-readable table) and the ONE shared decision,
+    // `placePhotoForDropIn`. The banner renders as soon as the place row is in
+    // hand; a free-text post has no `place_id` and no row, so it opens on its
+    // title instead (the accepted state for the 9 live posts with no place).
+    const publicBanner = publicPlace
+    const publicPhoto = publicBanner !== null ? placePhotoForDropIn(publicBanner) : null
     return (
       <div className="flex flex-col gap-4">
+        {/* V32 v32-4 (A7/A9): the place photo leads on the SIGNED-OUT surface
+            too. It is a SIBLING before the title block — never inside it, and
+            never between the h1 and anything the h1 is adjacent to (nothing is,
+            on this branch, but the rule is the same one the signed-in branch
+            follows for its status chip). Same shared decision, same ratio,
+            same alt="" and same illustration fallback as the card and the
+            signed-in page, so the three cannot drift. */}
+        {publicBanner !== null ? (
+          <div className="overflow-hidden rounded-xl">
+            {publicPhoto !== null && publicPhotoFailedUrl !== publicPhoto.url ? (
+              <div className="relative">
+                <img
+                  data-testid="public-place-photo"
+                  src={publicPhoto.url}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={() => setPublicPhotoFailedUrl(publicPhoto.url)}
+                  className="aspect-[2/1] w-full object-cover"
+                />
+                {publicPhoto.credit !== null ? (
+                  <span className="absolute bottom-1 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90">
+                    {publicPhoto.credit}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="aspect-[2/1] w-full bg-slate-100">
+                <PlaceKindArt kind={publicBanner.kind} />
+              </div>
+            )}
+          </div>
+        ) : null}
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{d.title}</h1>
           <p className="mt-1 text-sm text-slate-600">
@@ -2159,6 +2232,38 @@ export function PlaydateDetailPage() {
             "not a removal" now holds only while the window is ahead — an
             ended cancelled post leaves `/` like any ended one, and this page
             is where it stays reachable. See the ticket's Comments.) */}
+        {/* V32 v32-4 (A7/A9): the place photo leads here too, from the SAME
+            shared decision as the card and the public page. A SIBLING before
+            this title block — never between the h1 and its status chip, which
+            six specs pin as adjacent (host-status, while-away). The photo comes
+            from the `place_ref` embed `getPlaydateDetail` now selects, so there
+            is no second read. */}
+        {detailBanner !== null ? (
+          <div className="overflow-hidden rounded-xl">
+            {detailPhoto !== null && detailPhotoFailedUrl !== detailPhoto.url ? (
+              <div className="relative">
+                <img
+                  data-testid="detail-place-photo"
+                  src={detailPhoto.url}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={() => setDetailPhotoFailedUrl(detailPhoto.url)}
+                  className="aspect-[2/1] w-full object-cover"
+                />
+                {detailPhoto.credit !== null ? (
+                  <span className="absolute bottom-1 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90">
+                    {detailPhoto.credit}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="aspect-[2/1] w-full bg-slate-100">
+                <PlaceKindArt kind={detailBanner.kind} />
+              </div>
+            )}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{detail.title}</h1>
           {statusChip !== null ? (
