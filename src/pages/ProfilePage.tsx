@@ -25,15 +25,18 @@ import {
   searchProfilesByName,
   unlinkAccounts,
   LIKES_MAX_LENGTH,
+  INTERESTS_MAX_LENGTH,
   MAX_KIDS_PER_PROFILE,
   removeKid,
   updateDisplayName,
+  updateInterests,
   updateKid,
   uploadAvatar,
   uploadFamilyPhoto,
   uploadKidPhoto,
   validateAvatarFile,
   validateFamilyPhotoFile,
+  validateInterests,
   validateKid,
   validateKidLikes,
 } from '../lib/db'
@@ -782,6 +785,9 @@ export function ProfilePage() {
       kidDrafts,
       validators: {
         kid: (kid) => validateKid(kid.firstName, kid.age) ?? validateKidLikes(kid.likes),
+        // V32-2: the cap is the lib seam's decision, injected here — the page
+        // never inlines the number or the length check.
+        interests: (value) => validateInterests(value),
       },
     })
     if (plan.empty) {
@@ -802,16 +808,18 @@ export function ProfilePage() {
     const writers: Record<ProfileSection, () => Promise<void>> = {
       // V15 ticket 06 (A20): the display name is now edited INLINE on this page
       // (the identity block at the top) — the writer moved here from /settings.
-      // The location/interests writers remain TYPE requirements of the Record
-      // (every section needs a writer), not live paths: this page owns no
-      // location/interests input (V15 T07 removed them from /settings entirely;
-      // zip is set during onboarding, radius in the browse modal, and interests
-      // belong to the "About the parents" bio), so the planner never schedules
-      // those sections here. They stay so the machine's contract is complete
-      // rather than patched.
+      // V32-2 (A6c): the INTERESTS writer is a live path again — this page owns
+      // an interests input beside the display name, and the founder's complaint
+      // was exactly that the read line had no way to fill it in. The cap lives
+      // in lib (`validateInterests` + `INTERESTS_MAX_LENGTH`), injected below as
+      // a validator, so the page only trims and writes.
+      // The LOCATION writer remains a TYPE requirement of the Record, not a live
+      // path: this page owns no location input (zip is set during onboarding,
+      // radius in the browse modal), so the planner never schedules it here. It
+      // stays so the machine's contract is complete rather than patched.
       name: () => updateDisplayName(userId, draft.name.trim()),
       location: () => Promise.resolve(),
-      interests: () => Promise.resolve(),
+      interests: () => updateInterests(userId, draft.interests.trim()),
     }
     const savedValues: Partial<ProfileFormValues> = {}
     let failures = 0
@@ -822,8 +830,18 @@ export function ProfilePage() {
         // The write landed: advance THIS section's baseline only. The writers
         // trim, so the baseline is the trimmed value (the draft keeps showing
         // what was typed — the comparison is trimmed, so it is not dirty).
+        //
+        // ⚠️ EVERY live writer must advance its own baseline here. A section
+        // whose write lands but whose baseline does NOT advance stays dirty
+        // forever, so the autosave re-arms and re-fires the same write on a
+        // loop. `interests` joined the live set in V32-2, so it joins this
+        // branch — the omission is invisible in a unit test of the planner and
+        // only shows up as a write storm in the browser.
         if (section === 'name') {
           savedValues.name = draft.name.trim()
+        }
+        if (section === 'interests') {
+          savedValues.interests = draft.interests.trim()
         }
       } catch (err) {
         failures += 1
@@ -1278,6 +1296,33 @@ export function ProfilePage() {
             <p className="mt-1 text-sm text-slate-600">@{draft?.name.trim() || profile?.display_name}</p>
             {writeErrors.name !== undefined ? (
               <p className="mt-1 text-sm text-red-600">{writeErrors.name}</p>
+            ) : null}
+            {/* V32-2 (A6c): THE INTERESTS FIELD IS WRITABLE AGAIN. The founder
+                sees an `Interests:` line on /profile and cannot fill it in; it
+                has been unwritable since V15 T07 stubbed the writer and removed
+                the input. The read render (ProfileView, gated by
+                `showsInterests`) never changed — only the edit surface was
+                missing. The cap is the lib's own `INTERESTS_MAX_LENGTH`, never
+                a literal here: the `maxLength` attribute is the typing
+                affordance and `validators.interests` is the rule. `text-base`
+                is load-bearing (inputs must be >=16px). */}
+            <label className="mt-3 flex flex-col gap-1 text-sm">
+              <span className="text-slate-700">Interests</span>
+              <input
+                data-testid="interests-input"
+                aria-label="Interests"
+                className={
+                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                  (writeErrors.interests !== undefined ? 'border-red-400' : 'border-slate-300')
+                }
+                value={draft?.interests ?? ''}
+                onChange={(e) => editDraft({ interests: e.target.value }, 'interests')}
+                maxLength={INTERESTS_MAX_LENGTH}
+                disabled={draft === null}
+              />
+            </label>
+            {writeErrors.interests !== undefined ? (
+              <p className="mt-1 text-sm text-red-600">{writeErrors.interests}</p>
             ) : null}
           </div>
         </div>

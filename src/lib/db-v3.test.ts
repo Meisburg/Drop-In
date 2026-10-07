@@ -14,10 +14,12 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  INTERESTS_MAX_LENGTH,
   LIKES_MAX_LENGTH,
   listMyPingPostIdsWithClient,
   listPingsForPostsWithClient,
   updateKidWithClient,
+  validateInterests,
   validateKidLikes,
 } from './db'
 
@@ -279,5 +281,56 @@ describe('validateKidLikes (V16 t04 — the cap is 500, and it is the only pin)'
   it('accepts the empty string (likes are optional everywhere)', () => {
     expect(validateKidLikes('')).toBeNull()
     expect(validateKidLikes('   ')).toBeNull()
+  })
+})
+
+/**
+ * V32-2 (A6c) — the interests cap, which had NO test before this slice.
+ *
+ * The founder's complaint was that the read line on /profile could not be
+ * filled in; the field is writable again, so the cap that was silently standing
+ * between the app and an unbounded value now has a test behind it. Same rule as
+ * `kids.likes` above and the same reason it is worth pinning: `profiles.interests`
+ * is a `text` column with NO DB CHECK (0022_kids_v3.sql:31-32, "<=200 UI pin,
+ * NO DB CHECK"), so `validateInterests` is the ONLY thing enforcing it.
+ *
+ * ⚠️ The cap is **200**, not the 100 that `plan.md`'s v32-2 section claims: that
+ * section cites 0022:31, which in the file is the `kids.likes` <=100 pin; the
+ * same header pins `profiles.interests` at <=200 on the next line, and the code's
+ * single source of truth is `INTERESTS_MAX_LENGTH = 200` (db.ts:2707). This test
+ * pins the code's real number, and 100 appears nowhere.
+ */
+describe('validateInterests (V32-2 — the cap is 200, and it is the only pin)', () => {
+  it('accepts a value at exactly the cap', () => {
+    expect(INTERESTS_MAX_LENGTH).toBe(200)
+    expect(validateInterests('x'.repeat(INTERESTS_MAX_LENGTH))).toBeNull()
+  })
+
+  it('rejects one character past the cap, naming the real limit', () => {
+    expect(validateInterests('x'.repeat(INTERESTS_MAX_LENGTH + 1))).toBe(
+      `Keep interests to ${INTERESTS_MAX_LENGTH} characters.`,
+    )
+  })
+
+  it('measures AFTER trim, so surrounding whitespace cannot push a valid value over', () => {
+    // The founder's use case is prose about a family; a stray leading or
+    // trailing newline must not count as content — and the writer trims, so a
+    // value that only fits untrimmed would be silently stored shorter than it
+    // was validated.
+    expect(validateInterests('  ' + 'x'.repeat(INTERESTS_MAX_LENGTH) + '   \n')).toBeNull()
+    expect(validateInterests('  ' + 'x'.repeat(INTERESTS_MAX_LENGTH + 1) + '   \n')).not.toBeNull()
+  })
+
+  it('accepts the empty string (interests are optional)', () => {
+    expect(validateInterests('')).toBeNull()
+    expect(validateInterests('   ')).toBeNull()
+  })
+
+  it('renders the exact message the UI shows, so the surface and the rule cannot drift', () => {
+    // The input renders `writeErrors.interests`, which is this string. If the
+    // message shape moves, the UI moves with it or this fails.
+    expect(validateInterests('x'.repeat(INTERESTS_MAX_LENGTH + 1))).toBe(
+      'Keep interests to 200 characters.',
+    )
   })
 })
