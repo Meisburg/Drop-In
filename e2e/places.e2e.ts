@@ -3236,8 +3236,13 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   // still being real (the sheet below still lists them).
   // V27: the row also carries the two "coming soon" placeholder pills, which are
   // buttons but not kind chips.
+  // V32 v32-10a (A5): and a THIRD non-kind button — the coffee-nearby TOGGLE
+  // (`place-coffee-filter`). It is a filter like the kind chips, but it is not a
+  // KIND, so it sits in the same "+ N" tail as the placeholders. The pin moved
+  // from +2 to +3 in the same diff that added the control; the eight-kind pin
+  // below is unchanged, because the kind taxonomy did not move.
   const chipButtons = row.getByRole('button')
-  await expect(chipButtons).toHaveCount(PLACE_KIND_CHIP_KINDS.length + 2)
+  await expect(chipButtons).toHaveCount(PLACE_KIND_CHIP_KINDS.length + 3)
   expect(PLACE_KIND_CHIP_KINDS.length, 'the row ships eight kinds with rows').toBe(8)
   for (const kind of PLACE_KIND_CHIP_KINDS) {
     const chip = page.getByTestId(`place-kind-chip-${kind}`)

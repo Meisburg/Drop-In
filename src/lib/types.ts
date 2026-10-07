@@ -365,6 +365,20 @@ export interface Place {
    */
   photo_review_state?: PlacePhotoReviewState | null
   /**
+   * V32 v32-10a (A5, migration 0068): is there a cafe within
+   * `COFFEE_NEARBY_RADIUS_METERS` of this place?
+   *
+   * THREE-VALUED, and the distinction is the point:
+   *   `true`  — yes, a cafe is near
+   *   `false` — OpenStreetMap was ASKED and there is none
+   *   `null`  — NEVER ASKED (what every pre-0068 row carries)
+   *
+   * `null` must never be read as "no cafe". It is populated offline by
+   * `scripts/refresh-coffee-nearby.mjs`; no read path queries Overpass. The
+   * filter that consumes it is `placeHasCoffeeNearby` (lib/places.ts).
+   */
+  coffee_nearby?: boolean | null
+  /**
    * V20 t01 (0048): the place's OWN website — what "Learn more" opens.
    *
    * NULL for most rows, and that is the designed state rather than a gap: no

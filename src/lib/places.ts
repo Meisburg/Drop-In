@@ -333,6 +333,42 @@ export function savedPlacesEmptyCopy(hasSaves: boolean): string {
     : 'You haven’t saved any places yet. Tap the bookmark on a place to keep it here.'
 }
 
+/**
+ * V32 v32-10a (A5) — WHY THE COFFEE FILTER EMPTIED THE LIST, AND WHAT MAY BE SAID.
+ *
+ * The three-valued column makes two different silences, and the empty state must
+ * not confuse them:
+ *
+ *   * `'none'` — at least one excluded row was `false`: Overpass was ASKED about
+ *     it and there is genuinely no cafe nearby. The copy may say so.
+ *   * `'unknown'` — every excluded row is `null`: we never asked. The copy must
+ *     NOT claim those places have no cafe, because the dataset does not know. It
+ *     says the data is still being filled in instead.
+ *
+ * `'none'` wins when BOTH are present, because "some of these places definitely
+ * have no cafe" is true and useful, while "we do not know" would understate what
+ * the data does show. Pure, so the rule is unit-tested rather than living in a
+ * render branch.
+ */
+export type CoffeeNearbyGapReason = 'none' | 'unknown'
+
+export function coffeeNearbyGapReason(
+  excluded: ReadonlyArray<Pick<Place, 'coffee_nearby'>>,
+): CoffeeNearbyGapReason {
+  return excluded.some((place) => place.coffee_nearby === false) ? 'none' : 'unknown'
+}
+
+/**
+ * What the coffee-filter empty state says. Consumed by `PlaceDirectory` (the
+ * copy-field guard tracks declared-but-unread copy), and honest per the rule
+ * above: the "we never asked" branch never claims a place has no cafe.
+ */
+export function coffeeNearbyEmptyCopy(reason: CoffeeNearbyGapReason): string {
+  return reason === 'none'
+    ? 'None of the places near you have a cafe within a short walk.'
+    : 'We haven’t checked every place for nearby coffee yet — clear this filter to see them all.'
+}
+
 /** `/place/:id` — the one place path builder (links never hand-roll it). */
 export function placePath(placeId: string): string {
   return `/place/${encodeURIComponent(placeId)}`
@@ -1352,6 +1388,12 @@ export interface PlaceFilters {
    * model); a place with UNKNOWN distance is kept — see browsePlaces.
    */
   maxMiles: number | null
+  /**
+   * V32 v32-10a (A5): the coffee-nearby filter is ON. `null`/`false` = OFF and
+   * therefore INERT — the row set is unchanged. See `placeHasCoffeeNearby` for
+   * the three-valued rule.
+   */
+  coffeeNearbyOnly?: boolean | null
 }
 
 /**
@@ -1373,6 +1415,30 @@ export interface PlaceFilters {
  * belongs at the end of a distance-ordered list, not the top. Ties (and the
  * unknown block) break alphabetically, so the order is stable across renders.
  */
+/**
+ * V32 v32-10a (A5) — DOES THIS PLACE PASS THE COFFEE-NEARBY FILTER?
+ *
+ * The app's own answer to *"can our kids play here AND can we drink a coffee?"*.
+ * `places.coffee_nearby` is THREE-VALUED, and this predicate is where that
+ * matters:
+ *   `true`  — a cafe is within `COFFEE_NEARBY_RADIUS_METERS` → the row PASSES.
+ *   `false` — Overpass was asked and there is none → the row is EXCLUDED.
+ *   `null`  — NEVER ASKED → the row is EXCLUDED, but it is NOT a claim that the
+ *             place has no cafe.
+ *
+ * `false` and `null` filter the same way and mean DIFFERENT things. Collapsing
+ * them is the bug this design exists to avoid: a row we never asked about must
+ * not be presented as a place with no coffee. So the exclusion is one rule
+ * (`=== true`) and the two reasons are told apart by `coffeeNearbyGapReason`,
+ * which drives the empty state's honest copy.
+ *
+ * Pure and exported so the rule is unit-tested directly rather than only through
+ * the planner (the build law: lib decides, the `.tsx` renders).
+ */
+export function placeHasCoffeeNearby(place: Pick<Place, 'coffee_nearby'>): boolean {
+  return place.coffee_nearby === true
+}
+
 export function browsePlaces(
   places: readonly Place[],
   filters: PlaceFilters,
@@ -1394,6 +1460,10 @@ export function browsePlaces(
       continue
     }
     if (filters.indoor !== null && place.indoor !== filters.indoor) continue
+    // V32-10a (A5): `coffeeNearbyOnly` OFF (null/false) is INERT — the whole
+    // condition short-circuits before any row is dropped, so the default view is
+    // byte-for-byte what it was. ON drops everything that is not a `true`.
+    if (filters.coffeeNearbyOnly === true && !placeHasCoffeeNearby(place)) continue
     const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(place.id) ?? [])
     rows.push({
       place,
@@ -2107,6 +2177,13 @@ export interface DirectoryListPlan {
    */
   openNowReason: boolean
   /**
+   * V32 v32-10a (A5): non-null exactly when the coffee-nearby filter is ON,
+   * nothing rendered, and at least one row was excluded by it. The value names
+   * WHICH silence it is — see `coffeeNearbyGapReason` — so the empty state can
+   * say "no cafe nearby" only when the data supports it.
+   */
+  coffeeNearbyReason: CoffeeNearbyGapReason | null
+  /**
    * V25 t03 — the KIND CHIP is the reason nothing shows, and it can only ever
    * be: non-null exactly when at least one kind is selected, the search box is
    * empty, nothing renders in either section, and EVERY selected kind has zero
@@ -2154,6 +2231,14 @@ export function planDirectoryList(input: {
    */
   openNowOnly?: boolean
   /**
+   * V32 v32-10a (A5): when true, keep only places whose cached
+   * `coffee_nearby === true`. Default/absent = OFF = INERT, so the default
+   * directory is byte-for-byte unchanged. `false` and `null` columns are both
+   * excluded (one rule), but they are NOT the same fact — see
+   * `placeHasCoffeeNearby` and `coffeeNearbyGapReason`.
+   */
+  coffeeNearbyOnly?: boolean
+  /**
    * The viewer's own saved place ids (the batched `listMyFollows` read, the same
    * set the bookmark controls read). Read ONLY when `savedOnly` is true; the
    * default empty set + `savedOnly: true` therefore means "you saved nothing",
@@ -2197,6 +2282,9 @@ export function planDirectoryList(input: {
     selectedKinds,
     savedOnly = false,
     openNowOnly = false,
+  // V32 v32-10a (A5): the coffee-nearby filter. Defaulted false so every
+  // existing caller is unchanged and the default view stays inert.
+  coffeeNearbyOnly = false,
     followedPlaceIds = EMPTY_PLACE_IDS,
     radiusFilter,
     sortMode,
@@ -2285,7 +2373,29 @@ export function planDirectoryList(input: {
   const listRows = openNowOnly
     ? listRowsAll.filter((row) => isOpenNow(row.place.hours ?? null, new Date(nowIso)) === true)
     : listRowsAll
-  const unplaced = listRows.filter((row) => row.distanceMiles === null)
+  /**
+   * V32 v32-10a (A5) — THE COFFEE-NEARBY GATE, applied at the SAME final stage as
+   * the open-now one so it can only ever REMOVE rows, never reorder them.
+   *
+   * The rule itself is `placeHasCoffeeNearby` (`=== true`), which excludes both
+   * `false` ("asked, none") and `null` ("never asked"). The two are the same
+   * FILTERING outcome and different FACTS, and `coffeeByCoffeeGap` below keeps
+   * them apart for the empty state's copy.
+   *
+   * OFF is INERT: `coffeeNearbyOnly` is compared to `true`, so the default
+   * (`false`) short-circuits and `listRows` is untouched.
+   */
+  const coffeeByCoffeeGap = listRowsAll.filter((row) => !placeHasCoffeeNearby(row.place))
+  // ⚠️ THIS MUST BE THE VALUE THE REST OF THE FUNCTION CONSUMES. The first
+  // version of this gate wrote its result into a NEW binding while every
+  // downstream consumer kept reading `listRows`, so the filter narrowed nothing
+  // and the toggle changed `aria-pressed` without changing a single row — the
+  // exact "a toggle that filters nothing" defect the column exists to prevent.
+  // Rebinding `listRows` here is what makes the gate real.
+  const gatedRows = coffeeNearbyOnly === true
+    ? listRows.filter((row) => placeHasCoffeeNearby(row.place))
+    : listRows
+  const unplaced = gatedRows.filter((row) => row.distanceMiles === null)
   /**
    * V25 t01: THE LIST IS THE WHOLE LIST, AND NOTHING RENDERS TWICE.
    *
@@ -2301,7 +2411,7 @@ export function planDirectoryList(input: {
    * placed rows and `unplaced` is the rest, and neither surface is derived from
    * the other.
    */
-  const placedRows = listRows.filter((row) => row.distanceMiles !== null)
+  const placedRows = gatedRows.filter((row) => row.distanceMiles !== null)
   const placedGroups = groupPlacesByKind(placedRows)
 
   // The KIND filter must reach the "Not on the map yet" section too. Distance-
@@ -2326,12 +2436,24 @@ export function planDirectoryList(input: {
   // The date-window empty state is the honest answer ONLY when the window is
   // actually the reason nothing shows: a real window, zero rendered rows, no
   // search text (a search narrows further, so it is not "the window" alone).
-  const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
+  const nothingMatches = gatedRows.length === 0 && filteredUnplaced.length === 0
   // V27: the open-now gate is the reason only when it is ON and nothing at all
   // rendered. It outranks the generic message (the gate is a control the parent
   // touched), but a search/kind/radius that also emptied the list keeps its own
   // more specific message below.
   const openNowReason = openNowOnly && nothingMatches
+  /**
+   * V32 v32-10a (A5): the coffee filter is the reason nothing shows ONLY when it
+   * is ON and the list is empty. The REASON distinguishes the two silences —
+   * 'none' (some excluded row was asked and has no cafe) from 'unknown' (every
+   * excluded row was never asked) — because the copy must not claim a place has
+   * no cafe when the dataset has never checked. `null` when the filter is not the
+   * cause.
+   */
+  const coffeeNearbyReason =
+    coffeeNearbyOnly === true && nothingMatches && coffeeByCoffeeGap.length > 0
+      ? coffeeNearbyGapReason(coffeeByCoffeeGap.map((row) => row.place))
+      : null
 
   // V25 t03 — IS A SELECTED KIND THE REASON? Only when EVERY selected kind is
   // absent from the WHOLE loaded directory (see DirectoryListPlan.kindReason), a
@@ -2345,7 +2467,7 @@ export function planDirectoryList(input: {
   const kindReason = (() => {
     if (selectedKinds.size === 0) return null
     if (query.trim() !== '') return null
-    if (listRows.length > 0 || filteredUnplaced.length > 0) return null
+    if (gatedRows.length > 0 || filteredUnplaced.length > 0) return null
     // An unanswered read is UNKNOWN, never "every kind is empty".
     if (places === null) return null
     const counts = placeKindRowCounts(places)
@@ -2381,7 +2503,7 @@ export function planDirectoryList(input: {
   const savedReason = (() => {
     if (!savedOnly) return null
     if (places === null) return null
-    if (listRows.length > 0 || filteredUnplaced.length > 0) return null
+    if (gatedRows.length > 0 || filteredUnplaced.length > 0) return null
     return { hasSaves: followedPlaceIds.size > 0 }
   })()
 
@@ -2389,7 +2511,12 @@ export function planDirectoryList(input: {
     rows,
     effectiveRows,
     filteredRows,
-    listRows,
+    // ⚠️ THE GATED SET, not the pre-gate one. Returning `listRows` here was the
+    // second half of the same bug: the gate narrowed an internal binding that
+    // nothing downstream read, so the toggle changed `aria-pressed` and not one
+    // row. `gatedRows` IS `listRows` when the filter is off, so the default view
+    // is unchanged.
+    listRows: gatedRows,
     placed,
     unplaced,
     placedGroups,
@@ -2399,5 +2526,6 @@ export function planDirectoryList(input: {
     savedReason,
     nothingMatches,
     openNowReason,
+    coffeeNearbyReason,
   }
 }

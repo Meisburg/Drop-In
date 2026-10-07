@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { setDirectoryRadius, settleOnRoute } from './fixtures'
+import { readMarkerSession, readSupabaseEnv, setDirectoryRadius, settleOnRoute } from './fixtures'
 
 /**
  * V27 — the two quick gates the founder named on the places directory:
@@ -144,4 +144,113 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     await expect(page.getByTestId('places-distance-sheet')).toHaveCount(0)
     await expect(page.getByTestId('set-location-btn')).toBeVisible()
   })
+})
+
+/**
+ * V32 v32-10a (A5) — THE COFFEE-NEARBY TOGGLE.
+ *
+ * The founder: *"I think parents are really going to want to have a drop in where
+ * there's coffee nearby… as a parent I would want to be like, okay, can our kids
+ * play here and we can drink a coffee?"*
+ *
+ * The control filters on a CACHED COLUMN (`places.coffee_nearby`), never on a
+ * live Overpass call — no read path queries Overpass. That is proven here too.
+ */
+test('the coffee toggle filters the directory, and its off state is inert (V32-10a A5)', async ({
+  page,
+}) => {
+  // NO OVERPASS, EVER, ON THE READ PATH. Intercept and fail loudly if a request
+  // appears — the column is cached precisely so the directory never depends on a
+  // public API being up.
+  const overpassCalls: string[] = []
+  await page.route(/overpass/i, (route) => {
+    overpassCalls.push(route.request().url())
+    return route.abort()
+  })
+
+  await page.goto('/browse')
+  await settleOnRoute(page, '/browse')
+  await expect(page.getByTestId('place-row').first()).toBeVisible({ timeout: 20_000 })
+
+  const toggle = page.getByTestId('place-coffee-filter')
+  await expect(toggle).toBeVisible()
+  // A REAL control, not the door: pressed state, and it is a BUTTON.
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(toggle).toHaveRole('button')
+
+  // OFF IS INERT: the row set with the toggle untouched is today's row set.
+  const rowsOff = await page.getByTestId('place-row').count()
+  expect(rowsOff, 'the directory must render rows').toBeGreaterThan(1)
+
+  // ON: the row set CHANGES — asserted by comparing rendered counts, not by
+  // asserting the control exists.
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await expect
+    .poll(async () => page.getByTestId('place-row').count(), {
+      message: 'selecting the coffee toggle must change the rendered row set',
+    })
+    .toBeLessThan(rowsOff)
+  const rowsOn = await page.getByTestId('place-row').count()
+  console.log(`[V32-10a] coffee OFF rows=${rowsOff} ON rows=${rowsOn}`)
+  expect(rowsOn, 'the coffee filter must narrow the directory').toBeLessThan(rowsOff)
+
+  // Every row that survives carries the fact: read the column back through the
+  // app's own read and check the rendered rows are a subset of the `true` set.
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const res = await fetch(
+    `${restUrl}/rest/v1/places?coffee_nearby=is.true&select=name`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` } },
+  )
+  const truePlaces = res.ok ? ((await res.json()) as Array<{ name: string }>) : []
+  const trueNames = new Set(truePlaces.map((p) => p.name))
+  const rendered = await page.getByTestId('place-card-name').allInnerTexts()
+  for (const name of rendered) {
+    expect(trueNames.has(name.trim()), `${name} must be a coffee_nearby=true place`).toBe(true)
+  }
+
+  // OFF AGAIN restores the full set (the filter is a view, not a mutation).
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await expect
+    .poll(async () => page.getByTestId('place-row').count(), { timeout: 15_000 })
+    .toBe(rowsOff)
+
+  // THE READ PATH NEVER TOUCHED OVERPASS.
+  expect(overpassCalls, 'no /browse load may call Overpass').toEqual([])
+
+  // THE DOOR IS STILL A DOOR — both live in the row, with different jobs.
+  await expect(page.getByTestId('place-coffee-nearby')).toHaveRole('link')
+  await expect(page.getByTestId('place-coffee-nearby')).toHaveAttribute('href', /google\.com\/maps/)
+})
+
+test('the coffee empty state does not claim a place has no cafe when it never asked (V32-10a A5)', async ({
+  page,
+}) => {
+  await page.goto('/browse')
+  await settleOnRoute(page, '/browse')
+  await expect(page.getByTestId('place-row').first()).toBeVisible({ timeout: 20_000 })
+
+  const toggle = page.getByTestId('place-coffee-filter')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+  // The empty state is HONEST and never overclaims. Whichever branch shows, the
+  // "never asked" wording must not assert an absence the data does not support.
+  const empty = page.getByTestId('empty-coffee-nearby-state')
+  if ((await empty.count()) > 0) {
+    const copy = (await empty.innerText()).toLowerCase()
+    if (copy.includes('haven’t checked') || copy.includes("haven't checked")) {
+      // The unknown branch: it may NOT say any place has no cafe.
+      expect(copy).not.toContain('no cafe')
+    }
+    // The escape is always there, so the state is never a dead end.
+    await expect(page.getByTestId('coffee-nearby-escape')).toBeVisible()
+  } else {
+    // Rows exist, so the filter found something and the empty state is correctly
+    // absent. Both outcomes are legal; what is asserted either way is that the
+    // page never renders the zero-case INVITATION for a filter.
+    expect(await page.getByTestId('place-row').count()).toBeGreaterThan(0)
+  }
 })

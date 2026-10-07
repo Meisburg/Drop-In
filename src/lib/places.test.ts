@@ -36,6 +36,8 @@ import {
   placeExternalUrl,
   placeLearnMoreLink,
   placeOutboundLinks,
+  coffeeNearbyEmptyCopy,
+  coffeeNearbyGapReason,
   photoCreditLine,
   placePhotoForDropIn,
   radiusPreviewCircle,
@@ -289,6 +291,74 @@ describe('browsePlaces (the directory\'s filter + sort decision)', () => {
   const directory = [far, noCoords, indoor, near]
 
   const NO_FILTERS = { query: '', indoor: null, maxMiles: null }
+
+  /**
+   * V32 v32-10a (A5) — the coffee-nearby filter, and the three-valued column it
+   * reads. Every case names the defect it detects; the null/false pair is
+   * asserted SEPARATELY because collapsing them is the bug this design exists to
+   * avoid.
+   */
+  describe('the coffee-nearby filter (V32-10a A5)', () => {
+    const hasCoffee = place({ name: 'Cafe Park', lat: NEAR.lat, lng: NEAR.lng, coffee_nearby: true })
+    const noCoffee = place({ name: 'Dry Park', lat: NEAR.lat, lng: NEAR.lng, coffee_nearby: false })
+    const neverAsked = place({ name: 'Unasked Park', lat: NEAR.lat, lng: NEAR.lng, coffee_nearby: null })
+    const withCoffee = [hasCoffee, noCoffee, neverAsked]
+
+    it('OFF (null or absent) is INERT — the row set is unchanged', () => {
+      // The defect: a filter that leaks into the default view. Both the `null`
+      // and the omitted forms must produce EXACTLY today's rows.
+      const off = browsePlaces(withCoffee, { ...NO_FILTERS }, VIEWER, ZIP_COORDS, null)
+      const absent = browsePlaces(
+        withCoffee,
+        { query: '', indoor: null, maxMiles: null, coffeeNearbyOnly: null },
+        VIEWER,
+        ZIP_COORDS,
+        null,
+      )
+      expect(off.map((r) => r.place.name)).toEqual(['Cafe Park', 'Dry Park', 'Unasked Park'])
+      expect(absent.map((r) => r.place.name)).toEqual(['Cafe Park', 'Dry Park', 'Unasked Park'])
+    })
+
+    it('ON keeps a `true` row', () => {
+      const rows = browsePlaces(
+        withCoffee,
+        { ...NO_FILTERS, coffeeNearbyOnly: true },
+        VIEWER,
+        ZIP_COORDS,
+        null,
+      )
+      expect(rows.map((r) => r.place.name)).toContain('Cafe Park')
+    })
+
+    it('ON EXCLUDES a `false` row — Overpass was asked and there is no cafe', () => {
+      // `false` is a real answer, and it answers "no".
+      const rows = browsePlaces(
+        withCoffee,
+        { ...NO_FILTERS, coffeeNearbyOnly: true },
+        VIEWER,
+        ZIP_COORDS,
+        null,
+      )
+      expect(rows.map((r) => r.place.name)).not.toContain('Dry Park')
+    })
+
+    it('ON EXCLUDES a `null` row — but that is NOT the same fact as `false`', () => {
+      // ASSERTED SEPARATELY FROM `false` ON PURPOSE. The exclusion rule is one
+      // (`=== true`), but the REASONS differ, and the empty state's copy depends
+      // on telling them apart (`coffeeNearbyGapReason`). If these two cases ever
+      // collapse into one, a place nobody asked about starts being presented as
+      // a place with no coffee.
+      const rows = browsePlaces(
+        withCoffee,
+        { ...NO_FILTERS, coffeeNearbyOnly: true },
+        VIEWER,
+        ZIP_COORDS,
+        null,
+      )
+      expect(rows.map((r) => r.place.name)).not.toContain('Unasked Park')
+      expect(rows.map((r) => r.place.name)).toEqual(['Cafe Park'])
+    })
+  })
 
   it('sorts nearest first, alphabetically on ties', () => {
     const rows = browsePlaces(directory, NO_FILTERS, VIEWER, ZIP_COORDS, null)
@@ -2707,5 +2777,41 @@ describe('placePhotoNeedsReview (the badge, on the same fact as the gate)', () =
   it('flags nothing for a row with no picture', () => {
     expect(placePhotoNeedsReview(place(null, 'unreviewed'))).toBe(false)
     expect(placePhotoNeedsReview(place('', 'unreviewed'))).toBe(false)
+  })
+})
+
+/**
+ * V32 v32-10a (A5) — the coffee filter's empty state, which must not overclaim.
+ *
+ * The column is three-valued, so the empty list has TWO possible silences and
+ * the copy depends on which is true. Each case names the defect it detects.
+ */
+describe('coffeeNearbyGapReason / coffeeNearbyEmptyCopy (V32-10a A5)', () => {
+  it('says "none" when any excluded row was ASKED and has no cafe', () => {
+    expect(coffeeNearbyGapReason([{ coffee_nearby: false }])).toBe('none')
+    // …and it WINS over unknown rows, because "some of these definitely have no
+    // cafe" is true and useful while "we do not know" would understate the data.
+    expect(coffeeNearbyGapReason([{ coffee_nearby: false }, { coffee_nearby: null }])).toBe('none')
+  })
+
+  it('says "unknown" when every excluded row was NEVER ASKED', () => {
+    // The defect this prevents: claiming a place has no cafe when the dataset
+    // has never checked it.
+    expect(coffeeNearbyGapReason([{ coffee_nearby: null }])).toBe('unknown')
+    expect(coffeeNearbyGapReason([{ coffee_nearby: null }, { coffee_nearby: null }])).toBe('unknown')
+  })
+
+  it('treats an empty excluded set as unknown rather than inventing a claim', () => {
+    expect(coffeeNearbyGapReason([])).toBe('unknown')
+  })
+
+  it('the "unknown" copy never claims a place has no cafe', () => {
+    const copy = coffeeNearbyEmptyCopy('unknown')
+    expect(copy.toLowerCase()).not.toContain('no cafe')
+    expect(copy).toContain('haven’t checked')
+  })
+
+  it('the "none" copy may state the absence, because the data supports it', () => {
+    expect(coffeeNearbyEmptyCopy('none')).toContain('cafe')
   })
 })

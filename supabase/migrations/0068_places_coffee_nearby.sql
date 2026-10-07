@@ -1,0 +1,51 @@
+-- ===========================================================================
+-- V32 v32-10a (migration 0068, annotation A5): a place can say whether there is
+-- coffee nearby.
+-- ===========================================================================
+--
+-- What this adds: ONE nullable column, `public.places.coffee_nearby boolean`.
+-- No column is dropped or renamed, no row's data is touched, no constraint is
+-- added, no policy changes. It is a LIVE-DATABASE migration (the project holds
+-- real family data), so it is strictly additive and re-paste-safe.
+--
+-- Why: the founder's ask (V32, annotation A5) — *"I think parents are really
+-- going to want to have a drop in where there's coffee nearby… as a parent I
+-- would want to be like, okay, can our kids play here and we can drink a
+-- coffee?"* The directory already ships a `Coffee nearby` pill, but it is a DOOR
+-- to Google Maps: it answers "where is coffee around here", not "does THIS place
+-- have coffee near it". This column is the fact the in-app toggle filters on.
+--
+-- ⚠️ THREE-VALUED ON PURPOSE, AND `null ≠ false`:
+--   `true`  — a cafe is within the radius
+--   `false` — Overpass was ASKED about this place and there is none
+--   `null`  — NEVER ASKED (the default for every existing row)
+-- A place that was never asked must NOT be silently treated as "no cafe". That
+-- single distinction is the difference between an honest dataset and a lying one,
+-- and the filter treats `null` as "not a yes" WITHOUT ever claiming it is a "no".
+-- This is why the column is nullable and why there is NO `not null default false`.
+--
+-- POPULATED OFFLINE, NEVER AT READ TIME. `scripts/refresh-coffee-nearby.mjs`
+-- asks Overpass once per place and writes the column; **no read path queries
+-- Overpass** — not on load, not on toggle, not lazily. Overpass is a shared free
+-- endpoint with rate limits and multi-second latency, so making a directory load
+-- depend on it would be the wrong posture; caching the answer on the row keeps
+-- the read path offline and testable. The precedent for "a fact fetched from an
+-- external source, cached on the row" is `places.hours` / `hours_source` /
+-- `hours_checked_at`.
+--
+-- THE EXACT QUERY, so the claim is auditable: the script asks
+--   `nwr(around:750, <lat>, <lng>)[amenity=cafe]; out tags;`
+-- i.e. OpenStreetMap amenity=cafe, matching NODES, WAYS AND RELATIONS (`nwr`,
+-- not `node`), within a 750-metre radius of the place's coordinates. 750 m is a
+-- ~10-minute walk with kids; the radius and tag set are defined by
+-- `COFFEE_NEARBY_RADIUS_METERS` and the query builder in the script, which is the
+-- single source of truth for both.
+--
+-- A FAILED, TIMED-OUT OR THROTTLED QUERY LEAVES THE ROW UNTOUCHED (still `null`).
+-- Only a successful response reporting zero cafes writes `false`.
+--
+-- `add column if not exists` is inherently re-runnable and converges. There is
+-- deliberately no `do $$` guard, which would be one more thing to drift.
+-- ===========================================================================
+
+alter table public.places add column if not exists coffee_nearby boolean;

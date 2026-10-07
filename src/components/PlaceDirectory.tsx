@@ -13,6 +13,7 @@ import {
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
+  coffeeNearbyEmptyCopy,
   kindEmptyCopy,
   placePhotoNeedsReview,
   placePhotoVisibleTo,
@@ -253,6 +254,13 @@ export function PlaceDirectory({
    */
   const [openNowOnly, setOpenNowOnly] = useState(false)
   /**
+   * V32 v32-10a (A5): filter to places with a cafe within a short walk. OFF by
+   * default and therefore INERT — the decision itself lives in the pure
+   * `planDirectoryList` seam, and the three-valued column's rule lives in
+   * `placeHasCoffeeNearby` (the build law: lib decides, this renders).
+   */
+  const [coffeeNearbyOnly, setCoffeeNearbyOnly] = useState(false)
+  /**
    * Miles from the home pin; null = no radius constraint.
    *
    * V28 r4: this is ALWAYS null now. The filter modal's own "Within (miles of
@@ -459,6 +467,7 @@ export function PlaceDirectory({
     savedReason,
     nothingMatches,
     openNowReason,
+    coffeeNearbyReason,
   } = planDirectoryList({
     places,
     query,
@@ -472,6 +481,7 @@ export function PlaceDirectory({
     selectedKinds,
     savedOnly,
     openNowOnly,
+    coffeeNearbyOnly,
     followedPlaceIds,
     radiusFilter,
     sortMode,
@@ -1067,6 +1077,47 @@ export function PlaceDirectory({
                 for a single place. An in-app per-place answer needs a
                 nearby-places source (Google Places Nearby or Overpass) plus a
                 caching decision; that is a slice, not a chip. */}
+            {/* V32 v32-10a (A5): THE TOGGLE, BESIDE THE DOOR — two jobs, both
+                kept. The founder's per-place question (*"can our kids play here
+                AND can we drink a coffee?"*) is answered in-app by this filter,
+                which reads the cached `places.coffee_nearby` column. The door
+                below still answers the AREA question ("where is coffee around
+                here") by opening Google Maps, and it stays an `<a>`.
+
+                It is a real control matching the kind chips: `aria-pressed`, a
+                visible on/off state matching their selected colours, `min-h-11`,
+                the same focus ring. Its own testid — NOT the door's, which a spec
+                locates.
+
+                ⚠️ WHAT IT CANNOT SAY: the column is three-valued, so a place
+                we never asked about is excluded WITHOUT being called cafe-less.
+                The empty state below carries that distinction in its copy. */}
+            <button
+              type="button"
+              data-testid="place-coffee-filter"
+              aria-pressed={coffeeNearbyOnly}
+              onClick={() => setCoffeeNearbyOnly((prev) => !prev)}
+              className={
+                'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (coffeeNearbyOnly
+                  ? 'border-amber-700 bg-amber-700 text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+              }
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className={'h-5 w-5 shrink-0 ' + (coffeeNearbyOnly ? 'text-white' : 'text-amber-700')}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
+              </svg>
+              Coffee nearby
+            </button>
             <a
               href={`https://www.google.com/maps?q=${encodeURIComponent(
                 `coffee near ${locationLabelText}`,
@@ -1252,6 +1303,36 @@ export function PlaceDirectory({
         </div>
       ) : radiusReason !== null ? (
         <div className="md:col-start-2"><RadiusEmptyState radiusMiles={radiusReason.radiusMiles} /></div>
+      ) : coffeeNearbyReason !== null ? (
+        /* V32 v32-10a (A5) — THE COFFEE FILTER'S EMPTY STATE, and why it sits
+           HERE. Precedence: saved → kind → radius → COFFEE → open-now.
+
+           It comes after the kind and radius branches because those are more
+           specific about WHAT narrowed the list, and BEFORE open-now for the same
+           reason the open-now gate sits last: it is the broadest of the controls
+           and its message ("nothing is open right now") would be a less useful
+           truth when the parent has explicitly asked about coffee.
+
+           THE COPY IS HONEST ABOUT WHAT THE DATA KNOWS. The column is
+           three-valued, so `coffeeNearbyReason` tells the two silences apart:
+           'none' may say no cafe is nearby, 'unknown' must NOT — it says the
+           check is still in progress instead. The decision and the copy both live
+           in lib/ (`coffeeNearbyGapReason` / `coffeeNearbyEmptyCopy`); this
+           renders them. */
+        <div
+          data-testid="empty-coffee-nearby-state"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
+        >
+          <p className="text-sm text-slate-600">{coffeeNearbyEmptyCopy(coffeeNearbyReason)}</p>
+          <button
+            type="button"
+            data-testid="coffee-nearby-escape"
+            onClick={() => setCoffeeNearbyOnly(false)}
+            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            Show all places
+          </button>
+        </div>
       ) : openNowReason ? (
         /* V27 — THE OPEN-NOW EMPTY STATE. The gate is a control the parent
            touched, so when it is the reason nothing shows, name it and offer the
