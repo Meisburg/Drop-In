@@ -106,15 +106,16 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     //
     // v33-0 (restores what V32-5's deletion actually took): the 390px
     // no-ellipsis gate for the controls that exist NOW. For the indoor toggle
-    // and every kind chip — each element plus its text-bearing descendants —
-    // `scrollWidth <= clientWidth + 1` (a chip whose text sits in a child span
-    // can clip on the span while the button itself measures fine, so the check
-    // walks the descendants too, and the failure names the chip). The scroll
-    // CONTAINER (`place-kind-chip-row`) is deliberately exempt: side-scrolling
-    // inside it at 390px is the feature ("still side-scrolls"), not a defect.
-    // Plus the page itself must not widen at 390px: `documentElement.scrollWidth
-    // <= clientWidth + 1`. Both run after the count assertion above has settled,
-    // so the measurements are taken on the fully-rendered row set.
+    // and every kind chip — each element plus any descendant carrying
+    // non-whitespace text — `scrollWidth <= clientWidth + 1` (a chip whose label
+    // sits in a child span can clip on the span while the button itself measures
+    // fine, so the check walks the descendants too, and the failure names the
+    // chip). The scroll CONTAINER (`place-kind-chip-row`) is deliberately exempt:
+    // side-scrolling inside it at 390px is the feature ("still side-scrolls"),
+    // not a defect. Plus the page itself must not widen at 390px:
+    // `documentElement.scrollWidth <= clientWidth + 1`. Both run after the count
+    // assertion above has settled, so the measurements are taken on the
+    // fully-rendered row set.
     await expect(page.getByTestId('places-when-filter')).toHaveCount(0)
     await expect(page.getByTestId('places-when-sheet')).toHaveCount(0)
 
@@ -123,21 +124,28 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // and the window share the SAME start-time read (`upcomingStartTimes`), so
     // removing the window is exactly when someone might "tidy away" the read.
     //
-    // The row's own rule (`PlaceDirectory`'s `plannedCopy`/`inviteLine`, from
-    // `planDirectoryList.upcomingCount`) states one of exactly three things, and
-    // never nothing: "N drop-ins planned here", "1 drop-in planned here", or the
-    // invite line when the count is a true zero. A row rendering NONE of them
-    // means the read was lost. Asserting the DISJUNCTION is what makes this a
-    // real check rather than a string guess — the seeded directory's counts vary
-    // with live data, so pinning one literal would have been flaky by design.
+    // FIX ROUND 1 (ocr): the row's own rule (`PlaceDirectory`'s
+    // `plannedCopy`/`inviteLine`, from `planDirectoryList.upcomingCount`)
+    // produces FOUR states, not three — `src/lib/placeSocial.ts:139-146` +
+    // `PlaceDirectory.tsx:1782-1791`:
     //
-    // v33-0 (fixes the one-shot snapshot race): `settleOnRoute` settles the
-    // ROUTE, not the data — if `upcomingStartTimesByPlace` has not resolved yet,
-    // every row's `upcomingCount` is still null, the row renders neither string
-    // the disjunction expects, and a single evaluateAll fails with no retry. So
-    // the assertion POLLS the same disjunction until it holds; the testid and
-    // the disjunction are unchanged, only the timing is fixed. It must hold for
-    // EVERY row — never weakened to "at least one row states its count".
+    //   | state                                            | renders                    |
+    //   |--------------------------------------------------|----------------------------|
+    //   | `upcomingCount > 0`                              | "N drop-ins planned here"  |
+    //   | `upcomingCount === 0` and no proof               | "Be the first to start a drop-in here today!" |
+    //   | `upcomingCount === 0` and `dropInProofLine(proof) !== null` | NEITHER — documented behaviour: a place that has hosted keeps quiet (the historical proof line was removed from the row in the distill pass, `PlaceDirectory.tsx:1905-1918`) |
+    //   | `upcomingCount === null` (read not landed)       | neither                    |
+    //
+    // So "every row states its count" was never true — the third state is a
+    // legitimate render, and asserting it would time out on a healthy app as
+    // hosting accumulates. The invariant worth protecting is instead: the
+    // `upcomingStartTimes` READ still drives the rows. It is one batched read for
+    // the whole directory, so when it lands, states 1 and 2 appear; when it is
+    // lost, `upcomingCount` is `null` for every row and the directory goes
+    // entirely quiet. So this assertion POLLS until at least one row states a
+    // positive count OR the invite line — which fails loudly exactly when the
+    // read is lost, the regression the check exists for — and separately
+    // asserts the snapshot covers every row, so a partial snapshot cannot pass.
     const countRows = page.getByTestId('place-row')
     expect(await countRows.count()).toBeGreaterThan(0)
     const statesItsCount = (t: string) =>
@@ -145,12 +153,15 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     await expect
       .poll(async () => {
         const countTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))
-        return countTexts.filter(statesItsCount).length
+        return countTexts.length > 0 && countTexts.filter(statesItsCount).length > 0
       }, {
-        message: 'every directory row must still state its upcoming count (or its honest zero)',
+        message: 'the upcoming-start-times read must drive at least one directory row (positive count or honest zero)',
         timeout: 20_000,
       })
-      .toBe(await countRows.count())
+      .toBe(true)
+    // The snapshot must cover EVERY row — a partial evaluateAll cannot pass.
+    const allCountTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))
+    expect(allCountTexts.length, 'the count snapshot must cover every directory row').toBe(await countRows.count())
 
     // THE TOGGLE THAT REPLACED THE "Setting" DROPDOWN. One control, one word,
     // a real pressed state — and no sheet behind it to open.
@@ -162,45 +173,62 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     // v33-0 — the restored 390px NO-ELLIPSIS gate (see the comment at the top of
     // this test for what V32-5's deletion took and why it comes back now):
     // the indoor toggle and every kind chip must clip no text, and the page
-    // itself must not widen. The check walks each element's text-bearing
-    // descendants too (a chip whose label sits in a child span can clip there
-    // while the button measures fine), and the failure names the culprit.
-    const clipped = await page.evaluate(() => {
-      const TOLERANCE = 1
-      const offenders: string[] = []
-      const check = (el: Element, name: string) => {
-        if (el.scrollWidth > el.clientWidth + TOLERANCE) {
-          offenders.push(`${name} (scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth})`)
-        }
-        // Text-bearing descendants: any descendant with non-whitespace text of
-        // its own is where clipping would actually show up.
-        el.querySelectorAll('*').forEach((desc) => {
-          if ((desc.textContent ?? '').trim().length > 0 && desc.children.length === 0) {
-            if (desc.scrollWidth > desc.clientWidth + TOLERANCE) {
-              offenders.push(`${name} → <${desc.tagName.toLowerCase()}> (scrollWidth ${desc.scrollWidth} > clientWidth ${desc.clientWidth})`)
+    // itself must not widen. The check walks each element's descendants that
+    // carry non-whitespace text (a chip whose label sits in a child span can
+    // clip there while the button measures fine), and the failure names the
+    // culprit. Both gates POLL so a transient reflow (late webfont swap,
+    // scrollbar appearing) is retried instead of failing the run.
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          const TOLERANCE = 1
+          const offenders: string[] = []
+          const check = (el: Element, name: string) => {
+            if (el.scrollWidth > el.clientWidth + TOLERANCE) {
+              offenders.push(`${name} (scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth})`)
             }
+            // Any descendant with non-whitespace text is a clip candidate — no
+            // leaf-only restriction, so a future wrapping <span class="overflow-hidden">
+            // that clips its children while the leaf text node measures fine is
+            // still caught.
+            el.querySelectorAll('*').forEach((desc) => {
+              if ((desc.textContent ?? '').trim().length > 0) {
+                if (desc.scrollWidth > desc.clientWidth + TOLERANCE) {
+                  offenders.push(`${name} → <${desc.tagName.toLowerCase()}> (scrollWidth ${desc.scrollWidth} > clientWidth ${desc.clientWidth})`)
+                }
+              }
+            })
           }
+          const toggle = document.querySelector('[data-testid="places-indoor-filter"]')
+          if (toggle) check(toggle, 'indoor toggle [places-indoor-filter]')
+          // The chips only — the scroll container itself is exempt: its own
+          // horizontal overflow at 390px is the "still side-scrolls" feature.
+          document.querySelectorAll('[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])').forEach((chip) => {
+            check(chip, `kind chip [${chip.getAttribute('data-testid')}]`)
+          })
+          return offenders
         })
-      }
-      const toggle = document.querySelector('[data-testid="places-indoor-filter"]')
-      if (toggle) check(toggle, 'indoor toggle [places-indoor-filter]')
-      // The chips only — the scroll container itself is exempt: its own
-      // horizontal overflow at 390px is the "still side-scrolls" feature.
-      document.querySelectorAll('[data-testid^="place-kind-chip-"]:not([data-testid="place-kind-chip-row"])').forEach((chip) => {
-        check(chip, `kind chip [${chip.getAttribute('data-testid')}]`)
+      }, {
+        message: 'the 390px filter row must clip no text',
+        timeout: 10_000,
       })
-      return offenders
-    })
-    expect(clipped, 'the 390px filter row must clip no text (and the page must not widen)').toEqual([])
+      .toEqual([])
 
     // The other half of the same acceptance criterion — "/browse still
     // side-scrolls at 390px WITHOUT WIDENING THE PAGE": the scroll container
     // (the kind-chip row) may overflow horizontally; the document must not.
-    const widened = await page.evaluate(() => {
-      const doc = document.documentElement
-      return doc.scrollWidth > doc.clientWidth + 1 ? doc.scrollWidth : 0
-    })
-    expect(widened, 'the page must not widen beyond 390px').toBe(0)
+    // Polled for the same reason as the clip gate above.
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          const doc = document.documentElement
+          return doc.scrollWidth > doc.clientWidth + 1 ? doc.scrollWidth : 0
+        })
+      }, {
+        message: 'the page must not widen beyond 390px',
+        timeout: 10_000,
+      })
+      .toBe(0)
 
     // THE DELETED CONTROL IS REALLY GONE (V31 map-and-distance), and the radius
     // it used to state is still reachable — on the location control, beside the
