@@ -728,3 +728,77 @@ test('the home-ZIP control saves, keeps the radius, and never shows a false erro
   // Restore immediately; afterEach is the backstop.
   expect(await patchMarkerLocation(marker.homeZip, marker.radiusMiles)).toBe(true)
 })
+
+/**
+ * S9 — THE EMPTY-RADIUS MAP VIEW (the founder's own fix, pinned).
+ *
+ * Slice S2 (`7c8fc8f`) made the Map toggle draw a real map when the radius is
+ * empty. Before it, tapping Map filled the button with the action tone,
+ * announced `aria-pressed="true"`, and changed nothing underneath — which reads
+ * as a broken control rather than an empty one. The founder's words: "When I
+ * click the map button, I expect a map to populate even if there's no drop-ins
+ * available with like a pin that shows where I am. Otherwise it seemed like this
+ * feature is broken."
+ *
+ * The failure mode is invisible and NOTHING asserted this branch: the string
+ * "nothing in your radius yet" appeared in `src/` only. This test is the pin.
+ *
+ * THE TWO PHASES ARE THE POINT. PHASE A proves `feed-map-band` is absent under
+ * the SAME empty radius, so the band's appearance in PHASE B is caused by the
+ * toggle and not by the empty radius alone. Without PHASE A this test would pass
+ * just as happily against a build that always drew the band.
+ *
+ * It rides the file's own empty-radius discipline: `beforeEach` pins the far
+ * location (98901 / 2 mi), so no live post can reach this viewer, and `afterAll`
+ * restores the marker and fails loudly if the restore does not land.
+ */
+test('the empty radius draws a real map when the Map toggle is tapped (S2 pin)', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+
+  // ---------------- PHASE A — LIST VIEW: no band, card only ----------------
+  const empty = page.getByTestId('empty-radius-state')
+  await expect(empty).toBeVisible()
+
+  // THE FALSIFIABLE HALF. The band must be absent BECAUSE the view is list, not
+  // merely because there is nothing to plot — PHASE B shows the same empty
+  // radius DOES produce one. (If this number is ever 1 here, PHASE B proves
+  // nothing and this test has stopped testing the toggle.)
+  const bandInListCount = await page.getByTestId('feed-map-band').count()
+  console.log(`[S9] PHASE A feed-map-band count: ${bandInListCount}`)
+  expect(bandInListCount).toBe(0)
+
+  // ---------------- PHASE B — TAP MAP: a real map, card still below -------
+  const mapButton = page.getByRole('button', { name: 'Map' })
+  await mapButton.click()
+  await expect(mapButton).toHaveAttribute('aria-pressed', 'true')
+
+  const band = page.getByTestId('feed-map-band')
+  await expect(band).toBeVisible({ timeout: 15000 })
+
+  // Substring, not exact: a wording or dash change must not break this
+  // spuriously. The band's copy is "You are here — nothing in your radius yet".
+  await expect(band).toContainText('nothing in your radius yet')
+
+  // A REAL Leaflet canvas with the home pin — the same selectors the existing
+  // V19 (places.e2e.ts) and feed-view-toggle specs use. The empty-radius map has
+  // no place pins by construction, so this pin is the viewer's own.
+  await expect(page.locator('.leaflet-container').first()).toBeVisible()
+  const pins = await page.locator('path.leaflet-interactive').count()
+  console.log(`[S9] PHASE B path.leaflet-interactive count: ${pins}`)
+  expect(pins, 'the empty-radius map must still draw the home pin').toBeGreaterThan(0)
+
+  // THE OTHER HALF OF S2: the card is not replaced, it moves. It keeps its
+  // honest count, its widen escapes and its directory door — UNDER the map.
+  await expect(empty).toBeVisible()
+  const bandBox = await band.boundingBox()
+  const emptyBox = await empty.boundingBox()
+  expect(bandBox, 'the band must have a box').not.toBeNull()
+  expect(emptyBox, 'the empty-radius card must have a box').not.toBeNull()
+  expect(
+    emptyBox!.y,
+    'the empty-radius card must sit BELOW the map band, not instead of it',
+  ).toBeGreaterThanOrEqual(bandBox!.y + bandBox!.height)
+})
