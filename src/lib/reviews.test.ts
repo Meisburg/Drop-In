@@ -4,6 +4,7 @@ import {
   REVIEW_BODY_MAX_LENGTH,
   REVIEW_SCORE_MAX,
   REVIEW_SCORE_MIN,
+  hasPlaceRating,
   hasReviewed,
   inlineReviewHighlights,
   inlineReviewsEmptyLine,
@@ -435,5 +436,45 @@ describe('inlineReviewsEmptyLine', () => {
     expect(inlineReviewsEmptyLine(-1, 'Green Lake Park')).toBe(
       'No one has reviewed Green Lake Park yet.',
     )
+  })
+})
+
+/**
+ * V32 v32-9 (A10) — the drop-in page's visibility threshold.
+ *
+ * Each case names the defect it detects. The dangerous ones are silent: a
+ * zero-average rating drawn as a real score, or the "Be the first to rate"
+ * invitation leaking onto a page that is not where anyone reviews a place.
+ */
+describe('hasPlaceRating (V32-9 — the drop-in page draws only an EARNED rating)', () => {
+  it('is true for a place that has reviews and an average', () => {
+    expect(hasPlaceRating({ review_count: 12, display_average: 4.3 })).toBe(true)
+  })
+
+  it('is FALSE for an unrated place — the case the drop-in page exists to hide', () => {
+    // The defect: `PlaceRatingLine`'s zero case is an INVITATION ("Be the first
+    // to rate {place}."), which is right on a place page and noise on a drop-in
+    // page. An unrated place must render nothing at all.
+    expect(hasPlaceRating({ review_count: 0, display_average: null })).toBe(false)
+  })
+
+  it('is FALSE when the count is positive but the average is null (the guard, not a live shape)', () => {
+    // The current RPC cannot produce this — db.ts's normaliser keeps a null
+    // average distinct from 0 for exactly this reason — but the guard refuses it
+    // structurally, because what it prevents is drawing a rating the place has
+    // not earned. Pinning it means a future shape change cannot quietly start
+    // rendering a numberless rating.
+    expect(hasPlaceRating({ review_count: 7, display_average: null })).toBe(false)
+  })
+
+  it('is NOT a truthiness check on the average — a real 0 behaves like a real number', () => {
+    // `if (!average)` would hide a legitimate 0. The normaliser yields a real
+    // `number | null`, so 0 must be treated as a VALUE: present, and therefore
+    // visible when the count says someone rated it.
+    expect(hasPlaceRating({ review_count: 3, display_average: 0 })).toBe(true)
+  })
+
+  it('is false for a negative count (defensive: no count is not a rating)', () => {
+    expect(hasPlaceRating({ review_count: 0, display_average: 5 })).toBe(false)
   })
 })

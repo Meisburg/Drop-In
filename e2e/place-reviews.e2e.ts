@@ -65,6 +65,7 @@ import {
   readPlaceByName,
   readSessionFromBrowserPage,
   readSupabaseEnv,
+  settleOnRoute,
   signUpViewer,
 } from './fixtures'
 // The pure seams, imported rather than re-spelled: the spec asserts the label
@@ -441,4 +442,196 @@ test('a signed-out visitor gets no review surface at all (reviews-inline)', asyn
   } finally {
     await context.close()
   }
+})
+
+/**
+ * V32 v32-9 (A10) — THE PLACE'S RATING ON A DROP-IN PAGE.
+ *
+ * Q1 ruled: the stars rate the PLACE, not the drop-in. The drop-in detail page
+ * mounts the same `PlaceRatingLine` the place page uses, beside the place it
+ * describes.
+ *
+ * THE CRUX IS THE ABSENT CASE. `PlaceRatingLine` renders its zero case as an
+ * INVITATION — "Be the first to rate {place}." — which is right on a place page
+ * (where a parent can actually write one) and is noise on a drop-in page. So an
+ * unrated place must render NOTHING there: not a zero, not an empty star row,
+ * and not that invitation. `hasPlaceRating` (lib/reviews) is the threshold, and
+ * the second test below is what proves it is wired.
+ */
+test('a drop-in page shows the PLACE’s rating when it has one (V32-9 A10)', async ({ page }) => {
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const headers = { apikey: anonKey, Authorization: `Bearer ${accessToken}` }
+
+  // FIND a place that genuinely has reviews AND has a post, rather than pinning a
+  // seeded id: the review set is live data another spec may have just cleared.
+  const reviewsRes = await fetch(`${restUrl}/rest/v1/reviews?select=place_id`, { headers })
+  const reviewRows = reviewsRes.ok ? ((await reviewsRes.json()) as Array<{ place_id: string }>) : []
+  const ratedPlaceIds = [...new Set(reviewRows.map((r) => r.place_id))]
+  expect(ratedPlaceIds.length, 'the live project must hold at least one reviewed place').toBeGreaterThan(0)
+
+  const postRes = await fetch(
+    `${restUrl}/rest/v1/playdates?place_id=in.(${ratedPlaceIds.join(',')})&select=id,place,place_id&limit=1`,
+    { headers },
+  )
+  const posts = postRes.ok
+    ? ((await postRes.json()) as Array<{ id: string; place: string; place_id: string }>)
+    : []
+  expect(posts.length, 'a reviewed place must have a drop-in to open').toBeGreaterThan(0)
+  const post = posts[0]
+
+  // The summary the page will read, so the rendered line is asserted against the
+  // SAME numbers rather than a guess.
+  const sumRes = await fetch(`${restUrl}/rest/v1/rpc/review_summary`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_place_id: post.place_id }),
+  })
+  const summaryRow = (await sumRes.json()) as Array<{ review_count: number; display_average: string | null }>
+  const summary = summaryRow[0]
+  console.log(
+    `[V32-9] rated place ${post.place_id} "${post.place}" count=${summary.review_count} avg=${summary.display_average}`,
+  )
+
+  await page.goto(`/playdate/${post.id}`)
+  await settleOnRoute(page, `/playdate/${post.id}`)
+  const line = page.getByTestId('place-rating-line')
+  // V32-9 (STEP 4): the testid now appears on a FOURTH surface, so its count is
+  // pinned HERE deliberately rather than left to collide with a future
+  // `toHaveCount(1)` elsewhere. Measured on this build: the drop-in detail page
+  // renders EXACTLY ONE, `/browse` renders one per RATED row (4 on a 117-row
+  // directory — most places have no rating at all), and `/place/:id` plus
+  // `/place/:id/details` render one each.
+  await expect(line).toHaveCount(1, { timeout: 20_000 })
+  await expect(page.getByTestId('place-rating-line')).toHaveCount(1)
+  // The rendered line states the real numbers.
+  await expect(line).toContainText(`${Number(summary.display_average).toFixed(1)} out of 5`)
+  await expect(line).toContainText(
+    `${summary.review_count} ${summary.review_count === 1 ? 'review' : 'reviews'}`,
+  )
+  // And it sits with the place it describes: inside the place paragraph's block,
+  // below the h1 (NOT above it — that is the photo banner's slot).
+  const lineBox = await line.boundingBox()
+  const h1Box = await page.getByRole('heading', { level: 1 }).boundingBox()
+  expect(lineBox, 'the rating line must have a box').not.toBeNull()
+  expect(h1Box, 'the h1 must have a box').not.toBeNull()
+  expect(
+    lineBox!.y,
+    'the rating belongs in the place block BELOW the heading',
+  ).toBeGreaterThanOrEqual(h1Box!.y + h1Box!.height)
+})
+
+test('an UNRATED place renders NOTHING on a drop-in page — no zero, no invitation (V32-9 A10)', async ({
+  page,
+}) => {
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const headers = { apikey: anonKey, Authorization: `Bearer ${accessToken}` }
+
+  // A post whose place has no reviews at all.
+  const res = await fetch(
+    `${restUrl}/rest/v1/playdates?place_id=not.is.null&select=id,place,place_id&limit=40`,
+    { headers },
+  )
+  const posts = res.ok ? ((await res.json()) as Array<{ id: string; place: string; place_id: string }>) : []
+  let unrated: (typeof posts)[number] | null = null
+  for (const p of posts) {
+    const s = await fetch(`${restUrl}/rest/v1/rpc/review_summary`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_place_id: p.place_id }),
+    })
+    const rows = (await s.json()) as Array<{ review_count: number }>
+    if ((rows[0]?.review_count ?? 0) === 0) {
+      unrated = p
+      break
+    }
+  }
+  expect(unrated, 'the live project must hold an unreviewed place with a post').not.toBeNull()
+  console.log(`[V32-9] unrated place ${unrated!.place_id} "${unrated!.place}"`)
+
+  await page.goto(`/playdate/${unrated!.id}`)
+
+  // ⚠️ WAIT FOR THE PAGE TO SETTLE BEFORE ASSERTING ABSENCE. A blank page
+  // satisfies every `toHaveCount(0)` below for the wrong reason — that is the
+  // vacuous-pass class this repo names, and it happened here: the first version
+  // of this test asserted absence against a page whose `h1` had not painted, so
+  // it passed even with the predicate mutated to always-true. The h1 is the
+  // gate, then the place paragraph, and only then the rating assertions.
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(unrated!.place, { exact: false }).first()).toBeVisible()
+
+  // THE CRUX: absent, and specifically NOT the zero-case invitation.
+  await expect(page.getByTestId('place-rating-line')).toHaveCount(0)
+  await expect(page.getByText('Be the first to rate', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('0.0 out of 5', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('0 reviews', { exact: false })).toHaveCount(0)
+  // The page still rendered (a guard against asserting absence on a broken page).
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+})
+
+test('a signed-out visitor sees no rating line AND issues no review_summary request (V32-9 A10)', async ({
+  browser,
+}) => {
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const headers = { apikey: anonKey, Authorization: `Bearer ${accessToken}` }
+
+  const res = await fetch(`${restUrl}/rest/v1/playdates?place_id=not.is.null&select=id&limit=1`, { headers })
+  const posts = res.ok ? ((await res.json()) as Array<{ id: string }>) : []
+  expect(posts.length, 'a public drop-in must exist to open').toBeGreaterThan(0)
+
+  const context = await browser.newContext({
+    baseURL: E2E_BASE_URL,
+    storageState: { cookies: [], origins: [] },
+  })
+  const anonPage = await context.newPage()
+  try {
+    // BOTH halves in one test, because EITHER alone passes for the wrong reason:
+    // a page that renders no line by accident still leaks the request, and a page
+    // that hides the line but calls the RPC has still widened the read.
+    const rpcCalls: string[] = []
+    anonPage.on('request', (r) => {
+      if (r.url().includes('review_summary')) rpcCalls.push(r.url())
+    })
+    await anonPage.goto(`/playdate/${posts[0].id}`)
+    await expect(anonPage.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 })
+    // Give a late read a chance to appear before asserting it did not.
+    await anonPage.waitForTimeout(2000)
+
+    expect(rpcCalls, 'a signed-out page must NOT issue the review_summary read').toEqual([])
+    await expect(anonPage.getByTestId('place-rating-line')).toHaveCount(0)
+    await expect(anonPage.getByText('Be the first to rate', { exact: false })).toHaveCount(0)
+  } finally {
+    await context.close()
+  }
+})
+
+test('a FAILED summary read renders nothing — never a 0.0 (V32-9 A10)', async ({ page }) => {
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken } = readMarkerSession()
+  const headers = { apikey: anonKey, Authorization: `Bearer ${accessToken}` }
+
+  const reviewsRes = await fetch(`${restUrl}/rest/v1/reviews?select=place_id`, { headers })
+  const reviewRows = reviewsRes.ok ? ((await reviewsRes.json()) as Array<{ place_id: string }>) : []
+  const ratedPlaceIds = [...new Set(reviewRows.map((r) => r.place_id))]
+  const postRes = await fetch(
+    `${restUrl}/rest/v1/playdates?place_id=in.(${ratedPlaceIds.join(',')})&select=id&limit=1`,
+    { headers },
+  )
+  const posts = postRes.ok ? ((await postRes.json()) as Array<{ id: string }>) : []
+  expect(posts.length).toBeGreaterThan(0)
+
+  // Abort the RPC. The page must swallow the failure into "no line" — the same
+  // direction an unrated place takes — rather than drawing a 0.0, which would
+  // read as "this place is terrible".
+  await page.route('**/rest/v1/rpc/review_summary', (route) => route.abort())
+  await page.goto(`/playdate/${posts[0].id}`)
+  await settleOnRoute(page, `/playdate/${posts[0].id}`)
+  await page.waitForTimeout(2500)
+
+  await expect(page.getByTestId('place-rating-line')).toHaveCount(0)
+  await expect(page.getByText('0.0 out of 5', { exact: false })).toHaveCount(0)
+  // The page itself survived the failed decoration read.
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 })

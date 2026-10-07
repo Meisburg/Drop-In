@@ -198,6 +198,38 @@ export function reviewRatingLine(
   return `${avg.toFixed(1)} out of 5 · ${count} ${countWord}`
 }
 
+/**
+ * V32 v32-9 (A10) — MAY THIS PLACE'S RATING BE DRAWN AT ALL?
+ *
+ * The drop-in detail page mounts `PlaceRatingLine` beside the place it
+ * describes. That element renders its ZERO case as an INVITATION — *"Be the
+ * first to rate {place}."* — which is right on a place page (where a parent can
+ * actually write one) and wrong on a drop-in page, which is not where anyone
+ * reviews a place. So the drop-in page must render NOTHING for an unrated place:
+ * not a zero, not an empty star row, and not that invitation.
+ *
+ * This is the threshold that decides it, here rather than as a bare
+ * `review_count > 0` inlined in the `.tsx` (the build law: React renders, `lib/`
+ * decides). Both halves are required on purpose:
+ *   - `review_count > 0` is the "has anyone reviewed it" fact;
+ *   - `display_average !== null` is the "is there a number to show" fact.
+ * A count with a NULL average cannot be produced by the current RPC — the
+ * normaliser in db.ts keeps null distinct from 0 precisely so it never can — but
+ * the guard is checked anyway, because the failure it prevents is drawing a
+ * rating the place has not earned, and that is worth refusing structurally
+ * rather than trusting an upstream shape to stay still.
+ *
+ * ⚠️ IT IS NOT A TRUTHINESS CHECK ON THE AVERAGE. `0` is falsy, so `if (!avg)`
+ * would hide a legitimate average of 0. The normaliser hands this a real
+ * `number | null`, so the null test is explicit.
+ */
+export function hasPlaceRating(summary: {
+  review_count: number
+  display_average: number | null
+}): boolean {
+  return summary.review_count > 0 && summary.display_average !== null
+}
+
 // ---------------------------------------------------------------------------
 // The top-rated ordering — including the unrated-place rule.
 // ---------------------------------------------------------------------------

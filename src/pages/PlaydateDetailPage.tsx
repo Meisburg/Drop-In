@@ -33,6 +33,7 @@ import {
   getPlaydateDetail,
   getPlaydateSeries,
   getPublicPlaydateDetail,
+  getReviewSummary,
   loadPlacesOrEmpty,
   getShareUrl,
   hasPinged,
@@ -68,7 +69,9 @@ import { canModerate } from '../lib/moderation'
 // V8 ticket 07: the signed-in AND signed-out place lines link to /place/:id
 // (the 13th public field is a bare id; the place page reads the directory
 // itself).
+import { hasPlaceRating } from '../lib/reviews'
 import { placePath, placePhotoForDropIn } from '../lib/places'
+import { PlaceRatingLine } from '../components/PlaceRatingLine'
 // V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts) —
 // every presence test on this page goes through it, so a guard can never be
 // looser than the onboarding wall it replaces.
@@ -403,6 +406,22 @@ export function PlaydateDetailPage() {
    * class this repo's reviewers hunt for.
    */
   const [publicPlace, setPublicPlace] = useState<Place | null>(null)
+  /**
+   * V32 v32-9 (A10): the PLACE's aggregate rating, for the drop-in page's rating
+   * line. Q1 ruled the stars rate the place, not the drop-in.
+   *
+   * `null` means "no summary" in BOTH senses the render cares about: the read
+   * has not settled, it failed, or nothing is known. The render treats all three
+   * the same way — it draws NOTHING rather than a 0.0 — because a failed read
+   * must never read as "this place is bad".
+   *
+   * Cleared per load, beside the other per-post state: this page is ONE mounted
+   * route, so a summary left over from post A would otherwise appear on post B.
+   */
+  const [placeRatingSummary, setPlaceRatingSummary] = useState<{
+    review_count: number
+    display_average: number | null
+  } | null>(null)
   /** V32 v32-4: the two banners' failed urls, keyed so a later good url renders. */
   const [detailPhotoFailedUrl, setDetailPhotoFailedUrl] = useState<string | null>(null)
   const [publicPhotoFailedUrl, setPublicPhotoFailedUrl] = useState<string | null>(null)
@@ -721,6 +740,9 @@ export function PlaydateDetailPage() {
     setPublicPlace(null)
     setDetailPhotoFailedUrl(null)
     setPublicPhotoFailedUrl(null)
+    // V32-9: the rating is per-PLACE data on a per-POST page, so it is cleared
+    // with the rest of the per-load state.
+    setPlaceRatingSummary(null)
     if (session === null) {
       // V2 slice 5: the signed-out public surface — the SECURITY DEFINER
       // RPC (0015). A missing OR hidden post settles not-found (the
@@ -771,6 +793,20 @@ export function PlaydateDetailPage() {
           if (await getBlockState(detail.host.id)) {
             setState({ status: 'blocked', handle: detail.host.display_name })
             return
+          }
+          // V32 v32-9 (A10): the place's rating. SIGNED-IN ONLY and deliberately
+          // so — `review_summary` is granted to `authenticated` alone
+          // (0052_reviews.sql §3), and the ruled answer for a signed-out visitor
+          // is to HIDE the line and never issue the read (the place page's own
+          // precedent: "Reviews are for signed-in parents."). The public branch
+          // below therefore takes the hiding branch and issues nothing; this read
+          // cannot be reached from it.
+          //
+          // Fired only when there IS a place to rate, and `.catch(() => null)`
+          // like every other best-effort read on this page: a failed summary must
+          // render nothing, never a 0.0 that reads as "this place is bad".
+          if (detail.place_id != null) {
+            setPlaceRatingSummary(await getReviewSummary(detail.place_id).catch(() => null))
           }
           // The ping + comments + playdate_kids tables may not be applied
           // yet (0007 / 0013 / 0022): a failed load never costs the post
@@ -2349,6 +2385,39 @@ export function PlaydateDetailPage() {
             ? ` · ${detail.neighborhood.name}`
             : ''}
         </p>
+        {/* V32 v32-9 (A10) — THE PLACE'S RATING, BESIDE THE PLACE IT DESCRIBES.
+            Q1 ruled: the stars rate the PLACE, not the drop-in (rating the
+            drop-in itself is out of scope and is not queued).
+
+            `hasPlaceRating` is the `lib/` threshold, so an UNRATED place renders
+            NOTHING here — not a zero, not an empty star row, and above all not
+            `PlaceRatingLine`'s zero-case invitation ("Be the first to rate …"),
+            which is right on a place page and is noise on a drop-in page.
+
+            THE NAME IS `detail.place`, AND THAT IS MEASURED, NOT ASSUMED. The
+            brief suggested `place_ref?.name`, but the embed does NOT carry a
+            `name` field (it holds id/kind/indoor/photo_url/photo_attribution/
+            photo_review_state — types.ts), and adding one would be a payload
+            change this slice has no mandate for. Checked against the live data
+            instead: for every post with a `place_id`, `playdates.place` is
+            BYTE-IDENTICAL to the directory's `places.name`, because the picker
+            fills the text field from the row it inserted. So the free-text field
+            IS the place's real name on every referenced post, and it is the
+            right thing to pass.
+
+            It is mounted only when `placeRatingSummary !== null`, because a
+            FAILED summary read must render nothing rather than a 0.0 — the
+            contract `PlaceRatingLine`'s own docblock records. */}
+        {detail.place_id != null &&
+        placeRatingSummary !== null &&
+        hasPlaceRating(placeRatingSummary) ? (
+          <div className="mt-1">
+            <PlaceRatingLine
+              summary={placeRatingSummary}
+              placeName={detail.place}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div
