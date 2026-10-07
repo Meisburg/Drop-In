@@ -1981,10 +1981,46 @@ export function PlaydateDetailPage() {
         // count and a Duplicate action (V2 slice 1) — no ping button (the
         // host cannot ping their own post: the client guard in
         // db.togglePing, the 0010 DB trigger behind it).
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          {/* V32-1 (A8): THE HOST PANEL WAS A WALL. The founder, looking at his
+              own post: "This is all too much going on. I don't need all of this
+              on one page." This panel was the first child of the page and ran
+              ~219px on a ~785px page, because the label row, the going-count
+              line and the Edit/Delete/Duplicate row each took their own line and
+              the Status block sat under an `mt-3 border-t pt-3` rule. It is now
+              ONE line: the label, the count (or its retry), and the three actions
+              read left to right, and the section rules are gone. The panel keeps
+              every control and every behaviour — this is a class-level restyle,
+              no new data and no new contract. `shadow-sm` went with it: it
+              contradicted DESIGN.md ("flat at rest, borders not shadows").
+              Every control states `min-h-11` explicitly, because a one-line
+              layout no longer gets 44px incidentally from `px-3 py-3`. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="text-sm font-semibold text-indigo-900">This is your post</p>
-            <div className="flex flex-wrap items-center gap-2">
+            {/* V8 ticket 02 REVIEW ROUND: the host's line carried the same lie
+                the non-host branch was fixed for. A failed count read rendered
+                the flat claim "No pings yet" — a FACT the page did not have, on
+                the host's only retention signal, with no way to re-ask. It now
+                says so, and the same retry re-reads it. */}
+            {count !== null ? (
+              <p className="text-sm text-indigo-700">{hostGoingCountLine(count)}</p>
+            ) : (
+              <div
+                data-testid="host-going-count-unavailable"
+                className="flex flex-wrap items-center gap-2"
+              >
+                <p className="text-sm text-indigo-700">Couldn’t load who’s going.</p>
+                <button
+                  type="button"
+                  disabled={countRetryBusy}
+                  onClick={() => void handleRetryGoingCount()}
+                  className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {countRetryBusy ? 'Retrying…' : 'Retry'}
+                </button>
+              </div>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {/* V8 ticket 05: Edit — the host's own post, fixed in place
                   (the shared /new field set at /playdate/:id/edit) instead of
                   cancel + repost, which used to lose everyone who had said
@@ -1994,14 +2030,15 @@ export function PlaydateDetailPage() {
               <Link
                 to={`/playdate/${detail.id}/edit`}
                 data-testid="edit-post"
-                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
+                className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
               >
                 Edit
               </Link>
               {/* V8 ticket 05: Delete — behind an in-page confirmation that
                   names the consequence (the going pings + the comments go
                   with it). The button only OPENS the dialog; the write lives
-                  in handleDeletePost. */}
+                  in handleDeletePost. Kept QUIET (a bordered ghost, never a
+                  filled red control — DESIGN.md:471). */}
               <button
                 type="button"
                 data-testid="delete-post"
@@ -2009,78 +2046,64 @@ export function PlaydateDetailPage() {
                   setDeleteError(null)
                   setConfirmingDelete(true)
                 }}
-                className="rounded-xl border border-red-200 bg-white px-3 py-3 text-sm font-medium text-red-700 transition-colors motion-reduce:transition-none hover:bg-red-50"
+                className="flex min-h-11 items-center rounded-xl border border-red-200 bg-white px-3 text-sm font-medium text-red-700 transition-colors motion-reduce:transition-none hover:bg-red-50"
               >
                 Delete
               </button>
               <button
                 type="button"
                 onClick={() => void handleDuplicatePost()}
-                className="rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
+                className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
               >
                 Duplicate
               </button>
-            </div>
-          </div>
-          {/* V8 ticket 02 REVIEW ROUND: the host's line carried the same lie
-              the non-host branch was fixed for. A failed count read rendered
-              the flat claim "No pings yet" — a FACT the page did not have, on
-              the host's only retention signal, with no way to re-ask. It now
-              says so, and the same retry re-reads it. */}
-          {count !== null ? (
-            <p className="mt-1 text-sm text-indigo-700">{hostGoingCountLine(count)}</p>
-          ) : (
-            <div
-              data-testid="host-going-count-unavailable"
-              className="mt-1 flex flex-wrap items-center gap-2"
-            >
-              <p className="text-sm text-indigo-700">Couldn’t load who’s going.</p>
-              <button
-                type="button"
-                disabled={countRetryBusy}
-                onClick={() => void handleRetryGoingCount()}
-                className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50"
+              {/* V3 slice 2 (ticket 02; V3 slice 3, ticket 06 + migration
+                   0019 trimmed the options to On / Cancelled — the redundant
+                   third option was removed; V12 t03, migration 0041, added a
+                   genuinely different third option — "End this post now",
+                   which ends the event early so it leaves the feed
+                   immediately (honest history, option A)): the host's
+                   status control — the ONLY status surface (this panel
+                   renders for the host only; non-hosts + the signed-out
+                   view never see it). The RLS playdates_update_host is the
+                   wall; the active option shows the current state.
+                   V32-1: this is the SAME row as Edit/Delete/Duplicate — the
+                   `mt-3 border-t pt-3` section rule is gone. The `Status`
+                   caption that used to sit above them is now this group's
+                   accessible name: as visible text it cost a whole line, and
+                   inline it pushed "End this post now" onto a second row at
+                   448px. The buttons say what they are and `aria-pressed`
+                   announces the active one. Status stays visible and
+                   operable — never behind a disclosure, never off this page. */}
+              <div
+                role="group"
+                aria-label="Status"
+                className="flex flex-nowrap items-center gap-2"
               >
-                {countRetryBusy ? 'Retrying…' : 'Retry'}
-              </button>
+                {HOST_STATUS_OPTIONS.map((option) => {
+                  const active = postStatus === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={active}
+                      disabled={statusBusy}
+                      onClick={() => void handleSetStatus(option.value)}
+                      className={
+                        active
+                          ? 'flex min-h-11 shrink-0 items-center rounded-xl bg-indigo-600 px-3 text-sm font-medium text-white disabled:opacity-50'
+                          : 'flex min-h-11 shrink-0 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50'
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              {statusError !== null ? (
+                <p className="text-sm text-red-600">{statusError}</p>
+              ) : null}
             </div>
-          )}
-          {/* V3 slice 2 (ticket 02; V3 slice 3, ticket 06 + migration
-               0019 trimmed the options to On / Cancelled — the redundant
-               third option was removed; V12 t03, migration 0041, added a
-               genuinely different third option — "End this post now",
-               which ends the event early so it leaves the feed
-               immediately (honest history, option A)): the host's
-               status control — the ONLY status surface (this panel
-               renders for the host only; non-hosts + the signed-out
-               view never see it). The RLS playdates_update_host is the
-               wall; the active option shows the current state. */}
-          <div className="mt-3 border-t border-indigo-100 pt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900">Status</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {HOST_STATUS_OPTIONS.map((option) => {
-                const active = postStatus === option.value
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={active}
-                    disabled={statusBusy}
-                    onClick={() => void handleSetStatus(option.value)}
-                    className={
-                      active
-                        ? 'rounded-xl bg-indigo-600 px-3 py-3 text-sm font-medium text-white disabled:opacity-50'
-                        : 'rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50'
-                    }
-                  >
-                    {option.label}
-                  </button>
-                )
-              })}
-            </div>
-            {statusError !== null ? (
-              <p className="mt-2 text-sm text-red-600">{statusError}</p>
-            ) : null}
           </div>
 
           {/* V8 ticket 06: the series line + "Stop repeating" — inside the
@@ -2093,7 +2116,7 @@ export function PlaydateDetailPage() {
               weeks already posted stay as ordinary posts, because other
               families have said they are going to them. */}
           {seriesIdOnPost !== null ? (
-            <div className="mt-3 border-t border-indigo-100 pt-3" data-testid="series-panel">
+            <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="series-panel">
               {series !== null ? (
                 <>
                   <p className="text-sm font-medium text-indigo-900" data-testid="series-line">
@@ -2105,12 +2128,12 @@ export function PlaydateDetailPage() {
                       data-testid="stop-repeating"
                       disabled={seriesBusy}
                       onClick={() => void handleStopRepeating()}
-                      className="mt-2 rounded-xl border border-indigo-300 bg-white px-3 py-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50"
+                      className="flex min-h-11 items-center rounded-xl border border-indigo-300 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100 disabled:opacity-50"
                     >
                       Stop repeating
                     </button>
                   ) : (
-                    <p className="mt-1 text-sm text-indigo-700" data-testid="series-stopped">
+                    <p className="text-sm text-indigo-700" data-testid="series-stopped">
                       Repeating stopped — the weeks already posted stay up.
                     </p>
                   )}
@@ -2119,7 +2142,7 @@ export function PlaydateDetailPage() {
                 <p className="text-sm text-indigo-700">Couldn’t load the weekly details.</p>
               )}
               {seriesError !== null ? (
-                <p className="mt-2 text-sm text-red-600">{seriesError}</p>
+                <p className="text-sm text-red-600">{seriesError}</p>
               ) : null}
             </div>
           ) : null}
