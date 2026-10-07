@@ -590,3 +590,52 @@ h3 {
 .place-popup.leaflet-popup a.leaflet-popup-close-button:hover {
   color: #0f172a;
 }
+
+/* ---------------------------------------------------------------------------
+ * V31 — THE LOCATION CONTROL KEEPS LOOKING.
+ *
+ * "Use my location" (the modal half of V28 r4) is a two-to-five second wait in
+ * which nothing on screen changes except a half-opacity disabled button, and
+ * the parent is often looking at their own browser's permission prompt while it
+ * happens. The control now wears the app's own "you are here" mark — a dot
+ * inside a ring, the ripple the DropInMark comment calls the ground line's
+ * ancestor — and the ring runs outward while the browser is looking, so the
+ * wait reads as the app being out looking rather than as a dead control.
+ *
+ * The animation is gated on `:disabled` HERE rather than stacked into Tailwind
+ * variants at the call site: the button is disabled exactly while the lookup is
+ * in flight, and one selector is one place to read that.
+ *
+ * Accepted over impeccable live on the feed, 2026-10-05 — variant 1 of 3
+ * ("ripple"), ink "quiet". The terracotta ink the knob offered was not taken:
+ * the One Voice Rule spends the accent on the action the parent should take,
+ * and in this dialog that is Apply, not the field helper.
+ */
+@keyframes locate-ripple {
+  from {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+.locate-ripple-ring {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.locate-btn:disabled .locate-ripple-ring {
+  opacity: 1;
+  animation: locate-ripple 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .locate-btn:disabled .locate-ripple-ring {
+    animation: none;
+    opacity: 0;
+  }
+}

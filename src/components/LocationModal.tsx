@@ -357,13 +357,38 @@ export function LocationModal({
             silently does nothing is worse than no button. */}
         {isGeolocationAvailable() ? (
           <div className="mb-3 flex flex-col gap-1">
+            {/* V31 (2026-10-05, founder decision, accepted over impeccable live
+                on the feed): the wait is the button's weakest moment, and it is a
+                real two-to-five second one — the parent is often looking at their
+                own browser's permission prompt while a 50%-opacity disabled
+                control sits there saying nothing. The control now wears the
+                app's own "you are here" mark: a dot inside a ring, the ripple
+                the DropInMark comment calls the ground line's ancestor. The ring
+                runs outward while the browser is looking, gated on `:disabled`
+                in index.css, and the control takes the action tint for exactly
+                as long as it is the thing that is working. Reduced motion gets
+                the tint and no ripple. The label is unchanged ("Finding you…"),
+                so the accessible name and the e2e selector are untouched. */}
             <button
               type="button"
               data-testid="location-use-my-location-btn"
               disabled={locatingHere}
               onClick={() => void handleUseMyLocation()}
-              className="inline-flex min-h-11 items-center self-start rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+              className="locate-btn inline-flex min-h-11 items-center gap-2 self-start rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:border-indigo-300 disabled:bg-indigo-50 disabled:text-indigo-700"
             >
+              <svg className="h-4 w-4 shrink-0" viewBox="0 0 16 16" aria-hidden="true">
+                <circle
+                  className="locate-ripple-ring"
+                  cx="8"
+                  cy="8"
+                  r="3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                />
+                <circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.75" />
+                <circle cx="8" cy="8" r="1.5" fill="currentColor" />
+              </svg>
               {locatingHere ? 'Finding you…' : 'Use my location'}
             </button>
             {deviceNote !== null ? (
