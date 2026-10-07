@@ -184,8 +184,9 @@ Read it when its situation arrives — the pointer says when.
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
-| Running e2e, or changing `e2e/.e2e-target.json` | `docs/agents/e2e-target-guard.md` — the target policy and its expiring waiver; then `e2e-fixture-convention.md` — fixture markers and the sweep |
+| Running e2e, or changing `e2e/.e2e-target.json` | `docs/agents/e2e-target-guard.md` — the target policy and its waiver; then `e2e-fixture-convention.md` |
 | Filing or triaging a ticket | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` |
+| The human hands you a batch of browser annotations | `docs/agents/annotations.md` for the server and the triage rule |
 | Naming a domain concept | `docs/agents/domain.md` — `CONTEXT.md` + `docs/adr/`, created lazily |
 | CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what CI runs, the two repo variables, what it skips |
 
