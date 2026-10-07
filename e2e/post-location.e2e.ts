@@ -153,27 +153,31 @@ async function readMarkerPost(title: string): Promise<MarkerRow | null> {
  * against a hard-coded Commons URL: a URL that changes upstream must not turn
  * this spec red, and a hard-coded one would silently stop proving anything if
  * the row were re-imported.
+ *
+ * V32-4F (F5): ONE helper selecting all three columns. It was two (plus a third
+ * inline fetch in the unreviewed test) issuing separate single-column requests
+ * for the same row; selecting them together removes the round-trips and makes
+ * the photo/credit/state triple atomically consistent — a row cannot be
+ * observed mid-update with, say, a new url and a stale attribution.
  */
-async function readPlacePhoto(placeId: string): Promise<{ photo_url: string | null } | null> {
+async function readPlacePhotoFields(placeId: string): Promise<{
+  photo_url: string | null
+  photo_attribution: string | null
+  photo_review_state: string | null
+} | null> {
   const { url, anonKey } = readSupabaseEnv()
   const res = await fetch(
-    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_url`,
+    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_url,photo_attribution,photo_review_state`,
     { headers: { apikey: anonKey } },
   )
-  const rows = res.ok ? ((await res.json()) as Array<{ photo_url: string | null }>) : []
+  const rows = res.ok
+    ? ((await res.json()) as Array<{
+        photo_url: string | null
+        photo_attribution: string | null
+        photo_review_state: string | null
+      }>)
+    : []
   return rows[0] ?? null
-}
-
-/** V32 v32-4: the same row's attribution, so the credit overlay is asserted
- * against the stored value rather than a hard-coded licence string. */
-async function readPlaceCredit(placeId: string): Promise<string | null> {
-  const { url, anonKey } = readSupabaseEnv()
-  const res = await fetch(
-    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_attribution`,
-    { headers: { apikey: anonKey } },
-  )
-  const rows = res.ok ? ((await res.json()) as Array<{ photo_attribution: string | null }>) : []
-  return rows[0]?.photo_attribution ?? null
 }
 
 /**
@@ -444,9 +448,9 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // moment while that swap lands. Assert on a page-level locator scoped to the
   // card, which re-resolves on every retry, rather than on a node captured
   // before the swap.
-  const placePhoto = await readPlacePhoto((row?.place_id ?? '').trim())
-  expect(placePhoto?.photo_url, 'the picked place must carry a photo to prove the banner').toBeTruthy()
-  const expectedPhotoUrl = placePhoto!.photo_url!
+  const placeFields = await readPlacePhotoFields((row?.place_id ?? '').trim())
+  expect(placeFields?.photo_url, 'the picked place must carry a photo to prove the banner').toBeTruthy()
+  const expectedPhotoUrl = placeFields!.photo_url!
   const cardPhoto = page
     .getByTestId('dropin-card')
     .filter({ hasText: title })
@@ -518,10 +522,19 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   // ---------------------------------------------------------------------
   // V32 v32-4 (A7/A9): THE PLACE PHOTO LEADS, ON ALL THREE SURFACES.
   //
-  // The picked place here is Green Lake Park
-  // (place_id 52e8e1ca-4cca-43ea-ba4a-902cfe9ed761), which is `confirmed`
-  // WITH a photo_url and NO attribution — so this run exercises the confirmed
-  // branch AND the credit-null branch on a real row, on the real path.
+  // The picked place is "Green Lake Park (West)"
+  // (place_id c0d21bea-8808-4187-8216-66a7336bd237): `confirmed`, with a
+  // Wikimedia-hosted photo_url AND a real attribution ("Len Williams /
+  // CC BY-SA 2.0"). So this run exercises the confirmed branch AND the
+  // CREDIT-PRESENT branch — the attribution overlay must render, and the
+  // assertion below reads the stored attribution rather than assuming it.
+  //
+  // The credit-ABSENT branch is pinned separately, by its own test at the end
+  // of this file (a confirmed, attribution-less place), rather than being
+  // claimed here. V32-4F (F4) corrected this block: it previously named the
+  // sibling "Green Lake Park" row AND claimed the credit-null branch, while the
+  // assertion under it required a credit — a comment contradicting its own
+  // assertion.
   // ---------------------------------------------------------------------
   const detailPhoto = page.getByTestId('detail-place-photo')
   await expect(detailPhoto).toHaveCount(1)
@@ -541,7 +554,9 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   ).toBeLessThanOrEqual(detailH1Box!.y)
   // The credit DOES render for this row (it carries an attribution), as the
   // overlay on the picture — licence compliance travels with the image.
-  const placeCredit = await readPlaceCredit((row?.place_id ?? '').trim())
+  // F5: the SAME read supplies the credit, so the url and the attribution are
+  // observed together.
+  const placeCredit = placeFields!.photo_attribution
   expect(placeCredit, 'the picked place must carry a credit to prove the overlay').toBeTruthy()
   await expect(
     page.locator('span').filter({ hasText: placeCredit! }),
@@ -881,19 +896,14 @@ test('an UNREVIEWED place photo is withheld from a parent — the illustration r
 
   // THE ROW'S OWN STATE IS THE PREMISE: it is unreviewed AND it has a photo.
   // If either half were false, the assertions below would prove nothing.
-  const { url, anonKey } = readSupabaseEnv()
-  const stateRes = await fetch(
-    `${url}/rest/v1/places?id=eq.${row?.place_id}&select=photo_review_state,photo_url`,
-    { headers: { apikey: anonKey } },
-  )
-  const stateRows = stateRes.ok
-    ? ((await stateRes.json()) as Array<{ photo_review_state: string | null; photo_url: string | null }>)
-    : []
+  // F5 (V32-4F): read through the shared helper — one request, all three
+  // columns — instead of a third inline single-purpose fetch for the same row.
+  const state = await readPlacePhotoFields((row?.place_id ?? '').trim())
   expect(
-    stateRows[0]?.photo_review_state,
+    state?.photo_review_state,
     'the premise: this place must still be unreviewed for the boundary to be exercised',
   ).toBe('unreviewed')
-  expect(stateRows[0]?.photo_url, 'the premise: the withheld photo must actually exist').toBeTruthy()
+  expect(state?.photo_url, 'the premise: the withheld photo must actually exist').toBeTruthy()
 
   // THE BOUNDARY: illustration yes, picture no.
   const card = page.getByTestId('dropin-card').filter({ hasText: title })
@@ -904,4 +914,185 @@ test('an UNREVIEWED place photo is withheld from a parent — the illustration r
   ).toHaveCount(0)
   await expect(card.locator('svg').first()).toBeVisible()
   await expect(card).not.toContainText('null')
+})
+
+/**
+ * V32 v32-4 (A7/A9), F4: THE CREDIT-ABSENT BRANCH, PINNED ON A REAL ROW.
+ *
+ * V32-4F (F4) found the three-surface test CLAIMING this branch while its own
+ * assertion required a credit. Rather than delete the claim, the branch gets its
+ * own proof: "12th Ave Square Park" (55bc933f-22c1-4b30-acda-de32fb1a3b96) is
+ * `confirmed` WITH a photo_url and NO attribution, so the picture must render
+ * and the overlay must NOT — a picture shown without a licence line is a
+ * compliance failure, and a credit invented for a picture that has none is a
+ * lie about who made it.
+ */
+test('a confirmed photo with NO attribution renders the picture and no credit overlay', async ({
+  page,
+}) => {
+  const marker = readMarkerMeta()
+  const title = `e2e ${marker.displayName} no-credit place`
+  const NO_CREDIT_NAME = '12th Ave Square Park'
+
+  await page.goto('/new')
+  await settleOnRoute(page, '/new')
+  await editTitle(page)
+  await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+  await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(`@${NO_CREDIT_NAME}`)
+  const suggestion = page
+    .getByTestId('place-suggestions')
+    .getByText(NO_CREDIT_NAME, { exact: true })
+  await expect(suggestion).toBeVisible()
+  await suggestion.click()
+  await page.locator('input[type="date"]').fill(localDatePlusDays(1))
+  await submitAndLandOnFeed(page)
+
+  const row = await readMarkerPost(title)
+  expect(row?.place_id, 'the picked place must be linked to the post').toBeTruthy()
+
+  // THE PREMISE, read from the row itself: confirmed + a url + NO attribution.
+  const fields = await readPlacePhotoFields((row?.place_id ?? '').trim())
+  expect(fields?.photo_review_state, 'the premise: the photo must be confirmed').toBe('confirmed')
+  expect(fields?.photo_url, 'the premise: the photo must exist').toBeTruthy()
+  expect(fields?.photo_attribution, 'the premise: this row has no attribution').toBeNull()
+
+  const card = page.getByTestId('dropin-card').filter({ hasText: title })
+  await expect(card).toBeVisible()
+  const cardPhoto = card.getByTestId('dropin-card-photo')
+  // The PICTURE renders…
+  await expect(cardPhoto).toHaveCount(1, { timeout: 20_000 })
+  await expect(cardPhoto).toHaveAttribute('src', fields!.photo_url!)
+  // …and NO credit overlay does. The overlay is the only `span` inside the
+  // banner slot, so its absence is asserted structurally rather than by
+  // guessing at licence strings.
+  await expect(cardPhoto.locator('xpath=..').locator('span')).toHaveCount(0)
+})
+
+/**
+ * V32-4F (F1) — A PUBLIC BANNER CANNOT BELONG TO THE PREVIOUS POST.
+ *
+ * `/playdate/:id` is ONE route element, so React Router REUSES the component
+ * instance across a param-only change: the load effect re-runs, but any state it
+ * does not explicitly clear survives. `publicPlace` was only ever SET, so a
+ * signed-out visitor who opened post A (which names a place) and then navigated
+ * to post B rendered B's page with A's place row still in state — A's photo
+ * above B's title, on a share-link surface.
+ *
+ * THE REPRO MUST BE A REAL SPA NAVIGATION. `page.goto` would REMOUNT the route
+ * and pass without the fix, proving nothing, so the hop below drives the app's
+ * own history client-side instead. Post B names a DIFFERENT place with a
+ * different photo, so a leak is directly observable as A's url on B's page.
+ */
+test('a signed-out post change never reuses the previous post’s place photo (V32-4F F1)', async ({
+  page,
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const titleA = `e2e ${marker.displayName} f1 place A`
+  const titleB = `e2e ${marker.displayName} f1 place B`
+  const PLACE_A = 'Atlantic Street Park'
+  const PLACE_B = 'Ballard Commons Park'
+
+  /** Post a FREE-TEXT drop-in (no directory place, so no `place_id`). */
+  const postFreeText = async (title: string): Promise<string> => {
+    await page.goto('/new')
+    await settleOnRoute(page, '/new')
+    await editTitle(page)
+    await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+    // A plain typed place — never picked from the directory, so `place_id`
+    // stays absent (the `placeIdField` discipline in db.ts).
+    await page.getByPlaceholder(PLACE_PLACEHOLDER).fill('E2E F1 free text spot')
+    await page.locator('input[type="date"]').fill(localDatePlusDays(1))
+    await submitAndLandOnFeed(page)
+    const posted = await readMarkerPost(title)
+    expect(posted?.id, `the post "${title}" must exist`).toBeTruthy()
+    expect(posted?.place_id ?? null, 'the free-text post must carry NO place_id').toBeNull()
+    return posted!.id!
+  }
+
+  // Posting needs a session, so both posts are created as the MARKER through
+  // `page` (the signed-in default context). The public half then uses a FRESH
+  // signed-out context — the only way to read the page as anon sees it.
+  const postAt = async (title: string, place: string): Promise<string> => {
+    await page.goto('/new')
+    await settleOnRoute(page, '/new')
+    await editTitle(page)
+    await page.getByPlaceholder(TITLE_PLACEHOLDER).fill(title)
+    await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(`@${place}`)
+    const suggestion = page.getByTestId('place-suggestions').getByText(place, { exact: true })
+    await expect(suggestion).toBeVisible()
+    await suggestion.click()
+    await page.locator('input[type="date"]').fill(localDatePlusDays(1))
+    await submitAndLandOnFeed(page)
+    const posted = await readMarkerPost(title)
+    expect(posted?.id, `the post "${title}" must exist`).toBeTruthy()
+    return posted!.id!
+  }
+
+  const idA = await postAt(titleA, PLACE_A)
+  // Post B NAMES NO PLACE AT ALL. That is the shape that exposes the leak: B's
+  // load never calls `setPublicPlace`, so A's row is the only thing the banner
+  // could possibly render. (Against a B that names a place, the fresh write
+  // overwrites the stale one and the leak is invisible — which is exactly how
+  // the first version of this test passed under mutation.)
+  const idB = await postFreeText(titleB)
+
+  const ctx = await browser.newContext({
+    baseURL: E2E_BASE_URL,
+    storageState: { cookies: [], origins: [] },
+  })
+  const anonPage = await ctx.newPage()
+
+  // Both rows must genuinely carry DIFFERENT photo urls, or a leak would be
+  // invisible and this test would pass while proving nothing.
+  const rowA = await readMarkerPost(titleA)
+  const fieldsA = await readPlacePhotoFields((rowA?.place_id ?? '').trim())
+  expect(fieldsA?.photo_url, 'post A must have a photo').toBeTruthy()
+  expect(fieldsA?.photo_review_state, 'post A’s photo must be confirmed').toBe('confirmed')
+
+  // Open A as a signed-out visitor and confirm A's picture is showing.
+  await anonPage.goto(`/playdate/${idA}`)
+  const photoA = anonPage.getByTestId('public-place-photo')
+  await expect(photoA).toHaveCount(1, { timeout: 20_000 })
+  await expect(photoA).toHaveAttribute('src', fieldsA!.photo_url!)
+
+  // THE HOP: a client-side param change, no page load. `page.goto` here would
+  // remount the route and the leak would be laundered away.
+  await anonPage.evaluate((b) => {
+    window.history.pushState({}, '', `/playdate/${b}`)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, idB)
+
+  // WATCH THE TRANSITION, not only the settled page. The leak is A's photo
+  // rendering on B while B's own load is in flight — the stale state is visible
+  // IMMEDIATELY (the effect has not cleared it yet), so a poll that only looks
+  // after B settles can miss it entirely. This samples continuously across the
+  // whole hop and fails if A's url is EVER painted on B.
+  const leakedUrl = fieldsA!.photo_url!
+  let everLeaked = false
+  // SAMPLE THE WHOLE WINDOW, not just the settled page: the stale frame lives
+  // between the navigation and B's own data arriving, so a loop that stops once
+  // B's heading appears stops exactly too early. It runs the full 15s (or until
+  // a leak is seen), sampling every 50ms.
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    const stale = await anonPage
+      .locator(`img[src="${leakedUrl}"]`)
+      .count()
+      .catch(() => 0)
+    if (stale > 0) {
+      everLeaked = true
+      break
+    }
+    await anonPage.waitForTimeout(50)
+  }
+  expect(
+    everLeaked,
+    'post A’s photo must NEVER be painted on post B, not even for one frame',
+  ).toBe(false)
+
+  // …and B, which names no place, settles with no banner at all.
+  await expect(anonPage.getByTestId('public-place-photo-slot')).toHaveCount(0)
+
+  await ctx.close()
 })

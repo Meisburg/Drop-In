@@ -390,8 +390,17 @@ export function PlaydateDetailPage() {
    * `places` is anon-readable (`places_select_public`, 0029:407-410, `to anon`),
    * so the client reads the row ITSELF off the session-cached
    * `loadPlacesOrEmpty()` seam. That seam degrades to an empty map on failure,
-   * and an empty map yields `undefined` here → the illustration, which is the
-   * correct failure direction. No schema change, no RPC change.
+   * and an empty map yields `undefined` here — the slot then paints the
+   * per-kind illustration, which is the correct failure direction. No schema
+   * change, no RPC change.
+   *
+   * V32-4F (F3b): this docblock described the post-F2 behaviour BEFORE F2
+   * existed, and was therefore FALSE when it was written — a null row rendered
+   * no slot at all, so the illustration it promised never appeared. The sentence
+   * is true only because F2 gated the slot on the POST naming a place rather
+   * than on the row having loaded. Recorded rather than quietly rewritten: the
+   * comment stated a behaviour the code did not produce, which is the defect
+   * class this repo's reviewers hunt for.
    */
   const [publicPlace, setPublicPlace] = useState<Place | null>(null)
   /** V32 v32-4: the two banners' failed urls, keyed so a later good url renders. */
@@ -701,6 +710,17 @@ export function PlaydateDetailPage() {
     // V3 slice 7 (ticket 10): a fresh load (a new post, a session change)
     // never carries the reply-to mode over from the previous thread.
     setReplyToId(null)
+    // V32-4F (F1): this component is ONE mounted route, so EVERY piece of
+    // per-post data must be cleared per load or it leaks across a navigation.
+    // `publicPlace` is the public banner's row: left set, a visitor who opens a
+    // place-naming post and then navigates to a DIFFERENT post renders the
+    // second post's page with the FIRST post's photo, credit or illustration
+    // above its title — a wrong picture on a share-link surface. The two
+    // failed-url keys are the same class of leak in miniature: a failure
+    // recorded for post A must not suppress post B's photo.
+    setPublicPlace(null)
+    setDetailPhotoFailedUrl(null)
+    setPublicPhotoFailedUrl(null)
     if (session === null) {
       // V2 slice 5: the signed-out public surface — the SECURITY DEFINER
       // RPC (0015). A missing OR hidden post settles not-found (the
@@ -1611,8 +1631,17 @@ export function PlaydateDetailPage() {
   // V32 v32-4 (A7/A9): the signed-in page's banner inputs, from the `place_ref`
   // embed `getPlaydateDetail` now selects. One shape, one decision, shared with
   // the card and the public page.
+  //
+  // V32-4F (F2): the gate is the post NAMING a place, not the embed having
+  // resolved — so a degraded embed (`place_id` set, `place_ref` null) paints the
+  // per-kind illustration instead of silently dropping the block, matching the
+  // card and the public branch. Unlike the public branch this read is
+  // synchronous with `detail`, so there is no deferred-slot layout shift here;
+  // the gate is about the degraded case only.
+  const detailNamesPlace = detail.place_id != null
   const detailBanner = detail.place_ref ?? null
   const detailPhoto = detailBanner !== null ? placePhotoForDropIn(detailBanner) : null
+  const detailBannerKind = detailBanner?.kind ?? 'other'
   // V8 ticket 09: ONE "now" for this render — the "Same time next week"
   // block's day/time label reads the same clock it was offered under, so the
   // block can never be labelled with a day it is not actually offering.
@@ -1762,13 +1791,26 @@ export function PlaydateDetailPage() {
     // itself). Same tap-to-go affordance as the Maps link, one hop to the place's
     // address, notes, age line and — once signed in — the drop-ins there.
     const publicPlaceHref = d.place_id != null ? placePath(d.place_id) : null
-    // V32 v32-4 (A7/A9): the banner's inputs — the loaded place row (read by
-    // `place_id` off the anon-readable table) and the ONE shared decision,
-    // `placePhotoForDropIn`. The banner renders as soon as the place row is in
-    // hand; a free-text post has no `place_id` and no row, so it opens on its
-    // title instead (the accepted state for the 9 live posts with no place).
-    const publicBanner = publicPlace
+    // V32 v32-4 (A7/A9), FIXED IN V32-4F (F2): the banner slot's inputs.
+    //
+    // The slot is reserved whenever the post NAMES a place (`d.place_id`), not
+    // only once the row has loaded. The row read is a FULL-TABLE fetch on a cold
+    // session — the canonical signed-out share-link case — so gating the slot on
+    // it meant a ~2:1 block snapped in above the `h1` after the fetch resolved
+    // and pushed the title down (a layout shift on the app's most-shared
+    // surface). Reserving the box immediately removes the shift.
+    //
+    // It also makes the DEGRADED case honest: `loadPlacesOrEmpty` swallows a
+    // failed read into an empty map, which yields `undefined` here, and the slot
+    // then paints the per-kind illustration — matching the card and signed-in
+    // branches instead of omitting the block entirely. A post with NO place at
+    // all still renders no banner: there is nothing to illustrate.
+    const publicBanner = d.place_id != null ? publicPlace : null
     const publicPhoto = publicBanner !== null ? placePhotoForDropIn(publicBanner) : null
+    // The illustration's kind while the row is in flight, or when it never
+    // arrives: `other` is the union's neutral member and the same fallback the
+    // card uses for an unknown kind.
+    const publicBannerKind = publicBanner?.kind ?? 'other'
     return (
       <div className="flex flex-col gap-4">
         {/* V32 v32-4 (A7/A9): the place photo leads on the SIGNED-OUT surface
@@ -1777,9 +1819,12 @@ export function PlaydateDetailPage() {
             on this branch, but the rule is the same one the signed-in branch
             follows for its status chip). Same shared decision, same ratio,
             same alt="" and same illustration fallback as the card and the
-            signed-in page, so the three cannot drift. */}
-        {publicBanner !== null ? (
-          <div className="overflow-hidden rounded-xl">
+            signed-in page, so the three cannot drift.
+            V32-4F (F2): the gate is the POST naming a place, not the row having
+            loaded — so the box is reserved immediately (no layout shift) and a
+            degraded read paints the illustration rather than omitting the block. */}
+        {d.place_id != null ? (
+          <div className="overflow-hidden rounded-xl" data-testid="public-place-photo-slot">
             {publicPhoto !== null && publicPhotoFailedUrl !== publicPhoto.url ? (
               <div className="relative">
                 <img
@@ -1799,7 +1844,7 @@ export function PlaydateDetailPage() {
               </div>
             ) : (
               <div className="aspect-[2/1] w-full bg-slate-100">
-                <PlaceKindArt kind={publicBanner.kind} />
+                <PlaceKindArt kind={publicBannerKind} />
               </div>
             )}
           </div>
@@ -2238,8 +2283,8 @@ export function PlaydateDetailPage() {
             six specs pin as adjacent (host-status, while-away). The photo comes
             from the `place_ref` embed `getPlaydateDetail` now selects, so there
             is no second read. */}
-        {detailBanner !== null ? (
-          <div className="overflow-hidden rounded-xl">
+        {detailNamesPlace ? (
+          <div className="overflow-hidden rounded-xl" data-testid="detail-place-photo-slot">
             {detailPhoto !== null && detailPhotoFailedUrl !== detailPhoto.url ? (
               <div className="relative">
                 <img
@@ -2259,7 +2304,7 @@ export function PlaydateDetailPage() {
               </div>
             ) : (
               <div className="aspect-[2/1] w-full bg-slate-100">
-                <PlaceKindArt kind={detailBanner.kind} />
+                <PlaceKindArt kind={detailBannerKind} />
               </div>
             )}
           </div>

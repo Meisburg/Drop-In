@@ -1534,9 +1534,17 @@ export async function getPlaydateDetail(id: string): Promise<PlaydateWithNeighbo
       // (its own host's, right after posting) would 404.
       // V32 v32-4 (A7/A9): the place embed joins the feed's own (same alias,
       // same pinned FK hint for the PGRST201 lesson) so the signed-in detail
-      // page's photo banner reads the SAME row shape the card does. The photo
-      // columns are 0063's and all nullable, so a pre-0063 apply yields nulls
-      // and the banner takes the illustration — the correct failure direction.
+      // page's photo banner reads the SAME row shape the card does.
+      //
+      // V32-4F (F3a): the failure direction is an ERROR, not nulls. These three
+      // columns did NOT arrive together — `photo_url` is the original seed's
+      // (0029), `photo_attribution` is 0046's and `photo_review_state` is
+      // 0063's — so naming any of them against a database that predates it makes
+      // PostgREST answer 42703 (undefined column). That THROWS here and settles
+      // the page's error state, exactly as `listPlaceFeed`'s pre-0030 note
+      // records; it does not quietly return nulls. Post-migration the columns
+      // are all nullable, so a place that simply has no picture is the ordinary
+      // null case the banner turns into the illustration.
       '*, neighborhood:neighborhoods ( id, name ), host:profiles!playdates_host_profile_id_fkey ( id, display_name, avatar_url, home_zip ), place_ref:places!playdates_place_id_fkey ( id, kind, indoor, photo_url, photo_attribution, photo_review_state )',
     )
     .eq('id', id)
