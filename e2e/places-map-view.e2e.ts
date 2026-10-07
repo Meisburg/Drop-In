@@ -1912,7 +1912,10 @@ test('map mode draws the radius circle, and the radius cannot move the camera (V
    */
   await openMapView(page)
   const map = page.getByTestId('places-map-view-map')
-  const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+  // V32-7: scoped to the PAGE map, because the shared location sheet now draws a
+  // radius circle of its own and this spec opens that dialog below. Same
+  // selector attributes; only the scope is new.
+  const circle = map.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
 
   // The committed-radius circle is drawn on mount.
   await expect(circle, 'map mode must draw the radius circle').toHaveCount(1)
@@ -1985,7 +1988,14 @@ test('the radius preview REDRAWS the circle in map mode (V25 t01, V20 t05 live p
   })
 
   await openMapView(page)
-  const circle = page.locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
+  // V32-7: SCOPED TO THE PAGE MAP. The shared location sheet now draws its own
+  // radius circle, so an unscoped `path.leaflet-interactive[...]` matches TWO
+  // elements whenever the dialog is open — a strict-mode violation, not an
+  // ordering defect. This spec has always meant the page map behind the dialog,
+  // so it now says so. The selector's own attributes are unchanged.
+  const circle = page
+    .getByTestId('places-map-view-map')
+    .locator('path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]')
   await expect(circle, 'the committed circle must be drawn first').toHaveCount(1)
   const dCommitted = await circle.getAttribute('d')
 
@@ -2058,4 +2068,127 @@ test('the map view leaves no second Leaflet container behind (V24 s10)', async (
     await page.locator('.leaflet-container').count(),
     'the map view must leave no Leaflet container behind',
   ).toBe(0)
+})
+
+/**
+ * V32-7 (A2 + A4) — THE RADIUS CONTROL SHOWS THE GROUND IT COVERS.
+ *
+ * The founder: *"Wouldn't it be cool if you saw the map Above this and It showed
+ * a pin of where you were and then as you drag it it shows like a blast radius
+ * like perimeter circle … so you have like a frame of reference"* — and on
+ * /browse, *"same feedback as annotation 1 i left on the drop in page"*. The two
+ * are ONE change.
+ *
+ * Every assertion below is about RENDERED GEOMETRY, never about an element
+ * existing: a circle that never resizes is exactly the failure a
+ * `toBeVisible()` would wave through.
+ */
+test('the location sheet draws a radius map that follows the drag (V32-7 A2+A4)', async ({
+  page,
+}) => {
+  // A stubbed geocoder, so this checks the WIRING rather than Nominatim's uptime
+  // (the same discipline the circle-redraw spec above records).
+  let stubCentre = [{ lat: '47.6205', lon: '-122.3493' }]
+  await page.route('https://nominatim.openstreetmap.org/search**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(stubCentre),
+    })
+  })
+
+  await openMapView(page)
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
+
+  // (a) THE MAP IS INSIDE THE SHEET, ABOVE THE SLIDER, and it holds a canvas.
+  const sheetMap = page.getByTestId('location-modal-map')
+  await expect(sheetMap).toBeVisible()
+  const mapBox = await sheetMap.boundingBox()
+  const sliderBox = await page.getByTestId('location-radius-slider').boundingBox()
+  expect(mapBox, 'the sheet map must have a box').not.toBeNull()
+  expect(sliderBox, 'the slider must have a box').not.toBeNull()
+  expect(mapBox!.height, 'a zero-height Leaflet pane renders nothing').toBeGreaterThan(0)
+  expect(
+    mapBox!.y + mapBox!.height,
+    'the map must sit ABOVE the radius slider',
+  ).toBeLessThanOrEqual(sliderBox!.y)
+  await expect(page.getByTestId('location-modal-map-canvas')).toBeVisible()
+
+  // The circle lives on the SHEET's map. Scoped by the canvas's own ancestor so
+  // it cannot be confused with the page map behind the modal.
+  const sheetCircle = sheetMap.locator(
+    'path.leaflet-interactive[stroke="#dc2626"][fill-opacity="0.08"]',
+  )
+
+  // (d) THE CIRCLE REFLECTS THE LABEL, AT TWO RADII. The map must never show a
+  // radius the label does not — the pair is asserted together each time.
+  const slider = page.getByTestId('location-radius-slider')
+  await slider.fill('5')
+  await expect(page.getByTestId('location-modal')).toContainText('5 miles')
+  await expect(sheetCircle).toHaveCount(1)
+  const d5 = await sheetCircle.getAttribute('d')
+  expect(d5, 'the circle must have real path geometry at 5 miles').toMatch(/^M/)
+  const radius5 = await sheetCircle.evaluate((el) => el.getBoundingClientRect().width)
+
+  // (b) DRAGGING CHANGES THE DRAWN CIRCLE — compared by GEOMETRY, not presence.
+  await slider.fill('20')
+  await expect(page.getByTestId('location-modal')).toContainText('20 miles')
+  await expect
+    .poll(async () => sheetCircle.getAttribute('d'), {
+      message: 'dragging the slider must redraw the sheet circle',
+    })
+    .not.toBe(d5)
+  const radius20 = await sheetCircle.evaluate((el) => el.getBoundingClientRect().width)
+  expect(
+    radius20,
+    `the drawn circle must GROW with the radius (5mi ${radius5}px -> 20mi ${radius20}px)`,
+  ).toBeGreaterThan(radius5)
+  // …and it tracks the radius rather than a one-way transition: 10mi must land
+  // strictly BETWEEN 5mi and 20mi, so the circle is a function of the value
+  // rather than a latch that only ever grows.
+  await slider.fill('10')
+  await expect(page.getByTestId('location-modal')).toContainText('10 miles')
+  const radius10 = await sheetCircle.evaluate((el) => el.getBoundingClientRect().width)
+  expect(radius10, `10mi must be wider than 5mi (${radius5}px -> ${radius10}px)`).toBeGreaterThan(radius5)
+  expect(radius10, `10mi must be narrower than 20mi (${radius10}px vs ${radius20}px)`).toBeLessThan(radius20)
+
+  // CLOSE THE SHEET before the test ends. The dialog holds a live Leaflet
+  // instance of its own; leaving it open is untidy state for whatever runs next,
+  // and this file has other specs that count `.leaflet-container`s.
+  await page.getByTestId('location-modal-close').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
+})
+
+test('at 390px the radius map is VISIBLE INSIDE the open sheet (V32-7 A2+A4)', async ({ page }) => {
+  // The failure mode this slice exists to avoid: the sheet root is `items-end` on
+  // phones, so a map rendered BEHIND it is covered. This measures the map's box
+  // against the SHEET's box at the phone measure.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openMapView(page)
+  await page.getByTestId('set-location-btn').click()
+  await expect(page.getByTestId('location-modal')).toBeVisible()
+
+  const modalBox = await page.getByTestId('location-modal').boundingBox()
+  const mapBox = await page.getByTestId('location-modal-map').boundingBox()
+  expect(modalBox, 'the modal must have a box').not.toBeNull()
+  expect(mapBox, 'the sheet map must have a box').not.toBeNull()
+
+  expect(mapBox!.height, 'the map must have real height at 390px').toBeGreaterThan(0)
+  // INSIDE the sheet's box on both axes — this is the covered-map guard.
+  expect(mapBox!.y, 'the map must start inside the sheet').toBeGreaterThanOrEqual(modalBox!.y)
+  expect(
+    mapBox!.y + mapBox!.height,
+    'the map must END inside the sheet, not run past it',
+  ).toBeLessThanOrEqual(modalBox!.y + modalBox!.height)
+  expect(mapBox!.x).toBeGreaterThanOrEqual(modalBox!.x)
+  expect(mapBox!.x + mapBox!.width).toBeLessThanOrEqual(modalBox!.x + modalBox!.width)
+
+  // …and it is genuinely on screen, not merely inside a scrolled-out box.
+  const viewport = page.viewportSize()!
+  expect(mapBox!.y, 'the map must be within the viewport').toBeLessThan(viewport.height)
+  expect(mapBox!.y + mapBox!.height).toBeGreaterThan(0)
+
+  await page.getByTestId('location-modal-close').click()
+  await expect(page.getByTestId('location-modal')).toHaveCount(0)
 })

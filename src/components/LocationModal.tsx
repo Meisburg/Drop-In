@@ -5,7 +5,9 @@ import { ADDRESS_LOOKUP_TIMEOUT_MS, addressFromCoordsBounded } from '../lib/geoc
 import { isGeolocationAvailable, readDeviceCoords } from '../lib/geolocation'
 import { deviceLocationNotes } from '../lib/locationCopy'
 import { nativePushShellPlatform } from '../lib/nativePushToken'
+import { framingCircle } from '../lib/places'
 import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
+import { PlacesMap } from './PlaceMapLazy'
 
 /**
  * The shared "Set location" modal (V23 slice 1) — the address + radius control
@@ -58,6 +60,8 @@ export function LocationModal({
   onApplyRadius,
   addressPlaceholder = 'e.g. Green Lake Park, Seattle',
   onDeviceCoords,
+  mapCenter,
+  mapHomePin,
 }: {
   /** Render the modal at all (the caller owns the open state). */
   open: boolean
@@ -104,6 +108,22 @@ export function LocationModal({
    * Optional: a caller with no map to move simply omits it.
    */
   onDeviceCoords?: (coords: { lat: number; lng: number }) => void
+  /**
+   * V32-7 (A2 + A4): the map's TWO inputs, and its only ones.
+   *
+   * The sheet renders a map above the radius slider so the parent can see the
+   * ground the slider covers — the founder's *"frame of reference"* ask. The
+   * centre is whatever this caller last geocoded (its own state, because the
+   * caller owns the committed location); the pin is the viewer's stored home.
+   * The CIRCLE is not passed: it is computed here from the modal's own live
+   * draft radius, which is what makes the circle follow the drag.
+   *
+   * Both are OPTIONAL so every caller without a map — /new's picker sheet, for
+   * instance — keeps working unchanged, and so does a caller that simply has no
+   * pin yet.
+   */
+  mapCenter?: { lat: number; lng: number } | null
+  mapHomePin?: { lat: number; lng: number } | null
 }) {
   const [address, setAddress] = useState('')
   /**
@@ -114,6 +134,21 @@ export function LocationModal({
    */
   const [draftRadius, setDraftRadius] = useState<number | null>(null)
   const radius = draftRadius ?? radiusMiles
+  /**
+   * V32-7 (A2 + A4): the circle the sheet's map draws.
+   *
+   * THE DECISION IS `lib/`'s — `framingCircle` (src/lib/places.ts) already owns
+   * "which centre, at what radius", and it is unit-tested. This component only
+   * feeds it the two inputs the caller supplied plus its OWN live draft radius,
+   * which is what makes the circle follow the drag rather than only the saved
+   * value. No wrapper was added: a one-caller indirection around an existing,
+   * tested seam is the thing this repo names and rejects.
+   *
+   * `radius` (not `radiusMiles`) on purpose: the point of the slice is that the
+   * blast radius tracks the thumb, and the draft is already the value the slider
+   * and the "Radius: N miles" label both read — so the map cannot state a radius
+   * the label does not. */
+  const mapCircle = framingCircle({ geocodeCenter: mapCenter ?? null, homePin: mapHomePin ?? null, radiusMiles: radius })
   const [geocodeError, setGeocodeError] = useState<string | null>(null)
   /** V23 slice 1 review: a REJECTED `onApplyRadius` must say so — see the catch. */
   const [radiusError, setRadiusError] = useState<string | null>(null)
@@ -406,6 +441,36 @@ export function LocationModal({
             ) : null}
           </div>
         ) : null}
+
+        {/* V32-7 (A2 + A4): THE FRAME OF REFERENCE. The founder: *"Wouldn't it be
+            cool if you saw the map Above this and It showed a pin of where you
+            were and then as you drag it it shows like a blast radius like
+            perimeter circle … so you have like a frame of reference"* — and, on
+            /browse, *"same feedback as annotation 1 i left on the drop in page"*.
+            The two are ONE change.
+
+            IT MUST BE INSIDE THE SHEET. The sheet root is `items-end` on phones,
+            so a map rendered behind it is covered — that is the failure mode this
+            placement exists to avoid, and the 390px assertion below measures it.
+            It sits above the radius label because the label is the control the
+            circle explains.
+
+            The explicit height is load-bearing: a zero-height Leaflet pane
+            renders nothing at all, which reads as "the map is broken" rather than
+            "the map is empty". `places={[]}` + `zipCoords={null}` is deliberate —
+            this map plots no directory rows, only the home pin and the circle,
+            which is exactly the ask. Leaflet is code-split, so on `/` this pulls
+            its chunk when the modal opens; that is an accepted cost. */}
+        <div data-testid="location-modal-map" className="mb-4 h-48 w-full overflow-hidden rounded-xl">
+          <PlacesMap
+            places={[]}
+            zipCoords={null}
+            homePin={mapHomePin ?? null}
+            radiusCircle={mapCircle}
+            placeActions={false}
+            testId="location-modal-map-canvas"
+          />
+        </div>
 
         <label className="mb-4 flex flex-col gap-1 text-sm">
           <span className="text-slate-700">

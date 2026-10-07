@@ -412,6 +412,29 @@ export function FeedPage() {
   /** V23 slice 1: the feed's ONE location control opens the shared LocationModal. */
   const [locationModalOpen, setLocationModalOpen] = useState(false)
   /**
+   * V32-7 (A2 + A4): the centre the modal's own map frames.
+   *
+   * `/` used to hand `onGeocode={geocodeAddress}` — the lib function straight —
+   * and store nothing, so the modal had no centre to draw and its slider drove
+   * no map at all. This mirrors `/browse`'s `geocodeCenter` state: the CALLER
+   * owns the geocoded centre, the modal asks for it, the caller keeps the answer.
+   *
+   * ⚠️ IT IS DELIBERATELY NOT CLEARED ON CLOSE. `/browse` used to clear its
+   * equivalent and that was a defect it still documents
+   * (`PlaceDirectory.tsx`: *"THERE IS DELIBERATELY NO CLEAR HERE"*): once the
+   * dialog's geocode is committed, closing without re-applying must not discard
+   * where the parent said they were. This state follows that lesson.
+   *
+   * It feeds the MODAL's map only. The feed's own map band keeps
+   * `feedMapFrame` with `geocodeCenter: null` and `MAP_FOCUS_RADIUS_MILES` —
+   * V20 t05's ruling that the radius frames that map and nothing else moves its
+   * camera. Do not wire this into the band.
+   */
+  const [locationModalCenter, setLocationModalCenter] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
+  /**
    * V21 t09 (A9): which of the feed's two views is showing — list (the day
    * sections) or map (the map band as primary content).
    *
@@ -1050,6 +1073,21 @@ export function FeedPage() {
    * derived ages come from the ONE batched read above.
    */
   /**
+   * V32-7 (A2 + A4): store what the modal's geocode resolved, so the modal's own
+   * map has a centre to frame. Mirrors `/browse`'s handler, including its two
+   * lessons: a null result KEEPS the previous centre (the modal renders its own
+   * "could not find" line, and the caller merely reports whether one landed), and
+   * a close does NOT clear it.
+   */
+  async function handleLocationGeocode(
+    address: string,
+  ): Promise<{ lat: number; lng: number } | null> {
+    const result = await geocodeAddress(address)
+    if (result !== null) setLocationModalCenter(result)
+    return result
+  }
+
+  /**
    * V23 slice 1: the feed's ONE location control writes through the SAME
    * `updateHomeZipRadius` path as the old permanent controls. The shared
    * LocationModal calls this from its ONE Apply button (V28 r3-4; it used to be
@@ -1333,8 +1371,10 @@ export function FeedPage() {
         onClose={() => setLocationModalOpen(false)}
         radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
         homeZip={profile.home_zip ?? null}
-        onGeocode={geocodeAddress}
+        onGeocode={handleLocationGeocode}
         onApplyRadius={handleLocationApplyRadius}
+        mapCenter={locationModalCenter}
+        mapHomePin={homePinCoords}
       />
 
       {/* V23 slice 1: the old permanent radius select + zip form are GONE. The feed's

@@ -1493,6 +1493,13 @@ export function PlaceDirectory({
         onApplyRadius={(miles) => setPickedRadiusMiles(miles)}
         // V28 r4: the device tap moves the map before its label resolves.
         onDeviceCoords={handleDeviceCoords}
+        // V32-7 (A2 + A4): the sheet's OWN map — the founder's "frame of
+        // reference", asked for on /browse as *"same feedback as annotation 1 i
+        // left on the drop in page"*. Both callers now hand the modal the same
+        // pair; the circle itself is computed inside the modal from its live
+        // draft radius, so nothing about the drag path is restated here.
+        mapCenter={geocodeCenter}
+        mapHomePin={homePin ?? null}
       />
 
       {/* v30-8 — THE SAME EDITOR, opened from the card whose photo is wrong.
