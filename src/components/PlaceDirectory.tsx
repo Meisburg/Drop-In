@@ -3,7 +3,6 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DropInMark } from './DropInMark'
 import { LocationModal } from './LocationModal'
-import { PlaceFilterSheet } from './PlaceFilterSheet'
 import { NAV_ICONS, PLACE_KIND_ICONS } from './icons'
 import { PlacesMapView } from './PlacesMapView'
 import { usePrefersReducedMotion } from './usePrefersReducedMotion'
@@ -14,10 +13,6 @@ import {
 import type { ZipCoords } from '../lib/feed'
 import { geocodeAddress } from '../lib/geocode'
 import {
-  DATE_DROPDOWN_LABELS,
-  DATE_WINDOWS,
-  dateWindowEmptyCopy,
-  filterTriggerLabels,
   kindEmptyCopy,
   placePhotoNeedsReview,
   placePhotoVisibleTo,
@@ -35,7 +30,7 @@ import {
   resolveMapCoords,
   savedPlacesEmptyCopy,
 } from '../lib/places'
-import type { DateWindow, PlaceListRow, PlacePhotoViewer, SortMode } from '../lib/places'
+import type { PlaceListRow, PlacePhotoViewer, SortMode } from '../lib/places'
 import type { ReviewSummary } from '../lib/reviews'
 import { scrollBehaviorFor } from '../lib/mapStrip'
 import { hoursStatus } from '../lib/placeHours'
@@ -46,69 +41,6 @@ import { MODAL_OVER_LEAFLET_Z_CLASS } from '../lib/stacking'
 import { KIND_ACCENTS, PlaceKindArt } from './PlaceKindArt'
 import { ModalShell } from './ModalShell'
 import { PlacePhotoAdmin } from './PlacePhotoAdmin'
-
-/**
- * V27 — one of the prominent dropdown triggers. A shared presentational control
- * so the type and when buttons cannot drift apart: same height, same chevron,
- * same focus ring. Pure presentation; the caller owns the option list and the
- * sheet. (V31 map-and-distance deleted the third trigger — the distance pill —
- * and this control is unchanged by that: it renders whatever it is handed.)
- */
-function DropdownTrigger({
-  testId,
-  caption,
-  label,
-  iconPath,
-  onClick,
-}: {
-  testId: string
-  caption: string
-  label: string
-  iconPath: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      className="flex min-h-11 min-w-0 grow basis-28 items-center justify-center gap-1 rounded-full border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="hidden h-4 w-4 shrink-0 text-slate-500 sm:block"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d={iconPath} />
-      </svg>
-      <span className="flex min-w-0 flex-col items-start leading-tight">
-        {/* The caption names WHAT this control filters; the value is short
-            enough to survive the pill (founder annotation 4). Both are 14px —
-            the mobile audit's floor — and both are real text, so the button's
-            accessible name carries the purpose and not just the value. */}
-        <span className="text-sm text-slate-500">{caption}</span>
-        <span className="w-full truncate text-sm font-medium text-slate-700">{label}</span>
-      </span>
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="h-3.5 w-3.5 shrink-0 text-slate-400"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d={NAV_ICONS['chevron-down']} />
-      </svg>
-    </button>
-  )
-}
 
 /** V27: how far the page scrolls before the floating map toggle appears. */
 const MAP_TOGGLE_SCROLL_THRESHOLD_PX = 220
@@ -345,10 +277,6 @@ export function PlaceDirectory({
    */
   const [radiusFilter] = useState<number | null>(null)
 
-  // The date chips (annotation 15): a single-choice window filter. 'upcoming'
-  // is the unfiltered default — selecting it clears the date narrowing.
-  const [dateWindow, setDateWindow] = useState<DateWindow>('upcoming')
-
   // The address + radius modal ("Set location"). The geocoded center + radius
   // drive both the map overlay and the filtered list. V23 slice 1: the modal is
   // now the SHARED LocationModal (also opened from the feed's one location
@@ -413,8 +341,6 @@ export function PlaceDirectory({
    * only ever return an empty list, they open one honest "coming soon" line.
    */
   const [comingSoonKind, setComingSoonKind] = useState<string | null>(null)
-  /** Which of the prominent dropdowns is open (one at a time), or none. */
-  const [openDropdown, setOpenDropdown] = useState<'when' | null>(null)
   /**
    * The place-name shown on the pill / location row. The host may pass one
    * (the viewer's city); after a "Set location" geocode the typed address wins,
@@ -529,7 +455,6 @@ export function PlaceDirectory({
   const {
     listRows,
     radiusReason,
-    dateWindowReason,
     kindReason,
     savedReason,
     nothingMatches,
@@ -549,7 +474,6 @@ export function PlaceDirectory({
     openNowOnly,
     followedPlaceIds,
     radiusFilter,
-    dateWindow,
     sortMode,
     homeZip,
     homePin,
@@ -799,22 +723,6 @@ export function PlaceDirectory({
   // --- Render ----------------------------------------------------------------
 
   /**
-   * V27 / v30-3 — the dropdown triggers' own labels. Each names the CONTROL and
-   * its CURRENT choice, so the row reads as named state readouts rather than
-   * unlabelled values. The derivation is the pure `filterTriggerLabels` seam
-   * (lib/places, unit-tested); the option lists live beside it so a trigger and
-   * its sheet can never disagree about what is selectable.
-   *
-   * V31 map-and-distance: there are TWO triggers now, not three. The distance
-   * pill — and with it this seam's `distance` label — is gone; the radius is the
-   * location control's and is stated on that control (`radiusMiles` below).
-   */
-  const triggers = filterTriggerLabels({ dateWindow })
-  const whenOptions = DATE_WINDOWS.map((window) => ({
-    value: window,
-    label: DATE_DROPDOWN_LABELS[window],
-  }))
-  /**
    * The inline suggestion chips shown when the search field is focused and
    * empty — the same kind words the pill row uses, so the two can never
    * disagree.
@@ -1002,13 +910,6 @@ export function PlaceDirectory({
                         </svg>
                         Indoor
                       </button>
-                                    <DropdownTrigger
-                        testId="places-when-filter"
-                        caption={triggers.when.caption}
-                        label={triggers.when.value}
-                        iconPath={NAV_ICONS.clock}
-                        onClick={() => setOpenDropdown('when')}
-                      />
         {savedToggleAvailable ? (
                         <button
                           type="button"
@@ -1351,26 +1252,6 @@ export function PlaceDirectory({
         </div>
       ) : radiusReason !== null ? (
         <div className="md:col-start-2"><RadiusEmptyState radiusMiles={radiusReason.radiusMiles} /></div>
-      ) : dateWindowReason !== null ? (
-        // The honest window empty state (annotation 15): names the window that
-        // matched nothing and offers the way back to "Upcoming" — the house
-        // empty-state pattern (RadiusEmptyState's copy + escapes shape).
-        <div
-          data-testid="empty-date-window-state"
-          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm md:col-start-2"
-        >
-          <p className="text-sm text-slate-600">{dateWindowEmptyCopy(dateWindowReason)}</p>
-          <button
-            type="button"
-            data-testid="date-window-escape-upcoming"
-            onClick={() => {
-              setDateWindow('upcoming')
-            }}
-            className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none"
-          >
-            Show Upcoming
-          </button>
-        </div>
       ) : openNowReason ? (
         /* V27 — THE OPEN-NOW EMPTY STATE. The gate is a control the parent
            touched, so when it is the reason nothing shows, name it and offer the
@@ -1657,23 +1538,6 @@ export function PlaceDirectory({
           />
         </ModalShell>
       ) : null}
-
-      {/* V27: the dropdown sheets. One shared component, one open at a time
-          (`openDropdown`), each committing straight into the same state the
-          controls above render — there is no separate "apply" step.
-          V31 map-and-distance: two, not three — the distance sheet is deleted
-          with its pill. */}
-      <PlaceFilterSheet
-        open={openDropdown === 'when'}
-        testId="places-when-sheet"
-        title="When"
-        options={whenOptions}
-        value={dateWindow}
-        onSelect={(value) => {
-          setDateWindow(value)
-        }}
-        onClose={() => setOpenDropdown(null)}
-      />
     </div>
   )
 }

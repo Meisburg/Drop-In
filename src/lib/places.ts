@@ -20,7 +20,6 @@ import {
   cardWhenLabel,
   coordNumber,
   haversineMiles,
-  localDayKey,
   mapsHref,
   placeDistanceMiles,
   statedAgeRangeLine,
@@ -1320,171 +1319,6 @@ export function groupUpcomingStartTimesByPlace(
   return byPlace
 }
 
-/**
- * The directory's DATE CHIPS (the founder's annotation 15): the four windows a
- * parent can filter the list by. 'upcoming' is the UNFILTERED state — every row
- * the other filters allow — so it is the default, not a window.
- */
-export type DateWindow = 'upcoming' | 'today' | 'tomorrow' | 'weekend'
-
-/** The chip labels, in render order (the control's single-choice set). */
-export const DATE_WINDOW_LABELS: Record<DateWindow, string> = {
-  upcoming: 'Upcoming',
-  today: 'Today',
-  tomorrow: 'Tomorrow',
-  weekend: 'Weekend',
-}
-
-/** The chip values in render order — the control iterates this. */
-export const DATE_WINDOWS: readonly DateWindow[] = ['upcoming', 'today', 'tomorrow', 'weekend']
-
-/**
- * The /browse dropdown triggers' own date wording.
- *
- * Deliberately NOT `DATE_WINDOW_LABELS`: the chip and the sheet say "Upcoming"
- * for the unfiltered window, while the TRIGGER must read as a control that is
- * OFF rather than one that has chosen a window. Two vocabularies, one per
- * surface, and each now lives in exactly one place.
- */
-export const DATE_DROPDOWN_LABELS: Record<DateWindow, string> = {
-  upcoming: 'Any day',
-  today: 'Today',
-  tomorrow: 'Tomorrow',
-  weekend: 'Weekend',
-}
-
-/** One /browse filter trigger: WHAT it filters, and its short current value. */
-export interface FilterTriggerLabel {
-  /** Names the control's purpose, so the value is never a word on its own. */
-  caption: string
-  /** Short enough to survive a phone-width pill without an ellipsis. */
-  value: string
-}
-
-/**
- * The filter triggers' visible labels (founder annotation 4, 2026-10-05).
- *
- * The problem this exists for: at 390px the pills could only show "Any SETT…"
- * and "within three…", so a parent could not tell what they filtered. The
- * caption names the purpose; the value shortens to fit.
- *
- * The SHEETS keep their own option labels (`Either`, `Any day`) — only the
- * trigger shortens, and the option lists are built from the same constants, so a
- * trigger and its sheet cannot disagree about what is selectable.
- *
- * V31 map-and-distance — THERE IS NO `distance` FIELD HERE ANY MORE. The
- * `places-distance-filter-btn` pill was deleted (the radius is the location
- * control's, and that control states its own value), so there is no distance
- * trigger left to label. `DistanceChoice` itself stays in `lib/feed.ts`: the
- * feed's own radius ladder still speaks it, and `planDirectoryList` still
- * consumes it for the FEED-style 'profile'/'any'/number policy.
- *
- * Pure, and deliberately statement-shaped rather than a chain of nested
- * ternaries (the review rules ban those).
- */
-export function filterTriggerLabels(input: { dateWindow: DateWindow }): {
-  when: FilterTriggerLabel
-} {
-  let whenValue = 'Any'
-  if (input.dateWindow !== 'upcoming') whenValue = DATE_DROPDOWN_LABELS[input.dateWindow]
-
-  return {
-    // THE SETTING TRIGGER IS GONE (founder, 2026-10-06, over impeccable live on
-    // /browse). Two steers produced this: first the caption "Setting" was
-    // unreadable ("is anyone gonna know what setting means? Isn't it just, are
-    // we saying it's indoor or outdoor?"), and then the control itself —
-    // "maybe it doesn't even need to be a dropdown… the default is everything,
-    // and you just select something if you want it to be indoor."
-    //
-    // He is right, and the shape of the mistake is worth recording: the
-    // dropdown had three options (Any / Indoor / Outdoor) for a decision with
-    // ONE meaningful direction on this surface. "Any" is the default, and
-    // "Outdoor" is the directory's own norm, so two of the three options spent
-    // taps describing the state the list is already in. The narrowing is now a
-    // single inline toggle (`places-indoor-filter`) that is off by default and
-    // turns itself off when tapped again. Nothing here captions a control that
-    // no longer exists.
-    when: { caption: 'When', value: whenValue },
-  }
-}
-
-/**
- * Does a place with the given upcoming drop-in START TIMES fall inside the date
- * window?
- *
- * The window BOUNDARIES are the feed's own day sections (`localDayKey` in
- * feed.ts — "Today" when the local-day key equals now's, "Tomorrow" for the next
- * local day, otherwise a weekday label). This seam asks the question the chips
- * need — "does this place have ANY drop-in whose start falls in that window?" —
- * from the per-place start-time list (db.upcomingStartTimesByPlace):
- *
- * - 'upcoming': never filters (the unfiltered default; everything the other
- *   filters allow passes through).
- * - 'today': at least one start whose local-day key equals now's.
- * - 'tomorrow': at least one start whose local-day key equals tomorrow's
- *   (now + 1 local day, the same arithmetic formatDayLabel uses for its
- *   "Tomorrow" label).
- * - 'weekend': at least one start on the UPCOMING Saturday or Sunday — the
- *   first Saturday/Sunday strictly after today (if today IS Saturday or Sunday,
- *   the weekend is the NEXT one, not the current one). A drop-in starting on a
- *   weekday does NOT satisfy the weekend window.
- *
- * UNKNOWN dates (null — the read failed, or the place has no recorded starts)
- * are NOT claimed by any specific window: we cannot measure them against the
- * filter, so they are excluded from today/tomorrow/weekend but still shown under
- * 'upcoming'. This is the radius convention ("cannot be measured against the
- * filter"), not the distance convention ("never hidden") — a date window is a
- * claim about WHEN, and missing data cannot back that claim. The place is never
- * hidden entirely: 'upcoming' always passes it through.
- */
-export function placeInDateWindow(
-  startTimes: string[] | null,
-  window: DateWindow,
-  nowIso: string,
-): boolean {
-  if (window === 'upcoming') return true
-  // Unknown dates cannot be measured against a specific window (radius rule).
-  if (startTimes === null || startTimes.length === 0) return false
-
-  const nowDay = localDayKey(nowIso)
-  const tomorrowDate = new Date(nowIso)
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1)
-  const tomorrowDay = localDayKey(tomorrowDate.toISOString())
-
-  if (window === 'today') {
-    return startTimes.some((t) => localDayKey(t) === nowDay)
-  }
-  if (window === 'tomorrow') {
-    return startTimes.some((t) => localDayKey(t) === tomorrowDay)
-  }
-  // 'weekend': the upcoming Saturday + Sunday (strictly after today).
-  const nowDow = new Date(nowIso).getDay() // 0=Sun … 6=Sat
-  // Days until the next Saturday: if today is Sat (6), the next Sat is +7;
-  // if Sun (0), +6; Mon (1) → +5; … Fri (5) → +1.
-  const daysToSat = nowDow === 6 ? 7 : 7 - nowDow
-  const satDate = new Date(nowIso)
-  satDate.setDate(satDate.getDate() + daysToSat)
-  const satDay = localDayKey(satDate.toISOString())
-  const sunDate = new Date(satDate)
-  sunDate.setDate(sunDate.getDate() + 1)
-  const sunDay = localDayKey(sunDate.toISOString())
-  return startTimes.some((t) => {
-    const k = localDayKey(t)
-    return k === satDay || k === sunDay
-  })
-}
-
-/**
- * The honest empty-state copy for a date window that matched nothing: names the
- * window and offers the way back to "Upcoming" (the house empty-state pattern —
- * see RadiusEmptyState's "Nothing within N miles yet." + escapes). The window
- * label comes from DATE_WINDOW_LABELS so the copy can never drift from the
- * chip's own text.
- */
-export function dateWindowEmptyCopy(window: Exclude<DateWindow, 'upcoming'>): string {
-  return `No ${DATE_WINDOW_LABELS[window].toLowerCase()} plans near you yet — show Upcoming instead.`
-}
-
 /** One browse row: the place + the distance the list sorted and filtered on. */
 export interface PlaceListRow {
   place: Place
@@ -2273,21 +2107,6 @@ export interface DirectoryListPlan {
    */
   openNowReason: boolean
   /**
-   * The date window's empty state is the honest answer ONLY when the window
-   * filter is actually the reason nothing shows: a non-'upcoming' window, zero
-   * rendered rows, and no search text (a search narrows further, so it is not
-   * "the window" alone). Mirrors `radiusIsTheReason`'s discipline.
-   */
-  dateWindowIsTheReason: boolean
-  /**
-   * The window the date-window empty state names + offers the escape from,
-   * carried in a TYPE that makes the invariant structural (non-null EXACTLY
-   * when `dateWindowIsTheReason` is true) — the same shape as `radiusReason`.
-   * Null for 'upcoming' (no window to name) and whenever another filter is
-   * also narrowing.
-   */
-  dateWindowReason: Exclude<DateWindow, 'upcoming'> | null
-  /**
    * V25 t03 — the KIND CHIP is the reason nothing shows, and it can only ever
    * be: non-null exactly when at least one kind is selected, the search box is
    * empty, nothing renders in either section, and EVERY selected kind has zero
@@ -2343,8 +2162,6 @@ export function planDirectoryList(input: {
   followedPlaceIds?: ReadonlySet<string>
   /** Miles from the home pin (the modal's radius filter; null = off). */
   radiusFilter: number | null
-  /** The date chip's window ('upcoming' = no date filter — the default state). */
-  dateWindow: DateWindow
   /** The modal's sort mode. */
   sortMode: SortMode
   /** The viewer's stored home zip (the distance seam measures from it; null = none). */
@@ -2382,7 +2199,6 @@ export function planDirectoryList(input: {
     openNowOnly = false,
     followedPlaceIds = EMPTY_PLACE_IDS,
     radiusFilter,
-    dateWindow,
     sortMode,
     homeZip,
     homePin,
@@ -2455,15 +2271,6 @@ export function planDirectoryList(input: {
       )
       base = base.filter((row) => keptIds.has(row.place.id))
     }
-    // The date chip (annotation 15): a non-'upcoming' window keeps only places
-    // with at least one upcoming drop-in whose start falls in that window —
-    // measured from the per-place start-time list, not a count. 'upcoming' never filters.
-    if (dateWindow !== 'upcoming') {
-      base = base.filter((row) => {
-        const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(row.place.id) ?? [])
-        return placeInDateWindow(starts, dateWindow, nowIso)
-      })
-    }
     return sortPlaces(base, sortMode, homePin ?? undefined)
   })()
 
@@ -2505,12 +2312,6 @@ export function planDirectoryList(input: {
   const filteredUnplaced = (() => {
     let base = unplaced
     if (selectedKinds.size > 0) base = base.filter((row) => selectedKinds.has(row.place.kind))
-    if (dateWindow !== 'upcoming') {
-      base = base.filter((row) => {
-        const starts = upcomingStartTimes === null ? null : (upcomingStartTimes.get(row.place.id) ?? [])
-        return placeInDateWindow(starts, dateWindow, nowIso)
-      })
-    }
     return base
   })()
 
@@ -2525,9 +2326,6 @@ export function planDirectoryList(input: {
   // The date-window empty state is the honest answer ONLY when the window is
   // actually the reason nothing shows: a real window, zero rendered rows, no
   // search text (a search narrows further, so it is not "the window" alone).
-  const dateWindowIsTheReason =
-    dateWindow !== 'upcoming' && listRows.length === 0 && filteredUnplaced.length === 0 && query.trim() === ''
-  const dateWindowReason = dateWindowIsTheReason ? dateWindow : null
   const nothingMatches = listRows.length === 0 && filteredUnplaced.length === 0
   // V27: the open-now gate is the reason only when it is ON and nothing at all
   // rendered. It outranks the generic message (the gate is a control the parent
@@ -2597,8 +2395,6 @@ export function planDirectoryList(input: {
     placedGroups,
     radiusIsTheReason,
     radiusReason,
-    dateWindowIsTheReason,
-    dateWindowReason,
     kindReason,
     savedReason,
     nothingMatches,

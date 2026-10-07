@@ -96,22 +96,39 @@ test.describe('places directory — the filter pills say what they filter (v30-3
 
     // The indoor/outdoor control is a single TOGGLE now (founder, 2026-10-06),
     // not a captioned dropdown: its label is the whole story, so it is asserted
-    // below rather than in this captioned-trigger loop.
-    const triggers = [{ testId: 'places-when-filter', caption: 'When' }]
+    // below rather than in a captioned-trigger loop.
+    //
+    // V32-5: the loop that used to live here asserted the "When" trigger was
+    // VISIBLE with an accessible name. That was the LAST captioned dropdown, and
+    // the founder had it removed (annotation A1) — so this file's own
+    // pin-of-removal habit applies, exactly as it does for the deleted distance
+    // pill further down. The 390px no-ellipsis check is NOT lost with it: the
+    // indoor toggle and the kind chips carry that assertion now, and both are
+    // real controls on the surface.
+    await expect(page.getByTestId('places-when-filter')).toHaveCount(0)
+    await expect(page.getByTestId('places-when-sheet')).toHaveCount(0)
 
-    for (const { testId, caption } of triggers) {
-      const trigger = page.getByTestId(testId)
-      await expect(trigger).toBeVisible()
-      // The caption is real text inside the control, so the accessible name
-      // carries the purpose and not just the value.
-      await expect(trigger).toHaveAccessibleName(new RegExp(caption))
-
-      const clipped = await trigger.evaluate((node) => {
-        const spans = Array.from(node.querySelectorAll('span'))
-        return spans.some((span) => span.scrollWidth > span.clientWidth + 1)
-      })
-      expect(clipped, `${testId} must not ellipsize at 390px`).toBe(false)
-    }
+    // V32-5 ACCEPTANCE: the upcoming-count seam still drives the directory rows.
+    // This is the one thing the deletion could have taken with it — the count
+    // and the window share the SAME start-time read (`upcomingStartTimes`), so
+    // removing the window is exactly when someone might "tidy away" the read.
+    //
+    // The row's own rule (`PlaceDirectory`'s `plannedCopy`/`inviteLine`, from
+    // `planDirectoryList.upcomingCount`) states one of exactly three things, and
+    // never nothing: "N drop-ins planned here", "1 drop-in planned here", or the
+    // invite line when the count is a true zero. A row rendering NONE of them
+    // means the read was lost. Asserting the DISJUNCTION is what makes this a
+    // real check rather than a string guess — the seeded directory's counts vary
+    // with live data, so pinning one literal would have been flaky by design.
+    const countRows = page.getByTestId('place-row')
+    expect(await countRows.count()).toBeGreaterThan(0)
+    const countTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))
+    const statesItsCount = (t: string) =>
+      /\d+ drop-ins? planned here/.test(t) || /Be the first to start a drop-in here/.test(t)
+    expect(
+      countTexts.filter(statesItsCount).length,
+      'every directory row must still state its upcoming count (or its honest zero)',
+    ).toBe(countTexts.length)
 
     // THE TOGGLE THAT REPLACED THE "Setting" DROPDOWN. One control, one word,
     // a real pressed state — and no sheet behind it to open.
