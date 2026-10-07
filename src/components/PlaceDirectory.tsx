@@ -38,7 +38,7 @@ import {
 import type { DateWindow, PlaceListRow, PlacePhotoViewer, SortMode } from '../lib/places'
 import type { ReviewSummary } from '../lib/reviews'
 import { scrollBehaviorFor } from '../lib/mapStrip'
-import { hoursSourceNote, hoursStatus } from '../lib/placeHours'
+import { hoursStatus } from '../lib/placeHours'
 import { dropInProofLine, reviewQuoteLine } from '../lib/placeSocial'
 import type { PlaceDropInProof, PlaceReviewHighlight } from '../lib/placeSocial'
 import type { Place, PlacePrefill } from '../lib/types'
@@ -1808,7 +1808,9 @@ function DirectoryRow({
    * assumption is never shown in the same voice as a real schedule.
    */
   const openStatus = hoursStatus(row.place.hours ?? null, new Date())
-  const openNote = hoursSourceNote(row.place.hours_source ?? null)
+  // The "· typical hours" suffix this row used to carry is gone with the pills
+  // (2026-10-06). `hoursSourceNote` is still exported by lib/placeHours for the
+  // surfaces that state the assumption in its own voice.
   /**
    * V27 — THE SOCIAL CUE, in strict PRIORITY (a card shows exactly one line,
    * and the first true fact wins):
@@ -1940,36 +1942,38 @@ function DirectoryRow({
       </div>
 
       <div className="flex flex-col gap-1.5 p-3">
-        {/* Title row: the name on the left, the Save bookmark on the right — the
-            brief's "Top Line Row: [Place Title] on the left; explicit Bookmark/
-            Save actions stacked on the right", and the layout the specs pin
-            (the heart shares a row with the name). The stars sit on their own
-            line just below, so a rating never competes with the save control for
-            the same corner. */}
-        <div className="flex items-start justify-between gap-2">
-          <span
-            data-testid="place-card-name"
-            onClick={selectable ? select : undefined}
-            className="text-base font-semibold text-slate-900"
-          >
-            {row.place.name}
-          </span>
-          {/* Reserves the floating bookmark's 44px so the name never runs under
-              it. The control itself is a SIBLING of this link (see the wrapper
-              comment) — never nested inside the anchor. */}
-          {canFollow ? <span aria-hidden="true" className="h-11 w-11 shrink-0" /> : null}
-        </div>
-        {/* Rating line, just under the name. "No reviews yet" is stated, never
-            left blank and never shown as 0 stars. */}
+        {/* DISTILL + the founder's follow-up (2026-10-06, over impeccable live on
+            /browse). The row had seven things to read: a name, an empty rating
+            line, a five-pill logistics cluster, an address, a historical proof
+            line, a review quote and two buttons. What a parent scrolling for a
+            place to start a drop-in actually needs is narrower, and the founder's
+            own words were "what's the key information they need to know and
+            nothing else":
+
+              * THE REVIEWS LEAD — RATING AND QUOTE TOGETHER. Both move to the very
+                top of the row, above the name: other parents' verdict is the
+                strongest signal this directory has, and it was buried below the
+                title. The quote keeps its `line-clamp-2` so a long review can
+                never take the row over.
+              * ONE LOGISTICS LINE, NOT FIVE PILLS. Open-now, indoor/outdoor,
+                distance and kind were five filled pills; they are one 14px line.
+              * THE HISTORICAL PROOF IS GONE from this row. "1 drop-in hosted
+                here · last one 6 days ago" answered a question the founder did
+                not think a scrolling parent was asking — and it was the row's
+                second accent, competing with the action. `proofLine` is still
+                computed above because `inviteLine` keys off it (a place that has
+                never hosted keeps its honest "be the first" invitation, and a
+                place that has keeps quiet); only the RENDER went.
+              * "No reviews yet" STAYS when there are no reviews: it is the
+                rating line's own honest answer, never left blank and never shown
+                as 0 stars.
+              * The emoji (🗺️ / 👥 / ✨) went with the pills — at 14px they were
+                clip-art next to the words that already said the same thing. */}
         {ratingSummary !== null && ratingSummary.hasReviews ? (
           <PlaceStars count={ratingSummary.count} average={ratingSummary.displayAverage} />
         ) : (
           <span className="text-xs text-slate-400">No reviews yet</span>
         )}
-        {/* V27: a real parent's words under the rating. The `reviewQuoteLine`
-            seam owns truncation + the "Sam R." reduction; the stars are NOT
-            repeated here (they sit on the line above). Null renders nothing, so
-            "No reviews yet" is never second-guessed. */}
         {quoteLine !== null ? (
           <p
             data-testid="place-review-quote"
@@ -1978,64 +1982,41 @@ function DirectoryRow({
             {quoteLine}
           </p>
         ) : null}
-        {/* The prominent logistics row: indoor/outdoor (the rain question),
-            distance (how far), and the kind. A real "Open now" chip joins this
-            row the day the directory carries public opening hours — it is not
-            faked in the meantime. */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex items-start justify-between gap-2">
+          <span
+            data-testid="place-card-name"
+            onClick={selectable ? select : undefined}
+            className="text-base font-semibold text-slate-900"
+          >
+            {row.place.name}
+          </span>
+          {canFollow ? <span aria-hidden="true" className="h-11 w-11 shrink-0" /> : null}
+        </div>
+        <p className="text-xs text-slate-600">
           {openStatus !== null ? (
-            <span
-              data-testid="place-open-status"
-              title={row.place.hours?.display ?? undefined}
-              className={
-                'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ' +
-                (openStatus === 'open'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-slate-100 text-slate-500')
-              }
-            >
+            <span data-testid="place-open-status" title={row.place.hours?.display ?? undefined}>
               <span
                 aria-hidden="true"
-                className={openStatus === 'open' ? 'text-emerald-500' : 'text-slate-400'}
+                className={openStatus === 'open' ? 'text-emerald-600' : 'text-slate-400'}
               >
                 ●
-              </span>
+              </span>{' '}
               {openStatus === 'open' ? 'Open now' : 'Closed'}
-              {openNote !== null ? (
-                <span className="font-normal text-slate-400"> · {openNote}</span>
-              ) : null}
+              {' · '}
             </span>
           ) : null}
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-            {placeIndoorLabel(row.place)}
-          </span>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-            {row.distanceMiles !== null
-              ? formatDistanceLabel(row.distanceMiles)
-              : 'Distance unknown'}
-          </span>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-            {placeKindLabel(row.place.kind)}
-          </span>
-          {ageFit !== null ? (
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-              {ageFit}
-            </span>
-          ) : null}
-        </div>
+          {placeIndoorLabel(row.place)} ·{' '}
+          {row.distanceMiles !== null
+            ? formatDistanceLabel(row.distanceMiles)
+            : 'Distance unknown'}{' '}
+          · {placeKindLabel(row.place.kind)}
+          {ageFit !== null ? ` · ${ageFit}` : ''}
+        </p>
         <span className="text-xs text-slate-500">{row.place.address}</span>
-        {/* V27: the ONE social line, in the priority order computed above —
-            planned count, else past activity, else the zero-state invitation,
-            else nothing. `upcomingCount === 0` with a proof shows the proof,
-            so "be the first" can never appear on a place that has hosted. */}
         {plannedCopy !== null ? (
-          <span className="text-xs font-medium text-indigo-700">👥 {plannedCopy}</span>
-        ) : proofLine !== null ? (
-          <span data-testid="place-dropin-proof" className="text-xs font-medium text-indigo-700">
-            {proofLine}
-          </span>
+          <span className="text-xs font-medium text-indigo-700">{plannedCopy}</span>
         ) : inviteLine !== null ? (
-          <span className="text-xs text-slate-500">✨ {inviteLine}</span>
+          <span className="text-xs text-slate-500">{inviteLine}</span>
         ) : null}
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {!selectable ? (
@@ -2045,12 +2026,6 @@ function DirectoryRow({
               onClick={(e) => startDropIn(e)}
               className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
             >
-              {/* V30 (founder decision, over impeccable live 2026-10-05): the
-                  app's OWN mark — the slide under a tree — replaces 🚀, which he
-                  read as a category reflex that does not mean "start a drop-in".
-                  `mono` draws it in currentColor, so it is white on the action
-                  fill like the label beside it. The emoji was also an extra word
-                  in the accessible name ("rocket, Start a drop-in"). */}
               <DropInMark variant="mono" className="h-4 w-4 shrink-0" />
               Start a drop-in
             </button>
@@ -2065,9 +2040,9 @@ function DirectoryRow({
               onClick={(e) => {
                 e.stopPropagation()
               }}
-              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
             >
-              🗺️ {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
+              {learnMore.kind === 'website' ? 'Visit website' : 'Find it on the map'}
             </a>
           ) : (
             <span className="text-xs text-slate-500">
