@@ -1151,6 +1151,44 @@ export function PlaceDirectory({
                 {kind.label}
               </button>
             ))}
+            {/* COFFEE NEARBY (founder, 2026-10-06, over impeccable live on /browse).
+                It belongs WITH the place chips, not in a row's action cluster:
+                "the coffee nearby button should be with the other buttons like
+                Playground / Indoor play / Museum". It is the last chip in the
+                scroll row, and the only one that is not a filter — it is a DOOR.
+
+                WHAT IT CAN HONESTLY BE TODAY. This app holds no cafe data: the
+                directory's kinds are places, and "Food/Cafe" is a dashed
+                placeholder precisely because there is no dataset behind it. So
+                the chip cannot say "there is a coffee shop 3 minutes away". It
+                opens that question in the tool that does know, centred on the
+                area being browsed — the same move `mapsHref` (lib/feed.ts) makes
+                for a single place. An in-app per-place answer needs a
+                nearby-places source (Google Places Nearby or Overpass) plus a
+                caching decision; that is a slice, not a chip. */}
+            <a
+              href={`https://www.google.com/maps?q=${encodeURIComponent(
+                `coffee near ${locationLabelText}`,
+              )}`}
+              target="_blank"
+              rel="noopener"
+              data-testid="place-coffee-nearby"
+              className="flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 shrink-0 text-amber-700"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
+              </svg>
+              Coffee nearby
+            </a>
           </div>
           {comingSoonCopy !== null ? (
             <p
