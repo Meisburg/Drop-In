@@ -225,6 +225,9 @@ you do them.
   results** — do not build the empty-feed CTA or interest chips until it runs.
   *Time: ~2 hours total across 5 calls of 20 min. Done when: results scored
   against the pre-registered bars.*
+  **PARKED 2026-10-07** by the founder — needs five humans, not engineering time.
+  See `docs/backlog/five-parent-first-open-test.md`; check for a public URL
+  before unparking, since the only known route needs tailnet membership.
 
 ---
 
