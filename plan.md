@@ -501,3 +501,25 @@ the Going confirmation.
          proven by e2e/post-location.e2e.ts:539-555 (geometry, not DOM order)
     V33: v33-7 re-classified — the form REFUSES any window but 60/90/120/180
          minutes, so "it has to be an hour" is a behavioural defect, not polish
+
+---
+
+## 9. V33 ledger (append-only, one line per event)
+
+    V33: handoff read; HEAD 30e83d2 confirmed; only the three known files dirty
+    V33: plan.md committed (0ee9c66) — V32's plan is the record, not a WIP file
+    V33: plan written (base 30e83d2); 24 annotations -> 14 slices, 4 blocked on rulings
+    V33: v33-3 triaged as NO BUILD — 8ecaa35 already puts the photo above the h1
+    V33: v33-7 re-classified — the form REFUSES any window but 60/90/120/180 min
+    V33: v33-1 complete (25dc518) — matchPlaces folds whitespace/punctuation; browser 117 -> 5 rows
+    V33: v33-0 dispatched (2af490e), then fix round 1/5 (ad738cc), 2/5 (b28773b), 3/5 (0456f29)
+    V33: v33-0 parked its last two ocr findings — Ruling: documented limitations, not defects
+    V33: v33-2 complete (fc64070) + fix round 1/5 (71de45e) — photo admin one step + Edit photo
+    V33: v33-7a complete (aebdb84) — isPostableDuration; a 30-min window posts, DB read back
+    V33: v33-7 split into 7a (defect, shipped) and 7b (control polish, queued)
+    V33: v33-6 complete (091aad8) — Message controls beside Going, intrinsic width
+    V33: builder lane = herdr dsh pane, local qwen3.8-27b (~98k); 4 sessions died, 1 surveyed 50 min and edited nothing
+    V33: /tmp wiped by a 14:09 reboot — briefs/reports moved to .scratch/v33/; state snapshot at .scratch/v33/BATCH-STATE.md
+    V33: toolbar resolved 4 annotations with shas (muye8eek, muyfmog8, muyfsjwv, muyfsxah); 20 remain pending
+    V33: gate EXTERNAL red — another lane's untracked docs/agents/{parallel-development,compute-split,fleet-capacity}.md
+         are unreachable from AGENTS.md, so steering-lint fails; isolated (same gate exited 0 at 14:44). Not ours.

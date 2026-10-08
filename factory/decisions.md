@@ -1280,3 +1280,9 @@ preference against the headroom** and demands the preference still win. Three
 mutations were run to prove the new checks bite: deleting the preference tie-break,
 moving it above the cost tier, and restoring `=== null`. Each turns a named check
 red. **A green suite is only evidence if the red is reachable.**
+- V33: the brief/report convention MOVED from /tmp/pd-slices to .scratch/v33/ (briefs) and .scratch/v33-<slice>-report.md (reports).
+  Reason: the machine rebooted at 14:09 and /tmp was wiped, taking the v33-0/v33-1 briefs, the greenlake screenshot and the gate log
+  with it. Durable state must live in the repo. A copy is still mirrored into /tmp/pd-slices for the old convention.
+- V33: the builder lane is herdr pane wQ:p15 (dsh-tui, qwen-local/qwen3.8-27b on the 5090). The previous session's pane died on
+  upstream 500s at ~1357 steps; a fresh session on the local provider replaced it. Local-first per the 5090-first policy; cloud budget
+  measured OK (weekly 35.5%, session 29.8%) but unused.
