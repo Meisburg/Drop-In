@@ -1123,6 +1123,124 @@ export function stepTimeMinutes(currentMinutes: number, deltaMinutes: number): n
   return (currentMinutes + deltaMinutes + dayMinutes) % dayMinutes
 }
 
+/**
+ * v33-7b — THE SHORTEST WINDOW THE STEPPERS WILL PRODUCE, in minutes.
+ *
+ * A window must satisfy `end > start`, and one step is 30 minutes, so the
+ * smallest reachable window is one step. Named rather than inlined because the
+ * arithmetic below, the component's note, and the spec all have to agree on it.
+ */
+export const MIN_WINDOW_MINUTES = TIME_STEP_MINUTES
+
+/** What a window step did, and whether the OTHER end moved to keep it legal. */
+export interface WindowStepResult {
+  /** The start after the step. */
+  startMinutes: number
+  /** The end after the step, as minutes since local midnight (may exceed 24h
+   *  when the window crosses midnight — the form's existing convention). */
+  endMinutes: number
+  /**
+   * True when the stepped end pushed the OTHER end, so the UI can SAY SO.
+   * THE WHOLE POINT OF THIS SEAM (founder muyefjzq, second half): *"I don't want
+   * them to be linked together."* A flag is returned rather than the component
+   * inferring it by comparing its own previous values, because "did the other
+   * end move" is a property of the RULE, not of a render.
+   */
+  otherEndMoved: boolean
+}
+
+/**
+ * Step ONE end of a window by `deltaMinutes` and return the window that results.
+ *
+ * THE DEFECT THIS EXISTS TO PREVENT — A SILENT DRAG. The pre-v33-7b Start
+ * stepper wrote only `startMinutes` and left `durationMinutes` alone, so the END
+ * moved with the start every time: stepping the start of a 2–3 PM window gave
+ * 2:30–3:30. The parent moved ONE end and BOTH moved, which is exactly the
+ * "linked together" the founder rejected.
+ *
+ * Here, stepping an end moves THAT end and leaves the other where it was. The
+ * length is therefore free to become whatever the parent makes it — step a
+ * 2–3 PM window's start to 2:30 and you get 2:30–3:00. The ONLY coupling left is
+ * the invariant a window cannot break, `end > start`: step far enough and the
+ * other end gives way to preserve `MIN_WINDOW_MINUTES`, with `otherEndMoved`
+ * telling the UI to say so. Nothing moves invisibly.
+ *
+ * THE INVARIANT IS ENFORCED HERE, NOT AT THE CALL SITE, so the component never
+ * re-derives the window arithmetic and cannot disagree with this rule (the
+ * repo's one-copy rule). `stepTimeMinutes` stays the primitive underneath; the
+ * `(end − start) mod 1440` reading stays the form's way of measuring a window.
+ *
+ * The end is returned as `start + length` (NOT wrapped into `[0, 1440)`) because
+ * that is the form's own convention for a window crossing midnight: a 11:30 PM →
+ * 12:30 AM window is `start 1410, end 1470`, and `end ≥ DAY_MINUTES` is what
+ * already drives the "(next day)" handling elsewhere in this module.
+ */
+export function stepWindowEnd(
+  window: { startMinutes: number; endMinutes: number },
+  which: 'start' | 'end',
+  deltaMinutes: number,
+): WindowStepResult {
+  const day = 24 * 60
+  const start = stepTimeMinutes(window.startMinutes, 0)
+
+  if (which === 'start') {
+    /**
+     * THE END DOES NOT MOVE. This is the whole fix. Stepping the start of a
+     * 2–3 PM window to 2:30 PM gives 2:30–3:00 — a 30-minute window, because the
+     * parent moved one end and meant it. The LENGTH is free (the founder's "as
+     * long or as short as they want"); it is the END that is pinned.
+     *
+     * The one thing a start step CAN break is `end > start`: step the start far
+     * enough and it meets or passes the end. Then the end is the value that
+     * gives way — forward, by the minimum — and `otherEndMoved` is true so the
+     * section can say so.
+     */
+    const nextStart = stepTimeMinutes(start, deltaMinutes)
+    const forwardToEnd = ((window.endMinutes - nextStart) % day + day) % day
+    /**
+     * ⚠️ THE `currentInvalid` GUARD. When the window ALREADY fails `end > start`
+     * (a form that mounted before its duration derived, a legacy 0), the modulo
+     * above reports a near-full-day "forward" distance and would return a
+     * 23.5-hour window — the rule silently blessing the state it exists to
+     * forbid. An invalid window has no end to preserve, so the end is placed at
+     * the minimum ahead of the new start and the move is announced.
+     */
+    const currentInvalid = ((window.endMinutes - start) % day + day) % day < MIN_WINDOW_MINUTES
+    if (currentInvalid) {
+      return {
+        startMinutes: nextStart,
+        endMinutes: nextStart + MIN_WINDOW_MINUTES,
+        otherEndMoved: true,
+      }
+    }
+    if (forwardToEnd >= MIN_WINDOW_MINUTES) {
+      return { startMinutes: nextStart, endMinutes: nextStart + forwardToEnd, otherEndMoved: false }
+    }
+    return {
+      startMinutes: nextStart,
+      endMinutes: nextStart + MIN_WINDOW_MINUTES,
+      otherEndMoved: true,
+    }
+  }
+
+  /**
+   * which === 'end': the END moves and the START is the one that stays — until
+   * the step would land the end at or before the start. Then the window cannot
+   * be that short, so the START gives way (backwards, by the minimum) and the
+   * end stays exactly where the parent put it. The other end moved; say so.
+   */
+  const steppedEnd = stepTimeMinutes(window.endMinutes % day, deltaMinutes)
+  const forward = ((steppedEnd - start) % day + day) % day
+  if (forward >= MIN_WINDOW_MINUTES) {
+    return { startMinutes: start, endMinutes: start + forward, otherEndMoved: false }
+  }
+  return {
+    startMinutes: stepTimeMinutes(steppedEnd, -MIN_WINDOW_MINUTES),
+    endMinutes: steppedEnd,
+    otherEndMoved: true,
+  }
+}
+
 /** "3:30 PM" from minutes since local midnight (12-hour, wraps past midnight). */
 export function formatTimeLabel(minutes: number): string {
   const dayMinutes = 24 * 60
