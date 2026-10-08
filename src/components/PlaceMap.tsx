@@ -1304,15 +1304,14 @@ export function PlacesMap({
    * twice and that's redundant. We don't need it twice."*
    *
    * The two doors were the event link ("Drop-in details", `/playdate/:id`) and
-   * the place link ("Details", now `/place/:id/details`). Both opened a page
-   * about the same place, so a parent reading the bubble saw two buttons that
-   * did the same job. The event link is the real navigation target for the
-   * drop-in the pin stands for — it names the event, not the place — so it
-   * stays; the place link goes. A parent who wants the place's research page
-   * still has the place page's own door (`place-more-details`), which is where
-   * that control belongs rather than floating over a map.
+   * the place link ("Details", `/place/:id`). The PLACE DOOR SURVIVED, and the
+   * ruling is the surface's own: `marker-details` is the older, cross-surface
+   * door (V13) that `/browse` and the feed share, and it is the one the
+   * ticket's acceptance names ("tapping it still opens the place detail page").
+   * The event door existed only on the feed, so deleting it also stops the two
+   * surfaces drifting. The event link itself is gone from the markup below.
    */
-  const showDetails = isRealPlaceId && placeActions && pinEvent === null
+  const showDetails = isRealPlaceId && placeActions
 
   return (
     <div className="flex flex-col gap-2">
@@ -1473,22 +1472,25 @@ export function PlacesMap({
                       </span>
                     ) : null}
                   </div>
-                  {/* V25 t07: THE DOOR TO THE EVENT. It is NOT a second
-                      "Details" for the place — its destination is
-                      `/playdate/:id`, built by the same seam that built the
-                      title above it, and its name says which one it opens. A
-                      real `<Link>` (keyboard reachable, named by its own text)
-                      at the house 44px tap target, so it is not a second-class
-                      control beside the row below. `Link` works here because the
-                      portal keeps this content inside the React tree (see the
-                      portal's doc comment). */}
-                  <Link
-                    to={pinEvent.href}
-                    data-testid="pin-event-link"
-                    className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-                  >
-                    Drop-in details
-                  </Link>
+                  {/* V25 t07 REMOVED THE EVENT DOOR HERE (v34 `muzk0bae`).
+                      It was a `<Link>` to `/playdate/:id` labelled "Drop-in
+                      details", sitting directly above the place block whose own
+                      `marker-details` link is labelled "Details". The founder
+                      read the pair as one destination twice: *"when you select
+                      this, it says details twice. There's options to go to the
+                      details twice and that's redundant."*
+
+                      THE PLACE DOOR SURVIVED, and the ruling is the surface's
+                      own: `marker-details` is the older, cross-surface door
+                      (V13) that `/browse` and the feed share, and it is the one
+                      the ticket's acceptance names ("tapping it still opens the
+                      place detail page"). The event door existed only on the
+                      feed, so deleting it also stops the two surfaces drifting.
+
+                      The EVENT CONTENT above (title, when, "N more drop-ins
+                      here") is untouched: it is what the tap is asking about,
+                      and it was never the redundant half. Only its second door
+                      is gone. */}
                 </>
               ) : null}
               <div className="flex flex-col gap-0.5 pr-4">

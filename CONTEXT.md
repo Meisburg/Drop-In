@@ -69,3 +69,29 @@ _Avoid_: onboarding — they are not synonyms
 The interview that collects who the parent is. A series of cards, one question
 each — not a single form.
 _Avoid_: signup, setup wizard, registration
+
+**Group**:
+A private circle of parents who already know each other, whose drop-ins only its
+members see. Not discoverable, no public URL, joined by invite. One type only —
+there is no public or request-to-join group.
+_Avoid_: pod, community, circle, club
+
+**Member**:
+A parent who belongs to a group. Membership records who invited them, because the
+invite is how trust enters a group.
+_Avoid_: subscriber, follower
+
+**Admin**:
+The member who may remove members and revoke invites. Not a different kind of
+account — a role within one group.
+_Avoid_: owner, moderator, owner-role
+
+**Invite link**:
+The only way into a group. Opening it as a stranger creates the account, attaches
+the group, and lands the new parent inside that group.
+_Avoid_: referral, join code, invitation URL
+
+**Group thread**:
+The single conversation shared by a group's members, for coordinating meetups.
+One thread per group.
+_Avoid_: group chat, group DM, channel

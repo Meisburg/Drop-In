@@ -28,8 +28,25 @@ import { Agentation } from 'agentation'
  * `endpoint` points at the local MCP server (`npx -y agentation-mcp server`).
  * With it down, the toolbar still works — annotations are copied to the
  * clipboard instead of synced.
+ *
+ * THE ENDPOINT IS DERIVED, NOT HARDCODED (added 2026-10-07, phone lane).
+ * `http://localhost:4747` is correct only when the browser runs on THIS
+ * machine. Loaded from a phone, `localhost` means the phone, so the toolbar
+ * would sync to nothing and silently fall back to clipboard — the annotation
+ * never reaches the agent, and the failure looks like "the agent found no
+ * feedback". Deriving the host from `window.location.hostname` points the
+ * endpoint wherever the app itself was loaded from, so desktop keeps
+ * `localhost:4747` and a phone on the tailnet gets
+ * `<tailnet-host>:4747` with no second config.
  */
 export default function AgentationDev() {
   const location = useLocation()
-  return <Agentation key={location.key} appName="Drop In" endpoint="http://localhost:4747" />
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+  return (
+    <Agentation
+      key={location.key}
+      appName="Drop In"
+      endpoint={`http://${host}:4747`}
+    />
+  )
 }

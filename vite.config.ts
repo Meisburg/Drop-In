@@ -45,6 +45,25 @@ function stripDevInjector() {
 }
 
 export default defineConfig({
+  // PHONE LANE (added 2026-10-07). Vite binds loopback by DEFAULT, so a dev
+  // server started here is invisible to a phone on the tailnet — the symptom is
+  // a connection that simply never opens, which reads like the phone or
+  // Tailscale being broken rather than a bind address. `host: true` binds every
+  // interface, including the tailnet address (100.120.87.29), so
+  // http://omarchy-2.tail0c686b.ts.net:5173 serves the app AND the Agentation
+  // toolbar can reach the MCP server on :4747 from the same origin family.
+  // This is a DEV-ONLY bind: `vite build` output is unaffected.
+  server: {
+    host: true,
+    port: 5173,
+    // Vite 5+ rejects requests whose Host header is not loopback or an explicit
+    // allowlist entry — "Blocked request. This host is not allowed" — which is a
+    // DNS-rebinding guard, not a network problem. A phone reaches this dev server
+    // by the tailnet name, so that name must be listed or the page never loads even
+    // though the port is open. `.ts.net` is Tailscale's own suffix, so the entry is
+    // the tailnet hostname for this box (see `tailscale status --json` → Self.DNSName).
+    allowedHosts: ['omarchy-2.tail0c686b.ts.net', '.tail0c686b.ts.net'],
+  },
   plugins: [
     react(),
     // Tailwind CSS v4 (CSS-first: `@import "tailwindcss"` in src/index.css,

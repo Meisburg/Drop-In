@@ -661,7 +661,18 @@ export interface MapPinEvent {
   /** "2 more drop-ins here", or null when this dot stands for ONE drop-in — so
    *  a single-event pin says nothing extra rather than "0 more". */
   moreLabel: string | null
-  /** `/playdate/:id` — the tap target that reaches the named EVENT. */
+  /**
+   * `/playdate/:id` — the named EVENT's own page.
+   *
+   * ⚠️ NO LONGER RENDERED BY THE POPUP (v34 `muzk0bae`). It was the feed bubble's
+   * second "details" door until the founder read it and the place's own
+   * `marker-details` as one destination twice: *"it says details twice… that's
+   * redundant."* The place door survived, so this field now has no consumer in
+   * `PlaceMap`. It STAYS on the seam — the value is a pure, tested part of what
+   * names an event (`src/lib/places.test.ts` pins it), and a caller that needs
+   * the event's URL should get it from the same place the title and window come
+   * from rather than rebuilding a path. Delete it only together with its test.
+   */
   href: string
 }
 

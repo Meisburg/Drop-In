@@ -2880,9 +2880,15 @@ test('the feed maps its placed drop-ins and ignores free-text ones (V19 t02)', a
  * session at one park are a single circle. Two posts, one place, is therefore the
  * only fixture that can prove the two halves the ticket demands at once:
  *
- *   1. the dot DOES name an event (title + when + a link to `/playdate/:id`), and
+ *   1. the dot DOES name an event (title + when), and
  *   2. the dot does NOT pretend that event is the only one — it says how many
  *      more drop-ins share it.
+ *
+ * (v34 `muzk0bae` REMOVED the third thing this header used to claim — "a link to
+ * `/playdate/:id`". The founder read that link and the place's own "Details" as
+ * the same destination twice, so the event door is gone and only the place door
+ * remains; the spec now asserts exactly one "details" affordance instead. See the
+ * count-1 AC inside.)
  *
  * The pair is 20 and 25 minutes out, both comfortably future (the feed only
  * carries upcoming posts), and it is written at the SAME seeded place the V19
@@ -2948,10 +2954,9 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
       const rows = (await res.json()) as Array<{ id: string }>
       created.push(rows[0].id)
     }
-    // Both ids, in seed order (soonest first) — the href assertion below reads
-    // this, so a link that pointed at the WRONG drop-in could not pass by
-    // matching the place or the other row.
-    const [firstId, secondId] = created
+    // The SOONER of the two, in seed order — the collapse step below deletes it,
+    // so the dot must then name the survivor's own title.
+    const [firstId] = created
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
@@ -2962,7 +2967,7 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
     const band = page.getByTestId('feed-map-band')
     await expect(band).toBeVisible({ timeout: 15000 })
 
-    type NamedPin = { title: string; when: string; href: string; more: string | null }
+    type NamedPin = { title: string; when: string; more: string | null }
     /**
      * Click every indigo pin once and collect the popups that name THIS RUN's
      * drop-ins, plus the index of the dot that named one.
@@ -3039,7 +3044,6 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
         found.push({
           title,
           when: (await probePanel.getByTestId('pin-event-when').innerText()).trim(),
-          href: (await probePanel.getByTestId('pin-event-link').getAttribute('href')) ?? '',
           more: (await more.count()) > 0 ? (await more.innerText()).trim() : null,
         })
         foundIndex = index
@@ -3073,9 +3077,11 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
     )
 
     // ----------------------------------------------------------------
-    // AC: THE TAP CAN REACH THE EVENT — and reaches THE EVENT, not the place.
+    // AC: THE TAP STILL NAMES THE EVENT — its title and window are what the
+    // bubble is for. The door to the event is GONE (v34 `muzk0bae`): it was the
+    // second "details" affordance the founder rejected, and the assertion that
+    // it linked `/playdate/:id` moved with it into the count-1 AC below.
     // ----------------------------------------------------------------
-    expect(tapped.href, 'the bubble must link the drop-in it named').toBe(`/playdate/${firstId}`)
     // A real day + window, from the card's own rule (`cardWhenLabel`): the DAY
     // tables are locale-independent, so asserting the SHAPE here is stable
     // whatever the browser's locale; the exact string is pinned by the seam's
@@ -3083,10 +3089,6 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
     expect(tapped.when, 'the bubble must state when the drop-in starts').toMatch(
       /^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2} · .+–.+$/,
     )
-    // The link is NOT a second "Details" for the place: the place's own door is
-    // a different control with a different destination (the research page, not
-    // the event's /playdate/ route).
-    expect(tapped.href, 'the event link must never be a /place/ link').not.toContain('/place/')
 
     // ----------------------------------------------------------------
     // AC: THE PLACE IS STILL HOW A PARENT KNOWS WHERE, AND THE BUBBLE STILL
@@ -3097,6 +3099,11 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
       .nth(before.index)
       .click({ force: true })
     const panel = page.getByTestId('place-marker-info')
+    // THE WAIT THAT MAKES THE COUNT-1 AC BELOW NON-VACUOUS: `toHaveCount(0)`
+    // passes against a popup that has not rendered yet, so the "exactly one
+    // details door" assertion must run only after THIS popup is on screen. This
+    // visibility wait is that gate, and the title/address assertions prove it is
+    // the populated popup rather than an empty one.
     await expect(panel).toBeVisible()
     await expect(panel).toContainText(MARKER_PLACE_NAME)
     await expect(panel).toContainText(MARKER_PLACE_ADDRESS)
@@ -3105,16 +3112,54 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
     // note).
     await expect(panel.getByTestId('host-here')).toBeVisible()
 
-    // muzk0bae: the event link and the place's Details door are now mutually
-    // exclusive — when the event link is shown, the place link is suppressed.
-    const eventLink = panel.getByTestId('pin-event-link')
-    await expect(eventLink).toHaveAccessibleName('Drop-in details')
-    await expect(panel.getByTestId('marker-details')).toHaveCount(0)
-    await eventLink.focus()
-    await expect(eventLink).toBeFocused()
-    const linkBox = await eventLink.boundingBox()
-    expect(linkBox, 'the event link must be rendered').not.toBeNull()
-    // The house tap-target floor, on the new control too.
+    /**
+     * AC 1 (v34 `muzk0bae`) — EXACTLY ONE "details" AFFORDANCE IN THE POPUP.
+     *
+     * The founder, on this very popup: *"when you select this, it says details
+     * twice. There's options to go to the details twice and that's redundant."*
+     * The two were `pin-event-link` ("Drop-in details" → `/playdate/:id`) and
+     * `marker-details` ("Details" → `/place/:id`).
+     *
+     * WHAT SURVIVED, AND WHY THE ASSERTION IS SHAPED THIS WAY. The place door
+     * stays: it is the older cross-surface control (V13) that `/browse` shares,
+     * and it is the one that opens the place detail page. So the count is proven
+     * in BOTH directions from the ONE real popup on screen —
+     *   - the survivor exists and is a real, keyboard-reachable 44px `/place/`
+     *     link (AC 2: tapping it still opens the place detail page);
+     *   - the removed one is GONE, asserted on its own testid so that a future
+     *     re-add fails here rather than passing because "some link exists".
+     * The accessibility name is pinned as `Details` exactly: `toHaveCount(0)` on
+     * the old testid plus one `Details` link is what "not twice" means.
+     */
+    const placeDetails = panel.getByTestId('marker-details')
+    await expect(
+      placeDetails,
+      'the popup keeps exactly one details door, and it is the place door',
+    ).toHaveCount(1)
+    await expect(placeDetails).toHaveAccessibleName('Details')
+    await expect(placeDetails, 'the surviving door must open the place detail page').toHaveAttribute(
+      'href',
+      /^\/place\//,
+    )
+    // ...and the REMOVED affordance is really gone, on its own name.
+    await expect(
+      panel.getByTestId('pin-event-link'),
+      'the redundant second "details" door must not come back',
+    ).toHaveCount(0)
+    // No other control in this popup may carry a "details" name either — the
+    // count is about WORDS a parent reads, not just one testid. `marker-details`
+    // is the only link whose accessible name is or contains "Details"; the
+    // remaining controls ("Start a drop-in", "Visit website") do not.
+    const detailsNamedLinks = panel.getByRole('link', { name: /details/i })
+    await expect(detailsNamedLinks).toHaveCount(1)
+
+    // AC 2's second half: the door that survived is a first-class control — the
+    // house 44px tap target and a real keyboard stop, exactly as the removed one
+    // was required to be.
+    await placeDetails.focus()
+    await expect(placeDetails).toBeFocused()
+    const linkBox = await placeDetails.boundingBox()
+    expect(linkBox, 'the surviving details door must be rendered').not.toBeNull()
     expect(linkBox!.height).toBeGreaterThanOrEqual(44)
 
     // The popup that owns THIS panel (there is one bubble; filtering by the
@@ -3156,7 +3201,7 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
      * Without this, "1 more drop-in here" is only a sentence: it could be about
      * whatever else the live feed holds. After it, the second seeded row is
      * demonstrably BEHIND that dot — the dot changed its mind when the row went
-     * away, and it now links the survivor's own `/playdate/:id`.
+     * away, and it now names the survivor's own title.
      */
     const deleted = await fetch(`${restUrl}/rest/v1/playdates?id=eq.${firstId}`, {
       method: 'DELETE',
@@ -3175,17 +3220,19 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
       after.named.length,
       'the surviving drop-in must still be one dot, not zero and not two',
     ).toBe(1)
+    // The dot now names the SURVIVOR: the title is the identity the bubble still
+    // carries (v34 removed the event door, so the older `href` proof went with
+    // it), and it is the same discriminator the pre-delete assertion used.
     expect(
       after.named[0].title,
       'with the sooner drop-in deleted, the dot must name the one that is left',
     ).toBe(seeds[1].title)
-    expect(after.named[0].href).toBe(`/playdate/${secondId}`)
 
     console.log(
       `[V25 t07] pins probed: ${before.count}; dot naming "${tapped.title}" ` +
-        `(when "${tapped.when}", more "${tapped.more}", href "${tapped.href}"); ` +
+        `(when "${tapped.when}", more "${tapped.more}"); ` +
         `after deleting the sooner row the same dot names "${after.named[0].title}" ` +
-        `(href "${after.named[0].href}")`,
+        `(when "${after.named[0].when}")`,
     )
   } finally {
     // Best-effort cleanup: a leftover row would skew every later feed spec.
