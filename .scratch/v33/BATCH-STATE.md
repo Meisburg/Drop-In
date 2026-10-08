@@ -361,3 +361,33 @@ Dismissed with the safety reason: `muyc5kwv`.
 
 **Owed `ocr` passes:** v33-4 has none yet. v33-6 and v33-7a have run
 (`.scratch/ocr-v33-6.json`, `-7a.json`); **v33-13's run timed out** — rerun it.
+
+---
+
+## 11 — THE /browse DESIGN PASS (supersedes the earlier "prototypes first")
+
+**Contract:** `.scratch/v33/RULING-browse-directory.md` (founder, 21:25).
+**Deliverable (a) — DONE:** `.scratch/v33/plan-browse.md` — the restructured
+`/browse`: search expanding to the full row while typing; three **labelled tiers**
+(`When` = Open now · `Kind` = Playground/Indoor play/Museum/Café (+ More kinds) ·
+`Mine` = Saved); the sort as a visible control **above the list** with **Best
+first** as the default and A–Z available; the **Filters modal and its trigger
+deleted**; the tie-break pinned (rating desc, review count desc, then name) because
+4 reviews over 234 places means 230 rows tie. Eight acceptance criteria, each with
+what asserts it, in §5 of that plan.
+
+**Deliverable (b) — the PROTOTYPE — is QUEUED, not dropped.** A static HTML file at
+`.scratch/v33/prototypes/browse/browse.html` (no app code, no new route), in this
+app's own tokens, 390px + 1280px, with the one recommendation stated at the top of
+the page. **It must be built with `impeccable` loaded** (`impeccable context`, then
+the craft floor before any edit) — this is layout, hierarchy and copy, which is
+exactly what that skill governs.
+
+**⚠️ Routing blocks it right now:** the cap is **exactly ONE local builder lane**, and
+that lane (`wQ:p1F`) is carrying the v33-6 host-regression fix. The `dsh cloud
+rollover` job refuses while any lane has work, so new panes are still local and
+**must not be started**. **Queue the prototype behind the v33-6 fix on `wQ:p1F`** (or
+on the first cloud lane the rollover produces).
+
+**The five annotations are two changes and one design pass** — do not brief them
+separately: (1) delete the modal, (2) change the default sort, (3) the layout pass.
