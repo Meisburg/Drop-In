@@ -38,7 +38,6 @@ import {
   placeDetailsPath,
   placeKindLabel,
   placeLearnMoreLink,
-  placePath,
   resolveMapCoords,
   zoomForRadius,
 } from '../lib/places'
@@ -1282,7 +1281,6 @@ export function PlacesMap({
    */
   const isRealPlaceId = selected !== null && /^[0-9a-f-]{36}$/i.test(selected.id)
   const showHostHere = isRealPlaceId
-  const showDetails = isRealPlaceId && placeActions
 
   /**
    * V25 t07 — THE EVENT THE TAPPED PIN STANDS FOR, or null.
@@ -1297,6 +1295,24 @@ export function PlacesMap({
    * thing: no event, so the bubble keeps its place-only content.
    */
   const pinEvent = selected !== null ? (pinEvents?.get(selected.id) ?? null) : null
+
+  /**
+   * muzk0bae — THE DUPLICATE "Details" DOOR IS GONE.
+   *
+   * The founder, on the feed's marker popup: *"I just noticed that when you
+   * select this, it says details twice. There's options to go to the details
+   * twice and that's redundant. We don't need it twice."*
+   *
+   * The two doors were the event link ("Drop-in details", `/playdate/:id`) and
+   * the place link ("Details", now `/place/:id/details`). Both opened a page
+   * about the same place, so a parent reading the bubble saw two buttons that
+   * did the same job. The event link is the real navigation target for the
+   * drop-in the pin stands for — it names the event, not the place — so it
+   * stays; the place link goes. A parent who wants the place's research page
+   * still has the place page's own door (`place-more-details`), which is where
+   * that control belongs rather than floating over a map.
+   */
+  const showDetails = isRealPlaceId && placeActions && pinEvent === null
 
   return (
     <div className="flex flex-col gap-2">
@@ -1513,7 +1529,7 @@ export function PlacesMap({
                   ) : null}
                   {showDetails ? (
                     <Link
-                      to={placePath(selected.id)}
+                      to={placeDetailsPath(selected.id)}
                       data-testid="marker-details"
                       className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
                     >
@@ -1533,6 +1549,10 @@ export function PlacesMap({
                   {selected.notes !== null && selected.notes !== '' ? ` · ${selected.notes}` : ''}
                 </span>
               ) : null}
+              {/* muzk0bae: when the event link is shown, the place's Details
+                  door is suppressed (see `showDetails` above), but the panel
+                  still needs a fallback for places with no verified site and
+                  no event — the inline kind + notes line covers that case. */}
             </div>,
             popupHost,
           )
