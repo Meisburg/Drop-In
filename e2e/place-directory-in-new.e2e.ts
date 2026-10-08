@@ -84,8 +84,13 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   // The search control: the always-visible inline field, present only on the
   // real directory surface.
   await expect(sheet.getByTestId('places-search')).toBeVisible()
-  // The filter/sort control: the "filters" half of the founder's ask.
-  await expect(sheet.getByTestId('filter-sort-btn')).toBeVisible()
+  // The filter control: the ONE flat pill row, the "filters" half of the
+  // founder's ask. V33-D: the "Filter & sort" trigger and its modal are DELETED
+  // — the row itself is the filter surface now, and the sort is its own control
+  // above the list.
+  await expect(sheet.getByTestId('place-kind-chip-row')).toBeVisible()
+  await expect(sheet.getByTestId('places-sort-control')).toBeVisible()
+  await expect(sheet.getByTestId('filter-sort-btn')).toHaveCount(0)
   // V25 t01: LIST-FIRST. The sheet opens on the filters + the whole list, and
   // NO map is mounted below them — the map is a mode entered from the card.
   await expect(sheet.getByTestId('places-map-band')).toHaveCount(0)

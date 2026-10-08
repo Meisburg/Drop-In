@@ -19,7 +19,6 @@ import {
   placePhotoVisibleTo,
   MAP_FOCUS_RADIUS_MILES,
   planDirectoryList,
-  PLACE_KINDS,
   placeKindChips,
   placeLearnMoreLink,
   placeIndoorLabel,
@@ -196,7 +195,19 @@ export function PlaceDirectory({
   // --- Directory state -------------------------------------------------------
 
   const [query, setQuery] = useState('')
-  const [indoorFilter, setIndoorFilter] = useState<boolean | null>(null)
+  /**
+   * V33-D — THE KIND-BLIND "INDOOR" BOOLEAN IS GONE FROM THIS SURFACE.
+   *
+   * It was a second, kind-blind gate (indoor across every kind) whose only
+   * writer was its own pill. The one flat pill row names the indoor KIND
+   * directly (`Indoor play`), so "somewhere indoors" is a kind selection now,
+   * like every other pill — one filter mechanism, not two. The
+   * `planDirectoryList` seam KEEPS its `indoorFilter` parameter (it is tested
+   * behaviour and the feed still speaks it), so this component simply always
+   * passes the documented `null` default — exactly the discipline the `radiusFilter`
+   * state above records for the same "one door deleted, the seam kept" reason.
+   */
+  const indoorFilter: boolean | null = null
   /**
    * V31 map-and-distance — THE ONE RADIUS DOOR.
    *
@@ -230,10 +241,23 @@ export function PlaceDirectory({
    * and the slider cannot disagree.
    */
   const radiusMiles = pickedRadiusMiles ?? viewerRadius
-  // The filter & sort modal. The list defaults to alphabetical (A–Z); the modal
-  // is where filtering + re-sorting lives — there are no controls below the list.
-  const [sortMode, setSortMode] = useState<SortMode>('alpha')
-  const [filterModalOpen, setFilterModalOpen] = useState(false)
+  /**
+   * V33-D — THE SORT IS A CONTROL ABOVE THE LIST, and `Best first` is the
+   * default.
+   *
+   * The defect this names (`:235` before this slice) was `'alpha'`: the founder
+   * filed the same sentence twice — *"sorted automatically by top-rated…
+   * instead of alphabetical"* — and the plan's ruling is that "best" is not a
+   * thing a parent wants to EXCLUDE, it is the thing they want SORTED FIRST. So
+   * 'top-rated' is the load default, and the sort renders as its own row above
+   * the list (below), where it cannot compete with the filters for a tap. A–Z
+   * stays a first-class option for a parent who knows the name ("Greenlake").
+   *
+   * The FILTERS MODAL IS DELETED (V33-D): its contents are the one wrapping pill
+   * row, and its `Top rated` option was the second home of a control that now
+   * exists ONCE, as this sort. `filterModalOpen` went with it.
+   */
+  const [sortMode, setSortMode] = useState<SortMode>('top-rated')
   // Empty set = all kinds (no kind filter active).
   const [selectedKinds, setSelectedKinds] = useState<Set<string>>(new Set())
   /**
@@ -349,6 +373,14 @@ export function PlaceDirectory({
    * only ever return an empty list, they open one honest "coming soon" line.
    */
   const [comingSoonKind, setComingSoonKind] = useState<string | null>(null)
+  /**
+   * V33-D — whether the `More kinds` overflow panel is open. The door exists
+   * because the plan's single wrapping row names only the four kinds a parent
+   * says out loud; the rest are one tap away rather than competing for the same
+   * glance, and the panel WRAPS like the row above it (no side-scroll — that was
+   * the founder's wife's whole complaint, `muzk5y54`).
+   */
+  const [moreKindsOpen, setMoreKindsOpen] = useState(false)
   /**
    * The place-name shown on the pill / location row. The host may pass one
    * (the viewer's city); after a "Set location" geocode the typed address wins,
@@ -522,6 +554,73 @@ export function PlaceDirectory({
   const kindChips = placeKindChips(places)
 
   /**
+   * V33-D — THE PILL ROW'S ORDER, stated once: `Open now · Playground ·
+   * Indoor play · Café · Museum · Saved · More kinds`.
+   *
+   * The kinds therefore straddle the Café toggle, which is why there are TWO
+   * kind groups rather than one: the two kinds that precede Café, and the one
+   * that follows it. `More kinds` carries every remaining kind (pool, splash
+   * pad, library, beach, other). This is PRESENTATION ONLY — all three groups
+   * toggle the SAME `selectedKinds` set, so a selection made behind the door
+   * shows up in the row's own state and in the list identically. The split is by
+   * `kind`, so a kind added to `PLACE_KIND_CHIP_KINDS` lands behind the door by
+   * default rather than silently vanishing.
+   */
+  const BEFORE_CAFE_KINDS = ['playground', 'indoor_play'] as const
+  const AFTER_CAFE_KINDS = ['museum'] as const
+  const IN_ROW_KINDS = [...BEFORE_CAFE_KINDS, ...AFTER_CAFE_KINDS]
+  const beforeCafeKindChips = kindChips.filter((chip) =>
+    (BEFORE_CAFE_KINDS as readonly string[]).includes(chip.kind),
+  )
+  const afterCafeKindChips = kindChips.filter((chip) =>
+    (AFTER_CAFE_KINDS as readonly string[]).includes(chip.kind),
+  )
+  const moreKindChips = kindChips.filter(
+    (chip) => !(IN_ROW_KINDS as readonly string[]).includes(chip.kind),
+  )
+  /**
+   * ONE kind chip, rendered identically wherever it sits in the row. The two
+   * groups above draw from this rather than each carrying its own copy of the
+   * markup — one pill anatomy, so a change to it cannot reach one half only.
+   */
+  function renderKindChip(chip: (typeof kindChips)[number]) {
+    const selected = selectedKinds.has(chip.kind)
+    return (
+      <button
+        key={chip.kind}
+        type="button"
+        data-testid={`place-kind-chip-${chip.kind}`}
+        data-empty={chip.empty ? 'true' : 'false'}
+        aria-pressed={selected}
+        onClick={() => toggleKind(chip.kind)}
+        className={
+          'flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+          (selected
+            ? 'border-indigo-600 bg-indigo-600 text-white'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+        }
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          className={
+            'h-5 w-5 shrink-0 ' +
+            (selected ? 'text-white' : (KIND_ACCENTS[chip.kind] ?? 'text-slate-500'))
+          }
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d={PLACE_KIND_ICONS[chip.kind]} />
+        </svg>
+        {chip.label}
+      </button>
+    )
+  }
+
+  /**
    * V24 slice 10: the rows the MAP VIEW carries.
    *
    * TWO SETS, AND THE DISTINCTION IS LOAD-BEARING — this slice's second review
@@ -594,14 +693,6 @@ export function PlaceDirectory({
     places !== null && (followedPlaceIds.size > 0 || savedOnly)
 
   // --- Handlers --------------------------------------------------------------
-
-  function openFilterModal() {
-    setFilterModalOpen(true)
-  }
-
-  function closeFilterModal() {
-    setFilterModalOpen(false)
-  }
 
   /**
    * V24 slice 10: enter the map view. The list's CURRENT scroll offset is saved
@@ -783,16 +874,24 @@ export function PlaceDirectory({
       <div
         className={`flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ${view === 'map' ? 'md:col-start-2' : ''} ${stickyControls ? 'sticky top-0 z-10' : ''}`}
       >
-        {/* The search field + the two utilities, ONE inline row.
+        {/* The search field + the location utility, ONE inline row.
             THE FOUNDER: *"I expected to be able to do it right then and there on
             the same screen. I don't want it to take me anywhere else."* So the
             old full-screen sheet is gone. This is a REAL `<input>` that filters
             the list live as it is typed, and because the parent taps the input
             itself the on-screen keyboard opens natively. The pin button changes
-            the location; the sliders button opens Filter & sort. */}
+            the location.
+
+            V33-D — THE FILTERS TRIGGER IS DELETED (`muydnms9`/`muydpqw0`): the
+            "Filter & sort" modal it opened is gone, and its contents are the one
+            wrapping pill row below. The sort it also carried is now its own
+            control above the list.
+
+            V33-D — THE SEARCH EXPANDS WHILE TYPING (`muydrqml`): the *location*
+            control is what shrinks to make room, and it returns when the field
+            is cleared. The founder could not see what he was typing. */}
         <div className="flex flex-col gap-2">
-          {/* Says it in place: the pin carries the location's own value and
-              the sliders carry a word, so neither is a bare glyph. */}
+          {/* Says it in place: the pin carries the location's own value. */}
           <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 pl-3 pr-1 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200">
             <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d={NAV_ICONS.search} />
@@ -808,30 +907,24 @@ export function PlaceDirectory({
               autoComplete="off"
               className="min-h-11 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
             />
-            <button
-              type="button"
-              data-testid="set-location-btn"
-              onClick={openLocationModal}
-              aria-label="Change location"
-              className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-2 text-sm font-medium text-slate-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d={NAV_ICONS.nearby} />
-              </svg>
-              {locationLabelText}
-            </button>
-            <button
-              type="button"
-              data-testid="filter-sort-btn"
-              onClick={openFilterModal}
-              aria-label="Filter and sort"
-              className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-2 text-sm font-medium text-slate-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d={NAV_ICONS.sliders} />
-              </svg>
-              Filters
-            </button>
+            {/* V33-D: while the parent is typing, the location control yields the
+                row to the field — the input is the thing that must be readable.
+                It comes straight back when the field is cleared (the `query`
+                half), so nothing is lost by the collapse. */}
+            {query.trim() === '' ? (
+              <button
+                type="button"
+                data-testid="set-location-btn"
+                onClick={openLocationModal}
+                aria-label="Change location"
+                className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-2 text-sm font-medium text-slate-600 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={NAV_ICONS.nearby} />
+                </svg>
+                {locationLabelText}
+              </button>
+            ) : null}
           </div>
 
           {/* Focusing the empty field offers the SAME kind words as the pill row,
@@ -881,224 +974,79 @@ export function PlaceDirectory({
             icon-only circle whose only word was its `aria-label`, and his note
             was "as a user, I would have no idea what this does". It is now a
             named pill (bookmark + "Saved"). */}
-        {/* DISTILL (V30, 2026-10-05, over impeccable live on /browse): the
-            card spent TWO rows on one job — a row of filter pills, then a row
-            of quick gates, with a gap and a heading-shaped comment between
-            them. They are the same kind of control answering the same
-            question ("narrow what I am looking at"), so they are now one
-            wrapping row and the card is a row shorter. The gates stay last,
-            where the eye arrives after the filters. */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        data-testid="places-indoor-filter"
-                        aria-pressed={indoorFilter === true}
-                        onClick={() => {
-                          setIndoorFilter((prev) => (prev === true ? null : true))
-                        }}
-                        className={
-                          'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                          (indoorFilter === true
-                            ? 'border-indigo-600 bg-indigo-600 text-white'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
-                        }
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                          className={
-                            'h-4 w-4 shrink-0 ' +
-                            (indoorFilter === true ? 'text-white' : 'text-violet-500')
-                          }
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M3 10.5 12 4l9 6.5 M5 10.8V20h14v-9.2 M9.5 20v-5h5v5" />
-                        </svg>
-                        Indoor
-                      </button>
-        {savedToggleAvailable ? (
-                        <button
-                          type="button"
-                          data-testid="places-saved-filter"
-                          aria-pressed={savedOnly}
-                          aria-label="Saved places"
-                          onClick={() => {
-                            setSavedOnly((prev) => !prev)
-                          }}
-                          className={
-                            'flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                            (savedOnly
-                              ? 'border-indigo-600 bg-indigo-600 text-white'
-                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
-                          }
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                            className="h-4 w-4 shrink-0"
-                            fill={savedOnly ? 'currentColor' : 'none'}
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d={NAV_ICONS.bookmark} />
-                          </svg>
-                          Saved
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        data-testid="places-open-now-filter"
-                        aria-pressed={openNowOnly}
-                        onClick={() => setOpenNowOnly((prev) => !prev)}
-                        className={
-                          'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                          (openNowOnly
-                            ? 'border-emerald-600 bg-emerald-600 text-white'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
-                        }
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={openNowOnly ? 'text-white' : 'text-emerald-500'}
-                        >
-                          ●
-                        </span>
-                        Open now
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="places-top-rated-sort"
-                        aria-pressed={sortMode === 'top-rated'}
-                        onClick={() =>
-                          setSortMode((prev) => (prev === 'top-rated' ? 'alpha' : 'top-rated'))
-                        }
-                        className={
-                          'flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                          (sortMode === 'top-rated'
-                            ? 'border-amber-500 bg-amber-500 text-white'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
-                        }
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={sortMode === 'top-rated' ? 'text-white' : 'text-amber-500'}
-                        >
-                          ★
-                        </span>
-                        Top rated
-                      </button>
-                    </div>
+        {/* V33-D — THE ONE FLAT PILL ROW (`muzk5y54`).
+            The founder's wife, reviewing with him: *"why aren't all these pills
+            together? Why are they all space-weird? … you don't even need to make
+            them scrollable where they're off-screen, you could show all of them
+            together."* That supersedes the earlier correction's "scrolls
+            sideways": the row WRAPS, every pill is visible at 390px, and the
+            spacing reads as ONE group — tight, even gaps (`gap-2`), no tier
+            labels, no second row, no side-scroll.
 
-        {/* V27 — THE INTENT PILLS. Padded capsule buttons rather than the old
-            tight icon-above-word chips: easier to hit one-handed, and the
-            selected state is a SOLID indigo fill with white text/icon so it
-            reads instantly against the neutral inactive pills. Each still
-            toggles the SAME `selectedKinds` set the filter sheet's chips use.
+            THE ORDER is kept from the plan; the tiers are dropped:
+              Open now · Playground · Indoor play · Café · Museum · Saved · More kinds
 
-            THE TWO TRAILING PILLS ARE NOT FILTERS. This app has no food/cafe or
-            zoo/animal dataset anywhere, so a real chip for either could only
-            ever return an empty list. They are named to the parent and open one
-            honest "coming soon" line instead — the previous static disclaimer
-            sentence is gone. */}
+            `Open now` leads because it is the only question with a deadline. The
+            kinds follow — the four a parent names out loud for a toddler (a park,
+            somewhere indoors, a coffee while they play, something to look at).
+            `Saved` sits near the end because it is the narrowest question, a
+            memory aid that intersects with everything to its left. `More kinds`
+            is an overflow DOOR, never a destination. */}
         <div className="flex flex-col gap-1.5">
           <div
             data-testid="place-kind-chip-row"
             role="group"
-            aria-label="Place types"
-            className="flex snap-x gap-2 overflow-x-auto overscroll-x-contain pb-1"
+            aria-label="Place filters"
+            className="flex flex-wrap items-center gap-2"
           >
-            {kindChips.map((chip) => {
-              const selected = selectedKinds.has(chip.kind)
-              return (
-                <button
-                  key={chip.kind}
-                  type="button"
-                  data-testid={`place-kind-chip-${chip.kind}`}
-                  data-empty={chip.empty ? 'true' : 'false'}
-                  aria-pressed={selected}
-                  onClick={() => {
-                    toggleKind(chip.kind)
-                  }}
-                  className={
-                    'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                    (selected
-                      ? 'border-indigo-600 bg-indigo-600 text-white'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
-                  }
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    className={
-                      'h-5 w-5 shrink-0 ' +
-                      (selected ? 'text-white' : (KIND_ACCENTS[chip.kind] ?? 'text-slate-500'))
-                    }
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d={PLACE_KIND_ICONS[chip.kind]} />
-                  </svg>
-                  {chip.label}
-                </button>
-              )
-            })}
-            {comingSoonKinds.map((kind) => (
-              <button
-                key={kind.id}
-                type="button"
-                data-testid={`place-kind-placeholder-${kind.id}`}
-                onClick={() => setComingSoonKind((prev) => (prev === kind.id ? null : kind.id))}
-                className="flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border border-dashed border-slate-300 bg-white px-4 text-sm font-medium text-slate-400 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
-              >
-                {kind.label}
-              </button>
-            ))}
-            {/* COFFEE NEARBY (founder, 2026-10-06, over impeccable live on /browse).
-                It belongs WITH the place chips, not in a row's action cluster:
-                "the coffee nearby button should be with the other buttons like
-                Playground / Indoor play / Museum". It is the last chip in the
-                scroll row, and the only one that is not a filter — it is a DOOR.
+            {/* 1 · OPEN NOW — the only question with a deadline. */}
+            <button
+              type="button"
+              data-testid="places-open-now-filter"
+              aria-pressed={openNowOnly}
+              onClick={() => setOpenNowOnly((prev) => !prev)}
+              className={
+                'flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (openNowOnly
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
+              }
+            >
+              <span aria-hidden="true" className={openNowOnly ? 'text-white' : 'text-emerald-500'}>
+                ●
+              </span>
+              Open now
+            </button>
 
-                WHAT IT CAN HONESTLY BE TODAY. This app holds no cafe data: the
-                directory's kinds are places, and "Food/Cafe" is a dashed
-                placeholder precisely because there is no dataset behind it. So
-                the chip cannot say "there is a coffee shop 3 minutes away". It
-                opens that question in the tool that does know, centred on the
-                area being browsed — the same move `mapsHref` (lib/feed.ts) makes
-                for a single place. An in-app per-place answer needs a
-                nearby-places source (Google Places Nearby or Overpass) plus a
-                caching decision; that is a slice, not a chip. */}
-            {/* V32 v32-10a (A5): THE TOGGLE, BESIDE THE DOOR — two jobs, both
-                kept. The founder's per-place question (*"can our kids play here
-                AND can we drink a coffee?"*) is answered in-app by this filter,
-                which reads the cached `places.coffee_nearby` column. The door
-                below still answers the AREA question ("where is coffee around
-                here") by opening Google Maps, and it stays an `<a>`.
+            {/* 2–3 · PLAYGROUND · INDOOR PLAY — the first two kinds a parent
+                names out loud for a toddler. They read the SAME `selectedKinds`
+                set the rest of the row does, and the SAME
+                `placeKindLabel`/`PLACE_KIND_ICONS` vocabulary the list and the
+                place page already use — this row introduces no second label map
+                and no second taxonomy. `Museum` follows the Café toggle below,
+                in the plan's order. */}
+            {beforeCafeKindChips.map(renderKindChip)}
 
-                It is a real control matching the kind chips: `aria-pressed`, a
-                visible on/off state matching their selected colours, `min-h-11`,
-                the same focus ring. Its own testid — NOT the door's, which a spec
-                locates.
+            {/* 4 · CAFÉ — THE COFFEE TOGGLE, ONCE (`muzk3j1e`).
+                v32-10a's `place-coffee-filter` was rendering TWICE on this row —
+                the real defect the founder's wife caught. It stays HERE, the one
+                coffee control in the pill row, reading the cached
+                `places.coffee_nearby` column through the pure seam.
 
-                ⚠️ WHAT IT CANNOT SAY: the column is three-valued, so a place
-                we never asked about is excluded WITHOUT being called cafe-less.
-                The empty state below carries that distinction in its copy. */}
+                It is a real control matching the kind chips: `aria-pressed`, the
+                same `min-h-11`, the same focus ring. Its own testid — NOT the
+                door's, which the specs below locate.
+
+                ⚠️ WHAT IT CANNOT SAY: the column is three-valued, so a place we
+                never asked about is excluded WITHOUT being called cafe-less. The
+                empty state below carries that distinction in its copy. */}
             <button
               type="button"
               data-testid="place-coffee-filter"
               aria-pressed={coffeeNearbyOnly}
               onClick={() => setCoffeeNearbyOnly((prev) => !prev)}
               className={
-                'flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                'flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
                 (coffeeNearbyOnly
                   ? 'border-amber-700 bg-amber-700 text-white'
                   : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')
@@ -1116,32 +1064,102 @@ export function PlaceDirectory({
               >
                 <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
               </svg>
-              Coffee nearby
+              Café
             </button>
-            <a
-              href={`https://www.google.com/maps?q=${encodeURIComponent(
-                `coffee near ${locationLabelText}`,
-              )}`}
-              target="_blank"
-              rel="noopener"
-              data-testid="place-coffee-nearby"
-              className="flex min-h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+
+            {/* 5 · MUSEUM — the last of the four kinds a parent names out loud,
+                after Café in the plan's order. */}
+            {afterCafeKindChips.map(renderKindChip)}
+
+            {/* 6 · SAVED — the bookmark, rendered only when it is not a door to
+                nowhere (see `savedToggleAvailable`). It keeps its own testid and
+                `aria-label`: a signed-out viewer renders nothing extra here. */}
+            {savedToggleAvailable ? (
+              <button
+                type="button"
+                data-testid="places-saved-filter"
+                aria-pressed={savedOnly}
+                aria-label="Saved places"
+                onClick={() => setSavedOnly((prev) => !prev)}
+                className={
+                  'flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                  (savedOnly
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')
+                }
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="h-4 w-4 shrink-0"
+                  fill={savedOnly ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d={NAV_ICONS.bookmark} />
+                </svg>
+                Saved
+              </button>
+            ) : null}
+
+            {/* 7 · MORE KINDS — the overflow DOOR, last. It opens the kinds the
+                four above do not name (pool, splash pad, library, beach, other)
+                plus the two categories the DATA CANNOT EXPRESS (no food/cafe,
+                zoo or amenity dataset anywhere). Those trailing pills are NOT
+                filters: tapping one opens the single honest "coming soon" line,
+                exactly as before, because a chip for them could only ever return
+                an empty list. Nothing was dropped — it moved one tap in. */}
+            <button
+              type="button"
+              data-testid="place-more-kinds"
+              aria-expanded={moreKindsOpen}
+              onClick={() => setMoreKindsOpen((prev) => !prev)}
+              className={
+                'flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (moreKindsOpen
+                  ? 'border-slate-400 bg-slate-100 text-slate-900'
+                  : 'border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50')
+              }
             >
+              More kinds
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
-                className="h-5 w-5 shrink-0 text-amber-700"
+                className={'h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ' + (moreKindsOpen ? 'rotate-180' : '')}
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.8"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
+                <path d="m6 9 6 6 6-6" />
               </svg>
-              Coffee nearby
-            </a>
+            </button>
           </div>
+
+          {/* The overflow panel `More kinds` opens: the remaining KINDS as real
+              toggle chips (same `selectedKinds` set as the four in the row), then
+              the two honest "coming soon" doors. It is a second WRAPPING line,
+              not a scroll strip — the same rule as the row above. */}
+          {moreKindsOpen ? (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {moreKindChips.map(renderKindChip)}
+              {comingSoonKinds.map((kind) => (
+                <button
+                  key={kind.id}
+                  type="button"
+                  data-testid={`place-kind-placeholder-${kind.id}`}
+                  onClick={() => setComingSoonKind((prev) => (prev === kind.id ? null : kind.id))}
+                  className="flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full border border-dashed border-slate-300 bg-white px-4 text-sm font-medium text-slate-400 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  {kind.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {comingSoonCopy !== null ? (
             <p
               data-testid="place-kind-coming-soon"
@@ -1159,6 +1177,37 @@ export function PlaceDirectory({
             </p>
           ) : null}
         </div>
+
+        {/* V33-D — THE COFFEE DOOR, OUT OF THE PILL ROW (`muzk3j1e`).
+            The Google Maps door answers the AREA question ("where is coffee
+            around here"), not a filter over this list, so it is no longer a pill
+            among the filters — that duplicate-looking pairing is what read as
+            "the coffee control renders twice". It stays a real `<a>` to Maps,
+            centred on the area being browsed, rendered as its own quiet line
+            under the row. */}
+        <a
+          href={`https://www.google.com/maps?q=${encodeURIComponent(
+            `coffee near ${locationLabelText}`,
+          )}`}
+          target="_blank"
+          rel="noopener"
+          data-testid="place-coffee-nearby"
+          className="flex w-fit min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-5 w-5 shrink-0 text-amber-700"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
+          </svg>
+          Coffee nearby
+        </a>
       </div>
 
       {/* V24 slice 10 — THE MAP VIEW REPLACES the list rather than sitting
@@ -1236,6 +1285,62 @@ export function PlaceDirectory({
           {photoNotice}
         </p>
       ) : null}
+
+      {/* V33-D — THE SORT, ABOVE THE LIST (`muydtkbk` / `muyfmj1g`).
+          A sort is a property of the LIST, so it belongs to the list: stated
+          once, visible, changeable, and it never competes with the filters for a
+          tap. That is why it sits here rather than in the pill row, and why the
+          "Top rated" chip left the row entirely — the control that used to exist
+          in TWO places now exists ONCE.
+
+          `Best first` is the load default (`top-rated`); `A–Z` stays a
+          first-class option for a parent who knows the name ("Greenlake"). A
+          sort reorders — it must never change WHICH rows are shown, which the
+          e2e asserts by comparing the row count and set. Only two modes surface
+          here: the modal that carried `distance`/`newest` is deleted, and
+          neither was reachable from this surface's own controls anyway. */}
+      {view !== 'list' ? null : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-slate-600">
+            {places === null ? 'Loading places…' : `${listRows.length} places`}
+          </p>
+          <div
+            role="group"
+            aria-label="Sort places"
+            data-testid="places-sort-control"
+            className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1"
+          >
+            <button
+              type="button"
+              data-testid="places-sort-best-first"
+              aria-pressed={sortMode === 'top-rated'}
+              onClick={() => setSortMode('top-rated')}
+              className={
+                'flex min-h-11 items-center rounded-full px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (sortMode === 'top-rated'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-700 hover:bg-slate-200')
+              }
+            >
+              Best first
+            </button>
+            <button
+              type="button"
+              data-testid="places-sort-a-z"
+              aria-pressed={sortMode === 'alpha'}
+              onClick={() => setSortMode('alpha')}
+              className={
+                'flex min-h-11 items-center rounded-full px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
+                (sortMode === 'alpha'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-700 hover:bg-slate-200')
+              }
+            >
+              A–Z
+            </button>
+          </div>
+        </div>
+      )}
 
       {view !== 'list' ? null : places === null ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm md:col-start-2">
@@ -1465,82 +1570,6 @@ export function PlaceDirectory({
         </button>
       ) : null}
 
-      {/* The Filter & sort modal. State commits live as the parent toggles;
-          Apply just closes. Stacking class beats Leaflet's 1000 wrapper. */}
-      {filterModalOpen ? (
-        <div
-          data-testid="filter-sort-modal"
-          className={`fixed inset-0 ${MODAL_OVER_LEAFLET_Z_CLASS} flex items-end justify-center bg-black/40 sm:items-center`}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeFilterModal()
-          }}
-        >
-          <div className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Filter &amp; sort</h3>
-              <button
-                type="button"
-                onClick={closeFilterModal}
-                className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="mb-3">
-              <span className="mb-2 block text-xs font-medium text-slate-700">Place types</span>
-              <div className="flex flex-wrap gap-2">
-                {PLACE_KINDS.map((kind) => {
-                  const selected = selectedKinds.has(kind)
-                  return (
-                    <button
-                      key={kind}
-                      type="button"
-                      data-testid={`filter-kind-chip-${kind}`}
-                      aria-pressed={selected}
-                      onClick={() => toggleKind(kind)}
-                      className={
-                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors motion-reduce:transition-none ' +
-                        (selected
-                          ? 'border-indigo-600 bg-indigo-600 text-white'
-                          : 'border-slate-300 bg-white text-slate-700')
-                      }
-                    >
-                      {placeKindLabel(kind)}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="mt-1 text-xs text-slate-500">None selected = show all types.</p>
-            </div>
-
-            <label className="mb-3 flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">Sort by</span>
-              <select
-                data-testid="filter-sort-select"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as SortMode)}
-              >
-                <option value="alpha">A–Z</option>
-                <option value="distance">Closest to me</option>
-                <option value="newest">Newest</option>
-                <option value="top-rated">Top rated</option>
-              </select>
-            </label>
-
-            <button
-              type="button"
-              data-testid="filter-apply-btn"
-              onClick={closeFilterModal}
-              className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
-            >
-              Apply
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       {/* The Set location modal — address + THE radius. V31 map-and-distance:
           this is the surface's ONE radius door (the distance pill that used to

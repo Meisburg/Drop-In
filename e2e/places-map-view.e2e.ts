@@ -1339,20 +1339,22 @@ test('"Back to list" restores the same list, its filters and its scroll position
   await page.getByTestId('places-search').fill('park')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   // Two further, independent directories of state the round trip must survive:
-  // the indoor/outdoor toggle and the filter modal's SORT.
+  // a KIND pill and the SORT above the list.
   //
-  // The sort is chosen deliberately over the date chips: a date window can (and,
-  // for `park` + indoor + Tomorrow, does) narrow the set to nothing, which would
+  // The sort is chosen deliberately over a date window: a date window can (and,
+  // for `park` + a kind + Tomorrow, does) narrow the set to nothing, which would
   // leave the map view with no card to open its entry control from. Sorting only
   // REORDERS, so the round trip is exercised against a live, non-empty list.
   //
-  // V27's dropdown + sheet is a single toggle now (founder, 2026-10-06), so the
-  // state is read straight off the control that owns it.
-  await page.getByTestId('places-indoor-filter').click()
-  await page.getByTestId('filter-sort-btn').click()
-  await page.getByTestId('filter-sort-select').selectOption('newest')
-  await page.getByTestId('filter-apply-btn').click()
-  await expect(page.getByTestId('places-indoor-filter')).toHaveAttribute('aria-pressed', 'true')
+  // V33-D: the Filter & sort modal is DELETED. The sort is its own control above
+  // the list (`places-sort-a-z`), and the kind-blind indoor toggle is gone too —
+  // "somewhere indoors" is the `indoor_play` KIND pill now, so the state this
+  // spec carries is a kind selection plus a sort mode, both read straight off
+  // the controls that own them.
+  await page.getByTestId('place-kind-chip-playground').click()
+  await page.getByTestId('places-sort-a-z').click()
+  await expect(page.getByTestId('place-kind-chip-playground')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
 
@@ -1439,14 +1441,19 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // AC: the FILTER STATE survived the round trip. Asserted from the CONTROLS,
   // not from the result count: a filter that silently reset could still leave a
   // same-sized list behind, and the control is the state itself.
-  // V27: the query is readable from the inline input's value, and the type state
-  // is read straight off the toggle that owns it.
+  // V27: the query is readable from the inline input's value.
   // V31 map-and-distance: the RADIUS state is read from the location control —
   // the surface that now owns it — by reopening it and reading its slider. The
   // value asserted is the one this spec set at the top (`setAnyDistance` → the
   // widest the slider offers, read from the slider itself rather than copied).
   await expect(page.getByTestId('places-search')).toHaveValue('park')
-  await expect(page.getByTestId('places-indoor-filter')).toHaveAttribute('aria-pressed', 'true')
+  // V33-D: the kind pill and the sort control, both read from the controls that
+  // own that state (the modal they used to live behind is deleted).
+  await expect(page.getByTestId('place-kind-chip-playground')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('set-location-btn').click()
   const radiusSlider = page.getByTestId('location-radius-slider')
   await expect(radiusSlider).toBeVisible()
@@ -1457,10 +1464,6 @@ test('"Back to list" restores the same list, its filters and its scroll position
   ).toBe(widestRadius)
   await page.getByTestId('location-modal-close').click()
   await expect(page.getByTestId('location-modal')).toHaveCount(0)
-  // The sort lives behind the modal, so it is read from the control that owns it.
-  await page.getByTestId('filter-sort-btn').click()
-  await expect(page.getByTestId('filter-sort-select')).toHaveValue('newest')
-  await page.getByTestId('filter-apply-btn').click()
 
   // Nothing leaks: the probe spacer leaves with the spec that made it.
   await page.evaluate(() => document.getElementById('scroll-range-probe')?.remove())

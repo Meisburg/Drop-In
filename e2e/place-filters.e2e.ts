@@ -62,7 +62,7 @@ test.describe('places directory — the open-now and top-rated gates (V27)', () 
     await expect(rows).toHaveCount(before)
   })
 
-  test('Top rated toggles the review-based sort without changing which places are listed', async ({
+  test('Best first is the default sort and A–Z reorders without changing which places are listed', async ({
     page,
   }) => {
     await page.goto('/browse')
@@ -73,13 +73,22 @@ test.describe('places directory — the open-now and top-rated gates (V27)', () 
     const before = await rows.count()
     expect(before).toBeGreaterThan(0)
 
-    await page.getByTestId('places-top-rated-sort').click()
-    await expect(page.getByTestId('places-top-rated-sort')).toHaveAttribute('aria-pressed', 'true')
-    // Sorting is a reorder, never a filter: the same rows remain.
+    // V33-D: `Best first` is the LOAD DEFAULT (was `alpha` — the defect). The
+    // control lives above the list, so it is asserted from the page, not a modal.
+    const bestFirst = page.getByTestId('places-sort-best-first')
+    const aToZ = page.getByTestId('places-sort-a-z')
+    await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
+    await expect(aToZ).toHaveAttribute('aria-pressed', 'false')
+
+    // Switching to A–Z is a reorder, never a filter: the same rows remain.
+    await aToZ.click()
+    await expect(aToZ).toHaveAttribute('aria-pressed', 'true')
+    await expect(bestFirst).toHaveAttribute('aria-pressed', 'false')
     await expect(rows).toHaveCount(before)
 
-    await page.getByTestId('places-top-rated-sort').click()
-    await expect(page.getByTestId('places-top-rated-sort')).toHaveAttribute('aria-pressed', 'false')
+    // And back — still the same set.
+    await bestFirst.click()
+    await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
     await expect(rows).toHaveCount(before)
   })
 })
@@ -104,6 +113,15 @@ test.describe('places directory — the filter pills say what they filter (v30-3
   test('every trigger names its purpose and clips neither line', async ({ page }) => {
     await page.goto('/browse')
     await settleOnRoute(page, '/browse')
+    // V33-D — PIN THE RADIUS. This spec never did, so the row it measured was
+    // whatever radius the LAST spec had left on the shared marker account. That
+    // is mutable global state: measured, this test passed at 08:38 and failed at
+    // 09:0x on the same code with `place-row` count 0 — the marker's stored
+    // radius had been narrowed by the spec that ran before it. The wide radius
+    // is what the sibling specs use, and it makes the row under measurement the
+    // whole directory rather than a number another test chose.
+    await setDirectoryRadius(page)
+    await expect(page.getByTestId('place-row').first()).toBeVisible()
 
     // The indoor/outdoor control is a single TOGGLE now (founder, 2026-10-06),
     // not a captioned dropdown: its label is the whole story, so it is asserted
@@ -176,22 +194,24 @@ test.describe('places directory — the filter pills say what they filter (v30-3
       })
       .toBe(true)
 
-    // THE TOGGLE THAT REPLACED THE "Setting" DROPDOWN. One control, one word,
-    // a real pressed state — and no sheet behind it to open.
-    const indoorToggle = page.getByTestId('places-indoor-filter')
-    await expect(indoorToggle).toBeVisible()
-    await expect(indoorToggle).toHaveAccessibleName(/Indoor/)
-    await expect(indoorToggle).toHaveAttribute('aria-pressed', 'false')
+    // THE KIND PILLS (V33-D). One flat wrapping row; the kind-blind indoor
+    // toggle is gone, so "somewhere indoors" is the `indoor_play` kind pill,
+    // reached through `More kinds`. One control, one word, a real pressed state
+    // — and no sheet behind it to open.
+    await page.getByTestId('place-more-kinds').click()
+    const indoorChip = page.getByTestId('place-kind-chip-indoor_play')
+    await expect(indoorChip).toBeVisible()
+    await expect(indoorChip).toHaveAccessibleName(/Indoor play/)
+    await expect(indoorChip).toHaveAttribute('aria-pressed', 'false')
 
-    // v33-0 — the restored 390px NO-ELLIPSIS gate (see the comment at the top of
-    // this test for what V32-5's deletion took and why it comes back now):
-    // the indoor toggle, every kind chip, every placeholder pill, and the coffee
-    // controls must clip no text, and the page itself must not widen. The check
-    // walks each element's descendants that carry non-whitespace text with a real
-    // layout box (inline boxes are skipped — their `clientWidth` is 0 while
-    // `scrollWidth` is engine-dependent), and the failure names the culprit. Both
-    // gates POLL so a transient reflow (late webfont swap, scrollbar appearing) is
-    // retried instead of failing the run.
+    // v33-0 / V33-D — the 390px NO-ELLIPSIS gate. Every pill in the row — the
+    // kind chips, the placeholder pills, the coffee toggle, and the row's own
+    // controls — must clip no text, and the page itself must not widen. The
+    // check walks each element's descendants that carry non-whitespace text with
+    // a real layout box (inline boxes are skipped — their `clientWidth` is 0
+    // while `scrollWidth` is engine-dependent), and the failure names the
+    // culprit. Both gates POLL so a transient reflow (late webfont swap,
+    // scrollbar appearing) is retried instead of failing the run.
     //
     // FIX ROUND 2 (ocr): the gate must NOT pass vacuously when the chip row is
     // deleted — assert the row and a non-empty chip set BEFORE the clip check.
@@ -200,10 +220,6 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     const chipCount = await page.locator(KIND_CHIP_SELECTOR).count()
     expect(chipCount, 'the kind-chip row must render at least one chip').toBeGreaterThan(0)
 
-    // PARKED LIMITATION (ocr round 3, ruled by the operator): no control here can
-    // clip today by construction (`shrink-0 whitespace-nowrap` inside an
-    // `overflow-x-auto` row); this gate pins that property, and its red is
-    // mutation-proven (round 1: `w-24 overflow-hidden` → red, naming every chip).
     await expect
       .poll(async () => {
         return page.evaluate(({ tolerance, chipSelector }: { tolerance: number; chipSelector: string }) => {
@@ -224,16 +240,17 @@ test.describe('places directory — the filter pills say what they filter (v30-3
               }
             })
           }
-          const toggle = document.querySelector('[data-testid="places-indoor-filter"]')
-          if (toggle) check(toggle, 'indoor toggle [places-indoor-filter]')
-          // The whole row's pill controls — kind chips, placeholder pills, and
-          // the coffee controls — but NOT the scroll container itself: its own
-          // horizontal overflow at 390px is the "still side-scrolls" feature.
+          // V33-D: every pill in the ONE wrapping row, including the row's own
+          // controls (`Open now`, `Café`, `More kinds`) and the Maps door that
+          // left the row for its own line.
           const selectors = [
             chipSelector,
             '[data-testid^="place-kind-placeholder-"]',
             '[data-testid="place-coffee-filter"]',
             '[data-testid="place-coffee-nearby"]',
+            '[data-testid="places-open-now-filter"]',
+            '[data-testid="places-saved-filter"]',
+            '[data-testid="place-more-kinds"]',
           ]
           for (const selector of selectors) {
             document.querySelectorAll(selector).forEach((pill) => {
@@ -248,21 +265,36 @@ test.describe('places directory — the filter pills say what they filter (v30-3
       })
       .toEqual([])
 
-    // The other half of the same acceptance criterion — "/browse still
-    // side-scrolls at 390px WITHOUT WIDENING THE PAGE": the scroll container
-    // (the kind-chip row) may overflow horizontally; the document must not.
-    // Polled for the same reason as the clip gate above.
+    // V33-D — THE ROW WRAPS AND SHOWS EVERY PILL (the founder's wife's ask,
+    // `muzk5y54`): no side-scroll, no pill pushed off screen, and no page widen.
+    // This is the INVERSE of the assertion it replaces, which required the row to
+    // side-scroll.
     await expect
       .poll(async () => {
         return page.evaluate((tolerance: number) => {
           const doc = document.documentElement
-          return doc.scrollWidth > doc.clientWidth + tolerance ? doc.scrollWidth : 0
+          const row = document.querySelector('[data-testid="place-kind-chip-row"]') as HTMLElement | null
+          if (row === null) return { missing: true }
+          const viewport = doc.clientWidth
+          const offscreen: string[] = []
+          row.querySelectorAll<HTMLElement>('[data-testid]').forEach((pill) => {
+            const box = pill.getBoundingClientRect()
+            if (box.width > 0 && (box.left < -1 || box.right > viewport + 1)) {
+              offscreen.push(pill.getAttribute('data-testid') ?? '?')
+            }
+          })
+          return {
+            missing: false,
+            pageOverflow: doc.scrollWidth > viewport + tolerance,
+            rowOverflow: row.scrollWidth - row.clientWidth,
+            offscreen,
+          }
         }, CLIP_TOLERANCE)
       }, {
-        message: 'the page must not widen beyond 390px',
+        message: 'the pill row must wrap with every pill visible at 390px',
         timeout: 10_000,
       })
-      .toBe(0)
+      .toEqual({ missing: false, pageOverflow: false, rowOverflow: 0, offscreen: [] })
 
     // THE DELETED CONTROL IS REALLY GONE (V31 map-and-distance), and the radius
     // it used to state is still reachable — on the location control, beside the
@@ -347,9 +379,16 @@ test('the coffee toggle filters the directory, and its off state is inert (V32-1
   // THE READ PATH NEVER TOUCHED OVERPASS.
   expect(overpassCalls, 'no /browse load may call Overpass').toEqual([])
 
-  // THE DOOR IS STILL A DOOR — both live in the row, with different jobs.
+  // THE DOOR IS STILL A DOOR — V33-D moved it OUT of the pill row (`muzk3j1e`):
+  // it answers the AREA question ("where is coffee around here"), not a filter
+  // over this list, so it is no longer a pill among the filters. It stays a real
+  // `<a>` to Maps.
   await expect(page.getByTestId('place-coffee-nearby')).toHaveRole('link')
   await expect(page.getByTestId('place-coffee-nearby')).toHaveAttribute('href', /google\.com\/maps/)
+  // ...and the TOGGLE is the one coffee pill in the row — exactly once.
+  const chipRow = page.getByTestId('place-kind-chip-row')
+  await expect(chipRow.getByTestId('place-coffee-filter')).toHaveCount(1)
+  await expect(chipRow.getByTestId('place-coffee-nearby')).toHaveCount(0)
 })
 
 test('the coffee empty state does not claim a place has no cafe when it never asked (V32-10a A5)', async ({

@@ -26,7 +26,12 @@
  * runs on every `npm run test`, which the gate output proves by counting it.
  */
 import { describe, expect, it } from 'vitest'
-import { coffeeNearbyFromResponse, isRetryableResponse } from './refresh-coffee-nearby.mjs'
+import {
+  COFFEE_NEARBY_RADIUS_METERS,
+  coffeeNearbyFromResponse,
+  coffeeNearbyQuery,
+  isRetryableResponse,
+} from './refresh-coffee-nearby.mjs'
 
 /**
  * The MEASURED real throttle shape: the endpoint answers with an HTML page whose
@@ -97,5 +102,31 @@ describe('coffeeNearbyFromResponse — the three-valued decision (V32-10AF)', ()
     expect(isRetryableResponse('{"elements":[]}', 403)).toBe(false)
     expect(coffeeNearbyFromResponse(THROTTLE_HTML, 504)).toBeNull()
     expect(coffeeNearbyFromResponse('{"elements":[]}', 403)).toBeNull()
+  })
+})
+
+describe('COFFEE_NEARBY_RADIUS_METERS — the ¼-mile claim (V33-D, muzk3j1e)', () => {
+  it('is 400 m — a quarter mile — narrowing v32-10’s 750 m by founder instruction', () => {
+    // The defect this detects: the claim drifting back to v32-10's 750 m (a
+    // ten-minute walk), which is NOT what the founder's rule says. His words:
+    // *"if there's any coffee shop that's less than a fourth of a mile from that
+    // location we can make that claim."* ¼ mile ≈ 402 m, so 400 is the pin.
+    expect(COFFEE_NEARBY_RADIUS_METERS).toBe(400)
+    // Stated as the claim, so a future edit cannot keep the number without the
+    // meaning.
+    expect(COFFEE_NEARBY_RADIUS_METERS).toBeLessThan(750)
+  })
+
+  it('the emitted Overpass query CARRIES that radius — the request is the claim', () => {
+    // The pure decision under test: the number above must be the number the
+    // request actually asks Overpass for. A constant that no query reads would
+    // pass the assertion above while the data rule stayed at 750 m.
+    const q = coffeeNearbyQuery(47.6612, -122.3247)
+    expect(q).toContain('nwr(around:400,47.6612,-122.3247)')
+    // `nwr`, not `node`: ways and relations are real cafes in OSM, and the
+    // node-only probe was the artefact v32-10 measured against.
+    expect(q).toContain('nwr(')
+    expect(q).not.toContain('node(around')
+    expect(q).toContain('[amenity=cafe]')
   })
 })

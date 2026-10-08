@@ -44,13 +44,26 @@ import { join } from 'node:path'
 const ROOT = process.cwd()
 
 /**
- * WHAT "NEARBY" MEANS, in one place. 750 metres is roughly a ten-minute walk with
- * kids. Measured before choosing it: `nwr(around:750,…)[amenity=cafe]` returned 2
- * and 10 cafes at two of three sampled places, while `node(around:400,…)` returned
- * 0 at all three — a 400 m radius would have produced an almost all-`false`
- * dataset, which would have been a measurement artefact rather than a fact.
+ * WHAT "NEARBY" MEANS, in one place. **400 metres — a quarter mile.**
+ *
+ * ⚠️ THIS NARROWS v32-10's PINNED 750 m, BY FOUNDER INSTRUCTION (V33-D,
+ * `muzk3j1e`). The founder's rule for the claim is literal: *"if there's any
+ * coffee shop that's less than a fourth of a mile from that location we can make
+ * that claim."* 400 m ≈ ¼ mile, so the threshold IS the claim — a place marked
+ * "Café" must have a cafe a parent would actually walk to, not a ten-minute one.
+ *
+ * The 750 m figure v32-10 measured (2 and 10 cafes at two of three sampled
+ * places, vs 0 at all three under a 400 m `node(...)` probe) is the number this
+ * supersedes. That probe used `node(...)`, which undercounts — many cafes in OSM
+ * are WAYS or RELATIONS — so its "almost all-false" result was a measurement
+ * artefact of the tag matcher, not evidence about 400 m. The query below keeps
+ * `nwr`, so the narrower radius is measured with the wider matcher.
+ *
+ * ⚠️ DO NOT RUN A LIVE OVERPASS PASS TO RE-MEASURE: the endpoint throttles (see
+ * the mirror note below), and the 400 m re-run is queued separately (v32-10b's
+ * long pass). The change here is the THRESHOLD and its test, not the data.
  */
-export const COFFEE_NEARBY_RADIUS_METERS = 750
+export const COFFEE_NEARBY_RADIUS_METERS = 400
 
 /**
  * THE OSM TAG SET: `amenity=cafe`, matched with `nwr` — NODES, WAYS AND
@@ -241,11 +254,31 @@ export function isRetryableResponse(body, status) {
   return looksThrottled || status === 429 || status === 504 || status >= 500
 }
 
-async function askOverpass(lat, lng) {
-  const q =
+/**
+ * THE OVERPASS QUERY FOR ONE POINT, pure and exported (V33-D).
+ *
+ * ⚠️ WHY THIS IS ITS OWN FUNCTION. The threshold is a DATA-CLAIM decision — a
+ * place is marked "Café" only when a cafe sits within
+ * `COFFEE_NEARBY_RADIUS_METERS` of it — so the radius the request actually
+ * carries is the thing under test. When the query was assembled inline inside
+ * `askOverpass`, proving the radius meant either reading the source or calling
+ * the live endpoint (which throttles). Extracting it lets
+ * `refresh-coffee-nearby.test.mjs` assert the emitted radius offline, which is
+ * how the 400 m founder rule (¼ mile, V33-D `muzk3j1e`) is pinned.
+ *
+ * `nwr` — not `node` — is load-bearing: many cafes in OSM are mapped as ways or
+ * relations, so a node-only probe undercounts (the artefact v32-10 recorded).
+ */
+export function coffeeNearbyQuery(lat, lng) {
+  return (
     `[out:json][timeout:25];` +
     `nwr(around:${COFFEE_NEARBY_RADIUS_METERS},${lat},${lng})[amenity=${AMENITY_TAG}];` +
     `out tags;`
+  )
+}
+
+async function askOverpass(lat, lng) {
+  const q = coffeeNearbyQuery(lat, lng)
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let res

@@ -750,6 +750,61 @@ describe('sortPlaces (V15 ticket 03: the browse list\'s ordering decision)', () 
     expect(names).toEqual(['Aiden Playground', 'Milo Pool', 'Zed Park'])
   })
 
+  /**
+   * V33-D — THE DEFECT THIS NAMES: **tied rows reshuffling between renders.**
+   *
+   * The live directory has reviews on 4 of 234 places, so **230 rows tie** on the
+   * only key a naive "best first" sort would use. A comparator that returns 0 for
+   * those ties hands the order to `Array.prototype.sort`, whose stability is an
+   * implementation detail — the SAME query rendered twice could list the same
+   * places in a different order, and the parent watches the directory rearrange
+   * itself for no reason they can see.
+   *
+   * The fix is a TOTAL order (rating desc → review count desc → name → id), which
+   * this test pins by asking the SAME question twice on the 230-tie shape and
+   * requiring the answers to be identical AND alphabetical. A mutation that drops
+   * any tie-break (returning 0 on ties) makes this red.
+   */
+  it('top-rated: 230 tied (unrated) rows order IDENTICALLY across two calls — the reshuffle defect', () => {
+    // The live shape: a handful of rated rows, the rest tied with no reviews.
+    const tied = Array.from({ length: 230 }, (_, i) =>
+      // Names built so alphabetical order is NOT the input order — an unstable
+      // sort on the input order would then differ from a stable one.
+      row(`Place ${String(229 - i).padStart(3, '0')}`, { ratingSummary: null }),
+    )
+    const rows = [
+      row('Rated One', { ratingSummary: rated(3, 4.5) }),
+      ...tied,
+      row('Rated Two', { ratingSummary: rated(1, 2.0) }),
+    ]
+
+    const first = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+    const second = sortPlaces(rows, 'top-rated').map((r) => r.place.name)
+
+    // 1. The same query twice returns the SAME order — the defect assertion.
+    expect(second).toEqual(first)
+    // 2. The rated rows lead, best first (the only non-tied keys).
+    expect(first.slice(0, 2)).toEqual(['Rated One', 'Rated Two'])
+    // 3. The 230 tied rows are alphabetical, not input order — a total order,
+    //    not a coincidence of sort stability.
+    const tiedNames = first.slice(2)
+    expect(tiedNames).toEqual([...tiedNames].sort((a, b) => a.localeCompare(b)))
+    expect(tiedNames.length).toBe(230)
+  })
+
+  it('top-rated: a genuine review-COUNT tie also resolves by name, never by input order', () => {
+    // The second half of the tie-break rule, isolated: two rows with the SAME
+    // average AND the same count must still land in a stated order.
+    const rows = [
+      row('Zeta Cafe', { ratingSummary: rated(2, 4.0) }),
+      row('Alpha Cafe', { ratingSummary: rated(2, 4.0) }),
+    ]
+    expect(sortPlaces(rows, 'top-rated').map((r) => r.place.name)).toEqual([
+      'Alpha Cafe',
+      'Zeta Cafe',
+    ])
+  })
+
   it('top-rated: a summary with hasReviews=false (count 0) also sorts after every rated place', () => {
     // The DB can return count 0 + null average for a place with no reviews;
     // that shape must be treated exactly like a null summary (unrated).

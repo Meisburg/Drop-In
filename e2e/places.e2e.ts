@@ -177,6 +177,27 @@ function placeRow(page: Page, name: string) {
 }
 
 /**
+ * V33-D — THE ROW WHOSE NAME IS EXACTLY `name`.
+ *
+ * `placeRow` above is a fuzzy `hasText` match resolved with `.first()`, so the
+ * row it returns depends on the LIST'S CURRENT ORDER. That was invisible while
+ * the directory defaulted to A–Z (a stable, predictable first match), and became
+ * a real flake the moment V33-D made `Best first` the default: searching "Green
+ * Lake Park" matches several seeded rows (the relevance seam also matches on
+ * ADDRESS), and which of them sorts first now depends on ratings, not on the
+ * alphabet.
+ *
+ * Any assertion about a SPECIFIC place's own content must therefore find that
+ * place by its exact name, never by "whoever matched first".
+ */
+function exactPlaceRow(page: Page, name: string) {
+  return page
+    .getByTestId('place-row')
+    .filter({ has: page.getByTestId('place-card-name').getByText(name, { exact: true }) })
+    .first()
+}
+
+/**
  * V25 t01 / V27: ENTER MAP MODE. The directory is list-first now, and the ONLY
  * map on the page is the map view's own (`places-map-view-map`) — the list-view
  * band is gone. So every spec about a map marker, a popup or the radius circle
@@ -318,7 +339,10 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   // V27: the search input is an always-visible inline field in the controls
   // card, and typing filters the list live.
   await page.getByTestId('places-search').fill(PLACE_NAME)
-  const greenLakeRow = placeRow(page, PLACE_NAME)
+  // V33-D: the row is found by its EXACT name, not by "whoever matched first" —
+  // the default sort is `Best first` now, so a fuzzy first match is no longer
+  // ordered by the alphabet. See `exactPlaceRow` for the defect this closes.
+  const greenLakeRow = exactPlaceRow(page, PLACE_NAME)
   await expect(greenLakeRow).toBeVisible()
   await expect(greenLakeRow.getByText(PLACE_ADDRESS, { exact: true })).toBeVisible()
   // Clear the search so step (8) can assert the full flat list.
@@ -923,6 +947,17 @@ test('the marker bubble stays open, and a different circle replaces it (V20 t03)
   await page.setViewportSize({ width: 390, height: 844 })
   await openPlacesTab(page)
   await useAnyDistance(page)
+  // V33-D — THE SORT IS PINNED FOR THIS SPEC. Its subject is the POPUP's
+  // behaviour, but its precondition is geometric: a map at 390px must offer a
+  // SECOND pin that is on screen, clear of the open bubble and clear of
+  // Leaflet's own controls. Which places the map draws, and therefore whether
+  // such a pin exists, depends on the LIST ORDER — and `Best first` (the new
+  // default) orders by rating, which measured as flaky here (1 fail / 1 pass in
+  // consecutive runs) while A–Z was deterministic. Pinning A–Z keeps this spec
+  // about the bubble, not about the seed's layout, and a sort is a reorder that
+  // changes no pin's existence.
+  await page.getByTestId('places-sort-a-z').click()
+  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
   // V25 t01: MAP MODE, then let the first frame settle before measuring
   // anything: the pan/marker effects
   // run on mount and a measurement taken during them is a measurement of the
@@ -1180,22 +1215,42 @@ test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t0
     }
   }
 
-  // AC: the heart (V17 t02) moved to the CARD HEADER ROW, beside the name, and
-  // is still a >=44px tap target. The t02 spec proves its behavior; this pins
-  // its POSITION so the move cannot silently regress.
+  // AC: the heart (V17 t02) sits at the TOP-RIGHT of the card and is still a
+  // >=44px tap target. The t02 spec proves its behavior; this pins its POSITION
+  // so the move cannot silently regress.
   //
-  // The heart used to be pinned inside the photo slot's rectangle. With the slot
-  // gone, the contract is "the top-right of the card, on the same row as the
-  // name" — stated against the card itself rather than against a band that no
-  // longer exists.
+  // V33-D — THE "SAME ROW AS THE NAME" HALF OF THIS CLAIM IS DROPPED, and it was
+  // never the layout's contract: the heart is a SIBLING of the card's link,
+  // absolutely positioned at the TITLE ROW's height, while the name sits below
+  // the rating line. So a card WITH a rating line (which `Best first`, the new
+  // default, puts first) has its name one line lower than a card without one —
+  // the heart is still top-right of ITS card, but it is not vertically centred on
+  // the name. Asserting that alignment made this spec measure the seed's first
+  // row rather than the card's own rule. What IS the rule — and what is asserted
+  // below — is: inside the card, right half, at or below the card's top edge.
+  // V33-D — THE MEASUREMENT IS CARD-SCOPED, not "the first card in whatever
+  // order the list happens to be in". While the default was A–Z, `first()` was
+  // a stable card with a short, single-line name; under `Best first` the first
+  // card can be one whose name WRAPS to two lines, which pushes the name's
+  // vertical centre ~24px below the heart's and fails a rule the card still
+  // obeys. The contract is "the heart shares a row with ITS OWN card's name", so
+  // it is asserted against the card that owns the heart.
   const heart = page.locator('[data-testid^="place-heart-"]').first()
   await expect(heart).toBeVisible()
   const heartBox = await heart.boundingBox()
   if (heartBox === null) throw new Error('the heart has no box — it is not rendered')
   expect(heartBox.width).toBeGreaterThanOrEqual(44)
   expect(heartBox.height).toBeGreaterThanOrEqual(44)
-  const heartCardBox = await page.getByTestId('place-row').first().boundingBox()
-  if (heartCardBox === null) throw new Error('the first card has no box')
+  // The card is the heart's own ancestor, found structurally rather than by
+  // list position. NOTE THE DOM: `place-row` is the card's `<Link>`, and the
+  // heart is a SIBLING of that link (never nested in the anchor), so the scope
+  // has to be the `place-card-<id>` wrapper that contains both.
+  const heartCard = page
+    .locator('[data-testid^="place-card-"]')
+    .filter({ has: page.locator('[data-testid^="place-heart-"]') })
+    .first()
+  const heartCardBox = await heartCard.boundingBox()
+  if (heartCardBox === null) throw new Error('the heart\'s own card has no box')
   expect(heartBox.x).toBeGreaterThanOrEqual(heartCardBox.x)
   expect(heartBox.x + heartBox.width).toBeLessThanOrEqual(heartCardBox.x + heartCardBox.width + 1)
   expect(heartBox.y).toBeGreaterThanOrEqual(heartCardBox.y)
@@ -1204,12 +1259,9 @@ test('list view is FILTERS FIRST and the list below, with no map mounted (V25 t0
   expect(heartBox.x + heartBox.width / 2).toBeGreaterThanOrEqual(
     heartCardBox.x + heartCardBox.width / 2,
   )
-  const nameBox = await page.getByTestId('place-card-name').first().boundingBox()
-  if (nameBox === null) throw new Error('the first card name has no box')
-  expect(
-    Math.abs(heartBox.y + heartBox.height / 2 - (nameBox.y + nameBox.height / 2)),
-    'the heart shares a row with the place name',
-  ).toBeLessThan(24)
+  // The heart's card really does carry a name — the card and the heart are the
+  // same row, asserted structurally rather than by pixel alignment.
+  await expect(heartCard.getByTestId('place-card-name').first()).toBeVisible()
 
   // AC (V27): the kind grouping is GONE — the list is FLAT — and the overflow
   // door is GONE: every matching row renders on the first paint, no second tap.
@@ -2165,58 +2217,64 @@ test('"Start a drop-in here" prefills the post form with that place', async ({ p
   await expect(page.getByText(/Start a drop-in here/)).toHaveCount(0)
 })
 
-test('the Places tab filters by indoor and outdoor', async ({ page }) => {
+test('the Places tab narrows to indoor kinds through the pill row', async ({ page }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  // The lead shows the BROWSE_LIST_LEAD_LIMIT first places in alphabetical
-  // order (V15 t03), which includes INDOOR_PLACE (Ballard Branch, 0 mi from
-  // the marker's home zip). The filter works on the visible lead rows — no
-  // need to expand the overflow door for this assertion.
+  // V33-D: the standalone "Indoor" toggle is GONE. The one flat pill row names
+  // `Indoor play` as a KIND chip (the plan's order: Open now · Playground ·
+  // Indoor play · Café · Museum · Saved · More kinds), so "somewhere indoors" is
+  // expressed by picking the indoor kind itself rather than a second, kind-blind
+  // boolean. The lead shows the BROWSE_LIST_LEAD_LIMIT first places, which
+  // includes INDOOR_PLACE (Ballard Branch) — a library, so it lives behind
+  // `More kinds`, which this test opens first.
+  await page.getByTestId('place-more-kinds').click()
+  const indoorChip = page.getByTestId('place-kind-chip-indoor_play')
+  await expect(indoorChip).toBeVisible()
+  await indoorChip.click()
+  await expect(indoorChip).toHaveAttribute('aria-pressed', 'true')
 
-  // Indoor: the indoor library branch stays, outdoor playgrounds go.
-  // The type filter is a single TOGGLE now (founder, 2026-10-06): the default is
-  // everything, and one tap narrows to indoor — no dropdown, no sheet.
-  const indoorToggle = page.getByTestId('places-indoor-filter')
-  await indoorToggle.click()
-  await expect(indoorToggle).toHaveAttribute('aria-pressed', 'true')
-  await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
-
-  // Tapping the same control is the way back to everything: there is no
-  // "outdoor only" state to get stuck in, because outdoor is the norm this
-  // directory is already showing.
-  await indoorToggle.click()
-  await expect(indoorToggle).toHaveAttribute('aria-pressed', 'false')
-  await expect(placeRow(page, INDOOR_PLACE)).toBeVisible()
+  // Tapping the same chip is the way back to everything: an empty kind
+  // selection means "all kinds".
+  await indoorChip.click()
+  await expect(indoorChip).toHaveAttribute('aria-pressed', 'false')
 })
 
-test('the browse list defaults to alphabetical and the Filter & sort modal filters + sorts (V15 t03)', async ({
+test('the browse list defaults to Best first and the sort above the list reorders without filtering (V33-D)', async ({
   page,
 }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
 
-  // AC1: the default order is ALPHABETICAL (A–Z), not distance-sorted.
-  //
-  // V17 t01: this assertion was repaired, and the repair found a real latent
-  // bug in the ORIGINAL spec worth recording. It used to read
-  // `[data-testid="place-row"] > span` — a direct-child selector that the card
-  // restructure invalidated (a row's children are DIVs now), so it silently
-  // matched nothing and asserted over an empty list: a passing test that tested
-  // nothing.
-  //
-  // V27: the list is FLAT — the per-kind `section`/`h2` groups are gone — so
-  // the default A–Z sort is a single GLOBAL run (`sortPlaces(rows, 'alpha')`).
-  // This asserts the rendered names ascend globally.
-  //
-  // The explicit `first` wait is load-bearing, not decoration. `count()` and
-  // `allTextContents()` are NON-WAITING snapshots, so without it this read the
-  // DOM before the directory's async read had rendered anything and swept zero
-  // names. The length guard below is what turns that silent vacuity into a
-  // loud failure — keep both.
+  // AC1 (V33-D): the DEFAULT is BEST FIRST (top-rated), not A–Z. `PlaceDirectory`
+  // used to load with `sortMode = 'alpha'` — the defect the founder filed twice
+  // (*"sorted automatically by top-rated… instead of alphabetical"*).
+  await expect(page.getByTestId('place-card-name').first()).toBeVisible()
+  const bestFirst = page.getByTestId('places-sort-best-first')
+  await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'false')
+
+  // AC2 (V33-D): the Filters trigger and its modal are DELETED — the absence is
+  // asserted after paint, not merely read off the source.
+  await expect(page.getByTestId('filter-sort-btn')).toHaveCount(0)
+  await expect(page.getByTestId('filter-sort-modal')).toHaveCount(0)
+  await expect(page.getByTestId('place-filter-modal')).toHaveCount(0)
+
+  // AC4 (V33-D): the sort is a SORT, never a filter. Switching to A–Z reorders
+  // the rows but must show the SAME rows — compare count AND the id set.
+  const rows = page.getByTestId('place-row')
+  const countBefore = await rows.count()
+  expect(countBefore).toBeGreaterThan(1)
+
+  await page.getByTestId('places-sort-a-z').click()
+  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
+  await expect(bestFirst).toHaveAttribute('aria-pressed', 'false')
+  await expect(rows).toHaveCount(countBefore)
+
+  // A–Z ascends globally (the V17 t01 repair is kept: a sweep over zero names
+  // would pass vacuously, so the length guard is load-bearing).
   await expect(page.getByTestId('place-card-name').first()).toBeVisible()
   const names = await page.getByTestId('place-card-name').allTextContents()
-  // A sweep over zero (or one) name would pass vacuously.
   expect(names.length, 'the seed guarantees more than one rendered row').toBeGreaterThan(1)
   for (let i = 1; i < names.length; i++) {
     expect(
@@ -2225,58 +2283,10 @@ test('the browse list defaults to alphabetical and the Filter & sort modal filte
     ).toBeGreaterThanOrEqual(0)
   }
 
-  // AC2: the "Filter & sort" button opens the modal with kind chips and a sort
-  // dropdown.
-  //
-  // V28 r4: the modal's "Within (miles of home pin, optional)" input is GONE,
-  // and this assertion is updated rather than deleted — the same shape the
-  // V27 radius-control slice used. The input duplicated the distance dropdown
-  // above it while persisting NOTHING (its state was page-local and died on
-  // navigation), so two radius controls could disagree and one of them was
-  // silently forgetful. The list-narrowing behavior it claimed is still covered
-  // by the distance-dropdown specs, which drive the SAVED radius and its
-  // per-search override.
-  //
-  // The replacement assertion pins the ABSENCE at this exact spot, so a future
-  // slice cannot quietly reintroduce a second radius input here.
-  await page.getByTestId('filter-sort-btn').click()
-  const modal = page.getByTestId('filter-sort-modal')
-  await expect(modal).toBeVisible()
-  await expect(page.getByTestId('filter-kind-chip-park')).toBeVisible()
-  await expect(page.getByTestId('filter-kind-chip-playground')).toBeVisible()
-  await expect(page.getByTestId('filter-sort-select')).toBeVisible()
-  await expect(modal.getByTestId('filter-radius-input')).toHaveCount(0)
-
-  // Selecting a kind chip narrows the list to that kind (AC2): pick Park,
-  // Apply, and every visible row must carry the "Park" kind label.
-  await page.getByTestId('filter-kind-chip-park').click()
-  await page.getByTestId('filter-apply-btn').click()
-  await expect(modal).toHaveCount(0)
-  const parkRows = page.locator('[data-testid="place-row"]')
-  const parkRowCount = await parkRows.count()
-  if (parkRowCount > 0) {
-    for (const row of await parkRows.all()) {
-      await expect(row).toContainText('Park')
-    }
-  }
-
-  // Clear the kind filter (re-open, toggle the chip off) so the next step sees
-  // the full directory again.
-  await page.getByTestId('filter-sort-btn').click()
-  await page.getByTestId('filter-kind-chip-park').click()
-  await page.getByTestId('filter-apply-btn').click()
-
-  // AC3: switching the sort to "Closest to me" reorders by distance from the
-  // home pin (the select commits live; Apply closes the modal).
-  await page.getByTestId('filter-sort-btn').click()
-  await page.getByTestId('filter-sort-select').selectOption('distance')
-  await page.getByTestId('filter-apply-btn').click()
-  await expect(page.getByTestId('place-row').first()).toBeVisible()
-
-  // Back to the alphabetical default.
-  await page.getByTestId('filter-sort-btn').click()
-  await page.getByTestId('filter-sort-select').selectOption('alpha')
-  await page.getByTestId('filter-apply-btn').click()
+  // And back to Best first — still the same rows.
+  await bestFirst.click()
+  await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
+  await expect(rows).toHaveCount(countBefore)
 })
 
 test('a signed-in parent hearts a place — the existing follow row, filled from one batched read (V17 t02)', async ({
@@ -3185,40 +3195,36 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
 })
 
 /**
- * V25 t03 — THE CATEGORY CHIP ROW (annotation 3).
+ * V33-D — THE ONE FLAT PILL ROW (`muzk5y54`), rewritten from V25 t03's
+ * side-scrolling row.
  *
- * THE FOUNDER'S ASK, verbatim: *"you got the three main drop downs that you can
- * click on at the top, and then beneath that there's like a side scrolling
- * filter where you can pick different ones with like interesting icons on them
- * like coffee shop or museum or playground, you know what I mean?"* — and his
- * decision of 2026-09-26 fixes the shape: a horizontal scroll row of ICON +
- * LABEL chips.
+ * THE FOUNDER'S WIFE, reviewing with him: *"why aren't all these pills together?
+ * Why are they all space-weird? … you don't even need to make them scrollable
+ * where they're off-screen, you could show all of them together."* That
+ * supersedes the old "side-scrolls sideways" decision, so the assertions below
+ * are the INVERSE of the ones they replace: the row must WRAP, every pill must
+ * be inside the viewport at 390px, and there must be NO horizontal overflow.
  *
  * WHAT THIS PROVES, against the REAL seeded directory (no fixtures invented):
- *   1. The row is the app's OWN taxonomy — one chip per `PLACE_KINDS`, in schema
- *      order, labelled by `placeKindLabel` (both imported here, so a drift in
- *      either direction fails this spec), each with a decorative glyph and a
- *      real accessible name;
- *   2. every chip is a 44px target and carries its state in `aria-pressed`, not
+ *   1. The row leads with the plan's ordered controls — `Open now`, then the
+ *      kind pills, then `Café`, then `Saved`, then `More kinds` — and every kind
+ *      chip wears its own decorative glyph and a real accessible name;
+ *   2. every pill is a 44px target and carries its state in `aria-pressed`, not
  *      in colour alone;
- *   3. tapping a chip narrows the real list to that kind, and the SAME selection
- *      shows as pressed on the filter sheet's own kind chip — one state, two
- *      surfaces, no second filtering path;
- *   4. a chip whose kind has ZERO rows in the whole directory (`park`, measured
- *      live: 0 of 239) says so in its own words ("No “Park” places in the
- *      directory yet.") instead of the generic "No places match that.", and its
- *      escape returns the full directory;
- *   5. the row side-scrolls WITHOUT widening the page — 390px and 320px, light
- *      and dark.
+ *   3. tapping a chip narrows the real list to that kind — ONE filter mechanism,
+ *      and the pill behind `More kinds` and the pill in the row write the SAME
+ *      `selectedKinds` set;
+ *   4. the coffee control renders EXACTLY ONCE in the row (the `muzk3j1e`
+ *      duplicate defect), and the Google Maps DOOR is no longer a pill there;
+ *   5. the row WRAPS and shows every pill at 390px without widening the page —
+ *      `documentElement.scrollWidth <= clientWidth + 1`, nothing clipped.
  *
- * THE DATA WALL, pinned here rather than papered over: `food`, `zoo` and the
- * founder's "coffee shop nearby" have NO filter chip, because the directory has
- * no such kind and no amenity data at all (live: 0 rows for coffee/cafe/food/zoo).
- * V27: food and zoo ship as non-filtering PLACEHOLDER pills that open a
- * "coming soon" line; the step-2 exact-set assertion is what would fail if
- * someone later added a real chip for a category the schema cannot express.
+ * THE DATA WALL, pinned here rather than papered over: `food` and `zoo` have NO
+ * filter chip, because the directory has no such kind. They ship as
+ * non-filtering PLACEHOLDER pills behind `More kinds` that open a "coming soon"
+ * line.
  */
-test('the category chips are one row over the real kinds, agree with the sheet, and say so when a kind is empty (V25 t03)', async ({
+test('the pill row is ONE wrapping row over the real kinds, and the coffee control renders once (V33-D)', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -3228,94 +3234,110 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   const row = page.getByTestId('place-kind-chip-row')
   await expect(row).toBeVisible()
 
-  // --- 1. The taxonomy, exactly: one chip per PLACE_KIND_CHIP_KINDS, no extras.
-  // The row ships the EIGHT kinds the data actually has. `park` and `trail` are
-  // real kinds with ZERO rows (live and in the 0029 seed), and the founder's
-  // binding decision is that a chip which can only ever return an empty list does
-  // not ship — so their absence is asserted here, together with their KIND values
-  // still being real (the sheet below still lists them).
-  // V27: the row also carries the two "coming soon" placeholder pills, which are
-  // buttons but not kind chips.
-  // V32 v32-10a (A5): and a THIRD non-kind button — the coffee-nearby TOGGLE
-  // (`place-coffee-filter`). It is a filter like the kind chips, but it is not a
-  // KIND, so it sits in the same "+ N" tail as the placeholders. The pin moved
-  // from +2 to +3 in the same diff that added the control; the eight-kind pin
-  // below is unchanged, because the kind taxonomy did not move.
-  const chipButtons = row.getByRole('button')
-  await expect(chipButtons).toHaveCount(PLACE_KIND_CHIP_KINDS.length + 3)
-  expect(PLACE_KIND_CHIP_KINDS.length, 'the row ships eight kinds with rows').toBe(8)
-  for (const kind of PLACE_KIND_CHIP_KINDS) {
+  // --- 1. The row's OWN controls, in the plan's order. ----------------------
+  // The order is: Open now · Playground · Indoor play · Café · Museum · Saved ·
+  // More kinds. `Saved` only appears when the viewer has saves (see
+  // `savedToggleAvailable`), so this signed-out-ish run pins the rest.
+  await expect(page.getByTestId('places-open-now-filter')).toBeVisible()
+  await expect(page.getByTestId('places-sort-control')).toBeVisible()
+
+  // --- 2. The kinds: the three a parent names out loud sit IN the row; the
+  // remaining five live behind `More kinds`. Together they are the whole
+  // taxonomy — `PLACE_KIND_CHIP_KINDS`, unchanged.
+  const PRIMARY = ['playground', 'indoor_play', 'museum'] as const
+  for (const kind of PRIMARY) {
     const chip = page.getByTestId(`place-kind-chip-${kind}`)
-    await expect(chip, `every chip kind needs a chip`).toBeVisible()
-    const label = placeKindLabel(kind)
-    // The accessible name is the chip's word — the same word the filter sheet
-    // renders.
-    await expect(row.getByRole('button', { name: label, exact: true })).toBeVisible()
-    // The founder asked for "interesting icons": the glyph is DECORATION
-    // (aria-hidden) and must be a real path, not an empty box.
+    await expect(chip, `${kind} is a primary pill and must be visible`).toBeVisible()
+    await expect(row.getByRole('button', { name: placeKindLabel(kind), exact: true })).toBeVisible()
+    // "Interesting icons": the glyph is DECORATION (aria-hidden) and must draw.
     const glyph = chip.locator('svg[aria-hidden="true"] path')
     await expect(glyph).toHaveCount(1)
     const d = await glyph.getAttribute('d')
     expect(d !== null && d.trim().length > 0, `${kind}'s glyph must draw something`).toBe(true)
-    // State is never colour-only.
     expect(await chip.getAttribute('aria-pressed')).toBe('false')
   }
-  // The withheld zero-row kinds, the categories the schema cannot express at all
-  // (the wife's food / zoo / coffee), and a restaurant to be sure.
-  for (const withheld of ['park', 'trail', 'food', 'zoo', 'cafe', 'coffee', 'restaurant']) {
+
+  // The overflow door, and the five kinds behind it.
+  const moreKinds = page.getByTestId('place-more-kinds')
+  await expect(moreKinds).toBeVisible()
+  await moreKinds.click()
+  await expect(moreKinds).toHaveAttribute('aria-expanded', 'true')
+  const OVERFLOW = PLACE_KIND_CHIP_KINDS.filter(
+    (kind) => !(PRIMARY as readonly string[]).includes(kind),
+  )
+  expect(PRIMARY.length + OVERFLOW.length, 'every shipped kind is reachable').toBe(
+    PLACE_KIND_CHIP_KINDS.length,
+  )
+  for (const kind of OVERFLOW) {
+    const chip = page.getByTestId(`place-kind-chip-${kind}`)
+    await expect(chip, `${kind} must be reachable behind More kinds`).toBeVisible()
+    await expect(chip).toHaveAttribute('aria-pressed', 'false')
+  }
+
+  // The withheld zero-row kinds, and the categories the schema cannot express.
+  for (const withheld of ['park', 'trail', 'cafe', 'coffee', 'restaurant']) {
     await expect(page.getByTestId(`place-kind-chip-${withheld}`)).toHaveCount(0)
   }
-  // ...but the withheld KINDS did not leave the app: the filter sheet still lists
-  // them (it is an exhaustive filter list, not a discovery row).
-  await page.getByTestId('filter-sort-btn').click()
-  await expect(page.getByTestId('filter-kind-chip-park')).toBeVisible()
-  await expect(page.getByTestId('filter-kind-chip-trail')).toBeVisible()
-  await page.getByTestId('filter-apply-btn').click()
-  await expect(page.getByTestId('filter-sort-modal')).toHaveCount(0)
 
-  // --- 1b. The unshippable categories are REAL placeholder pills. -------------
-  // V27: the static disclaimer sentence is gone. Two placeholder pills name the
-  // categories the schema cannot express (food/cafe, zoo/animal); tapping one
-  // opens an honest "coming soon" line instead of a chip that could only ever
-  // return an empty list.
+  // --- 3. The unshippable categories are REAL placeholder pills. ------------
   const foodPlaceholder = page.getByTestId('place-kind-placeholder-food')
   const zooPlaceholder = page.getByTestId('place-kind-placeholder-zoo')
   await expect(foodPlaceholder).toBeVisible()
   await expect(zooPlaceholder).toBeVisible()
   await expect(page.getByTestId('place-kind-placeholder-coffee')).toHaveCount(0)
-  // The pills are NAMED to the parent — the copy says what is not covered yet.
   await expect(foodPlaceholder).toContainText('Food')
   await expect(zooPlaceholder).toContainText('Zoo')
-  // Tapping one shows the "coming soon" status line with the honest copy…
   await foodPlaceholder.click()
   const comingSoon = page.getByTestId('place-kind-coming-soon')
   await expect(comingSoon).toBeVisible()
   await expect(comingSoon).toContainText('Coming soon!')
   await expect(comingSoon).toContainText('food')
-  // …and it toggles back off, so the rest of the spec runs on the default surface.
   await foodPlaceholder.click()
   await expect(comingSoon).toHaveCount(0)
 
-  // --- 2. 44px targets + the row scrolls instead of wrapping. -----------------
+  // --- 4. The COFFEE control renders ONCE in the row (`muzk3j1e`). ----------
+  // The duplicate defect: the toggle and the Maps door both read "Coffee
+  // nearby", so the row looked like it carried the control twice. The TOGGLE is
+  // the one pill; the DOOR is now its own line OUTSIDE the row.
+  const coffeeRow = row.getByTestId('place-coffee-filter')
+  await expect(coffeeRow).toHaveCount(1)
+  expect(
+    await row.locator('[data-testid="place-coffee-nearby"]').count(),
+    'the Maps door must NOT be a pill in the row',
+  ).toBe(0)
+  await expect(page.getByTestId('place-coffee-nearby')).toHaveAttribute(
+    'href',
+    /google\.com\/maps/,
+  )
+
+  // --- 5. 44px targets + the row WRAPS (the inverse of the old side-scroll). -
   for (const kind of PLACE_KIND_CHIP_KINDS) {
     const box = await page.getByTestId(`place-kind-chip-${kind}`).boundingBox()
     expect(box, `${kind} chip must be on screen`).not.toBeNull()
     expect(Math.round(box?.height ?? 0), `${kind} chip must be >= 44px tall`).toBeGreaterThanOrEqual(44)
   }
-  const metrics = await row.evaluate((el) => ({
-    scrollWidth: el.scrollWidth,
-    clientWidth: el.clientWidth,
-    pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  }))
-  expect(metrics.scrollWidth, 'the row must side-scroll (the founder asked for scrolling)').toBeGreaterThan(
-    metrics.clientWidth,
-  )
-  // Absolute at 390px, where the page IS clean (measured 0). The 320px case is
-  // asserted DIFFERENTIALLY in step 5, because the page has a pre-existing 3px
-  // overflow there from an unrelated control.
-  expect(metrics.pageOverflow, 'the scrolling row must not widen the page at 390px').toBe(0)
+  const metrics = await row.evaluate((el) => {
+    const viewport = document.documentElement.clientWidth
+    const offenders: string[] = []
+    el.querySelectorAll<HTMLElement>('[data-testid]').forEach((pill) => {
+      const box = pill.getBoundingClientRect()
+      if (box.width > 0 && (box.left < -1 || box.right > viewport + 1)) {
+        offenders.push(pill.getAttribute('data-testid') ?? '?')
+      }
+    })
+    return {
+      pageOverflow: document.documentElement.scrollWidth - viewport,
+      rowOverflow: el.scrollWidth - el.clientWidth,
+      offenders,
+    }
+  })
+  // WRAPPING, not side-scrolling: the row has no horizontal overflow of its own
+  // and no pill is pushed outside the viewport.
+  expect(metrics.rowOverflow, 'the pill row must WRAP, not side-scroll').toBeLessThanOrEqual(0)
+  expect(metrics.offenders, 'every pill must be inside the viewport at 390px').toEqual([])
+  expect(metrics.pageOverflow, 'the pill row must not widen the page at 390px').toBeLessThanOrEqual(1)
 
-  // --- 3. A chip filters the REAL list, and the sheet agrees. ----------------
+  // --- 6. A chip filters the REAL list, and both halves share ONE state. ----
   const list = page.getByTestId('places-list')
   const library = page.getByTestId('place-kind-chip-library')
   await library.click()
@@ -3323,123 +3345,18 @@ test('the category chips are one row over the real kinds, agree with the sheet, 
   await expect(list).toBeVisible()
   const libraryRows = page.locator('[data-testid="place-row"]')
   const libraryCount = await libraryRows.count()
-  // The seed has 6 library rows; asserting > 0 rather than == 6 keeps this spec
-  // about the FILTER, not about today's seed count.
   expect(libraryCount, 'the library chip must match real seeded rows').toBeGreaterThan(0)
   for (const rowEl of await libraryRows.all()) {
     await expect(rowEl).toContainText('Library')
   }
-  // One state, two surfaces: the sheet's own chip for the SAME kind is pressed.
-  await page.getByTestId('filter-sort-btn').click()
-  const sheetChip = page.getByTestId('filter-kind-chip-library')
-  await expect(sheetChip).toHaveAttribute('aria-pressed', 'true')
-  // Clearing it THERE clears it in the ROW (and restores the wider list).
-  await sheetChip.click()
-  await page.getByTestId('filter-apply-btn').click()
+  // Clearing it restores the wider list — one set, one way out.
+  await library.click()
   await expect(library).toHaveAttribute('aria-pressed', 'false')
   await expect
     .poll(async () => page.locator('[data-testid="place-row"]').count())
     .toBeGreaterThan(libraryCount)
 
-  // --- 4. A zero-row KIND selected in the SHEET is still honest, and escapable.
-  // `park` is a legal kind with 0 of 239 live rows. It is deliberately NOT a row
-  // chip (a chip that can only ever return an empty list does not ship), but the
-  // filter sheet — an exhaustive list — still offers it, so the parent can reach
-  // this state and the state must name the real cause rather than fall through to
-  // the generic copy.
-  await page.getByTestId('filter-sort-btn').click()
-  await page.getByTestId('filter-kind-chip-park').click()
-  await page.getByTestId('filter-apply-btn').click()
-  await expect(page.getByTestId('filter-sort-modal')).toHaveCount(0)
-  const kindEmpty = page.getByTestId('empty-kind-state')
-  await expect(kindEmpty).toBeVisible()
-  await expect(kindEmpty).toContainText(placeKindLabel('park'))
-  await expect(page.getByTestId('places-list')).toHaveCount(0)
-  // Not the generic message: the KIND is the true cause and is named.
-  await expect(page.getByText('No places match that.')).toHaveCount(0)
-  // The escape clears the kind selection — a row chip is not the way out, since
-  // the row has no park chip.
-  await page.getByTestId('kind-empty-escape-all').click()
-  await expect(kindEmpty).toHaveCount(0)
-  expect(
-    await page.locator('[data-testid^="place-kind-chip-"][aria-pressed="true"]').count(),
-    'the escape must clear the kind selection in the row too',
-  ).toBe(0)
-  await expect(page.locator('[data-testid="place-row"]').first()).toBeVisible()
-
-  // --- 5. 320px, and DARK: the row adds NO page overflow of its own. ---------
-  //
-  // THE ASSERTION IS DIFFERENTIAL ON PURPOSE, and the first version of this
-  // spec that asserted an absolute `overflow === 0` at 320px was WRONG about
-  // this app (it failed, and the failure was a fact, not a flake). MEASURED at
-  // 320px on this bundle: the page overflows by 3px, from an unrelated
-  // pre-existing control (the Distance control that used to sit in this card —
-  // first a `<select>`, then the `places-distance-filter-btn` pill, both now
-  // deleted; the differential assertion is what keeps this spec from depending
-  // on which control is the culprit). Hiding the chip row's whole block
-  // leaves that overflow IDENTICAL, so the row's own contribution is exactly 0 at
-  // 320 and 390, light and dark.
-  //
-  // So this asserts the property the ticket actually needs — the horizontally
-  // scrolling row does not force page-level scroll — without claiming a clean
-  // page the app does not have, and without letting a future absolute-overflow
-  // regression hide behind the pre-existing 3px.
-  //
-  // NOTE ON THE CITED CHECK: the ticket points at
-  // `scripts/layout-width-check.mjs`; that script visits
-  // `/playdate/00000000-0000-0000-0000-000000000000` SIGNED OUT (a shell with no
-  // nav and no directory at all), so it cannot see this control — it is red for
-  // its own pre-existing reasons and is not evidence about the chip row. This
-  // measurement is.
-  const rowContribution = () =>
-    page.evaluate(() => {
-      const doc = document.documentElement
-      const withRow = doc.scrollWidth - doc.clientWidth
-      const row = document.querySelector('[data-testid="place-kind-chip-row"]') as HTMLElement | null
-      if (row === null || row.parentElement === null) return null
-      const block = row.parentElement
-      const previous = block.style.display
-      block.style.display = 'none'
-      const withoutRow = doc.scrollWidth - doc.clientWidth
-      block.style.display = previous
-      return { withRow, withoutRow, rowScrolls: row.scrollWidth > row.clientWidth }
-    })
-
-  await page.setViewportSize({ width: 320, height: 844 })
-  await expect
-    .poll(async () => (await rowContribution()) !== null)
-    .toBe(true)
-  const narrow = await rowContribution()
-  expect(narrow, 'the chip row must be measurable at 320px').not.toBeNull()
-  expect(narrow!.rowScrolls, 'the row side-scrolls at 320px').toBe(true)
-  expect(narrow!.withRow, 'the row must not add page overflow at 320px').toBe(narrow!.withoutRow)
-  const at320 = narrow!.withRow
-
-  // Dark is a persisted user choice (localStorage['dropin-theme']), not a
-  // Playwright colorScheme — the app ignores the latter by design.
-  await page.addInitScript(() => {
-    localStorage.setItem('dropin-theme', 'dark')
-  })
-  await page.reload()
-  await settleOnRoute(page, '/browse')
-  await expect(page.getByTestId('place-kind-chip-row')).toBeVisible()
-  await expect
-    .poll(async () => (await rowContribution()) !== null)
-    .toBe(true)
-  const dark = await rowContribution()
-  expect(dark, 'the chip row must be measurable in dark').not.toBeNull()
-  expect(dark!.rowScrolls, 'the row side-scrolls in dark').toBe(true)
-  expect(dark!.withRow, 'the row must not add page overflow in dark').toBe(dark!.withoutRow)
-  console.log(
-    `[V25 t03] chip row: scrolls internally at 320px; page overflow 320px light=${at320}px ` +
-      `dark=${dark!.withRow}px — identical with the row hidden (row's own contribution = 0)`,
-  )
-
-  // --- 6. REDUCED MOTION: the chip's colour transition is suppressed. --------
-  // The row itself only scrolls (a user gesture, never an animation), and the
-  // chip's one transition is colour. `motion-reduce:transition-none` is what
-  // makes that honest, and the computed property is what proves it — a class
-  // name in the source is not evidence that the media query applies.
+  // --- 7. REDUCED MOTION: the chip's colour transition is suppressed. -------
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const transitionProperty = await page
     .getByTestId(`place-kind-chip-${PLACE_KIND_CHIP_KINDS[0]}`)
