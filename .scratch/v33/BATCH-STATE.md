@@ -321,3 +321,43 @@ delays the overflow) — **but they were not the cause.**
   were alive; with the other two now closed it should recover. **Check
   `git log` before re-dispatching it** — this batch has twice seen a "dead" lane
   that had already committed.
+
+### 10e. UPDATE #3 — v33-4 landed; the queue as it stands
+
+**HEAD `83ac2bf`.** **v33-4 shipped** (`muye9a6l`): a quiet facts line under the
+place name on a drop-in page, built from the same `placeTrustLine` seam the
+directory row uses; a free-text post renders nothing; no new read. Gate
+**92 files / 2705 tests / 0 errors · GUARDS PASS**, only the external
+steering-lint red. Diff = exactly the page + its spec.
+
+**Toolbar: 24 → 16 pending.** Resolved with a summary + sha: `muye8eek`,
+`muyfmog8`, `muyfsjwv`, `muyfsxah`, `muyejzaa`, `muyed1t6`, `muye9a6l`.
+Dismissed with the safety reason: `muyc5kwv`.
+
+**Strict order for the next session — do not reorder:**
+
+1. ⚠️ **Fix the v33-6 host regression** (§10a) — the host cannot see its own
+   "Message \<pinger\>" buttons, and two spec assertions were made vacuous. Also
+   fold in v33-7a's three `ocr` doc-drift findings and the cheap v33-6 `ocr`
+   items (duplicate className, nested ternary, `key={name}`, the invalid
+   `page.locator(sel, { hasText })` in `e2e/rsvp-confirmation.e2e.ts`, the
+   unguarded `second.context.close()`, the re-baselining viewport pin, the stale
+   docblock). Then **resolve `muyekozk`** against `091aad8` **only after** the host
+   row really renders — the annotation is satisfied by v33-6's intent, and the
+   regression is what makes it a lie today.
+2. **v33-7b** — the window control polish. Brief not yet written; the facts are in
+   §8. Dispatch **to a cloud lane** (`ollama-cloud/deepseek-v4.1-flash:cloud`) after
+   `~/fleet/bin/ollama-cloud-budget --json` reads OK.
+3. **v33-12** — the avatar circle immediately LEFT of the person's name
+   (conventionally, wherever the name is the entity you are messaging). Ruling in
+   §10c; brief not yet written.
+4. **5c five miles** — one constant + one migration reversing `0066`, comment
+   recording the deliberate reversal.
+5. **v33-8 settings** — the editability rule in §10c, with log-out at the bottom.
+6. **Prototypes (no slice):** 2–3 directory layouts; the hero-photo variant.
+7. **ADR + one recommendation:** community-owned places and three roles, built on
+   `0063_place_photo_review_state.sql`.
+8. **Reviews (R1):** prototype the post-event ask copy first, then the slice.
+
+**Owed `ocr` passes:** v33-4 has none yet. v33-6 and v33-7a have run
+(`.scratch/ocr-v33-6.json`, `-7a.json`); **v33-13's run timed out** — rerun it.
