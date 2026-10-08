@@ -10,7 +10,7 @@ import { PlacePhotoAdmin } from '../components/PlacePhotoAdmin'
 import { ReviewForm } from '../components/ReviewForm'
 import { useSessionContext } from '../components/SessionProvider'
 import { usePrefersReducedMotion } from '../components/usePrefersReducedMotion'
-import { NAV_ICONS } from '../components/icons'
+import { NAV_ICONS, PLACE_KIND_ICONS } from '../components/icons'
 import { scrollBehaviorFor } from '../lib/mapStrip'
 import {
   countPlaceFollowers,
@@ -38,6 +38,7 @@ import {
   placePhotoVisibleTo,
   placeAgeFitLabel,
   placeDistanceMiles,
+  placeHasCoffeeNearby,
   placeIndoorLabel,
   placeKindLabel,
   placeDetailsPath,
@@ -707,10 +708,122 @@ export function PlacePage() {
         ) : null}
 
         <h1 className="mt-2 text-xl font-semibold text-slate-900">{place.name}</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {placeKindLabel(place.kind)} · {placeIndoorLabel(place)}
-          {distance !== null ? ` · ${formatDistanceLabel(distance)} from your zip` : ''}
-        </p>
+        {/* V34 slice D — THE PLACE'S OWN ATTRIBUTES, AS PILLS.
+            The founder, anchored on this block: *"The same filters that were
+            used on the places page to get to this place could be populated here
+            and be shown in the same way in pill form to show like these pills
+            represent this place, so like coffee nearby, outdoor, playground."*
+
+            The pills reuse the directory filter row's ANATOMY verbatim
+            (`whitespace-nowrap`, `shrink-0`, `rounded-full`, `px-4`,
+            `text-sm font-medium`, the same slate border and white ground) and
+            come from the SAME label seams the directory chips read
+            (`placeKindLabel`, `placeIndoorLabel`) — so a kind cannot be worded
+            one way in the filter row and another way here. */}
+        <ul
+          data-testid="place-pill-row"
+          className="mt-2 flex flex-wrap gap-2 list-none p-0"
+          aria-label="About this place"
+        >
+          {/* The kind is `not null` on the row (0029's CHECK), so this pill
+              always renders; the seam is still what decides its word. */}
+          <li
+            data-testid="place-pill-kind"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5 shrink-0 text-slate-500"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={PLACE_KIND_ICONS[place.kind] ?? PLACE_KIND_ICONS.other} />
+            </svg>
+            {placeKindLabel(place.kind)}
+          </li>
+          {/* The indoor/outdoor pill is its own WORD and nothing else — the
+              seam's output, verbatim. ⚠️ AN EARLIER DRAFT OF THIS SLICE PUT THE
+              KIND'S TEXT IN AN `sr-only` SPAN INSIDE THIS PILL, trying to keep
+              `places.e2e.ts`'s old `getByText('Playground · Outdoor')` joined
+              string alive while the visible row read as two labels. That was
+              WRONG on both counts, and the spec caught it:
+
+                - the joined literal was never asserted outside that one old
+                  line, which this slice replaces with per-pill assertions (the
+                  brief's rule: assert the pills, which are the facts);
+                - the `sr-only` text made this pill's text content
+                  "Playground · Outdoor", so the natural, correct assertion
+                  `toHaveText('Outdoor')` failed — the hack broke the very
+                  surface it was meant to serve.
+
+              The two facts live in two pills, each carrying its own seam's
+              word. Nothing is announced twice. */}
+          <li
+            data-testid="place-pill-indoor"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700"
+          >
+            {placeIndoorLabel(place)}
+          </li>
+          {/* ☕ THE THREE-VALUED COLUMN, AND WHY ONLY `true` RENDERS.
+              `places.coffee_nearby` is three-valued on purpose: `true` (OSM was
+              asked and a cafe is near), `false` (asked, none found) and `null`
+              (NEVER ASKED — what every pre-0068 row carries). A `false` or
+              `null` place gets NO pill at all: a pill reading "No coffee
+              nearby" would state something the `null` rows never established,
+              and even for `false` a badge about an absence is not an attribute a
+              parent filtering by "coffee nearby" was ever shown. The predicate
+              is the EXISTING pure seam — never a second copy of `=== true` in a
+              render site. */}
+          {placeHasCoffeeNearby(place) ? (
+            <li
+              data-testid="place-pill-coffee"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 shrink-0 text-amber-700"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
+              </svg>
+              Coffee nearby
+            </li>
+          ) : null}
+        </ul>
+        {/* V34 slice D — THE META LINE'S KIND · INDOOR IS GONE FROM HERE AND
+            NOW LIVES IN THE PILLS ABOVE. Leaving both would print the same two
+            words twice in the space of forty pixels (the founder's *"the same
+            filters … shown in the same way in pill form"* — a pill REPLACES the
+            sentence, it does not join it).
+
+            ⚠️ WHAT THE DISTANCE LINE MUST DO ABOUT THAT, because the two rules
+            have to hold together: a bare `${distance}` interpolation would
+            render an EMPTY `<p>` on a place with no distance (lat/lng NULL, or
+            the gazetteer not loaded), silently dropping "· from your zip" with
+            it. So the paragraph renders ONLY when there IS a distance. The pill
+            row above already carries the kind and indoor facts at every width,
+            so nothing is lost by the swap; what would be lost is the sentence's
+            own honesty about which fact it is stating.
+
+            The spec that asserted the OLD joined line on this page —
+            `getByText('Playground · Outdoor')` in `e2e/places.e2e.ts` ("a place
+            page renders the seeded data") — was corrected in the same diff to
+            assert the two pills, because the two facts are still on the page,
+            just no longer as one string. */}
+        {distance !== null ? (
+          <p className="mt-1 text-sm text-slate-600">
+            {formatDistanceLabel(distance)} from your zip
+          </p>
+        ) : null}
       </div>
 
       {/* V25 t04 — THE DESCRIPTION, directly under the name.

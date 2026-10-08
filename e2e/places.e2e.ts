@@ -1767,7 +1767,25 @@ test('a place page renders the seeded data with the existing Maps link', async (
 
   await page.waitForURL(/\/place\//)
   await expect(page.getByRole('heading', { name: PLACE_NAME, exact: true })).toBeVisible()
-  await expect(page.getByText('Playground · Outdoor')).toBeVisible()
+  /**
+   * V34 slice D — THE KIND · INDOOR PAIR MOVED FROM A SENTENCE INTO PILLS on
+   * this surface, so this assertion follows the facts rather than the old
+   * wording. The two facts are unchanged and still asserted as the page's own
+   * text; what changed is that they are now two pills in `place-pill-row`
+   * (the same seam words `placeKindLabel`/`placeIndoorLabel` produce), and a
+   * `getByText('Playground · Outdoor')` joined string no longer exists here.
+   *
+   * ⚠️ THAT JOINED STRING IS GONE FROM THE PRODUCT, AND AN EARLIER DRAFT OF
+   * THIS COMMENT CLAIMED OTHERWISE — it said the literal survived on the
+   * research page (`/place/:id/details`) and that that page's spec asserted it.
+   * MEASURED, neither half is true: no spec asserts the joined literal on ANY
+   * surface (this line was the only one, and this slice replaces it), and
+   * `PlaceDetailsPage.tsx` keeps its own `kind · indoor` sentence for a
+   * different reason — it is the research page's own line, with no pill row
+   * above it. The claim is deleted rather than restated.
+   */
+  await expect(page.getByTestId('place-pill-kind')).toHaveText('Playground')
+  await expect(page.getByTestId('place-pill-indoor')).toHaveText('Outdoor')
 
   // The address is the SAME tappable Maps link the detail page uses (the V3
   // ticket 08 seam) — the place page is where a place's address lives now.

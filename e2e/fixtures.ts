@@ -707,6 +707,79 @@ export async function readPlaceByName(name: string): Promise<PlacePhotoRow> {
 }
 
 /**
+ * V34 slice D — read ONE place's `coffee_nearby` value, THREE-VALUED.
+ *
+ * ⚠️ THE THREE STATES ARE THE POINT, so this helper keeps `false` and `null`
+ * apart: `true` (OSM was asked, a cafe is near), `false` (asked, none found)
+ * and `null` (NEVER ASKED — every pre-0068 row). A helper that collapsed the
+ * two through `?? false` at a call site is exactly how "never asked" becomes
+ * "no coffee", which is the defect the column's design exists to prevent.
+ *
+ * The value is read through the same PostgREST path the moderator/photo specs
+ * use (the PROJECT-scoped service-role key out of the repo `.env`), because a
+ * spec must be able to SET the column to `false` without a moderator session:
+ * `places_update_moderators` (0062) is the only UPDATE policy on the table and
+ * it admits moderators only, so the in-app path cannot reach this writer. Read
+ * the caller's snapshot with this, and hand it to `setPlaceCoffeeNearby` in a
+ * `finally` — the directory is the founder's real data.
+ */
+export async function readPlaceCoffeeNearby(id: string): Promise<boolean | null> {
+  const { result, rows } = await postgrest<{ coffee_nearby: boolean | null }>(
+    `read places.coffee_nearby on ${id}`,
+    'GET',
+    `places?id=eq.${encodeURIComponent(id)}&select=coffee_nearby`,
+  )
+  if (!result.ok) throw new Error(`reading coffee_nearby failed: ${result.output}`)
+  if (rows.length !== 1) {
+    throw new Error(`expected exactly one place for id ${id}, got ${rows.length}`)
+  }
+  // `=== true` is the ONLY value that means "a cafe is near" (the pure
+  // `placeHasCoffeeNearby` seam's rule); `false` and `null` stay distinct.
+  return rows[0].coffee_nearby === true
+    ? true
+    : rows[0].coffee_nearby === false
+      ? false
+      : null
+}
+
+/**
+ * V34 slice D — write ONE place's `coffee_nearby`, and READ IT BACK.
+ *
+ * The read-back is the point (the `setPlacePhotos` discipline): a PATCH that
+ * matched zero rows is a silent no-op, so a spec that then asserted "no coffee
+ * pill" would pass for the wrong reason — because the value never changed, not
+ * because the page decided not to render it. The read-back compares the stored
+ * value against the intended one, `null` included.
+ */
+export async function setPlaceCoffeeNearby(
+  id: string,
+  value: boolean | null,
+): Promise<AdminResult> {
+  const { result, rows } = await postgrest<{ coffee_nearby: boolean | null }>(
+    `write places.coffee_nearby=${String(value)} on ${id}`,
+    'PATCH',
+    `places?id=eq.${encodeURIComponent(id)}&select=coffee_nearby`,
+    { body: { coffee_nearby: value } },
+  )
+  if (!result.ok) return result
+  if (rows.length !== 1) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back returned ${rows.length} row(s) — wanted exactly one for id ${id}`,
+    }
+  }
+  const written = rows[0].coffee_nearby
+  const landed = written === true ? true : written === false ? false : null
+  if (landed !== value) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back returned coffee_nearby=${String(landed)} — wanted ${String(value)}`,
+    }
+  }
+  return result
+}
+
+/**
  * Write the five photo columns of one row back (null clears) and read them back
  * in the same round-trip. The read-back compares EVERY snapshot column, not just
  * `photo_url`: the restore's whole job is to leave the live row exactly as it was
