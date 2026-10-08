@@ -2842,19 +2842,19 @@ describe('the archive link (V9 ticket 04: the feed\'s door to the Past list)', (
 })
 
 describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty radius)', () => {
-  it('offers both widen escapes at the 1-mile default (no "Back to 1" — you are already there)', () => {
-    // V32 v32-3 moved the default 5 → 1, so the "already at the default, no
-    // narrow escape" case is now 1, not 5. If this ever returns a "Back to 1
-    // mile" candidate, the narrow-escape predicate has drifted to `>=`.
-    expect(radiusEscapes(1)).toEqual([
+  it('offers both widen escapes at the 5-mile default (no "Back to 5" — you are already there)', () => {
+    // V35-C moved the default back 1 → 5, so the "already at the default, no
+    // narrow escape" case is now 5. If this ever returns a "Back to 5 miles"
+    // candidate, the narrow-escape predicate has drifted to `>=`.
+    expect(radiusEscapes(5)).toEqual([
       { radiusMiles: 20, label: 'Widen to 20 miles' },
       { radiusMiles: 35, label: 'See everything in Seattle' },
     ])
   })
 
-  it('pins the radii to the ticket (1 = default, 20 = widen, 35 = the max, the DB ceiling)', () => {
-    // The default moved to 1; the widen and the ceiling did NOT.
-    expect(DEFAULT_RADIUS_MILES).toBe(1)
+  it('pins the radii to the ticket (5 = default, 20 = widen, 35 = the max, the DB ceiling)', () => {
+    // V35-C moved the default back to 5; the widen and the ceiling did NOT.
+    expect(DEFAULT_RADIUS_MILES).toBe(5)
     expect(WIDEN_RADIUS_MILES).toBe(20)
     expect(SEE_ALL_RADIUS_MILES).toBe(35)
     expect(SEE_ALL_RADIUS_MILES).toBe(RADIUS_MAX_MILES)
@@ -2863,31 +2863,33 @@ describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty r
     expect(RADIUS_MILES_OPTIONS).toContain(SEE_ALL_RADIUS_MILES)
   })
 
-  it('now treats 5 as a NARROW case: the old default became a way back (10 → 1, 20, 35)', () => {
-    // The interesting inversion v32-3 creates: 5 was the default and is now a
-    // radius you can leave. 10 must offer "Back to 1 mile", and must NOT offer
-    // a no-op "Back to 5 miles" for a radius it is not at.
+  it('treats 10 as a NARROW case: 10 offers "Back to 5 miles" (10 → 5, 20, 35)', () => {
+    // The inversion v32-3 created is reversed by V35-C: 5 is the default again,
+    // so 10 must offer "Back to 5 miles", and must NOT offer a no-op "Back to
+    // 10 miles" for a radius it is not at.
     expect(radiusEscapes(10)).toEqual([
-      { radiusMiles: 1, label: 'Back to 1 mile' },
+      { radiusMiles: 5, label: 'Back to 5 miles' },
       { radiusMiles: 20, label: 'Widen to 20 miles' },
       { radiusMiles: 35, label: 'See everything in Seattle' },
     ])
   })
 
-  it('offers the narrow escape AT the old default: a 5-mile parent can go back to 1 (5 → 1, 20, 35)', () => {
-    // This is the case that did not exist before v32-3: at 5 you were AT the
-    // default, so there was no narrow escape at all. Now there is one — the
-    // label must read singular ("1 mile"), not "1 miles".
-    expect(radiusEscapes(5)).toEqual([
-      { radiusMiles: 1, label: 'Back to 1 mile' },
+  it('offers NO narrow escape BELOW the default: a 1-mile parent is already narrower (1 → 20, 35)', () => {
+    // V35-C moved the default back to 5, so 1 is now BELOW it. The narrow
+    // escape widens toward nothing here: `radiusEscapes` offers "Back to
+    // <default>" only when `radius > DEFAULT`, because at or under the default
+    // the parent is already narrower — a "Back to 5 miles" button would WIDEN,
+    // which is the widen escape's job, not the narrow one's. So at 1 only the
+    // two widen escapes render.
+    expect(radiusEscapes(1)).toEqual([
       { radiusMiles: 20, label: 'Widen to 20 miles' },
       { radiusMiles: 35, label: 'See everything in Seattle' },
     ])
   })
 
-  it('drops candidates that would not change the radius (20 → back-to-1 + see-all only)', () => {
+  it('drops candidates that would not change the radius (20 → back-to-5 + see-all only)', () => {
     expect(radiusEscapes(20)).toEqual([
-      { radiusMiles: 1, label: 'Back to 1 mile' },
+      { radiusMiles: 5, label: 'Back to 5 miles' },
       { radiusMiles: 35, label: 'See everything in Seattle' },
     ])
   })
@@ -2903,9 +2905,9 @@ describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty r
       for (const r of radii) {
         expect(r).toBeLessThanOrEqual(RADIUS_MAX_MILES)
       }
-      // At 1 you are already at the default; at 35 the state is honestly
+      // At 5 you are already at the default; at 35 the state is honestly
       // terminal (narrowing can never surface what 35 did not). The predicate
-      // itself is unchanged by v32-3 — only the value of the default it reads.
+      // itself is unchanged by V35-C — only the value of the default it reads.
       expect(radii.includes(DEFAULT_RADIUS_MILES)).toBe(
         radius > DEFAULT_RADIUS_MILES && radius < SEE_ALL_RADIUS_MILES,
       )
@@ -2913,8 +2915,10 @@ describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty r
   })
 
   it('keeps the escapes present for a 2-mile radius (the far-zip e2e case)', () => {
-    // 2 is now ABOVE the default, so it also earns the narrow escape.
-    expect(radiusEscapes(2).map((e) => e.radiusMiles)).toEqual([1, 20, 35])
+    // 2 is BELOW the default (5), so there is no narrow escape — only the two
+    // widen escapes. The case still matters: a far-zip parent at 2 miles must
+    // never be left with an empty escape list.
+    expect(radiusEscapes(2).map((e) => e.radiusMiles)).toEqual([20, 35])
   })
 })
 

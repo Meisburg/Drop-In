@@ -2071,10 +2071,11 @@ describe('MAP_FOCUS_RADIUS_MILES (V19 t01 — D1: the map frames the neighbourho
   it('is never wider than the default the list opens at', () => {
     // V32 v32-3: this assertion was STRICTLY less-than, and that is now wrong.
     // The old rule was "the map opens nearer than the list's default", which
-    // held while the default was 5. The default is now 1 — the same value as
-    // MAP_FOCUS_RADIUS_MILES — so a strict inequality is structurally
-    // unsatisfiable: there is no radius below the floor for the frame to sit at.
-    // Nothing about the map changed; the default moved to meet it.
+    // held while the default was 5. V35-C moved the default back to 5 — the same
+    // value as MAP_FOCUS_RADIUS_MILES' predecessor — so a strict inequality is
+    // structurally unsatisfiable: there is no radius below the floor for the
+    // frame to sit at. Nothing about the map changed; the default moved to meet
+    // it.
     //
     // The surviving half of the rule is the NEXT test ("is never wider than any
     // radius the user can PICK"), which is the real protection and is untouched:
