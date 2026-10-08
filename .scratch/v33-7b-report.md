@@ -3,7 +3,7 @@
 SENTINEL: V33-7B-WINDOW-CONTROL-M6R3
 Status: DONE
 Commit: `36bf451` (the slice) on branch `window-control-m6r3`; the report and its
-verification passes are `2aed972`, `bab9b5a`, `5478b44` and the commit carrying
+verification passes are `2aed972`, `bab9b5a`, `5478b44`, `58a7158`, `28661a3` and the commit carrying
 this section
 Worktree: `/tmp/pd-wt/window-control-m6r3`
 
@@ -323,4 +323,51 @@ for all five slice files. The onboarding-Finish lane's uncommitted files
 files, and the untracked `onboardingCompletion.*` /
 `onboarding-finish-transition` pair) remain present and **untouched**. Port 4211
 released; the verification worktree removed. Nothing was pushed.
+
+## 6f. Fifth resume — acceptance re-checked against the commit, not just re-run
+
+The slice was still fully committed on resume, so again **nothing was re-done**.
+Four passes had already re-run the same gate and specs; rather than repeat a fifth
+identical run as the only act, this pass first checked the thing a repeated
+re-verification could still miss — **whether each brief acceptance is actually
+carried by the committed tree**, read out of the commit itself:
+
+| AC | Checked against `HEAD` | Result |
+|---|---|---|
+| 1 | `window-section` present in the committed component | 1 occurrence ✓ |
+| 3 | v33-7a's "30-minute window posts … exact span" spec | present ✓ |
+| 5 | `git show 36bf451` on `durationBlock` | **7 lines, all comments** — the markup itself is never modified ✓ |
+| 6 | `end-time-label` / `start-time-label` / the four ± names | 4 present ✓ |
+
+AC 5 is the one worth stating explicitly: the slice commit mentions
+`durationBlock` seven times, and every one is a **comment** line. `/edit`'s markup
+is byte-identical, as the brief requires — a grep count alone would have looked
+like a violation.
+
+Then the gate and both specs were run once more on a fresh detached checkout at
+`28661a3`, **with §6e's `.env` trap honoured first** (copied in before the run):
+
+```
+verify (clean checkout @ 28661a3, .env copied in) → exit 0
+  92 files / 2715 tests ✓, oxlint 0 errors, steering-lint PASS, GUARDS: PASS
+e2e (port 4212, auth.setup + post-fast + post-edit-delete) → 14 passed, exit 0
+  [e2e v33-7a] live row: start_at=…T17:30:00+00:00 ends_at=…T18:00:00+00:00 span=30min
+  [e2e v33-7b] mount 630→690 (60min); after a start step 660→690
+               (end UNMOVED, 30min, no note); after stepping the start into the
+               end 690→720 (30min, note shown)
+```
+
+Both behavioural proofs are unchanged across five independent runs, which is the
+real signal: the numbers are deterministic (`630→690`, `660→690`, `690→720`) even
+though the mount slot depends on the clock, because the window arithmetic is
+relative to the slot the form picked.
+
+**Port hygiene:** 4212 verified free before the run and released after; the
+temporary worktree removed with `git worktree remove --force`. The other lane's
+files remain present and untouched. Nothing was pushed.
+
+**This lane is complete.** The slice is at `36bf451` (product) with the report and
+five verification passes documented above. Further resumes should treat it as
+done rather than re-running the gate again.
+
 
