@@ -4,7 +4,7 @@
 
 ## What this project is
 
-**Playdate** — a webapp for arranging playdates: parents post time+place
+**Drop In** — a webapp for arranging playdates: parents post time+place
 invitations, nearby parents see them and RSVP. Privacy-first: kids appear by
 first name + age, no public profiles, parents authenticate to see anything.
 Boring stack: Vite + React + TypeScript + Tailwind.
@@ -12,18 +12,15 @@ Boring stack: Vite + React + TypeScript + Tailwind.
 ## Communication style (always on)
 
 The human reader has ADHD. Every response follows the `i-have-adhd` ruleset —
-full text: `.opencode/skills/i-have-adhd/SKILL.md`. Compact contract:
+full text: `.opencode/skills/i-have-adhd/SKILL.md`. Load-bearing core:
 
-1. Lead with the next action — first line is something doable now, not context.
-2. Number multi-step work; each step one bounded action; fewest steps that work.
-3. End with ONE concrete next action, doable in under two minutes.
+1. Lead with the next action — first line doable now, not context.
+2. Number multi-step work; one bounded action per step.
+3. End with ONE concrete next action, under two minutes.
 4. Suppress tangents; surface side-issues once, at the end.
-5. Restate project state every turn (active slice, what's pending, what's next).
-6. Specific time estimates; never "a bit of work."
-7. Make completed work visible ("X now works — try Y").
-8. Matter-of-fact tone for errors: cause + fix, no "uh oh."
-9. Cap lists at 5 items; rank them (do now vs later).
-10. No preamble, no recap, no closing pleasantries.
+5. Restate project state every turn (active slice, pending, next).
+6. Cap lists at 5 items, ranked. Specific time estimates, never "a bit."
+7. No preamble, no recap, no closing pleasantries.
 
 Applies to every session and agent. Off-switch: "stop adhd mode" or "normal
 mode" — confirm in one line, then revert to default style.
@@ -39,10 +36,10 @@ mode" — confirm in one line, then revert to default style.
 - `factory/work/<id>.json` — per-work-item lane state and artifacts; a worker
   is disposable, this is not.
 - `factory/decisions.md` — append-only decisions about factory behaviour. The
-  batch ledger keeps slice rulings; its mixed history stays as it is.
-- Subagents get briefs pointing at files, never pasted chat history.
-- Each returns a structured report; the orchestrator routes on the report plus
-  the files, not on vibes.
+  batch ledger keeps slice rulings; its mixed history stays.
+- Subagents get briefs pointing at files, never pasted chat history. Each
+  returns a structured report; the orchestrator routes on it and the files,
+  not on vibes.
 
 ## Agents (defined in .opencode/agents/)
 
@@ -51,9 +48,8 @@ mode" — confirm in one line, then revert to default style.
   summaries, test output, reviewer verdicts. Can only spawn the five
   orchestrator-* subagents (enforced by permission.task).
 - `orchestrator-explorer` — read-only codebase research, cited findings.
-- `orchestrator-researcher` — read-only open-web research via Exa. Answers one
-  bounded external question and returns cited findings into `research/`.
-  Never edits code.
+- `orchestrator-researcher` — read-only open-web research via Exa. One bounded
+  external question, cited findings into `research/`. Never edits code.
 - `orchestrator-builder` — ONE bounded slice, runs required checks itself,
   structured report.
 - `orchestrator-reviewer` — fresh-context diff review, verdict
@@ -64,7 +60,7 @@ mode" — confirm in one line, then revert to default style.
 
 1. Serialized: one builder at a time; parallelize only read-only exploration,
    and only after the base loop is proven.
-2. Every slice has acceptance criteria + verification command in plan.md
+2. Every slice has acceptance criteria + a verification command in plan.md
    before dispatch. A slice with neither is a plan defect, not a builder
    problem.
 3. Reviewer loops escalate by **model**, not by count: rounds 1–3 resume the
@@ -108,8 +104,8 @@ ocr review --from <base-sha> --to HEAD --format json --output .scratch/ocr-<slic
   domain rules in pages, `lib/` modules inject their client and ship a sibling
   test, idempotent migrations, tap targets ≥44px, inputs ≥16px, new routes join
   the playtest `routes.json`. **It found a real defect on its first run.**
-- `ocr delegate rule <files>` prints the resolved rules WITHOUT an LLM — use it
-  to confirm a rule file matches before trusting it.
+- `ocr delegate rule <files>` prints the resolved rules WITHOUT an LLM — confirm
+  a rule file matches before trusting it.
 - **Known limitations:** `ocr` reviews CODE only — `.md`, agent definitions and
   config are `unsupported_ext`, so this file and `docs/agents/` are outside its
   view; and it trades recall for precision. It complements the agent reviewer,
@@ -121,8 +117,7 @@ The three lanes above **judge**; none can *guarantee*. A reviewer misses files,
 `ocr` skips config and prose, the verifier runs only what it was handed. So
 `npm run guards` (inside `verify`) runs scripts that either find a violation or
 do not — no model, no tokens. A rule that parses source ships a `.check.mjs`
-proving it can fire. See `docs/agents/borrowed-guards.md` for provenance and the
-four tests a new guard must pass.
+proving it can fire. Provenance and the four tests: `docs/agents/borrowed-guards.md`.
 
 ## The escalating fix loop (why it escalates by capability)
 
@@ -136,10 +131,10 @@ silent discard.
 
 ## The build law
 
-`docs/agents/code-structure.md` is the written structure contract: domain logic
-in `src/lib/` as pure functions with injected dependencies, React renders and
-does not decide, every `lib/*.ts` ships a `lib/*.test.ts` sibling. Builders
-read it before writing; reviewers check the diff against it.
+`docs/agents/code-structure.md` is the structure contract: domain logic in
+`src/lib/` as pure functions with injected dependencies, React renders and does
+not decide, every `lib/*.ts` ships a `lib/*.test.ts` sibling. Builders read it
+before writing; reviewers check the diff against it.
 
 ## The ledger (compaction survival)
 
@@ -153,9 +148,9 @@ re-dispatched completed work:
     Slice N: fix round R/5 (<X> addressed, <Y> open)
     Slice N: parked — <finding> — Ruling: <why the code stands>
 
-After compaction, read the ledger and `git log` before re-dispatching. Trust
-the ledger over recollection — ledger-named commits exist in git even when
-context forgets them.
+After compaction, read the ledger and `git log` before re-dispatching. Trust the
+ledger over recollection — ledger-named commits exist in git even when context
+forgets them.
 
 ## Slice budget
 
@@ -166,8 +161,8 @@ gate result.
 
 At every phase boundary decide **explicitly**: continue, clear, or compact, and
 write it in the ledger. Default **clear** — durable state lives outside the
-window. The decision table, and the rule against letting auto-compaction choose
-for you, are inlined in `.opencode/agents/orchestrator.md`.
+window. The decision table, and the rule against letting auto-compaction choose,
+are inlined in `.opencode/agents/orchestrator.md`.
 
 ## Where the rest lives (read on demand, do not push)
 
@@ -178,17 +173,21 @@ Read it when its situation arrives — the pointer says when.
 | Any `git push` to origin/master | `docs/agents/auto-push.md` — the three conditions, staging rules, enforcing hook |
 | Starting ANY browser lane (e2e, playtest, audits) | `docs/agents/browser-lanes.md` — the human works here; never touch their Chrome |
 | A slice touches an external API, library, or version-specific behavior | `docs/agents/grounding-gates.md` — Exa grounding before dispatch; findings into `research/` |
-| Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch mechanics, this session's migration/QA steps, fleet roles |
+| Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch mechanics, migration/QA steps, fleet roles |
 | Running agents in Orca (worktrees, terminals, diff, browser) | `docs/agents/orca.md` — the workspace substrate, and what it must never own |
-| Choosing compute or a model, or a lane is resource-blocked | `docs/agents/compute-policy.md` — local-first routing, what exists; then `factory.md`, `model-routing.md` |
+| Choosing compute or a model, or a lane is resource-blocked | `docs/agents/compute-policy.md` — local-first routing; then `factory.md`, `model-routing.md` |
 | Writing or reviewing a diff | `docs/agents/code-structure.md` — the build law |
 | Adding a deterministic guard, or evaluating an external agent framework | `docs/agents/borrowed-guards.md` — provenance, refusals, the four tests |
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
 | Running e2e, or changing `e2e/.e2e-target.json` | `docs/agents/e2e-target-guard.md` — the target policy and its waiver; then `e2e-fixture-convention.md` |
 | Filing or triaging a ticket | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` |
-| The human hands you a batch of browser annotations | `docs/agents/annotations.md` for the server and the triage rule |
+| The human hands you a batch of browser annotations | `docs/agents/annotations.md` — the server and the triage rule |
 | Naming a domain concept | `docs/agents/domain.md` — `CONTEXT.md` + `docs/adr/`, created lazily |
 | CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what CI runs, the two repo variables, what it skips |
+| Dispatching a slice, or picking a lane | `docs/agents/builder-routing.md` — the lane pool, one slice per lane, one writer per worktree |
+| Where work runs (5090 / cloud / fleet) | `docs/agents/compute-split.md` — a rate meter is not parallelizable by adding machines |
+| Fleet capacity, or a stalled lane | `docs/agents/fleet-capacity.md`, `docs/agents/lane-health.md` — measured ceilings, the safe-lane cap |
+| Running more than one slice at once | `docs/agents/parallel-development.md` — read-only lanes overlap; writers never |
 
 **A pointer is skippable; a file you never opened is not a rule you followed.**
 The unconditional rules — delegate and never do the work yourself; the
@@ -206,15 +205,14 @@ Two layers: agents define WHO does what; skills hold HOW.
 
 - Before orchestration (human-invoked): `/grill-me` or `/grill-with-docs`
   (alignment + CONTEXT.md/ADRs feeding plan.md Interfaces), `/to-spec`,
-  `/to-tickets` (tickets → plan.md slices), `/wayfinder` (work bigger than one
-  session). Run `/setup-matt-pocock-skills` once per repo.
-- Inside builder slices (model-invoked): `tdd` for red-green-refactor,
-  `diagnosing-bugs` when verification fails, `codebase-design` for module
-  boundaries, `ponytail` for the smallest diff that works, and
-  `verification-before-completion` before any success claim.
-  Allowed via per-agent `permission.skill`; every other agent has skills
-  denied — the reviewer stays skill-free and fresh, because a reviewer that
-  loads a workflow skill stops being an independent judge.
+  `/to-tickets`, `/wayfinder` (work bigger than one session). Run
+  `/setup-matt-pocock-skills` once per repo.
+- Inside builder slices (model-invoked): `tdd`, `diagnosing-bugs`,
+  `codebase-design`, `ponytail` (smallest diff), and
+  `verification-before-completion` before any success claim. Allowed via
+  per-agent `permission.skill`; every other agent is denied — the reviewer
+  stays skill-free, because one that loads a workflow skill is no longer an
+  independent judge.
 - Do NOT run `/implement` or `superpowers:subagent-driven-development` — both
   are competing orchestration spines. The orchestrator pattern is the spine;
   skills are disciplines within it (worktrees, ledgers, verification).
