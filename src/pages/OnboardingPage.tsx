@@ -24,7 +24,7 @@ import {
   type FirstRunCardId,
   type FirstRunView,
 } from '../lib/firstRun'
-import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
+import { FIRST_RUN_COMPLETION_COPY, FIRST_RUN_COPY } from '../lib/firstRunCopy'
 import { FIRST_RUN_TOOLTIPS_ARMED_STATE } from '../lib/firstRunTooltips'
 import {
   addKid,
@@ -60,6 +60,7 @@ import { shouldRenderPlacesMap } from '../lib/mapStrip'
 import { PHOTO_UPLOAD_TIMEOUT_MS, photoUploadBlocksContinue } from '../lib/photoUpload'
 import { newKidRowKey } from '../lib/kidRowKey'
 import { resolveOnboardingRedirect } from '../lib/onboarding'
+import { completionHoldRemainingMs } from '../lib/onboardingCompletion'
 import { errorId, fieldA11y } from '../lib/a11y'
 
 /**
@@ -326,6 +327,30 @@ export function OnboardingPage() {
   const [zipError, setZipError] = useState<string | null>(null)
   const [radiusMiles, setRadiusMiles] = useState<number>(DEFAULT_RADIUS_MILES)
   const [saving, setSaving] = useState(false)
+  /**
+   * V34-C — THE FINISH TRANSITION IS ON SCREEN.
+   *
+   * The founder annotation: *"When you click on finish here, I feel like it
+   * jumps into the main app really quickly and it's like kind of jarring.
+   * Maybe there should be some kind of animation state or loading state or
+   * like building your profile state or something."*
+   *
+   * ⚠️ THIS FLAG IS NOT THE STATE MACHINE. It is the RENDER half only: the
+   * RULE — how long the state must still be held given when the tap happened
+   * and when the real work settled — is `lib/onboardingCompletion`'s
+   * (`completionHoldRemainingMs`), pure and tested without React. The page
+   * sets this true on the tap and false when the seam says the hold is served,
+   * which is all a `.tsx` should be doing here.
+   *
+   * ⚠️ IT IS NOT AN ARTIFICIAL SLEEP, and the distinction is the whole slice:
+   * `saveLocation` AWAITS the real write (`updateHomeZipRadius`) and the real
+   * session re-read (`refresh()`) BEFORE it consults the floor, so the state
+   * is driven by the completion work and merely not-allowed-to-flash. A slower
+   * write holds it longer; a faster one still pays the floor; a FAILED one
+   * never shows it at all (the catch below clears this flag, so the failure
+   * path is the error line it always was).
+   */
+  const [completing, setCompleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /**
    * V28 r3-5 (r3-D2) — THE PARENT'S POSITION IN THE RUN, or `null` for "wherever
@@ -714,6 +739,12 @@ export function OnboardingPage() {
   // finish card, rendered below, is the ending.)
   const redirect = resolveOnboardingRedirect(session !== null)
   if (redirect !== null) return <Navigate to={redirect} replace />
+
+  // V34-C: the finish transition is rendered from the `'finish'` branch
+  // (below), NOT here — the area CARD owns tap → settle, preserving its own
+  // in-flight state (`saving` freezes the zip field and refuses navigation),
+  // and the TRANSITION owns settle → feed. See `saveLocation` for the ordering
+  // and why it is a correctness requirement rather than a preference.
 
   // The avatar upload (V2 ticket 02; the crop step added by photo-crop
   // ticket 03) ran in the photo card's crop step (handlePhotoChange →
@@ -1260,6 +1291,55 @@ export function OnboardingPage() {
       // no longer keys on the home zip, and the header shows no zip at all
       // — this keeps the shared state, not the chrome, current.
       await refresh()
+      /**
+       * V34-C — THE REAL WORK IS DONE. NOW THE PARENT GETS TOLD SO.
+       *
+       * ⚠️ THE TRANSITION STARTS HERE, AFTER `refresh()`, AND NOT AT THE TAP —
+       * and that ordering is a correctness requirement, not a preference.
+       *
+       * The first cut set the flag at the tap, so the transition replaced the
+       * area card the instant the parent tapped. Two existing specs hold this
+       * very PATCH open and assert the CARD's in-flight state —
+       * `signup-zip-fallback.e2e.ts`'s frozen-zip-field leg (`saving` disables
+       * the field, which keeps showing the value being written) and its
+       * navigation-guard leg (the back/forward controls are refused while
+       * `saving`). Unmounting the card mid-write made both fail with
+       * "element(s) not found": the transition itself altered the write path
+       * the brief says must not change.
+       *
+       * So the split is: the CARD owns tap → settle (byte-for-byte as before
+       * this slice), and the TRANSITION owns settle → feed. Nothing about the
+       * write, its busy state, or its failure path moves.
+       *
+       * ⚠️ AND IT MAKES THE PAINT CERTAIN, which is why this is also the shape
+       * that survives a real race. `visibleSince` is read at the moment the
+       * state is created, and `completionHoldRemainingMs` therefore owes the
+       * FULL floor here — never `0` — so `setCompleting(true)` and the later
+       * clear can never land in one React batch. The earlier
+       * measure-from-the-tap design could compute `0` and let React commit
+       * only the cleared state: measured as `onboarding-completing`
+       * "element(s) not found" on a warm run, with the feed already painted.
+       */
+      const visibleSince = performance.now()
+      setCompleting(true)
+      const holdMs = completionHoldRemainingMs(visibleSince, visibleSince)
+      if (holdMs > 0) await new Promise((resolve) => setTimeout(resolve, holdMs))
+      /**
+       * ⚠️ WAIT FOR A REAL PAINT BEFORE THE HANDOFF, and the exact shape is
+       * load-bearing — a single `requestAnimationFrame` is NOT enough. The rAF
+       * callback runs BEFORE the frame is painted, so if the clear lands inside
+       * that same tick the browser can still never paint the state. The idiom
+       * below — rAF, then a `setTimeout(0)` queued from inside it — resolves
+       * just AFTER a real paint, so the commit that includes the state has
+       * happened by the time the handoff runs. Belt and braces beside the
+       * unconditional floor above.
+       */
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          setTimeout(resolve, 0)
+        })
+      })
+      setCompleting(false)
     } catch (err) {
       // V16 t09 review: this write goes through updateHomeZipRadius too, and
       // the card's picker renders RADIUS_MILES_OPTIONS (so it offers 1 mile).
@@ -1270,6 +1350,14 @@ export function OnboardingPage() {
       // English. The zip the card held (typed or resolved) is not re-derived
       // here — a failed save stays on the card with its error, and the parent
       // retries with what they still see.
+      //
+      // V34-C: the FAILURE path is otherwise UNTOUCHED. The transition state
+      // is cleared here and nowhere else on this path, so a failed completion
+      // shows its error line on the area card exactly as it did before this
+      // slice — the success state can never co-render with a failure. (The
+      // `finally` below still runs, as it always did; `saving` is what
+      // releases the card's own controls.)
+      setCompleting(false)
       setError(radiusSaveErrorMessage(err))
     } finally {
       setSaving(false)
@@ -1661,6 +1749,54 @@ export function OnboardingPage() {
   // `loadError` — and they are finished, so they leave for the feed rather than
   // being shown the area card's error for a card they are no longer on.
   if (paintedView === 'finish') {
+    /**
+     * V34-C — THE TRANSITION BETWEEN THE SAVE AND THE FEED.
+     *
+     * `completing` is set by `saveLocation` AFTER the write and the
+     * `refresh()` have settled (see that handler), and cleared when the tested
+     * visible window plus a real paint have elapsed. So this branch paints the
+     * state for exactly that window and otherwise falls through to the
+     * unchanged navigation below — no timer here, no sleep, and no second code
+     * path to the feed.
+     *
+     * ⚠️ `paintedView` IS `'finish'` THROUGHOUT THIS WINDOW, and that is why
+     * the branch can live here. `refresh()` is what flips `homeZipSet`, which
+     * is what makes `resolveCard` answer `'finish'` — and `refresh()` has
+     * already resolved before `completing` is ever set. The earlier design
+     * (flag set at the tap) could NOT live here, because `paintedView` was
+     * still `'area'` for most of its window; that design also unmounted the
+     * card's frozen controls mid-write and was reverted for it.
+     *
+     * ⚠️ AND IT IS NOT A SECOND SUCCESS PATH. `completing` is set only by
+     * `saveLocation`'s success leg and cleared on every exit including its
+     * catch, so a failed save leaves this branch unreachable and the parent on
+     * the area card with the error line, exactly as before this slice.
+     */
+    if (completing) {
+      return (
+        <div
+          data-testid="onboarding-completing"
+          // `role="status"` (not `alert`): this is an outcome the parent is
+          // waiting on, not a failure — the house rule DESIGN.md states.
+          role="status"
+          aria-live="polite"
+          className="flex min-h-64 flex-col items-center justify-center gap-3 text-base text-slate-600"
+        >
+          {/* THE ONE ANIMATED ELEMENT, and the house's exact shape (ModPage's
+              busy spinner): a bordered ring spun by Tailwind's `animate-spin`,
+              cancelled by `motion-reduce:animate-none`. `motion-reduce:` is
+              what makes the reduced-motion face of this slice true in CSS; the
+              spec pins it by measuring `animationName === 'none'` on every
+              node here. Flat at rest otherwise — no bounce, no confetti. */}
+          <span
+            data-testid="onboarding-completing-spinner"
+            aria-hidden="true"
+            className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600 motion-reduce:animate-none"
+          />
+          <p>{FIRST_RUN_COMPLETION_COPY.message}</p>
+        </div>
+      )
+    }
     // r3-7: arm the feed's first-run tooltips for this entry. The armed state
     // is TRANSIENT (router navigation state, not a stored key) — it is the
     // "the run just ended in this tab" trigger the feed's gate reads; the

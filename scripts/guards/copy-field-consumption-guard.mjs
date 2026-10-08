@@ -332,7 +332,9 @@ const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
 const COPY_MODULES = [
   {
     module: 'src/lib/firstRunCopy.ts',
-    consts: ['FIRST_RUN_COPY', 'FIRST_RUN_NUDGE_COPY'],
+    // V34-C registered the finish transition's copy const the day it was
+    // added — the act this list exists to force.
+    consts: ['FIRST_RUN_COPY', 'FIRST_RUN_NUDGE_COPY', 'FIRST_RUN_COMPLETION_COPY'],
   },
   // Slice 2b-iii. Its fields ARE read: NotificationsSection renders
   // `notificationSectionCopy(native)` and prints all three sentences.

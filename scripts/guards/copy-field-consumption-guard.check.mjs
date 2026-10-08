@@ -650,7 +650,16 @@ try {
   r = run()
   check(
     'a forward-referenced alias chain resolves (no hard finding from our own resolution order)',
-    r.exit === 0 && /declared fields: 8/.test(r.out) && /read\s+— FirstRunCardCopy\.title/.test(r.out),
+    // ⚠️ THE COUNT IS 9, RECONCILED — not relaxed (V34-C). The seed's claim is
+    // "the alias chain did not DROP fields, and the run still reads the real
+    // shape", and the number is how it notices a drop: the old pass reported 3
+    // against the 8 then declared. V34-C added `FIRST_RUN_COMPLETION_COPY`
+    // (one field, `message`) to this module, so the live corpus declares 9 and
+    // the drop-detecting number moves with it. Verified: the guard's own
+    // pre-seed run prints `declared fields: 9` listing every one, including
+    // the new const — the seed still fails on a DROPPED field, which is the
+    // defect class it was written for.
+    r.exit === 0 && /declared fields: 9/.test(r.out) && /read\s+— FirstRunCardCopy\.title/.test(r.out),
     `exit ${r.exit}: ${findingLines(r.out)}`,
   )
 
