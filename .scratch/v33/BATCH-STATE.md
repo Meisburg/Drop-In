@@ -225,3 +225,99 @@ dying). Run
 `ocr review --from 40b1f06 --to 964d066 --format json --output .scratch/ocr-v33-13.json`
 when a lane is free. v33-6 and v33-7a also have no `ocr` pass yet
 (`091aad8`, `aebdb84`).
+
+---
+
+## 10 — UPDATE #2: routing changed, a REGRESSION found, and the rulings
+
+### 10a. ⚠️ OPEN REGRESSION FROM v33-6 — FIX THIS FIRST (`091aad8`)
+
+`ocr` (run concurrently as the ruling directed) found it and **the source
+confirms it**:
+
+- `src/pages/PlaydateDetailPage.tsx:2542` opens `{!isHost ? (` and that branch now
+  **contains** the per-pinger row at `:2588` (`hostPingerNames.map(...)`).
+- `hostPingerNames` is derived at `:1788` as
+  `isHost && guestNames !== null && count !== null && count > 0 ? guestNames : []`
+  — **host-only**.
+- Inside a `!isHost` branch it is therefore **always empty**. **The host can never
+  see "Message \<pinger\>" any more.** A pinger can still see "Message the host".
+
+Two spec assertions were moved into the same wrong branch and now pass
+**vacuously** (`ocr` findings 7 and 11): the host-side visibility check and its
+`toHaveCount(2)`. That is why the gate was green.
+
+**The fix:** the per-pinger row must render **outside** the `!isHost` branch (it is
+host-only by its own gate, not by the branch), beside the RSVP row as v33-6
+intended; and both spec assertions must be restored so they can fail again —
+**mutation-prove** it (make `hostPingerNames` return `[]` and show the spec red).
+
+Same `ocr` pass also returned, all real: `key={name}` on non-unique
+`display_name`s (`:2590`); a duplicated message-control className; a three-level
+nested ternary in the going-button label; `page.locator(sel, { hasText })` is
+**not** valid Playwright (must be `.filter({ hasText })`) in
+`e2e/rsvp-confirmation.e2e.ts`; an unguarded `second.context.close()` in
+`e2e/inbox.e2e.ts`; a duplicated viewport pin re-baselining five unrelated specs;
+and a stale docblock. Fix them in the same pass where cheap.
+
+**v33-7a's `ocr`** returned 3 **doc-drift** findings in `src/lib/feed.ts` (the
+`validatePlaydateForm` docblock and the `durationMinutes` field doc still say
+"one of the chips"; and the new docblock claims `isDuration` is what the chip
+row's selected state uses — it is not, the row compares `durationMinutes`
+directly). Cheap, honest, do them with the v33-6 fix.
+
+### 10b. ROUTING (operator, 2026-10-07 21:0x) — supersedes §6's lane recipe
+
+**Exactly ONE local builder lane** (`ninfer/qwen3.8-27b`, full ~98k window). Every
+other lane runs on **cloud**: `ollama-cloud/deepseek-v4.1-flash:cloud` (1M ctx) or
+`ollama-cloud/glm-5.3` (1M ctx) — zero local KV. `wQ:p15` and `wQ:p19` were
+**closed** for this reason; `wQ:p1F` is the one local lane.
+
+**The measured cause of the "dead" lanes was KV contention, not brief length**
+(`running=5 waiting=4`, decode 27.8 tok/s, KV capacity 122,880 total vs 30-50k per
+coding context). A queued lane emits nothing and looks dead. **Before any cloud
+lane: `~/fleet/bin/ollama-cloud-budget --json` — verdict must not be CRIT** (a hard
+429 kills a cloud lane silently, zero files changed). Measured at 21:05: weekly
+35.8 %, session 0.7 %, **verdict OK**. Judge a lane's health from process state
+(`~/fleet/bin/fleet-stall-check <pane> --repo …`), never from its pane.
+
+Tight briefs remain good practice for a different reason (a smaller context
+delays the overflow) — **but they were not the cause.**
+
+### 10c. RULINGS APPLIED (`.scratch/v33/RULINGS-2026-10-07.md`)
+
+- ✅ **5b rejected and dismissed in the toolbar** with the safety reason: the inbox
+  last-active line (`muyc5kwv`) — the app refuses to claim presence; manufacturing
+  one lies about a parent's whereabouts.
+- **5c five miles (`muydy8tg`): APPLY.** One constant + one migration reversing
+  `0066`, with the migration comment recording that it is a **deliberate reversal,
+  not drift** ("for now" — a tuning value). Not started.
+- **v33-12 (`muyc3jnt`) re-ruled: avatar circle immediately LEFT of the person's
+  name** — the conventional messaging pattern — anywhere a person's name is the
+  entity you are messaging (thread header, composer recipient, DM rows), matching
+  the existing avatar treatment in the DM list. **NOT** a per-bubble avatar, **NOT**
+  a standalone chip. Not started.
+- **v33-7b: PROCEED** (UI polish only; the bound is already ruled).
+- **v33-10 / 5a: prototypes, no slice.** 2–3 directory layouts and the hero-photo
+  variant, shown to the founder; `impeccable` applies.
+- **v33-11 / roles: ADR + ONE recommendation, NO implementation this batch.**
+  Discover `supabase/migrations/0063_place_photo_review_state.sql` and the
+  moderator surfaces first — build on that flow, never beside it.
+- **Reviews (R1): build the ASK** — a non-obligating prompt to parents who said
+  Going, after the time has passed. No scraping, no seeding. **Prototype the copy
+  first.** Do not present an average derived from 4 reviews as representative.
+- **v33-8 settings rule:** editable = a fact about the parent (name, photo, kids,
+  interests, zip, radius, notif prefs, providers); read-only = computed or
+  contractual (member-since, counts, the account email) or moderation-controlled;
+  when read-only, **say why** next to it; **log out to the bottom** in that slice.
+- **Debts: carry them** (62 places without a photo, `coffee_nearby` 215/234 null,
+  590 marker rows — the last can go to the overnight sweep).
+
+### 10d. IN FLIGHT when this snapshot was written
+
+- **v33-4** (`muye9a6l`): builder `wQ:p1F` (the one local lane), 41 steps,
+  **uncommitted** — `src/pages/PlaydateDetailPage.tsx` (+15) and
+  `e2e/post-location.e2e.ts` (+16). Its TTFT read 34.3 s while three local lanes
+  were alive; with the other two now closed it should recover. **Check
+  `git log` before re-dispatching it** — this batch has twice seen a "dead" lane
+  that had already committed.
