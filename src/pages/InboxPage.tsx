@@ -1375,23 +1375,49 @@ export function InboxPage() {
                 data-testid="inbox-thread-playdate-link"
                 className="min-w-0 flex-1 rounded-lg transition-colors motion-reduce:transition-none hover:bg-slate-50"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {threadHeaderGroupLabel ?? threadHeaderName}
-                  </p>
-                  {threadDropInLine !== null ? (
-                    <p
-                      data-testid="inbox-thread-context"
-                      className="truncate text-xs text-slate-500"
-                    >
-                      {threadDropInLine}
-                    </p>
+                <div className="flex min-w-0 items-center gap-2">
+                  {/* V33-12: the counterpart's face, immediately left of their name —
+                      the app's ONE avatar primitive (HostAvatar), reusing the same
+                      host shape the list row and empty state already feed it. A `null`
+                      photo is its ordinary initial circle; never a broken image. */}
+                  {counterpart.id !== '' && counterpart.name !== '' ? (
+                    <HostAvatar
+                      host={{
+                        id: counterpart.id,
+                        display_name: counterpart.name,
+                        avatar_url: counterpartAvatarUrl,
+                      }}
+                    />
                   ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {threadHeaderGroupLabel ?? threadHeaderName}
+                    </p>
+                    {threadDropInLine !== null ? (
+                      <p
+                        data-testid="inbox-thread-context"
+                        className="truncate text-xs text-slate-500"
+                      >
+                        {threadDropInLine}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </Link>
             ) : (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {counterpart.id !== '' && counterpart.name !== '' ? (
+                  <HostAvatar
+                    host={{
+                      id: counterpart.id,
+                      display_name: counterpart.name,
+                      avatar_url: counterpartAvatarUrl,
+                    }}
+                  />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">{threadHeaderName}</p>
+                </div>
               </div>
             )}
           </div>
@@ -1563,6 +1589,22 @@ export function InboxPage() {
                     nothing. Geometry (inline send, pinned bottom) is slice A's
                     and is untouched. */}
                 <div data-testid="composer" className="rounded-xl border border-slate-200 bg-white p-1.5 pl-3">
+                  {/* V33-12: the recipient's face beside their name, above the field —
+                      the same HostAvatar + host shape as the header, so the two can
+                      never disagree about which person this thread is with. */}
+                  {counterpart.id !== '' && counterpart.name !== '' ? (
+                    <div className="flex items-center gap-2 px-1 pb-1">
+                      <HostAvatar
+                        size="sm"
+                        host={{
+                          id: counterpart.id,
+                          display_name: counterpart.name,
+                          avatar_url: counterpartAvatarUrl,
+                        }}
+                      />
+                      <p className="truncate text-xs font-medium text-slate-600">{counterpart.name}</p>
+                    </div>
+                  ) : null}
                   <div className="flex items-end gap-1">
                     <textarea
                       ref={composerRef}
