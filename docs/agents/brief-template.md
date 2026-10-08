@@ -36,6 +36,12 @@ cd /tmp/pd-wt/<slice-id> && npm install --silent 2>/dev/null || true
 
 All commands run inside `/tmp/pd-wt/<slice-id>`.
 
+📌 **A FRESH WORKTREE HAS NO `.env`.** `e2e-target-guard` resolves the e2e target from
+it, so `npm run guards` fails with *"Cannot read .env — the e2e target cannot be
+resolved"* until the untracked local file is present. `fleet-run` copies it for you; if
+you launched the worktree yourself, copy `~/Projects/playdate-app/.env` (and
+`e2e/.auth/`) in by hand. They stay untracked and are never staged.
+
 📌 **WORK ECONOMICALLY.** A fresh session's window is ~98k tokens and it goes fast.
 Read only what this brief names; **edit first, verify after**. If you open a fourth
 file that this brief does not name, stop and start editing.
