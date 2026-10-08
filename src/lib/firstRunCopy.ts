@@ -107,6 +107,34 @@ export const FIRST_RUN_COPY: FirstRunCopyByCard = {
 }
 
 /**
+ * V34-C — THE FINISH TRANSITION'S WORDS, on the same seam as every other word
+ * the run renders (the copy module is the UI's words as data, so the sentence a
+ * parent reads between the Finish tap and the feed is reviewable here rather
+ * than inline in JSX).
+ *
+ * WHAT THE PARENT IS ACTUALLY WAITING ON, because the sentence claims it: the
+ * tap writes the home zip + radius and then re-reads the session profile. That
+ * IS the profile the feed will be built from, so "Building your profile…" is
+ * the honest description — not a decorative verb, and not a claim about work
+ * the app is not doing.
+ *
+ * The punctuation is part of the contract: the house's other busy labels
+ * ("Saving…", "Checking your address…", "Loading…") all use the single U+2026,
+ * and the e2e spec locates this line by a stable substring.
+ *
+ * ⚠️ NOT `as const` — deliberately. `copy-field-consumption-guard` reads an
+ * object-literal export's SHAPE to judge whether every field is consumed, and
+ * an `as const` assertion is not the shape it resolves: the guard reports the
+ * const as "blind on it", which is a finding rather than a pass. The literal
+ * needs no widening (nothing indexes it dynamically), so the assertion would
+ * buy nothing and cost the instrument.
+ */
+export const FIRST_RUN_COMPLETION_COPY = {
+  /** The state's one line, rendered inside the `role="status"` region. */
+  message: 'Building your profile…',
+}
+
+/**
  * V28 slice 3c (fix 1) → slice 4a — the resume nudge's GENERIC line
  * (src/App.tsx).
  *
