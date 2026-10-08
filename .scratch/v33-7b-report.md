@@ -2,8 +2,16 @@
 
 SENTINEL: V33-7B-WINDOW-CONTROL-M6R3
 Status: DONE
-Commit: `36bf451` on branch `window-control-m6r3`
+Commit: `36bf451` (the slice) + `2aed972` (this report) on branch `window-control-m6r3`
 Worktree: `/tmp/pd-wt/window-control-m6r3`
+
+> **Resumed run.** This slice's work was already committed (`36bf451`) when the
+> session resumed; nothing was re-done. The resume **re-verified** the committed
+> state instead of trusting the earlier run: full `npm run verify` → exit 0,
+> `GUARDS: PASS`, `feed.test.ts` 436 passed, the three post specs 14 passed, and
+> the silent-drag defect **mutation-proved** by re-introducing the old handler
+> (3 tests red). Sections §5, §6 and the new §6b record that verification and the
+> corrections it made to this report.
 
 ---
 
@@ -130,7 +138,7 @@ server.host change (another session), not this slice" npm run verify
 The expected `steering-lint` red naming another lane's `docs/agents/*` **did not
 appear**; steering reported clean. No guard regressed.
 
-**e2e, private port 4215** (4210 and 4213/4214 were held by other lanes):
+**e2e, private port 4211** (4210, 4213 and 4218 were held by other lanes):
 
 | Spec | Result |
 |---|---|
@@ -140,24 +148,51 @@ appear**; steering reported clean. No guard regressed.
 | `post-again`, `comments`, `reactions` | passed |
 
 **One pre-existing failure, measured at base, not mine.**
-`rsvp-confirmation.e2e.ts:199` and `:598` time out waiting for
-`input[autocomplete="given-name"]` during signup. I stashed my changes and ran
-`:199` at the pristine base: it fails identically. Recorded, not fixed — outside
-this slice.
+`rsvp-confirmation.e2e.ts` — "an RSVP raises one lightbox, Escape closes it, and
+it never comes back for that yes" — fails on **`confetti pieces must stay inside
+the dialog`**, a confetti-animation geometry assertion with no connection to the
+start/end stepper. Re-measured on resume: the same test fails with my five files
+`git stash`ed at the pristine base, identically. (An earlier draft of this report
+named a *different* symptom — a `given-name` signup timeout at `:199`/`:598` —
+which the resumed run did not reproduce; the failure recorded here is the one
+actually measured at base.) Recorded, not fixed — outside this slice.
 
-**A trap worth recording.** My first e2e run "failed" on `window-section count 0`
+**A trap worth recording.** An early e2e run "failed" on `window-section count 0`
 because Playwright's `reuseExistingServer` found another lane's `vite preview`
 squatting on port 4210 (`/tmp/pd-wt/place-pills-p5l9`) and served **its** build.
 The port was logged free by `ss` moments earlier and taken by the time the run
-started. Fixed by moving to a port no other lane held. The repo's own config warns
-about exactly this; on a machine with five concurrent lanes it is the default
-outcome, not an edge case.
+started. Fixed by moving to a port no other lane held (4211). The repo's own
+config warns about exactly this; on a machine with five concurrent lanes it is
+the default outcome, not an edge case.
+
+## 6b. ⚠️ This worktree is being written by a SECOND lane
+
+The brief says this path is this slice's alone. It is not. On resume the working
+tree gained **another lane's uncommitted work** — `src/lib/onboardingCompletion.ts`
+(+ its sibling test), `e2e/onboarding-finish-transition.e2e.ts`, and edits to
+`scripts/guards/copy-field-consumption-guard.*`, `src/lib/firstRunCopy.ts`,
+`src/pages/OnboardingPage.tsx` (the onboarding-Finish slice, `muzkg290`).
+
+Nothing of theirs was lost: their files are present and complete, the guard
+script parses, and the whole tree typechecks. But **this slice's own work was
+already committed before the resume began** (`36bf451`), so no stash or reset was
+ever needed — and the one `git stash`/`pop` cycle the resume performed (to
+re-measure the `rsvp-confirmation` failure at base) briefly lifted their
+uncommitted files out of the tree and put them back. Net effect: zero loss, but
+it was avoidable, and **no further tree operations were made after that cycle.**
+
+Verified on resume, against `HEAD`:
+
+- the five slice files match `36bf451` **exactly** (`git diff HEAD` empty for them);
+- `src/lib/feed.test.ts` **436 passed**;
+- `e2e/auth.setup.ts` + `post-fast.e2e.ts` + `post-edit-delete.e2e.ts`
+  **14 passed**, exit 0.
 
 ## 7. Nothing else changed
 
-`git diff` is 5 files, all named in §3. The `/edit` and location-first branches
-render the same markup as before — verified by their specs passing and by
-inspection of the staged diff (the only removed markup lines are the old
-branch-1-only `endBlock`, folded into `whenBlock`).
+`git diff` against `0df3dfe` is 5 files, all named in §3. The `/edit` and
+location-first branches render the same markup as before — verified by their
+specs passing and by inspection of the staged diff (the only removed markup lines
+are the old branch-1-only `endBlock`, folded into `whenBlock`).
 
-Nothing was pushed. Branch `window-control-m6r3` at `36bf451`.
+Nothing was pushed. Branch `window-control-m6r3` at `2aed972`.
