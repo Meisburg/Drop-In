@@ -69,15 +69,17 @@ export interface RadiusViewer {
 export const RADIUS_MILES_OPTIONS = [1, 2, 5, 10, 20, 35] as const
 
 /**
- * The default radius (pinned: 1 mile) — V32 v32-3 (A3), founder decision Q3.
+ * The default radius (pinned: 5 miles) — V35-C, founder ruling: the browse
+ * default returns to five miles, deliberately reversing migration 0066's
+ * narrowing (5 → 1).
  *
  * This is the FALLBACK when a profile row stores nothing, and the value a
- * brand-new parent starts at (the DB column default agrees — migration 0066).
- * It is NOT retroactive: a stored radius always wins at the read site
- * (`profile.radius_miles ?? DEFAULT_RADIUS_MILES`), so a parent who already
- * chose 35 still sees 35.
+ * brand-new parent starts at (the DB column default agrees — migration 0069
+ * reverses 0066 back to 5). It is NOT retroactive: a stored radius always
+ * wins at the read site (`profile.radius_miles ?? DEFAULT_RADIUS_MILES`), so a
+ * parent who already chose 35 still sees 35.
  */
-export const DEFAULT_RADIUS_MILES = 1
+export const DEFAULT_RADIUS_MILES = 5
 
 /** The DB backstop bounds (migration 0045 CHECK: between 1 and 35). */
 export const RADIUS_MIN_MILES = 1
@@ -2594,8 +2596,8 @@ export function emptyRadiusBeyondCopy(count: number): string | null {
 
 /**
  * The escape hatches an empty-radius state offers (V8 ticket 02, pure +
- * unit-tested; V11 ticket 01 added the narrow escape): "Back to 1 mile"
- * (only when the current radius is wider than the 1-mile default),
+ * unit-tested; V11 ticket 01 added the narrow escape): "Back to 5 miles"
+ * (only when the current radius is wider than the 5-mile default),
  * "Widen to 20 miles", and "See everything in Seattle" (35 mi, the max).
  *
  * All three call the EXISTING `updateHomeZipRadius` write path — this seam
@@ -2604,7 +2606,7 @@ export function emptyRadiusBeyondCopy(count: number): string | null {
  * A candidate equal to the viewer's current radius is dropped: at 20 miles,
  * "Widen to 20 miles" would be a no-op button, which is just a second dead
  * end wearing a control's clothes. The narrow escape is its mirror: it is
- * offered only strictly BETWEEN the default and the max (at 1 you are already
+ * offered only strictly BETWEEN the default and the max (at 5 you are already
  * there; at the 35-mile max the list is empty and the empty state is honestly
  * terminal — the radius ceiling is the whole discovery surface, and
  * narrowing can never surface what 35 already did not). The "Post a
