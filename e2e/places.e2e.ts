@@ -760,7 +760,7 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   }
   const panelDetails = info.getByTestId('marker-details')
   await expect(panelDetails).toBeVisible()
-  await expect(panelDetails.getAttribute('href')).resolves.toMatch(/^\/place\//)
+  await expect(panelDetails.getAttribute('href')).resolves.toMatch(/^\/place\/.+\/details$/)
 
   // "Start a drop-in" lands on /new with the place pre-filled — the SAME router-
   // state seam the place page's "Start a drop-in here" uses (V9 ticket 03's
@@ -902,8 +902,8 @@ test('a marker\'s tooltip is hit-testable, and tapping opens the place panel (V2
   await expect(info.getByTestId('host-here')).toBeVisible()
 
   // …and the tap MEANT one thing: it selected the place rather than navigating.
-  // (The panel's own `marker-details` link is the way to the place page, so a
-  // tap that had also followed it would have left /browse entirely.)
+  // (The panel's own `marker-details` link is the way to the place's research
+  // page, so a tap that had also followed it would have left /browse entirely.)
   await expect(page).toHaveURL(/\/browse/)
 })
 
@@ -3084,7 +3084,8 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
       /^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2} · .+–.+$/,
     )
     // The link is NOT a second "Details" for the place: the place's own door is
-    // a different control with a different destination.
+    // a different control with a different destination (the research page, not
+    // the event's /playdate/ route).
     expect(tapped.href, 'the event link must never be a /place/ link').not.toContain('/place/')
 
     // ----------------------------------------------------------------
@@ -3104,8 +3105,11 @@ test('a tapped feed pin names the drop-in happening there, and says when it stan
     // note).
     await expect(panel.getByTestId('host-here')).toBeVisible()
 
+    // muzk0bae: the event link and the place's Details door are now mutually
+    // exclusive — when the event link is shown, the place link is suppressed.
     const eventLink = panel.getByTestId('pin-event-link')
     await expect(eventLink).toHaveAccessibleName('Drop-in details')
+    await expect(panel.getByTestId('marker-details')).toHaveCount(0)
     await eventLink.focus()
     await expect(eventLink).toBeFocused()
     const linkBox = await eventLink.boundingBox()
