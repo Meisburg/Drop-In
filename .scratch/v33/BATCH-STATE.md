@@ -391,3 +391,31 @@ on the first cloud lane the rollover produces).
 
 **The five annotations are two changes and one design pass** — do not brief them
 separately: (1) delete the modal, (2) change the default sort, (3) the layout pass.
+
+---
+
+## 12 — browse CORRECTION applied (2026-10-08 early AM)
+
+`.scratch/v33/RULING-browse-correction.md` supersedes `plan-browse.md` §2/§3, and
+that plan is now **corrected in place** (both sections plus the acceptance-criteria
+numbering). What the founder rejected at prototype review:
+
+1. **The three labelled tiers** — an invention of mine. **One flat pill row**, no
+   labels, no stacking, scrolls sideways, in the order
+   `Open now · Playground · Indoor play · Café · Museum · Saved · More kinds`.
+   The ORDER was the useful part; the structure was not.
+2. **A Map button above the list** — it already exists as the floating toggle that
+   appears on scroll (`PlaceDirectory.tsx:46`). **No second map entry point.**
+
+**Everything else stands:** the Filters modal is deleted, `Top rated` leaves the chip
+row, the default sort becomes **Best first**, the search expands to the full row
+while typing, and the tie-break (**rating desc → review count desc → name**) stays —
+230 of 234 places have no reviews, so without it the list reshuffles between renders.
+
+**The correction makes the slice SMALLER, not larger**: no new components, no labels,
+one control removed. **If the slice grows, something is being rebuilt that should be
+deleted.**
+
+**The prototype is BUILT AND CORRECTED**:
+`.scratch/v33/prototypes/browse/browse.html` + `browse-390.png` + `browse-1280.png`
+(06:28). It is the **visual reference for the slice — do not rebuild it.**

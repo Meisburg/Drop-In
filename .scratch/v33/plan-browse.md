@@ -22,25 +22,32 @@ modal outright and demotes "Top rated" from a filter to the ordering — because
 
 ## 2 — The layout, top to bottom
 
+> ⚠️ **CORRECTED 2026-10-08** by the founder's prototype review
+> (`.scratch/v33/RULING-browse-correction.md`), which **supersedes §2 and §3 as
+> first written**. Two things were rejected: the three labelled tiers, and a Map
+> button above the list. **The correction makes the change smaller, not larger** —
+> no new components, no labels, one control removed.
+
 ```
 ┌──────────────────────────────────────────────┐
-│  [ Search places…                        ]   │  ← full width, expands to the
-│                                              │    whole row while typing
+│  [ Search places…                        ]   │  ← expands while typing
 ├──────────────────────────────────────────────┤
-│  WHEN   [ Open now ]                         │  tier 1
-│  KIND   [ Playground ][ Indoor play ][ Café ]│  tier 2   … [ More kinds ]
-│         [ Museum ]                           │
-│  MINE   [ ♥ Saved ]                          │  tier 3
+│  [Open now][Playground][Indoor play][Café]   │  ← ONE row, no labels,
+│  [Museum][♥ Saved][More kinds]               │    scrolls sideways
 ├──────────────────────────────────────────────┤
-│  117 places ·  [ Best first ▾ ]  [ Map ]     │  ← SORT above the list, visible
+│  117 places ·  [ Best first ▾ ]              │  ← SORT above the list
 ├──────────────────────────────────────────────┤
-│  ▸ row                                       │
-│  ▸ row                                       │
-└──────────────────────────────────────────────┘
+│  ▸ rows…                                     │  ← the floating map toggle
+└──────────────────────────────────────────────┘    appears on scroll (V27)
 ```
 
 **Defaults on load:** `Open now` **off**, kind **none**, sort **Best first**
 (top-rated). Not A–Z.
+
+**⚠️ Do not add a map entry point above the list.** It already exists: the floating
+map toggle appears as the page scrolls (`PlaceDirectory.tsx:46` — *"V27: how far
+ the page scrolls before the floating map toggle appears"*). A second door would
+duplicate a control that is already there.
 
 ### Why the sort is a control above the list, not a chip
 
@@ -53,20 +60,36 @@ minutes earlier.
 
 ## 3 — The chip order, justified tier by tier
 
-The old row was a flat pile of three different *kinds* of question — `Saved` (my
-relationship to a place), `Open now` (time), `Playground / Indoor play / Museum` (sort
-of place). Flatness is why it read as hodgepodge: nothing signalled which question
-came first.
+**ONE flat horizontal row of pills. No labels. No stacked rows.** The founder
+rejected the labelled tiers outright — *"all those pills could be all together…
+why do they need to be different rows?"* — and supplied TripAdvisor's category row
+(`Essentials · Travelers' Choice · Museums · Outdoors · Art`) as the reference:
+one row, no captions, scrolls sideways.
 
-| Tier | Question | Controls | Why it sits here |
-|---|---|---|---|
-| **1. When** | *Can I go right now?* | `Open now` | It is the parent's **hardest constraint** and it is binary. It eliminates the most rows per tap, and on a phone with a toddler in the car it is the only question with a deadline. Nothing else can be answered before it. |
-| **2. What kind** | *What sort of place?* | `Playground` · `Indoor play` · `Museum` · `Café` (… `More kinds`) | Only meaningful **after** the time constraint: an indoor playground that closed an hour ago is not an option. Four, not eight, because these are the four a parent names out loud; the rest stay reachable behind `More kinds` rather than competing for the same glance. |
-| **3. Mine** | *What have I already liked?* | `Saved` | The **narrowest** question — it intersects with everything above it and is the last thing a parent applies, usually after they have already seen something they like once. Putting it last is the point: it is a memory aid, not a filter. |
+**The ORDER is kept; the STRUCTURE is dropped.** The order in the row:
 
-Each tier is **labelled** (`When` / `Kind` / `Mine`) and separated by space, so the
-grouping is stated rather than inferred. Within a tier the controls are one row of
-pills that scrolls sideways at 390px; between tiers the eye gets a gap.
+```
+Open now · Playground · Indoor play · Café · Museum · Saved · More kinds
+```
+
+Why this order still holds without tiers:
+
+- **`Open now` first** — the only question with a deadline, so it leads the row.
+- **The kinds next** (`Playground` · `Indoor play` · `Café` · `Museum`) — the four a
+  parent names out loud, in the order one would think of them for a toddler: a park,
+  then somewhere indoors, then a coffee while they play, then something to look at.
+  The remaining kinds stay reachable behind **`More kinds`** rather than competing
+  for the same glance.
+- **`Saved` near the end** — the narrowest question, a memory aid rather than a
+  filter; it intersects with everything to its left.
+- **`More kinds` last** — an overflow door, never a destination.
+
+One row of pills that **scrolls sideways at 390px** without widening the page.
+
+**Deleted: the Filters modal and its trigger** (`PlaceDirectory.tsx:1529` and the
+`places-filter-*` entry point). Its contents are the pill row above. **`Top rated`
+leaves the chip row entirely** and becomes the sort — the one control that was in
+two places (`:994` chip and `:1529` option) now exists once.
 
 **Deleted: the Filters modal and its trigger** (`PlaceDirectory.tsx:1529` and the
 `places-filter-*` entry point). Its contents are the tier rows above. **`Top rated`
@@ -89,21 +112,25 @@ two places (`:994` chip and `:1529` option) now exists once.
 
 1. `/browse` renders **no** Filters trigger and **no** filter modal (`places-filter-*`
    absent — its own assertion, an absence claim that waits for paint).
-2. The three tier labels and their controls render in the order above; the tier-1
-   control is the first interactive element after the search field.
-3. The sort control renders **above the list**, offering at least `Best first` and
+2. The pills render in **one** row, with **no tier labels**, in the order above;
+   `Open now` is the first interactive element after the search field.
+3. **No second map entry point**: the page renders no map control above the list
+   (the floating toggle appearing on scroll is the only one — assert its absence
+   above the list, not its absence everywhere).
+4. The sort control renders **above the list**, offering at least `Best first` and
    `A–Z`; `Best first` is selected on load, and changing it reorders the rows
    **without changing which rows are shown** (a sort, never a filter — asserted by
    comparing the row count and the row set).
-4. `Best first` is stable across renders on tied ratings (the same query twice
+5. `Best first` is stable across renders on tied ratings (the same query twice
    returns the same order) — the tie-break assertion.
-5. The search field expands to the full row while focused and typing, and returns
+6. The search field expands to the full row while focused and typing, and returns
    when cleared — asserted by width, not by DOM order.
-6. Every chip keeps `aria-pressed` and a ≥44px target; each tier row side-scrolls
-   at 390px without widening the page (`documentElement.scrollWidth <= clientWidth + 1`).
-7. `Saved` still reflects the follow/save read and still renders nothing extra for a
+7. Every pill keeps `aria-pressed` and a ≥44px target; the **one** pill row
+   side-scrolls at 390px without widening the page
+   (`documentElement.scrollWidth <= clientWidth + 1`).
+8. `Saved` still reflects the follow/save read and still renders nothing extra for a
    signed-out viewer.
-8. Every spec that located the deleted controls changes **in the same diff**
+9. Every spec that located the deleted controls changes **in the same diff**
    (`scripts/guards/stale-locator-guard.mjs`), and `/browse`'s route stays in the
    playtest `routes.json` set.
 
@@ -117,8 +144,12 @@ shadows, the indigo/green accents, the existing pill anatomy, ≥44px targets,
 
 It must be built from the real component vocabulary rather than invented: the pill
 and chip shapes, the row anatomy, and the type scale all come from the existing
-directory. It shows: the expanded-search state, the three labelled tiers, the sort
-above the list, and the list sorted Best-first with its tie-break visible.
+directory. It shows: the expanded-search state, the **one flat pill row**, the sort above the
+list, and the list sorted Best-first with its tie-break visible.
+
+✅ **BUILT AND CORRECTED** — `.scratch/v33/prototypes/browse/browse.html` plus
+`browse-390.png` and `browse-1280.png` (2026-10-08 06:28). **That is the visual
+reference for the slice; do not rebuild it.**
 
 **One recommendation, in one paragraph, at the top of the prototype's own page**:
 what changes, what it costs, and what he should look at first. No menu of options.
