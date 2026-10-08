@@ -342,6 +342,20 @@ export const INLINE_REVIEW_LIMIT = 3
 export interface ReviewWithAuthor extends Review {
   /** The author's `profiles.display_name`; '' when the profile row carries none. */
   authorDisplayName: string
+  /**
+   * The author's `profiles.avatar_url`, or null when they have no photo.
+   *
+   * V35 slice A (`muzk8c1g`): the reviewer row draws the author's face in a
+   * circle LEFT of their name, so the read has to carry the photo. Null means
+   * "no photo" and the row renders the initial placeholder.
+   *
+   * ⚠️ THIS IS THE ONLY FIELD THE SLICE ADDED TO THE READ. The name is a link to
+   * `/u/<handle>`, and that route needs no new column: `getProfileByHandle`
+   * resolves a handle by matching `profiles.display_name`
+   * (`src/lib/db.ts` — `.eq('display_name', handle)`), so `authorDisplayName`
+   * IS the handle. Nothing new is fetched for the link.
+   */
+  authorAvatarUrl: string | null
 }
 
 /**
