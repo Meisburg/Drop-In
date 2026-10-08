@@ -197,3 +197,31 @@ session's context to rediscover).
 surveying, and — when a session has already built the work — send a **commit-only**
 brief that runs two commands and commits (that is the only shape that completed in
 under three minutes this batch).
+
+## 9 — UPDATE (later the same session)
+
+**HEAD is now `1f9914c`.** Shipped since §3 was written: **v33-13** (`964d066`
+confetti + mark on the Going confirmation, `ocr` not run — one session's work
+committed by a commit-only pass, gate 92 files / 2697 tests, guards PASS) and
+**v33-5** (`1f9914c` the card counts parents and kids and says the ages once;
+gate 92 / 2705, guards PASS, suppression mutation-proved).
+
+**Pending annotations: 24 → 18.** Newly resolved with a summary + sha:
+`muyejzaa` (v33-13, `964d066`), `muyed1t6` (v33-5, `1f9914c`).
+
+**Still open, in priority order:** v33-4, v33-7b, v33-12 (needs a wording
+ruling), v33-8 / v33-9 / v33-10 / v33-11 (need rulings, `plan.md` §5). Briefs
+for v33-4 and v33-7b are **not written** — their facts are in §8 above; v33-5's
+brief is at `.scratch/v33/briefs/v33-5-brief.md` and is now a worked example of
+the shape that completes in one session.
+
+**What worked:** a brief that names files AND regions, forbids surveying, and
+states the expected gate shape. v33-5 finished in one 81-step session; the
+commit-only brief finished in 13 steps. **What failed:** any dispatch whose brief
+left the builder to discover context — two of those died with zero edits.
+
+**Un-run review lane:** `v33-13` has had **no `ocr` review** (the sessions kept
+dying). Run
+`ocr review --from 40b1f06 --to 964d066 --format json --output .scratch/ocr-v33-13.json`
+when a lane is free. v33-6 and v33-7a also have no `ocr` pass yet
+(`091aad8`, `aebdb84`).

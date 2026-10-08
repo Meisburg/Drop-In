@@ -523,3 +523,7 @@ the Going confirmation.
     V33: toolbar resolved 4 annotations with shas (muye8eek, muyfmog8, muyfsjwv, muyfsxah); 20 remain pending
     V33: gate EXTERNAL red — another lane's untracked docs/agents/{parallel-development,compute-split,fleet-capacity}.md
          are unreachable from AGENTS.md, so steering-lint fails; isolated (same gate exited 0 at 14:44). Not ours.
+    V33: v33-13 complete (964d066) — confetti + the drop-in mark on the Going confirmation only
+    V33: v33-5 complete (1f9914c) — the card counts parents and kids; one age range, mutation-proved
+    V33: toolbar resolved 6 annotations with shas; 18 remain pending
+    V33: ocr NOT yet run on v33-6 (091aad8), v33-7a (aebdb84), v33-13 (964d066) — recorded, not hidden
