@@ -2,7 +2,9 @@
 
 SENTINEL: V33-7B-WINDOW-CONTROL-M6R3
 Status: DONE
-Commit: `36bf451` (the slice) + `2aed972` (this report) on branch `window-control-m6r3`
+Commit: `36bf451` (the slice) on branch `window-control-m6r3`; the report and its
+verification passes are `2aed972`, `bab9b5a`, `5478b44` and the commit carrying
+this section
 Worktree: `/tmp/pd-wt/window-control-m6r3`
 
 > **Resumed run.** This slice's work was already committed (`36bf451`) when the
@@ -244,3 +246,42 @@ e2e/post-fast.e2e.ts e2e/post-edit-delete.e2e.ts` on port 4211, plus its own
 `onb-finish-transition` run). That is the mechanism by which the foreign edits
 appeared and kept re-appearing. Their work is intact and uncommitted; nothing of
 theirs was reverted.
+
+## 6d. Third resume — re-verified again at the current HEAD, nothing re-done
+
+The slice was already fully committed when this session resumed, so **no work was
+re-done**; this pass re-ran the checks against the committed tree to confirm the
+green still holds at `5478b44`, and to confirm for itself what §6c reported.
+
+**A clean checkout was again required, and for the same reason.** The shared
+worktree still carries the onboarding-Finish lane's uncommitted edits
+(`firstRunCopy.ts`, `OnboardingPage.tsx`, both `copy-field-consumption-guard`
+files, plus untracked `onboardingCompletion.*` / `onboarding-finish-transition`).
+Running the gate there would measure their half-finished work, not this slice —
+§6c's `GUARDS: FAIL` exactly. So this run used a throwaway detached worktree at
+`5478b44` and removed it afterwards.
+
+```
+verify (clean checkout, detached at 5478b44) → exit 0
+  build ✓, typecheck:e2e ✓, 2715 tests / 92 files ✓, oxlint 0 errors
+  (88 pre-existing warnings), a11y:focus ✓, steering-lint PASS, GUARDS: PASS
+```
+
+**e2e, private port 4216** (`auth.setup` + both specs): **14 passed, exit 0** —
+post-edit-delete 7/7, post-fast 7/7 including the new v33-7b spec. The two
+behavioural proofs, quoted from the run's own log rather than restated:
+
+```
+[e2e v33-7a] live row: start_at=2026-10-08T17:30:00+00:00 ends_at=2026-10-08T18:00:00+00:00 span=30min
+[e2e v33-7b] mount 630→690 (60min); after a start step 660→690 (end UNMOVED, 30min, no note);
+             after stepping the start into the end 690→720 (30min, note shown)
+```
+
+That is AC 3 (a 30-minute window still posts and reads its exact span back) and
+AC 2 (an ordinary start step leaves the END byte-identical and shows no note; a
+collision keeps the 30-minute minimum and **shows the note**) in one line each.
+
+**Port hygiene:** 4216 verified free before the run and released after
+(`ss -ltn` clean); the temporary worktree was removed with
+`git worktree remove --force`. Nothing was pushed.
+
