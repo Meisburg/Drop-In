@@ -146,3 +146,54 @@ finding, confirm it is only these three, and record the isolation.
    report.
 5. **`.scratch/v33-0-report.md` was committed by the builder** (the `.scratch`
    convention is normally untracked). Harmless and durable; left as it is.
+
+---
+
+## 8 — Facts already gathered for the briefs not yet written
+
+Measured by the orchestrator; **use them instead of re-deriving** (each costs a
+session's context to rediscover).
+
+### v33-5 — the card counts parents and kids, one age range (`muyed1t6`)
+- `src/components/DropInCard.tsx:517-526` renders `card-age-range` — the HOST's
+  kids' ages ("Ages 3–6"), above the place line.
+- `:573-626` is the going line: circles, `+N`, then `goingLine.label`.
+- `buildGoingLine` `src/lib/feed.ts:1531` → `goingCountsLabel` `:1567-1578`
+  already renders **`3 going · 2 kids (ages 2–5)`** — the counts and the
+  attendee band exist; the word "going" is the ambiguous one (V6's own note), and
+  the card shows **two age signals** at once, which is what he is pointing at.
+- Pin: the counts name **parents** and **kids**; an age range renders **exactly
+  once** (suppress `card-age-range` when the going line renders; keep it when
+  nobody is going, the only age signal a fresh post has); the decision is a `lib/`
+  seam with a sibling test.
+- Specs that pin the old strings: `e2e/feed-ages.e2e.ts`, `e2e/card-circles.e2e.ts`.
+
+### v33-4 — the drop-in page says where the place is (`muye9a6l`)
+- The place paragraph is `src/pages/PlaydateDetailPage.tsx:2355-2400`: the name is
+  already a `Link` to `placePath(detail.place_id)` for a directory place, a Maps
+  `<a>` for free text, plain text otherwise; the neighbourhood is appended.
+- The rating line sits under it (`:2400-2415`).
+- `e2e/post-location.e2e.ts:568-570` pins the paragraph's **exact text** — it must
+  change in the same diff.
+- Ruling: **inline the place's own facts, then the link** (his own "use your best
+  judgment"): reuse the directory row's trust-line vocabulary, add nothing that
+  needs a new read, render nothing when there is no `place_id`.
+
+### v33-7b — the window CONTROL (`muyefjzq`, the polish half)
+- `src/components/PlaydateFormFields.tsx`: `whenBlock` `:545`, `endBlock`
+  `:612-636`, `durationBlock` `:590`. **Branch 1 (`/new`) only**; branches 2/3
+  (`/edit`, the location-first page) keep `durationBlock` byte-identical.
+- `stepTimeMinutes` (feed.ts) is the existing pure stepper; the window rule is
+  `(end − start) mod 1440`, which v33-7a already made unconstrained on the grid.
+- Specs pin `end-time-label`, the absence of "Ends …" on `/new`, and the steppers.
+- Pin: one control reading as a **window**; stepping one value never silently
+  moves the other; the single remaining coupling is `end > start`, and when it
+  forces a move the UI says so.
+
+### Operating recipe for the builder lane (repeat it in every brief)
+`herdr pane split` + `herdr pane run <pane> "dsh tui"`, wait ~25 s, then
+`herdr_dispatch_slice(pane_id, brief, sentinel, report_lines, timeout_ms)`.
+**Write the brief for a ~98k window**: name the files and regions, forbid
+surveying, and — when a session has already built the work — send a **commit-only**
+brief that runs two commands and commits (that is the only shape that completed in
+under three minutes this batch).
