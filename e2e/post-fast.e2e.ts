@@ -82,7 +82,10 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import {
+  computeEndIso,
+  computeStartIso,
   defaultStartDateIso,
+  localDayKey,
   nextSlotMinutes,
   suggestedDurationMinutes,
 } from '../src/lib/feed'
@@ -526,6 +529,85 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   const whenText = (await card.getByTestId('card-when').innerText()).replace(/\s+/g, ' ').trim()
   const [cardStart, cardEnd] = parseWindowLine(whenText)
   expect([cardStart, cardEnd]).toEqual([summaryStart, summaryEnd])
+})
+
+/**
+ * v33-7a — the founder's "I don't want it to be telling people it has to be an
+ * hour" (annotation muyefjzq), proven end to end: a 30-minute window is
+ * postable from /new's own End stepper, and the row in the database carries
+ * that exact span.
+ *
+ * The defect this spec pins: the End stepper writes `durationMinutes =
+ * (end − start) mod 1440` (PlaydateFormFields' endBlock), so one step of the
+ * End control yields a 30-minute window — reachable from the app's own
+ * controls, yet `validatePlaydateForm` refused it with "Pick a duration."
+ * because its gate was chip membership (`isDuration`). The fix swaps the gate
+ * for `isPostableDuration` (positive, on the 30-minute grid, up to 24h); this
+ * spec proves the round trip: the stepper shows the 30-minute window, the
+ * submit lands, and the LIVE ROW reads back `start_at` / `ends_at` exactly 30
+ * minutes apart.
+ */
+test('a 30-minute window posts and the live row carries the exact span (v33-7a)', async ({ page }) => {
+  // The marker's seeded place — the same directory row post-fast uses.
+  const pickedAddress = await readPlaceAddress(PLACE_NAME)
+  expect(pickedAddress, `the seeded place "${PLACE_NAME}" must have an address`).not.toBe('')
+  const title = generatedTitle(PLACE_NAME)
+
+  await page.goto('/new')
+  await settleOnRoute(page, '/new')
+
+  // (a) Pick the place (one tap, as the cold-post test does).
+  const placeInput = page.getByPlaceholder(PLACE_PLACEHOLDER)
+  await placeInput.fill(PLACE_NAME)
+  const suggestion = page.getByTestId('place-suggestions').getByText(PLACE_NAME, { exact: true })
+  await expect(suggestion).toBeVisible()
+  await suggestion.click()
+  await expect(placeInput).toHaveValue(PLACE_NAME)
+
+  // (b) Read the mounted window off the two steppers (the visible "When"
+  //     section — V11 t05 / V13 t02: the steppers are where the window shows).
+  const readStepper = async (testid: string): Promise<string> =>
+    (await page.getByTestId(testid).innerText()).replace(/\s+/g, ' ').trim()
+  const shownStart = parseAnyTimeLabel(await readStepper('start-time-label'))
+  const shownEndBefore = parseAnyTimeLabel(await readStepper('end-time-label'))
+  // The mount auto-picks "until the next hour" (V12 t02) — a 60-minute window.
+  expect(wrapMinutes(shownEndBefore - shownStart)).toBe(60)
+
+  // (c) Step the End stepper ONCE EARLIER: the 30-minute window. This is the
+  //     reachable-but-refused value the slice fixes — before v33-7a, the
+  //     submit below would have failed with "Pick a duration."
+  await page.getByRole('button', { name: 'Earlier end time' }).click()
+  const shownEnd = parseAnyTimeLabel(await readStepper('end-time-label'))
+  expect(wrapMinutes(shownEnd - shownStart), 'one earlier step must yield the 30-minute window').toBe(30)
+
+  // (d) Post. The form's validator now accepts the 30-minute duration
+  //     (isPostableDuration), so the submit lands.
+  await page.getByRole('button', { name: 'Post drop-in' }).click()
+  await page.waitForURL('/')
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+
+  // (e) THE LIVE ROW: read start_at / ends_at back from the database and
+  //     prove the exact 30-minute span. The expected instants are computed
+  //     from the SAME values the form wrote (the row's own day + the
+  //     stepper's start + 30), so the comparison is exact, not approximate.
+  //     The DB stores timestamptz as `+00:00` (not `Z`), so compare through
+  //     Date.parse, not string equality.
+  const row = await readMarkerPost(title)
+  expect(row, 'the posted drop-in must exist in the database').not.toBeNull()
+  const rowDay = localDayKey(row?.starts_at ?? '')
+  const expectedStartIso = computeStartIso(rowDay, shownStart)
+  const expectedEndIso = computeEndIso(rowDay, shownStart, 30)
+  console.log(
+    `[e2e v33-7a] live row: start_at=${row?.starts_at} ends_at=${row?.ends_at} ` +
+      `span=${Math.round((Date.parse(row?.ends_at ?? '') - Date.parse(row?.starts_at ?? '')) / 60_000)}min`,
+  )
+  expect(Date.parse(row?.starts_at ?? ''), 'the row\'s start_at must match the stepper\'s start').toBe(
+    Date.parse(expectedStartIso),
+  )
+  expect(Date.parse(row?.ends_at ?? ''), 'the row\'s ends_at must be start + 30 minutes').toBe(
+    Date.parse(expectedEndIso),
+  )
+  expect(Date.parse(row?.ends_at ?? '') - Date.parse(row?.starts_at ?? '')).toBe(30 * 60_000)
 })
 
 test('typing over a picked place drops the address it came with — and a typed address survives', async ({

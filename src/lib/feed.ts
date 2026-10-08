@@ -1007,7 +1007,7 @@ export function validatePlaydateForm(values: PlaydateFormValues): PlaydateFormEr
   if (!isSteppedTime(values.startMinutes)) {
     errors.startMinutes = 'Pick a start time.'
   }
-  if (!isDuration(values.durationMinutes)) {
+  if (!isPostableDuration(values.durationMinutes)) {
     errors.durationMinutes = 'Pick a duration.'
   }
   return errors
@@ -1078,6 +1078,32 @@ export function isSteppedTime(minutes: number): boolean {
 /** True when `minutes` is one of the duration chips. */
 export function isDuration(minutes: number): boolean {
   return (PLAYDATE_DURATIONS_MINUTES as readonly number[]).includes(minutes)
+}
+
+/**
+ * True when `minutes` is a postable window length: a positive whole number of
+ * minutes on the form's own step grid (TIME_STEP_MINUTES = 30), up to 24h.
+ *
+ * WHY it exists (v33-7a, founder-requested behaviour change — "I don't want it
+ * to be telling people it has to be an hour", annotation muyefjzq): /new's End
+ * stepper writes `(end − start) mod 1440`, so a parent who steps it once gets a
+ * 30-minute window — reachable from the app's own controls, yet the validator
+ * refused it with "Pick a duration." because `isDuration` is chip membership.
+ * The validation and the parse/snap gates use THIS predicate; a stored
+ * 30-minute window must read back as 30, not 0.
+ *
+ * How it differs from `isDuration`: that one is CHIP MEMBERSHIP over
+ * PLAYDATE_DURATIONS_MINUTES ([60, 90, 120, 180]) — exactly what the chip row's
+ * selected state still needs, and it stays untouched. This one accepts any
+ * multiple of 30 in (0, 1440].
+ */
+export function isPostableDuration(minutes: number): boolean {
+  return (
+    Number.isInteger(minutes) &&
+    minutes > 0 &&
+    minutes % TIME_STEP_MINUTES === 0 &&
+    minutes <= 24 * 60
+  )
 }
 
 /**
@@ -1226,10 +1252,11 @@ export function computeEndIso(
  *   grid (the stepper is the only time entry); a legacy off-grid row stays
  *   off-grid in the field and the shared validator asks for a grid time
  *   before it can be saved, rather than the form silently moving it.
- * - the duration is the exact end − start when it is one of the pinned
- *   chips (1h / 1.5h / 2h / 3h), and 0 ("none picked yet") otherwise: the
- *   chip set is a pinned contract, so no fifth chip is invented to match a
- *   stored duration, and the validator asks for a pick.
+ * - the duration is the exact end − start when it is postable (a positive
+ *   whole number of minutes on the form's own 30-minute grid, up to 24h —
+ *   `isPostableDuration`, v33-7a), and 0 ("none picked yet") otherwise: a
+ *   stored 30-minute window reads back as 30, not 0, so the edit form never
+ *   asks the parent to re-pick a length they already had.
  *
  * `ageHint` is always '' — the edit form does not render or write the age
  * hint (the /new field went away in V3 ticket 09), and the update payload
@@ -1256,7 +1283,7 @@ export function playdateFormValuesFromPost(post: {
     neighborhoodId: post.neighborhood_id ?? '',
     startDate: localDayKey(start.toISOString()),
     startMinutes: start.getHours() * 60 + start.getMinutes(),
-    durationMinutes: isDuration(durationMinutes) ? durationMinutes : 0,
+    durationMinutes: isPostableDuration(durationMinutes) ? durationMinutes : 0,
     ageHint: '',
     details: post.details ?? '',
   }
@@ -1403,9 +1430,10 @@ export function toDuplicatePrefill(
   /** V12 ticket 04: the source post's linked kids (feed.playdateKidsKidIds). */
   kidIds: string[],
 ): DuplicatePrefill {
-  // The span as its duration, snapped to the form's own options — a legacy
-  // post with an off-grid span yields 0, which /new reads as "parent picks"
-  // (the auto value stands in; the form never opens on a 0 duration).
+  // The span as its duration, snapped to the form's own step grid (v33-7a:
+  // isPostableDuration) — a legacy post with an off-grid span yields 0, which
+  // /new reads as "parent picks" (the auto value stands in; the form never
+  // opens on a 0 duration).
   const durationRaw = Math.round((Date.parse(post.ends_at) - Date.parse(post.starts_at)) / 60_000)
   return {
     title: post.title,
@@ -1414,7 +1442,7 @@ export function toDuplicatePrefill(
     ageHint: post.age_hint ?? '',
     details: post.details ?? '',
     startsAt: post.starts_at,
-    durationMinutes: isDuration(durationRaw) ? durationRaw : 0,
+    durationMinutes: isPostableDuration(durationRaw) ? durationRaw : 0,
     kidIds,
   }
 }
@@ -3238,7 +3266,7 @@ export function clonedStart(
 export function cloneLastPost(last: LastOwnPlaydate, nowIso: string): CloneLastPostResult {
   const { startDate, startMinutes } = clonedStart(last.starts_at, nowIso)
   const durationRaw = Math.round((Date.parse(last.ends_at) - Date.parse(last.starts_at)) / 60_000)
-  const durationMinutes = isDuration(durationRaw) ? durationRaw : 0
+  const durationMinutes = isPostableDuration(durationRaw) ? durationRaw : 0
   const title = last.title.trim()
   return {
     values: {

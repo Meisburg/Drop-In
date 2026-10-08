@@ -32,7 +32,7 @@ import {
   defaultStartDateIso,
   durationChipForUntilNextHour,
   formatStartDayLabel,
-  isDuration,
+  isPostableDuration,
   kidLabel,
   nextSlotMinutes,
   pastPostStatusLabel,
@@ -160,8 +160,9 @@ function initialValues(
  *   same slot again when it is still ahead today, otherwise tomorrow at that
  *   time. It is still the parent's to change — it is the ONE required input
  *   the ticket leaves.
- * - the DURATION carries the source post's only when it is one of the form's
- *   own options (`isDuration`); a legacy off-grid span (0) falls back to the
+ * - the DURATION carries the source post's only when it is postable (a positive
+ *   whole number of minutes on the form's own 30-minute grid, up to 24h —
+ *   `isPostableDuration`, v33-7a); a legacy off-grid span (0) falls back to the
  *   base's auto value, so a 0 never locks in (the applyLastPost rule).
  * - the PARENT'S WORDS pass through as-is (title, place, neighborhood, age
  *   hint, details).
@@ -181,7 +182,7 @@ function duplicateFormValues(
     details: duplicate.details,
     startDate,
     startMinutes,
-    durationMinutes: isDuration(duplicate.durationMinutes)
+    durationMinutes: isPostableDuration(duplicate.durationMinutes)
       ? duplicate.durationMinutes
       : base.durationMinutes,
   }
@@ -503,7 +504,7 @@ export function NewPlaydatePage({
     * the auto derivation stays armed).
     */
    const [durationOverridden, setDurationOverridden] = useState(
-     () => duplicate !== null && isDuration(duplicate.durationMinutes),
+     () => duplicate !== null && isPostableDuration(duplicate.durationMinutes),
    )
   // The session's user id (the kids table's profile_id — the same key
   // ProfilePage's kids load uses).

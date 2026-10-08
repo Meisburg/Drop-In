@@ -52,6 +52,7 @@ import {
   isHappeningNow,
   isHiddenPost,
   isStartingSoon,
+  isPostableDuration,
   isSteppedTime,
   isStillAhead,
   kidHeading,
@@ -1283,11 +1284,25 @@ describe('validatePlaydateForm (the /new form rules, V2 slice 1: date + stepper 
     }
   })
 
-  it('requires a duration chip', () => {
+  it('accepts any positive duration on the 30-minute grid up to 24h, and still refuses off-grid lengths', () => {
+    // The validator uses isPostableDuration (v33-7a): a window's length is free
+    // on the form's own step grid — the founder: "I don't want it to be telling
+    // people it has to be an hour." 30 minutes is reachable from the End
+    // stepper but used to be refused ("Pick a duration.").
+    expect(validatePlaydateForm({ ...valid, durationMinutes: 30 }).durationMinutes).toBeUndefined()
+    expect(validatePlaydateForm({ ...valid, durationMinutes: 150 }).durationMinutes).toBeUndefined()
+    expect(validatePlaydateForm({ ...valid, durationMinutes: 1440 }).durationMinutes).toBeUndefined()
     expect(validatePlaydateForm({ ...valid, durationMinutes: 0 }).durationMinutes).toBeDefined()
     expect(validatePlaydateForm({ ...valid, durationMinutes: 45 }).durationMinutes).toBeDefined()
     for (const m of PLAYDATE_DURATIONS_MINUTES) {
       expect(validatePlaydateForm({ ...valid, durationMinutes: m }).durationMinutes).toBeUndefined()
+    }
+  })
+
+  it('isPostableDuration accepts exactly the positive 30-minute grid up to 24h', () => {
+    for (const m of [30, 60, 90, 120, 150, 180, 1440]) expect(isPostableDuration(m)).toBe(true)
+    for (const m of [0, 20, 45, 1470, 2880, -30, 30.5, Number.NaN]) {
+      expect(isPostableDuration(m)).toBe(false)
     }
   })
 
@@ -1416,7 +1431,26 @@ describe('toDuplicatePrefill (V2 slice 1, re-aimed by V12 ticket 04)', () => {
     })
   })
 
-  it('a legacy off-grid span degrades to 0 (the parent picks the duration)', () => {
+  it('a stored 2.5-hour window (150 minutes) reads back as 150 through toDuplicatePrefill', () => {
+    // v33-7a: the parse/snap gate is the form's own step grid, not chip
+    // membership — a 2.5-hour span must carry, not degrade to 0.
+    expect(
+      toDuplicatePrefill(
+        {
+          title: 'T',
+          place: 'P',
+          neighborhood_id: null,
+          age_hint: null,
+          details: null,
+          starts_at: '2026-09-04T15:00:00.000Z',
+          ends_at: '2026-09-04T17:30:00.000Z', // 150-minute span
+        },
+        [],
+      ),
+    ).toMatchObject({ durationMinutes: 150 })
+  })
+
+  it('a legacy off-grid span (45 minutes) still degrades to 0 (the parent picks the duration)', () => {
     expect(
       toDuplicatePrefill(
         {
@@ -3570,12 +3604,27 @@ describe('playdateFormValuesFromPost (V8 ticket 05)', () => {
     expect(values.startDate).toBe('2026-09-12')
   })
 
-  it('invents no fifth duration chip: a stored duration outside the pinned set prefills as "none picked"', () => {
+  it('an off-grid stored duration (45 minutes) still prefills as "none picked"', () => {
     const values = playdateFormValuesFromPost(
       storedPost({ ends_at: computeEndIso('2026-09-12', 15 * 60 + 30, 45) }),
     )
     expect(values.durationMinutes).toBe(0)
     expect(isDuration(values.durationMinutes)).toBe(false)
+  })
+
+  it('a stored 30-minute window reads back as 30, not 0 (v33-7a: the parse/snap gate is the step grid, not chip membership)', () => {
+    // The defect this slice fixes: a 30-minute span was postable from the End
+    // stepper but playdateFormValuesFromPost snapped it to 0, so /edit asked
+    // the parent to re-pick a length they already had.
+    const values = playdateFormValuesFromPost(
+      storedPost({ ends_at: computeEndIso('2026-09-12', 15 * 60 + 30, 30) }),
+    )
+    expect(values.durationMinutes).toBe(30)
+    // Round trip: saving these values recomputes the same instants.
+    const post = storedPost({ ends_at: computeEndIso('2026-09-12', 15 * 60 + 30, 30) })
+    expect(
+      computeEndIso(values.startDate, values.startMinutes, values.durationMinutes),
+    ).toBe(post.ends_at)
   })
 })
 
@@ -4145,9 +4194,9 @@ describe('cloneLastPost (V10 ticket 01: the Post-again values, pure)', () => {
     expect(out.values.title).toBe('Saturday soccer crew')
   })
 
-  it('an off-chip stored duration becomes 0 ("none picked yet") — never a fifth chip', () => {
+  it('a legacy off-grid stored duration (45 minutes) still becomes 0 ("none picked yet")', () => {
     // The end is computed from start + a legal chip today, but legacy/manual
-    // rows could carry e.g. 45 minutes; the form's chip set is a pinned
+    // rows could carry e.g. 45 minutes; the form's step grid is a pinned
     // contract (playdateFormValuesFromPost's same rule).
     const out = cloneLastPost(
       {
