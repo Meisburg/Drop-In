@@ -292,8 +292,22 @@ compaction.
   without explicit human authorization.** End-of-slice git pushes to
   origin/master are the one exception and are automatic — see
   `docs/agents/auto-push.md` for the three conditions and the staging rules.
-- One writer per slice. No concurrent-writer worktrees are needed here.
-  Parallelize read-only exploration only, and only after the base loop is proven.
+- One writer per worktree — **and one worktree per slice.** Concurrent worktrees
+  are now in use; what stays forbidden is two writers on **one** checkout.
+  Read-only exploration still parallelizes freely.
+- **A slice may not edit shared scaffolding.** `AGENTS.md`, `CONTEXT.md`,
+  `docs/RELEASE-CHECKLIST.md` are the orchestrator's; a slice reports the change
+  and the orchestrator applies it once at merge. Measured 2026-10-08: four
+  parallel slices all edited those three files plus `vite.config.ts`, so every
+  branch conflicted with every other and merging became serial manual work.
+  `vite.config.ts`, `tsconfig*`, and `.github/workflows/` need a recorded reason
+  (config-guard enforces it).
+- **Two slices that touch a hot file are one slice, or they are sequenced.**
+  `src/lib/places.ts`, `src/components/PlaceMap.tsx`, and `e2e/places.e2e.ts` are
+  touched by most slices. Group the queue by AREA, not by annotation ID. See
+  `docs/agents/parallel-development.md`.
+- **Merge within ~30 minutes of a slice's commit, or park it.** A stale branch is
+  a future conflict; a fresh one is a clean merge.
 - Release anything you created — the CDP Chrome instance, background processes,
   servers. Preserve the human's existing work and undelivered artifacts.
 - Factual drift check before you dispatch: if a doc you are about to rely on has
