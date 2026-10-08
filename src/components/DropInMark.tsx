@@ -39,9 +39,12 @@ const BARK = '#6b4a34'
 export function DropInMark({
   className,
   variant = 'color',
+  testId,
 }: {
   className?: string
   variant?: 'color' | 'mono'
+  /** Optional `data-testid` for a caller that pins the mark in a spec. */
+  testId?: string
 }) {
   const mono = variant === 'mono'
   const slide = 'currentColor'
@@ -50,7 +53,7 @@ export function DropInMark({
   const bark = mono ? 'currentColor' : BARK
 
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true" data-testid={testId}>
       {/* The tree. Two overlapping canopies give it a shape at 28px; a single
           circle would read as a dot. */}
       <circle cx="15" cy="21" r="10" fill={tree} />

@@ -633,8 +633,72 @@ h3 {
   animation: locate-ripple 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
+/* ---------------------------------------------------------------------------
+ * v33-13 — THE RSVP CONFIRMATION'S CONFETTI.
+ *
+ * The founder's note on the "You're going!" lightbox: "some kind of confetti
+ * thing that explodes animation". CSS-only, no dependency: one keyframe, one
+ * layer class, four colour slots. The piece GEOMETRY (where each piece sits,
+ * its stagger, fall time and spin) is decided by `src/lib/confetti.ts` — a pure
+ * seeded function — and read back here as inline custom properties, so this
+ * file owns only the motion itself.
+ *
+ * NO LAYOUT SHIFT: the layer is absolutely positioned inside the dialog panel
+ * (`relative`) with `pointer-events: none`, so the controls keep their boxes
+ * whether or not it is present. BOUNDED TO THE DIALOG: every piece starts at
+ * top: 0 of the layer and falls only as far as the layer's own height (the
+ * pieces' left positions are 0–100 % of the layer, pinned by the lib test),
+ * and `overflow: hidden` clips any overshoot — nothing escapes over the page.
+ */
+@keyframes rsvp-confetti-fall {
+  from {
+    transform: translateY(-8px) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    /* The fall ends at the layer's own bottom edge (translateY(100%) of the
+       piece's height lands the piece's top on it), so no piece ever paints
+       past the panel — `overflow: hidden` clips only sub-pixel overshoot. */
+    transform: translateY(calc(100% - 11px)) rotate(var(--rsvp-confetti-spin, 540deg));
+    opacity: 0;
+  }
+}
+
+.rsvp-confetti-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Pieces live in their OWN stacking context (the keyframe's transform makes
+   them containing blocks for any fixed descendants), so a piece can never
+   paint outside this layer's box even mid-flight. */
+.rsvp-confetti-piece {
+  position: absolute;
+  top: 0;
+  width: 7px;
+  height: 11px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: rsvp-confetti-fall var(--rsvp-confetti-duration, 1.4s) ease-in
+    var(--rsvp-confetti-delay, 0s) 1 both;
+}
+
+.rsvp-confetti-piece:nth-child(4n + 1) { background-color: #e8552f; }
+.rsvp-confetti-piece:nth-child(4n + 2) { background-color: #93c066; }
+.rsvp-confetti-piece:nth-child(4n + 3) { background-color: #f2b134; }
+.rsvp-confetti-piece:nth-child(4n + 4) { background-color: #64748b; }
+
 @media (prefers-reduced-motion: reduce) {
   .locate-btn:disabled .locate-ripple-ring {
+    animation: none;
+    opacity: 0;
+  }
+  /* The confetti stops entirely: no animation, no visible pieces — the mark
+     and the copy carry the moment instead, and nothing is lost. */
+  .rsvp-confetti-piece {
     animation: none;
     opacity: 0;
   }

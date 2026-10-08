@@ -259,6 +259,130 @@ test('an RSVP raises one lightbox, Escape closes it, and it never comes back for
   // It is NOT the photo viewer.
   await expect(viewerPage.getByTestId('lightbox-photo')).toHaveCount(0)
 
+  // --- 4b. v33-13 — THE DELIGHT HALF: the drop-in mark sits above the text,
+  //         and the confetti layer is present, decorative, and bounded. ---
+  const mark = viewerPage.getByTestId('rsvp-confirmation-mark')
+  await expect(mark).toBeVisible()
+  // The mark is ABOVE the event line in DOM order (the annotation's "at the top
+  // above the text"), pinned by document position like the RSVP-order test.
+  const markAboveEvent = await viewerPage.evaluate(() => {
+    const m = document.querySelector('[data-testid="rsvp-confirmation-mark"]')
+    const e = document.querySelector('[data-testid="rsvp-confirmation-event"]')
+    if (m === null || e === null) return false
+    return (m.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  })
+  expect(markAboveEvent, 'the mark must sit above the event line').toBe(true)
+  // Decorative: hidden from the accessibility tree (the title already names
+  // the event), and not a second h1 / focus stop.
+  await expect(mark).toHaveAttribute('aria-hidden', 'true')
+  await expect(viewerPage.locator('[data-testid="rsvp-confirmation-mark"][tabindex]')).toHaveCount(0)
+  const confettiLayer = viewerPage.getByTestId('rsvp-confetti')
+  await expect(confettiLayer).toHaveCount(1)
+  await expect(confettiLayer).toHaveAttribute('aria-hidden', 'true')
+  // Bounded to the dialog: no piece escapes the panel's own box. The check
+  // runs AFTER the burst has settled (the pieces' total duration is bounded
+  // by the lib — `MAX_TOTAL_MS`), so every piece sits at its keyframe END,
+  // which lands inside the layer; mid-flight positions are not asserted
+  // because they depend on when the walk reaches this line.
+  const piecesBounded = await viewerPage.evaluate(() => {
+    return new Promise<boolean>((resolve) => {
+      const layer = document.querySelector('[data-testid="rsvp-confetti"]')
+      if (layer === null) {
+        resolve(false)
+        return
+      }
+      let attempts = 0
+      const check = () => {
+        attempts += 1
+        const layerBox = layer.getBoundingClientRect()
+        const pieces = Array.from(layer.querySelectorAll('.rsvp-confetti-piece'))
+        const settled = pieces.every((piece) => getComputedStyle(piece).animationPlayState !== 'running')
+        if (!settled && attempts < 60) {
+          window.setTimeout(check, 50)
+          return
+        }
+        const violations = pieces.map((piece) => {
+          const box = piece.getBoundingClientRect()
+          return [
+            Math.round(box.left - layerBox.left),
+            Math.round(box.right - layerBox.right),
+            Math.round(box.top - layerBox.top),
+            Math.round(box.bottom - layerBox.bottom),
+          ]
+        })
+        console.log(
+          '[v33-13] pieces=' + pieces.length + ' settled=' + settled + ' layerH=' + Math.round(layerBox.height) + ' violations=' + JSON.stringify(violations),
+        )
+        document.title = '[v33-13] pieces=' + pieces.length + ' settled=' + settled + ' layerH=' + Math.round(layerBox.height) + ' v=' + JSON.stringify(violations)
+        resolve(
+          pieces.every((piece) => {
+            const box = piece.getBoundingClientRect()
+            return (
+              box.left >= layerBox.left - 1 &&
+              box.right <= layerBox.right + 1 &&
+              box.top >= layerBox.top - 1 &&
+              box.bottom <= layerBox.bottom + 1
+            )
+          }),
+        )
+      }
+      check()
+    })
+  })
+  expect(piecesBounded, 'confetti pieces must stay inside the dialog').toBe(true)
+  // NO LAYOUT SHIFT: the Got-it button keeps its box with the layer present.
+  const gotItWithConfetti = await viewerPage.getByTestId('rsvp-confirmation-got-it').boundingBox()
+  expect(gotItWithConfetti, 'Got it has no layout box').not.toBeNull()
+  await viewerPage.evaluate(() => {
+    const layer = document.querySelector('[data-testid="rsvp-confetti"]')
+    layer?.remove()
+  })
+  const gotItWithoutConfetti = await viewerPage.getByTestId('rsvp-confirmation-got-it').boundingBox()
+  expect(gotItWithoutConfetti, 'Got it lost its layout box').not.toBeNull()
+  expect(Math.abs(gotItWithConfetti!.x - gotItWithoutConfetti!.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(gotItWithConfetti!.y - gotItWithoutConfetti!.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(gotItWithConfetti!.width - gotItWithoutConfetti!.width)).toBeLessThanOrEqual(1)
+  expect(Math.abs(gotItWithConfetti!.height - gotItWithoutConfetti!.height)).toBeLessThanOrEqual(1)
+  // Restore the layer for the rest of the walk.
+  await viewerPage.evaluate(() => {
+    const dialogEl = document.querySelector('[data-testid="rsvp-confirmation"]')
+    if (dialogEl === null) return
+    const wrapper = dialogEl.querySelector(':scope > div.relative')
+    if (wrapper === null) return
+    const restored = document.createElement('div')
+    restored.setAttribute('aria-hidden', 'true')
+    restored.setAttribute('data-testid', 'rsvp-confetti')
+    restored.className = 'rsvp-confetti-layer pointer-events-none'
+    wrapper.appendChild(restored)
+  })
+  // 390×844 FITS: every control stays inside the viewport, on the ≥44px floor.
+  const controlsFitted = await viewerPage.evaluate(() => {
+    const dialogEl = document.querySelector('[data-testid="rsvp-confirmation"]')
+    if (dialogEl === null) return null
+    const boxes = [
+      dialogEl,
+      document.querySelector('[data-testid="rsvp-confirmation-mark"]'),
+      document.querySelector('[data-testid="rsvp-confirmation-got-it"]'),
+      document.querySelector('[data-testid="rsvp-confirmation-dismiss"]'),
+    ].filter((el): el is Element => el !== null)
+    const within = boxes.every((el) => {
+      const box = el.getBoundingClientRect()
+      return box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight
+    })
+    const floors = [
+      document.querySelector('[data-testid="rsvp-confirmation-got-it"]'),
+      document.querySelector('[data-testid="rsvp-confirmation-dismiss"]'),
+    ].filter((el): el is Element => el !== null)
+    const floored = floors.every((el) => {
+      const box = el.getBoundingClientRect()
+      return box.width >= 44 && box.height >= 44
+    })
+    return { within, floored }
+  })
+  expect(controlsFitted, 'no control box could be read').not.toBeNull()
+  expect(controlsFitted!.within, 'a control escapes the 390×844 viewport').toBe(true)
+  expect(controlsFitted!.floored, 'a control dropped under the 44px floor').toBe(true)
+
   // --- 5. FOCUS IS INSIDE, AND STAYS (the trap), and the body cannot scroll. ---
   const gotIt = viewerPage.getByTestId('rsvp-confirmation-got-it')
   const dismiss = viewerPage.getByTestId('rsvp-confirmation-dismiss')
@@ -373,15 +497,76 @@ test('an RSVP raises one lightbox, Escape closes it, and it never comes back for
   //          one-tap dismiss leaves the RSVP in place. ---
   await viewerPage.getByRole('button', { name: /^I’m going$/ }).click()
   await expect(viewerPage.getByTestId('rsvp-confirmation')).toHaveCount(1)
-  // The POSITIVE CONTROL for the motion rule: with the DEFAULT preference this
-  // panel really does run `modal-pop`, so the shipped suppression
-  // (`motion-reduce:animate-none` → `animation: none` inside the
-  // `@media (prefers-reduced-motion: reduce)` block) switches off something
-  // that exists rather than a permanently dead property. The reduced-motion
-  // half itself is asserted where it is deterministic — as a COMPUTED value
-  // under `emulateMedia({ reducedMotion: 'reduce' })`, which this spec does not
-  // run (the preference is per-context) and which no unit test can express
-  // without a DOM.
+
+  // --- 10b. v33-13 — REDUCED MOTION: nothing animates, nothing is lost. The
+  //          preference is per-context, so a FRESH context emulates it; the
+  //          same ping raises the same dialog, and under `reduce` every piece's
+  //          computed `animationName` is `none` while the title, both
+  //          paragraphs, the mark and "Got it" all stay present + visible. ---
+  const reducedContext = await browser.newContext({
+    baseURL: E2E_BASE_URL,
+    storageState: { cookies: [], origins: [] },
+    reducedMotion: 'reduce',
+    viewport: { width: 390, height: 844 },
+  })
+  const reducedPage = await reducedContext.newPage()
+  await signUpViewer(reducedPage, {
+    name: `e2e-v-${epoch}-rsvpreduce`,
+    email: `e2e-v-${epoch}-rsvpreduce@gmail.com`,
+    password: `e2e-v-pw-${epoch}-rsvpreduce`,
+  })
+  await finishSignup(reducedPage, { homeZip: marker.homeZip, radiusMiles: marker.radiusMiles })
+  await reducedPage.goto(`/playdate/${playdateId}`)
+  await reducedPage.getByRole('button', { name: /^I’m going$/ }).click()
+  const reducedDialog = reducedPage.getByTestId('rsvp-confirmation')
+  await expect(reducedDialog).toBeVisible()
+  const pieceAnimations = await reducedPage.evaluate(() => {
+    const layer = document.querySelector('[data-testid="rsvp-confetti"]')
+    if (layer === null) return null
+    return Array.from(layer.querySelectorAll('.rsvp-confetti-piece')).map((piece) =>
+      getComputedStyle(piece).animationName,
+    )
+  })
+  expect(pieceAnimations, 'the confetti layer did not render').not.toBeNull()
+  expect(pieceAnimations!.length).toBeGreaterThan(0)
+  for (const name of pieceAnimations!) {
+    expect(name, 'a piece still animates under prefers-reduced-motion').toBe('none')
+  }
+  // No content is lost: the whole dialog reads as before, just without motion.
+  await expect(reducedPage.locator(`#${labelledBy}`)).toHaveText('You’re going!')
+  await expect(reducedPage.getByTestId('rsvp-confirmation-event')).toBeVisible()
+  await expect(reducedPage.getByTestId('rsvp-confirmation-next')).toBeVisible()
+  await expect(reducedPage.getByTestId('rsvp-confirmation-mark')).toBeVisible()
+  await expect(reducedPage.getByTestId('rsvp-confirmation-got-it')).toBeVisible()
+  await reducedContext.close()
+
+  // --- 10c. v33-13 — SCOPE: the delight lives in THIS component, not in
+  //          `ModalShell`. Open a plain `ConfirmDialog` flow (the comment
+  //          delete confirm) and assert zero confetti there. The marker is the
+  //          comment's author, so the delete control is theirs to drive. ---
+  await seedPostViaUi(page, `${title} scope`)
+  const scopePlaydateId = await latestMarkerPlaydateIdByTitle(`${title} scope`)
+  await page.goto(`/playdate/${scopePlaydateId}`)
+  const scopeComment = `e2e ${marker.displayName} rsvp scope`
+  await page.locator('#comment-composer').fill(scopeComment)
+  await page.getByRole('button', { name: 'Comment' }).click()
+  await page.locator('li').filter({ hasText: scopeComment }).first().getByRole('button', { name: 'Delete' }).click()
+  const scopeDialog = page.getByTestId('comment-action-dialog')
+  await expect(scopeDialog).toBeVisible()
+  await expect(page.getByTestId('rsvp-confetti')).toHaveCount(0)
+  await expect(page.getByTestId('rsvp-confirmation-mark')).toHaveCount(0)
+  await scopeDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(scopeDialog).toHaveCount(0)
+
+  // --- 10d. THE POSITIVE CONTROL for the motion rule: with the DEFAULT
+  //          preference this panel really does run `modal-pop`, so the shipped
+  //          suppression (`motion-reduce:animate-none` → `animation: none`
+  //          inside the `@media (prefers-reduced-motion: reduce)` block)
+  //          switches off something that exists rather than a permanently dead
+  //          property. The reduced-motion half itself is asserted where it is
+  //          deterministic — as a COMPUTED value under the emulated context
+  //          above, which no unit test can express without a DOM. The re-ping's
+  //          dialog is still open here, so the poll reads it directly. ---
   let defaultMotionSawAnimation = false
   await expect
     .poll(
