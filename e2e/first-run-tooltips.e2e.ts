@@ -31,7 +31,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 // v30-10 (`ocr` finding, low): the tour's step count comes from the tour's own
 // data, never a restated literal — adding or removing a line must not silently
 // under-test this leg (it used to stop one step early in that case).
-import { TOOLTIPS_STEPS } from '../src/lib/firstRunTooltips'
+import { FIRST_RUN_DISMISSED_KEY, TOOLTIPS_STEPS } from '../src/lib/firstRunTooltips'
 import { E2E_BASE_URL, finishSignup, readMarkerMeta, signUpViewer } from './fixtures'
 
 /** The tour's overlay root (the veil + ring + card all live under it). */
@@ -213,6 +213,87 @@ test('the veil leaves a hole exactly where the ring is — on every step', async
         await tour.getByRole('button', { name: 'Next' }).click()
       }
     }
+  } finally {
+    await context.close()
+  }
+})
+
+/**
+ * v33-E — THE DEFECT THIS SPEC'S SHAPE COULD NOT CATCH.
+ *
+ * The founder created a brand-new profile and landed on the feed with no
+ * orientation. The cause, measured on a private port: the shared dismissal
+ * fact is `sessionStorage` — PER TAB — and he reviews the app in one tab all
+ * day, so an earlier "Dismiss" on the nudge had already stood the tour down
+ * for a parent who had never seen it.
+ *
+ * ⚠️ EVERY LEG ABOVE SIGNS UP ITS VIEWER IN A FRESH CONTEXT, so
+ * `sessionStorage` starts empty and the stale fact cannot exist. That is
+ * exactly why the suite was green while the founder saw nothing: the spec
+ * could not express "a used tab". This leg does — it writes the fact into the
+ * tab BEFORE the walk, which is the real user's session.
+ *
+ * The fix (OnboardingPage's `handleCreateProfile` → `clearFirstRunDismissed`,
+ * `lib/firstRunTooltips`) clears the fact the moment the new row is minted.
+ */
+test('a brand-new profile is taught even in a tab that dismissed earlier (v33-E)', async ({
+  browser,
+}) => {
+  const marker = readMarkerMeta()
+  const epoch = Math.floor(Date.now() / 1000)
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    storageState: { cookies: [], origins: [] },
+  })
+  const viewer = await context.newPage()
+  try {
+    // THE USED TAB: today's earlier dismissal is already in this tab's
+    // sessionStorage before the new parent ever arrives.
+    await viewer.goto('/login')
+    await viewer.evaluate((key) => window.sessionStorage.setItem(key, '1'), FIRST_RUN_DISMISSED_KEY)
+
+    await signUpViewer(viewer, {
+      name: `e2e-r37e-${epoch}`,
+      email: `e2e-r37e-${epoch}@gmail.com`,
+      password: `e2e-r37e-pw-${epoch}`,
+    })
+    await finishSignup(viewer, { homeZip: marker.homeZip, radiusMiles: marker.radiusMiles })
+
+    // THE ORIENTATION IS DELIVERED: creating the profile cleared the stale
+    // fact, so the gate opens on the new parent's own arrival.
+    await expect(tourOf(viewer)).toBeVisible({ timeout: 30_000 })
+    // And the fact is genuinely gone, not merely shadowed by mount state.
+    expect(
+      await viewer.evaluate((key) => window.sessionStorage.getItem(key), FIRST_RUN_DISMISSED_KEY),
+    ).toBeNull()
+  } finally {
+    await context.close()
+  }
+})
+
+/**
+ * THE OTHER HALF OF THE WIDENING (v33-E): a session that ALREADY dismissed is
+ * still not re-taught. Without this leg the fix could have been a removal —
+ * clearing on every arrival — and the suite would not notice.
+ */
+test('an already-dismissed session is still not taught on the next load (v33-E)', async ({
+  browser,
+}) => {
+  const { viewer, context } = await signUpAndFinishRun(browser, 'f')
+  try {
+    const tour = tourOf(viewer)
+    await expect(tour).toBeVisible({ timeout: 30_000 })
+    // The parent stands it down (Skip writes the shared fact).
+    await tour.getByRole('button', { name: 'Skip' }).click()
+    await expect(tour).toHaveCount(0)
+    expect(
+      await viewer.evaluate((key) => window.sessionStorage.getItem(key), FIRST_RUN_DISMISSED_KEY),
+    ).not.toBeNull()
+
+    // A reload of the SAME armed entry: the fact is what keeps it quiet.
+    await viewer.reload()
+    await expect(viewer.getByRole('heading', { name: 'Near you' })).toBeVisible({ timeout: 30_000 })
+    await expect(viewer.getByTestId('first-run-tooltips')).toHaveCount(0)
   } finally {
     await context.close()
   }
