@@ -497,3 +497,33 @@ before it is dispatched** — read those first.
 there. Then `muzk0bae` (a redundancy, tiny), `muzkh36s` (possibly a broken
 first-run experience), `muzk8c1g` (consistent with v33-12's ruling),
 `muzkg290`, `muzk9fk3`, `muzjx0we`, `muzka6tz` (needs a data decision).
+
+---
+
+## 15 — HANDOFF: what is in flight right now (2026-10-08, later)
+
+**Dispatched and running:** **v33-D, the /browse restructure**, on the one local
+lane `wQ:p1G`, brief `.scratch/v33/briefs/v33-d-brief.md`. It was **still
+`THINKING`** at the last check (steps 46, no product changes yet, no commit). It
+had been asked to read the plan, **both rulings, and the 13 KB prototype HTML** —
+which is a heavy context load for a ~98k lane and is the likely reason each turn
+takes minutes. **If it stalls: re-dispatch the SAME brief with the reading list
+trimmed to `plan-browse.md` + `BATCH-STATE.md` §14 only** (the prototype is a
+visual reference, and the plan already carries the shape). The recovery for a
+verified STALLED verdict is exactly that re-dispatch, max 3 tries, logged.
+
+**Written and waiting to dispatch — do not rewrite it:** **v33-E** (`muzkh36s`, the
+missing first-run orientation), brief at `.scratch/v33/briefs/v33-e-brief.md`. It is
+diagnosis-first (reproduce → name the cause → fix), and the prime suspect is already
+measured: the tour's gate is `signedIn && homeZipSet && armed && !dismissed`
+(`src/lib/firstRunTooltips.ts:223`) and `dismissed` is a **per-tab sessionStorage**
+fact shared with the nudge — so a brand-new profile in a used tab gets no
+orientation. The brief requires the cause to be measured, not assumed.
+
+**Nothing is pushed.** `origin/master` is still `5fc5f25`.
+
+**Then, still queued:** `muzk0bae` (the map popup says "details" twice), `muzk8c1g`
+(reviewer avatar left of the name + name links to profile), `muzkg290` (Finish jumps
+into the app jarringly), `muzk9fk3` (place attributes as pills on the place page),
+`muzjx0we` (interests as emoji bubbles), `muzka6tz` (a bathrooms pill — needs a data
+decision), plus v33-7b, v33-12, 5c (five miles), v33-8 (settings), and the ADR.
