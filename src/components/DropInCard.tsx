@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ComponentPropsWithoutRef } from 'react'
 import { Link } from 'react-router'
 import { PhotoButton } from './ImageLightbox'
 import { PlaceKindArt } from './PlaceKindArt'
@@ -824,6 +824,7 @@ export function HostAvatar({
   size = 'md',
   expandable = false,
   eager = false,
+  ...rest
 }: {
   host: PlaydateHost
   size?: 'md' | 'sm' | 'lg'
@@ -840,7 +841,7 @@ export function HostAvatar({
    * feed card's host avatar is the LCP hero; every other list/row avatar lazy-loads.
    */
   eager?: boolean
-}) {
+} & Omit<ComponentPropsWithoutRef<'span'>, 'host' | 'size' | 'expandable' | 'eager'>) {
   // Hooks run before every return (the early returns below are on the photo).
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const box = size === 'sm' ? 'h-6 w-6' : size === 'lg' ? 'h-20 w-20' : 'h-10 w-10'
@@ -870,6 +871,7 @@ export function HostAvatar({
         alt=""
         onError={() => setFailedUrl(storedUrl)}
         className={`${box} shrink-0 rounded-full object-cover`}
+        {...rest}
       />
     ) : (
       <img
@@ -879,6 +881,7 @@ export function HostAvatar({
         decoding="async"
         onError={() => setFailedUrl(storedUrl)}
         className={`${box} shrink-0 rounded-full object-cover`}
+        {...rest}
       />
     )
     return expandable ? (
@@ -893,6 +896,7 @@ export function HostAvatar({
     <span
       aria-hidden
       className={`flex ${box} shrink-0 items-center justify-center rounded-full bg-indigo-100 ${initialClass} font-semibold text-indigo-500`}
+      {...rest}
     >
       {(host.display_name.charAt(0) || '?').toUpperCase()}
     </span>
