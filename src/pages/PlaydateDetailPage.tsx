@@ -1787,6 +1787,21 @@ export function PlaydateDetailPage() {
   // or there is no pinger yet; a stranger never sees these (no free-form DM).
   const hostPingerNames =
     isHost && guestNames !== null && count !== null && count > 0 ? guestNames : []
+  // V33-6F: the per-pinger row's button className — shared by every "Message
+  // <pinger>" control (only `text-left` differs from the "Message the host"
+  // variant, which stays its own). One const so the two cannot drift.
+  const messageButtonClass =
+    'min-h-11 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100'
+  // V33-6F: the going button's label — one small pure helper instead of a
+  // three-level nested ternary. The decision is purely presentational (which
+  // word to show), so it lives here rather than in `lib/`.
+  const goingButtonLabel = pingBusy
+    ? 'Updating…'
+    : confirmPing
+      ? 'Tap to confirm you’re coming'
+      : going
+        ? '✓ Going'
+        : 'I’m going'
   const openInboxThread = () => {
     navigate(`/inbox?thread=${detail.id}`)
   }
@@ -2567,38 +2582,18 @@ export function PlaydateDetailPage() {
                 going ? ' bg-green-700' : ' bg-indigo-600'
               }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
             >
-              {pingBusy
-                ? 'Updating…'
-                : confirmPing
-                  ? 'Tap to confirm you’re coming'
-                  : going
-                    ? '✓ Going'
-                    : 'I’m going'}
+              {goingButtonLabel}
             </button>
             {canMessageHost ? (
               <button
                 type="button"
                 onClick={openInboxThread}
-                className="min-h-11 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
+                className={messageButtonClass}
               >
                 Message the host
               </button>
             ) : null}
           </div>
-          {hostPingerNames.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {hostPingerNames.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={openInboxThread}
-                  className="min-h-11 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
-                >
-                  Message {name}
-                </button>
-              ))}
-            </div>
-          ) : null}
           {/* V28 slice 2a: the no-home-zip notice — shown only after a blocked
               SETTING tap AND while the zip is still unset (a zip landing via
               refresh clears it); clearing a ping never raises it. */}
@@ -2638,6 +2633,26 @@ export function PlaydateDetailPage() {
               onSaved={() => setKidsReloadToken((token) => token + 1)}
             />
           ) : null}
+        </div>
+      ) : null}
+      {/* V33-6F: the host's per-pinger row lives OUTSIDE the `!isHost` branch —
+          it is host-only by its OWN gate (`hostPingerNames` is derived from
+          `isHost && ...`, so it is always empty for a non-host). Inside the
+          branch it could never render, which is the regression this fix
+          removes. It keeps the same visual cluster (the action row above the
+          RSVP controls) and rides the SAME guest-list read as the guest line. */}
+      {hostPingerNames.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {hostPingerNames.map((name, index) => (
+            <button
+              key={`${name}-${index}`}
+              type="button"
+              onClick={openInboxThread}
+              className={`${messageButtonClass} text-left`}
+            >
+              Message {name}
+            </button>
+          ))}
         </div>
       ) : null}
 

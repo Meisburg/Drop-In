@@ -943,9 +943,9 @@ export interface PlaydateFormValues {
   /** Start time as minutes since local midnight, on the 30-minute grid (0–1410). */
   startMinutes: number
   /**
-   * Duration in minutes — one of PLAYDATE_DURATIONS_MINUTES. 0 = none picked
-   * yet (the chips always produce a valid value; the validator still guards
-   * the pure boundary).
+   * Duration in minutes — a postable window length (`isPostableDuration`: any
+   * multiple of 30 in (0, 1440]). 0 = none picked yet (the chips always produce
+   * a valid value; the validator still guards the pure boundary).
    */
   durationMinutes: number
   /** Optional, e.g. "best for 2-5" (advisory only). */
@@ -976,9 +976,10 @@ export const TIME_STEP_MINUTES = 30
 /**
  * Validate the /new drop-in form (pinned rules: title required + ≤ 80
  * characters after trim; place required; start date required; the start time
- * sits on the 30-minute grid; the duration is one of the chips; age_hint /
+ * sits on the 30-minute grid; the duration is a postable window length
+ * (`isPostableDuration` — any multiple of 30 in (0, 1440]); age_hint /
  * details optional). The end time never needs a check — it is computed
- * (start + duration > start always, since every chip duration is positive).
+ * (start + duration > start always, since every postable duration is positive).
  *
  * V9 ticket 01: the NEIGHBOURHOOD rule is DELETED (pinned in the ticket), not
  * made optional — "maybe you just put in the address and not a neighborhood
@@ -1096,6 +1097,11 @@ export function isDuration(minutes: number): boolean {
  * PLAYDATE_DURATIONS_MINUTES ([60, 90, 120, 180]) — exactly what the chip row's
  * selected state still needs, and it stays untouched. This one accepts any
  * multiple of 30 in (0, 1440].
+ *
+ * NOTE: the chip row's SELECTED state does NOT use `isPostableDuration` — it
+ * compares `values.durationMinutes === minutes` directly (PlaydateFormFields.tsx
+ * `durationChipsRow`). `isPostableDuration` is used by the validator and the
+ * parse/snap gates only.
  */
 export function isPostableDuration(minutes: number): boolean {
   return (

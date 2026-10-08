@@ -616,7 +616,7 @@ test('the host never sees the confirmation, and the feed card’s toggle does no
   await expect(page.getByRole('button', { name: /^I’m going$/ })).toHaveCount(0)
   // V33-6: the host's message entry point is one per-pinger button, beside the
   // post panel — a stranger sees none, and the gate did not widen.
-  await expect(page.locator('button', { hasText: /^Message / })).toHaveCount(0)
+  await expect(page.locator('button').filter({ hasText: /^Message / })).toHaveCount(0)
   // The notification prompt is deferred off this route by the earlier audit
   // (lib/push.ts:394 `isPlaydateDetailPath`, applied at :436) — this slice must
   // not have re-armed it.
