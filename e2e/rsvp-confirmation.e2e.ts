@@ -60,6 +60,12 @@ import {
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
 const PLACE_PLACEHOLDER = 'e.g. Green Lake playground, near the boathouse'
 
+// V33-6: the message-control geometry assertions (beside the Going control,
+// intrinsic width, no page widening) only make sense at a phone width — at
+// Playwright's default 1280px everything fits on one row and the "not
+// full-width" check is vacuous. Pinned to 390px like post-again-overflow.
+test.use({ viewport: { width: 390, height: 844 } })
+
 /** Seed ONE post through the /new UI (the golden-path pattern). */
 async function seedPostViaUi(page: Page, title: string): Promise<void> {
   await page.goto('/new')
@@ -296,8 +302,33 @@ test('an RSVP raises one lightbox, Escape closes it, and it never comes back for
   ).toBe('hidden')
 
   // --- 6. THE WRITE WAS NOT DELAYED BY ANY OF THIS: it is in the DB already,
-  //         so the page behind offers the participant affordances. ---
-  await expect(viewerPage.getByRole('button', { name: 'Message the host' })).toBeVisible()
+  //         so the page behind offers the participant affordances. V33-6: the
+  //         message entry point now sits in the RSVP block, beside the Going
+  //         control — intrinsic width, not full-width. ---
+  const goingControl = viewerPage.getByRole('button', { name: /^✓ Going$/ })
+  await expect(goingControl).toBeVisible()
+  const messageButton = viewerPage.getByRole('button', { name: 'Message the host' })
+  await expect(messageButton).toBeVisible()
+  // GEOMETRY (AC1): the two boxes overlap vertically (same row band), asserted
+  // on boxes rather than DOM order.
+  const goingBox = await goingControl.boundingBox()
+  const messageBox = await messageButton.boundingBox()
+  expect(goingBox, 'Going control has no layout box').not.toBeNull()
+  expect(messageBox, 'message control has no layout box').not.toBeNull()
+  expect(Math.abs(goingBox!.y - messageBox!.y)).toBeLessThan(messageBox!.height)
+  // NOT FULL-WIDTH (AC2): at 390px the message control is narrower than its
+  // containing row, and the page does not widen.
+  const rowBox = await viewerPage.locator('button[aria-pressed]').first().locator('..').boundingBox()
+  expect(rowBox, 'RSVP row has no layout box').not.toBeNull()
+  expect(messageBox!.width).toBeLessThan(rowBox!.width)
+  const scrollWidths = await viewerPage.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(scrollWidths.scrollWidth).toBeLessThanOrEqual(scrollWidths.clientWidth + 1)
+  // TAP TARGET floor: the moved control keeps ≥44px smallest dimension.
+  expect(messageBox!.height).toBeGreaterThanOrEqual(44)
+  expect(messageBox!.width).toBeGreaterThanOrEqual(44)
 
   // --- 7. ESCAPE CLOSES IT, and the parent is left on the detail page with the
   //         RSVP intact — the ticket's own criterion for dismissing.
@@ -398,6 +429,9 @@ test('the host never sees the confirmation, and the feed card’s toggle does no
   // The host's page has no "I'm going" control at all (the client guard in
   // db.togglePing and the 0010 DB trigger are the write-side wall behind it).
   await expect(page.getByRole('button', { name: /^I’m going$/ })).toHaveCount(0)
+  // V33-6: the host's message entry point is one per-pinger button, beside the
+  // post panel — a stranger sees none, and the gate did not widen.
+  await expect(page.locator('button', { hasText: /^Message / })).toHaveCount(0)
   // The notification prompt is deferred off this route by the earlier audit
   // (lib/push.ts:394 `isPlaydateDetailPath`, applied at :436) — this slice must
   // not have re-armed it.

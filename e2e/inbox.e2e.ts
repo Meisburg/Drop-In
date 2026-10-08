@@ -31,6 +31,7 @@
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { escapeForRegExp } from '../src/lib/escapeForRegExp.mjs'
 import {
   E2E_BASE_URL,
   dismissRsvpConfirmationIfOpen,
@@ -41,6 +42,41 @@ import {
 
 const TITLE_PLACEHOLDER = 'e.g. Playground time at Green Lake'
 const PLACE_PLACEHOLDER = 'e.g. Green Lake playground, near the boathouse'
+
+/**
+ * V33-6: the "Message the host" control moved into the RSVP block, beside the
+ * Going button (intrinsic width, wrapping row). The pinger's detail page now
+ * carries a SECOND pinger when two are created — and that is exactly what the
+ * host-side geometry assertions below need (two per-pinger buttons side by
+ * side), so this helper takes an optional second viewer to ping before it
+ * returns. The stranger path (RLS isolation) needs only the first.
+ */
+async function createSecondPinger(
+  browser: import('@playwright/test').Browser,
+  playdateId: string,
+  secondName: string,
+  secondEmail: string,
+  secondPassword: string,
+  homeZip: string,
+  radiusMiles: number,
+): Promise<{ context: import('@playwright/test').BrowserContext; page: Page }> {
+  const secondContext = await browser.newContext({
+    baseURL: E2E_BASE_URL,
+    storageState: { cookies: [], origins: [] },
+  })
+  const secondPage = await secondContext.newPage()
+  await signUpViewer(secondPage, {
+    name: secondName,
+    email: secondEmail,
+    password: secondPassword,
+  })
+  await finishSignup(secondPage, { homeZip, radiusMiles })
+  await secondPage.goto(`/playdate/${playdateId}`)
+  await secondPage.getByRole('button', { name: /^I’m going$/ }).click()
+  await expect(secondPage.getByRole('button', { name: /^✓ Going$/ })).toBeVisible()
+  await dismissRsvpConfirmationIfOpen(secondPage)
+  return { context: secondContext, page: secondPage }
+}
 
 /**
  * Seed ONE post through the /new UI (the golden-path pattern). Returns
@@ -139,6 +175,8 @@ async function createPingingViewer(
  */
 test.describe.configure({ retries: 1 })
 
+test.use({ viewport: { width: 390, height: 844 } })
+
 test('two-account conversation: pinger messages the host, host reads + badge clears', async ({
   page,
   browser,
@@ -168,7 +206,8 @@ test('two-account conversation: pinger messages the host, host reads + badge cle
   const viewerPage = viewer.page
 
   // The "Message the host" button is visible on the detail page (the
-  // participant gate: the viewer has a going_ping).
+  // participant gate: the viewer has a going_ping). V33-6: it now sits in the
+  // RSVP block, beside the Going control — intrinsic width, not full-width.
   await expect(
     viewerPage.getByRole('button', { name: 'Message the host' }),
   ).toBeVisible()
@@ -198,25 +237,84 @@ test('two-account conversation: pinger messages the host, host reads + badge cle
   expect(viewerProfiles.length).toBe(1)
   const viewerProfileId = viewerProfiles[0].id
 
-  // --- The host: navigate to /inbox → see the conversation row with an
-  // unread dot + badge (count 1) → tap it → the thread shows the message → the
-  // dot clears (markConversationRead fired). ---
-  await page.goto('/inbox')
-  await settleOnRoute(page, '/inbox')
-  const conversationRow = page.getByRole('button').filter({ hasText: viewerName })
-  await expect(conversationRow).toBeVisible()
-  // The unread dot + badge (count 1) are visible.
-  await expect(page.getByTestId(`unread-dot-${viewerProfileId}`)).toBeVisible()
-  await expect(page.getByTestId(`unread-badge-${viewerProfileId}`)).toHaveText('1')
+  // --- A SECOND pinger joins, so the host's detail page carries TWO per-pinger
+  //     buttons (V33-6 geometry: side by side at their own width). ---
+  const secondName = `e2e-v-${epoch}-inbox-b`
+  const second = await createSecondPinger(
+    browser,
+    playdateId,
+    secondName,
+    `${secondName}@gmail.com`,
+    `e2e-v-pw-${epoch}-inbox-b`,
+    marker.homeZip,
+    marker.radiusMiles,
+  )
 
-  // Tap the conversation → the thread view shows the message.
-  await conversationRow.click()
+  // --- The host: navigate to /playdate/:id → the message entry point is in
+  //         the top action cluster, beside the Going control (V33-6) → tap a
+  //         per-pinger button → the thread shows the message. ---
+  await page.goto(`/playdate/${playdateId}`)
+  await settleOnRoute(page, `/playdate/${playdateId}`)
+  const hostGoingButton = page.getByRole('button', { name: /^I’m going$/ })
+  await expect(hostGoingButton).toBeVisible()
+  // THE COUNT IS ASSERTED FIRST (AC4): two pingers → exactly two per-pinger
+  // controls, one each — none dropped by the move.
+  const hostMessageButtons = page.locator('button', { hasText: /^Message / })
+  await expect(hostMessageButtons).toHaveCount(2)
+  // GEOMETRY (AC1): the message row and the Going control share a vertical
+  // band (|a.y − b.y| less than a control's height), asserted on boxes rather
+  // than DOM order.
+  const firstPingerBox = await page
+    .getByRole('button', { name: new RegExp(`^Message ${escapeForRegExp(viewerName)}$`) })
+    .boundingBox()
+  const goingBox = await hostGoingButton.boundingBox()
+  expect(firstPingerBox, 'host per-pinger button has no layout box').not.toBeNull()
+  expect(goingBox, 'Going control has no layout box').not.toBeNull()
+  expect(Math.abs(firstPingerBox!.y - goingBox!.y)).toBeLessThan(firstPingerBox!.height)
+  // NOT FULL-WIDTH (AC2): the message button is narrower than its containing
+  // row, and the page does not widen.
+  const rowBox = await page.locator('button[aria-pressed]').first().locator('..').boundingBox()
+  expect(rowBox, 'RSVP row has no layout box').not.toBeNull()
+  expect(firstPingerBox!.width).toBeLessThan(rowBox!.width)
+  const scrollWidths = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(scrollWidths.scrollWidth).toBeLessThanOrEqual(scrollWidths.clientWidth + 1)
+  // TAP TARGET floor: every message control keeps ≥44px smallest dimension.
+  for (const btn of await hostMessageButtons.all()) {
+    const box = await btn.boundingBox()
+    expect(box, 'message control has no layout box').not.toBeNull()
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+    expect(box!.width).toBeGreaterThanOrEqual(44)
+  }
+  // PER-PINGER BUTTONS SIT NEXT TO EACH OTHER (AC3): the two boxes share a
+  // vertical band (one row) or wrap without overflow.
+  const secondPingerBox = await page
+    .getByRole('button', { name: new RegExp(`^Message ${escapeForRegExp(secondName)}$`) })
+    .boundingBox()
+  expect(secondPingerBox).not.toBeNull()
+  if (Math.abs(firstPingerBox!.y - secondPingerBox!.y) < Math.max(firstPingerBox!.height, secondPingerBox!.height)) {
+    // Same row band: they sit side by side.
+    expect(firstPingerBox!.x + firstPingerBox!.width).toBeLessThanOrEqual(secondPingerBox!.x + 1)
+  } else {
+    // Wrapped: no horizontal overflow either way.
+    const pageScroll = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }))
+    expect(pageScroll.scrollWidth).toBeLessThanOrEqual(pageScroll.clientWidth + 1)
+  }
+  // Tap the first pinger's button → the thread shows that pinger's message.
+  await page
+    .getByRole('button', { name: new RegExp(`^Message ${escapeForRegExp(viewerName)}$`) })
+    .click()
   await expect(page).toHaveURL(/\/inbox\?thread=/)
   await expect(page.getByTestId('other-message')).toContainText('Can we do Saturday?')
-
   // The dot cleared (markConversationRead fired on thread open).
   await expect(page.getByTestId(`unread-dot-${viewerProfileId}`)).toHaveCount(0)
 
+  await second.context.close()
   // Close the viewer's context (its ping row cascades with the post cleanup).
   await viewer.context.close()
 })
@@ -398,6 +496,13 @@ test('RLS isolation: a stranger cannot read or write messages', async ({
   await settleOnRoute(strangerPage, '/inbox')
   // No conversation row for this playdate (the stranger is not a participant).
   await expect(strangerPage.getByText(title)).toHaveCount(0)
+
+  // WHO-SEES-WHAT GATE (AC5): the stranger sees NO message control on the
+  // detail page either — the gate did not widen with the V33-6 move.
+  await strangerPage.goto(`/playdate/${playdateId}`)
+  await settleOnRoute(strangerPage, `/playdate/${playdateId}`)
+  await expect(strangerPage.getByRole('button', { name: 'Message the host' })).toHaveCount(0)
+  await expect(strangerPage.locator('button', { hasText: /^Message / })).toHaveCount(0)
 
   // Direct REST call: GET /rest/v1/messages?playdate_id=eq.<id> → [] (RLS).
   const { url, anonKey } = readSupabaseEnv()

@@ -2516,42 +2516,76 @@ export function PlaydateDetailPage() {
       {/* The RSVP block — the page's primary action, rendered for every viewer who
           is NOT the host (the host sees "This is your post" above instead and cannot
           ping their own post). r3-D1 moved it here, after the event's information;
-          see the order note at the top of this render. */}
+          see the order note at the top of this render.
+
+           V33-6: the founder's annotation ("shouldn't this button be like next to
+           the going button at the top? These buttons don't need to be so long")
+           moved the inbox entry point INTO this block, beside the Going control:
+           intrinsic width (no `w-full`), side by side with the ping button and
+           wrapping at phone widths. The gates are UNCHANGED — a stranger sees
+           nothing (`canMessageHost` still requires a live ping; the host's
+           per-pinger list still rides the same guest-list read) — only the
+           placement and width changed. */}
       {!isHost ? (
         <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            aria-pressed={going}
-            /* V8 ticket 02: a FAILED count read no longer disables this
-               button. `count === null` meant "the going count did not load",
-               and the button then sat there dead with no explanation — the one
-               control the page exists for, disabled by an unrelated read, with
-               "I'm going" as the only thing a visitor came to do. The write
-               path never needed the count (togglePing upserts/deletes on its
-               own), so the button stays enabled and the unknown count is
-               reported honestly BELOW it, with a Retry. */
-            disabled={pingBusy}
-            onClick={() => void handlePingToggle()}
-            autoFocus={confirmPing}
-            /* V6 (design jury item 5): the primary action leads by FILL and
-               WEIGHT, not by being taller. It was the same weight as its
-               outlined siblings and 2px shorter than them (they carry a
-               border), which is backwards: the most important control on the
-               page should not be the smallest one. The verb also now matches
-               the card's pill — "I'm going" / "Going" — instead of introducing
-               a third word for the same intent. */
-            className={`rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50${
-              going ? ' bg-green-700' : ' bg-indigo-600'
-            }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
-          >
-            {pingBusy
-              ? 'Updating…'
-              : confirmPing
-                ? 'Tap to confirm you’re coming'
-                : going
-                  ? '✓ Going'
-                  : 'I’m going'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={going}
+              /* V8 ticket 02: a FAILED count read no longer disables this
+                 button. `count === null` meant "the going count did not load",
+                 and the button then sat there dead with no explanation — the one
+                 control the page exists for, disabled by an unrelated read, with
+                 "I'm going" as the only thing a visitor came to do. The write
+                 path never needed the count (togglePing upserts/deletes on its
+                 own), so the button stays enabled and the unknown count is
+                 reported honestly BELOW it, with a Retry. */
+              disabled={pingBusy}
+              onClick={() => void handlePingToggle()}
+              autoFocus={confirmPing}
+              /* V6 (design jury item 5): the primary action leads by FILL and
+                 WEIGHT, not by being taller. It was the same weight as its
+                 outlined siblings and 2px shorter than them (they carry a
+                 border), which is backwards: the most important control on the
+                 page should not be the smallest one. The verb also now matches
+                 the card's pill — "I'm going" / "Going" — instead of introducing
+                 a third word for the same intent. */
+              className={`rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50${
+                going ? ' bg-green-700' : ' bg-indigo-600'
+              }${confirmPing ? ' ring-2 ring-indigo-400 ring-offset-2' : ''}`}
+            >
+              {pingBusy
+                ? 'Updating…'
+                : confirmPing
+                  ? 'Tap to confirm you’re coming'
+                  : going
+                    ? '✓ Going'
+                    : 'I’m going'}
+            </button>
+            {canMessageHost ? (
+              <button
+                type="button"
+                onClick={openInboxThread}
+                className="min-h-11 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
+              >
+                Message the host
+              </button>
+            ) : null}
+          </div>
+          {hostPingerNames.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {hostPingerNames.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={openInboxThread}
+                  className="min-h-11 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
+                >
+                  Message {name}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {/* V28 slice 2a: the no-home-zip notice — shown only after a blocked
               SETTING tap AND while the zip is still unset (a zip landing via
               refresh clears it); clearing a ping never raises it. */}
@@ -2768,33 +2802,6 @@ export function PlaydateDetailPage() {
       {guestLine !== null ? (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-slate-700">{guestLine}</p>
-        </div>
-      ) : null}
-
-      {/* V14 ticket 01: the inbox entry point — "Message the host" for a
-          pinger, one "Message <pinger>" button per pinger for the host.
-          Hidden otherwise (a stranger sees nothing; no free-form DM). */}
-      {canMessageHost ? (
-        <button
-          type="button"
-          onClick={openInboxThread}
-          className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
-        >
-          Message the host
-        </button>
-      ) : null}
-      {hostPingerNames.length > 0 ? (
-        <div className="mt-3 flex flex-col gap-2">
-          {hostPingerNames.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={openInboxThread}
-              className="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-indigo-100"
-            >
-              Message {name}
-            </button>
-          ))}
         </div>
       ) : null}
 
