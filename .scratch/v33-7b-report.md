@@ -195,4 +195,52 @@ location-first branches render the same markup as before — verified by their
 specs passing and by inspection of the staged diff (the only removed markup lines
 are the old branch-1-only `endBlock`, folded into `whenBlock`).
 
-Nothing was pushed. Branch `window-control-m6r3` at `2aed972`.
+Nothing was pushed. Branch `window-control-m6r3` (`36bf451` the slice, `2aed972`
+this report, `bab9b5a` the resume verification, and the commit carrying this
+section).
+
+## 6c. Independent corroboration on a CLEAN checkout of the committed state
+
+A third session re-ran the whole gate and both specs against the **committed**
+tree, from a throwaway detached worktree at `2aed972` — deliberately **not** the
+shared path, because §6b's foreign edits were still sitting in it and would have
+made the run unreadable.
+
+**Why a separate checkout was required — `GUARDS: FAIL` is 100% the other lane.**
+Running `npm run verify` in the shared worktree exited **1** with
+`GUARDS: FAIL — copy-field-consumption-guard`, 9 sub-checks red on
+`firstRunCopy.ts: "FIRST_RUN_COMPLETION_COPY" … the instrument is blind on it`.
+Measured against the two trees:
+
+| tree | `copy-field-consumption-guard.mjs` `consts:` | guard result |
+|---|---|---|
+| `HEAD` (`2aed972`, this slice) | `['FIRST_RUN_COPY', 'FIRST_RUN_NUDGE_COPY']` | **PASS** |
+| shared worktree (other lane's uncommitted edit) | `[…, 'FIRST_RUN_COMPLETION_COPY']` | **FAIL** |
+
+`FIRST_RUN_COMPLETION_COPY` does not exist anywhere in this slice's commits
+(`git show HEAD:src/lib/firstRunCopy.ts | grep -c` → 0), and this slice touches
+none of those files. The failure is the onboarding-Finish lane's half-finished
+guard config, not v33-7b.
+
+**On the clean checkout (`/tmp/pd-wt/wc-verify-m6r3` @ `2aed972`, then removed):**
+
+| Check | Result |
+|---|---|
+| `npm run verify` (with the config waiver) | **exit 0** — 92 files / **2715 tests**, oxlint **0 errors** (88 warnings), a11y:focus PASS, steering-lint PASS, **GUARDS: PASS** |
+| `post-fast.e2e.ts` (private port **4216**) | **8 passed** — incl. the v33-7b leg and v33-7a's 30-minute post |
+| `post-edit-delete.e2e.ts` (same port) | **7 passed** — `/edit` unchanged (AC5) |
+| `src/lib/feed.test.ts` | **436 passed** (10 new) |
+
+**The drag was mutation-proved a second time, independently.** Re-introducing the
+pre-v33-7b handler (end rides along, length preserved) in `stepWindowEnd` and
+re-running: `× THE SILENT DRAG: stepping the START moves the START and leaves the
+END` — **1 failed**, restored immediately after. The assertion is load-bearing,
+not vacuous.
+
+**Note on §6b's account.** The foreign files were not merely lifted by a stash
+cycle: during the resumed window the onboarding-Finish lane was **actively running
+Playwright in this same worktree** (`playwright test e2e/auth.setup.ts
+e2e/post-fast.e2e.ts e2e/post-edit-delete.e2e.ts` on port 4211, plus its own
+`onb-finish-transition` run). That is the mechanism by which the foreign edits
+appeared and kept re-appearing. Their work is intact and uncommitted; nothing of
+theirs was reverted.
