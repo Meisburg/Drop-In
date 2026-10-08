@@ -419,3 +419,41 @@ deleted.**
 **The prototype is BUILT AND CORRECTED**:
 `.scratch/v33/prototypes/browse/browse.html` + `browse-390.png` + `browse-1280.png`
 (06:28). It is the **visual reference for the slice — do not rebuild it.**
+
+---
+
+## 13 — v33-6 REGRESSION FIXED (2026-10-08)
+
+**HEAD `6e12c0b`** (`fix(drop-ins): the host's Message controls render again, and
+the specs can fail`). The fix was written by `wQ:p1F`, which then **wedged** — no
+child process, steps frozen for hours (the STALLED verdict from
+`fleet-stall-check`, not a pane guess). The tree was complete and typechecked, so
+the recovery was the proven **commit-only** shape on a fresh session: **8 steps,
+2 minutes.** Gate re-run by the orchestrator: **92 files / 2705 tests / 0 errors ·
+GUARDS PASS**, and the only red is the external steering-lint (now 5 findings, the
+other lane's `docs/agents/*`).
+
+The host sees one **"Message \<pinger\>"** per pinger again; the two vacuous spec
+assertions are restored and mutation-proved; the cheap `ocr` items are folded in
+(one message-control className, `goingButtonLabel` extracted, a stable key, the
+invalid `page.locator(sel, { hasText })` replaced by `.filter({ hasText })`, a
+guarded `context.close()`, a scoped viewport pin) plus the three `feed.ts`
+doc-drift lines from v33-7a's review.
+
+**`muyekozk` resolved** against `091aad8` + `6e12c0b` — after the fix, not before
+(the annotation was true only once the host row actually rendered).
+
+**Toolbar: 16 pending** (15 after this). Resolved so far: `muye8eek`, `muyfmog8`,
+`muyfsjwv`, `muyfsxah`, `muyejzaa`, `muyed1t6`, `muye9a6l`, `muyekozk`.
+Dismissed: `muyc5kwv`.
+
+**Lane state:** `wQ:p1G` is the one local lane, idle. The cloud rollover had not
+landed (new panes still read `qwen-local`), so the browse prototype work must wait
+for it or ride the single local lane.
+
+**Next, in order:** the **/browse slice** (corrected plan `.scratch/v33/plan-browse.md`
++ the built prototype as its visual reference — it is now SMALLER than first
+planned: one flat pill row, no tiers, no map door, plus the deleted modal and the
+Best-first default) · **v33-7b** · **v33-12** (avatar left of the name) · **5c** five
+miles · **v33-8** settings rule · **ADR** for community places on `0063` · the
+reviews-ask copy prototype.
