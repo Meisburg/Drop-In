@@ -285,3 +285,42 @@ collision keeps the 30-minute minimum and **shows the note**) in one line each.
 (`ss -ltn` clean); the temporary worktree was removed with
 `git worktree remove --force`. Nothing was pushed.
 
+## 6e. Fourth resume — and the one NEW trap a fresh checkout has
+
+The slice was still fully committed (`58a7158`) on resume, so again **no work was
+re-done**. This pass re-ran the gate and both specs on a fresh detached checkout
+at `58a7158` to confirm §6c/§6d first-hand rather than by report. Same result:
+
+```
+verify (clean detached checkout @ 58a7158) → exit 0
+  build ✓, typecheck:e2e ✓, 92 files / 2715 tests ✓, oxlint 0 errors,
+  a11y:focus ✓, steering-lint PASS (28 files), GUARDS: PASS
+e2e (port 4211, auth.setup + post-fast + post-edit-delete) → 14 passed, exit 0
+  [e2e v33-7a] live row: start_at=…T17:30:00+00:00 ends_at=…T18:00:00+00:00 span=30min
+  [e2e v33-7b] mount 630→690 (60min); after a start step 660→690
+               (end UNMOVED, 30min, no note); after stepping the start into the
+               end 690→720 (30min, note shown)
+```
+The silent drag was mutation-proved a **third** time (old handler restored →
+`× THE SILENT DRAG: stepping the START moves the START and leaves the END`,
+3 failed), then reverted with `git diff` empty.
+
+⚠️ **NEW, and the reason this section exists: a fresh `git worktree` has no
+`.env`, and without it 18 of the 92 test files fail to LOAD — not to assert.**
+The first run on the fresh checkout exited 1 with `Test Files 18 failed | 74
+passed` and every failure reading
+`Error: Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY (see .env)` from
+`src/lib/db-*.test.ts`. `.env` is gitignored and machine-local, so a clean
+checkout never has it. Copying the repo's `.env` in and re-running gave the
+`exit 0` above — **there was no code defect**. Anyone reproducing §6c/§6d on a
+new checkout must copy `.env` first, or they will read a red gate that says
+nothing about this slice. (This is distinct from §6c's `GUARDS: FAIL`, which is
+the other lane's guard config; this one is purely a missing local secret file.)
+
+**Final state:** branch `window-control-m6r3` at `58a7158`, working tree clean
+for all five slice files. The onboarding-Finish lane's uncommitted files
+(`firstRunCopy.ts`, `OnboardingPage.tsx`, both `copy-field-consumption-guard`
+files, and the untracked `onboardingCompletion.*` /
+`onboarding-finish-transition` pair) remain present and **untouched**. Port 4211
+released; the verification worktree removed. Nothing was pushed.
+
