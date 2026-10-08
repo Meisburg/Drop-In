@@ -1382,6 +1382,7 @@ export function InboxPage() {
                       photo is its ordinary initial circle; never a broken image. */}
                   {counterpart.id !== '' && counterpart.name !== '' ? (
                     <HostAvatar
+                      data-testid="thread-header-avatar"
                       host={{
                         id: counterpart.id,
                         display_name: counterpart.name,
@@ -1596,6 +1597,7 @@ export function InboxPage() {
                     <div className="flex items-center gap-2 px-1 pb-1">
                       <HostAvatar
                         size="sm"
+                        data-testid="composer-recipient-avatar"
                         host={{
                           id: counterpart.id,
                           display_name: counterpart.name,

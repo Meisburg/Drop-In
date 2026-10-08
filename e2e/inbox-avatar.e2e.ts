@@ -238,11 +238,15 @@ test('v33-12: the counterpart\'s avatar sits left of their name in the header an
 
     // ------------------------------------------ AC5: no per-bubble avatars
     // Every bubble row still carries exactly its own content: the optional
-    // sender-label paragraph, the body, and the reaction/time strip. Count the
-    // circles INSIDE the message region — there must be none (all the
-    // rounded-full spans live in the header/composer, outside this region).
+    // sender-label paragraph, the body, and the reaction/time strip. The claim
+    // is that NO AVATAR was added inside a bubble. ⚠️ It must NOT be asserted as
+    // "no span.rounded-full": every bubble's reaction pill is itself a
+    // `rounded-full` span (reactionButtonClasses), so that selector counts
+    // reaction controls, not faces, and would fail on a correct page. Assert
+    // against the avatar testids this slice added instead — the precise claim.
     const region = page.getByTestId('thread-messages')
-    await expect(region.locator('span.rounded-full')).toHaveCount(0)
+    await expect(region.getByTestId('thread-header-avatar')).toHaveCount(0)
+    await expect(region.getByTestId('composer-recipient-avatar')).toHaveCount(0)
     await expect(region.locator('img')).toHaveCount(0)
     // The existing bubble shape is intact: two bodies, each with its reaction
     // control (the specs that own those shapes pass untouched elsewhere too).
