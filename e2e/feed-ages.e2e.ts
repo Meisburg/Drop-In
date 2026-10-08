@@ -300,11 +300,18 @@ test('the card leads with the ages of the kids the host is bringing — and neve
 
   const card = cardFor(page, withKidsTitle)
   // The ages line is the FIRST line of the card's meta: the ticket's AC, pinned
-  // by ORDER against the place line that has always led the block.
+  // by ORDER against the place line that has always led the block. v33-5: this
+  // post has NO pings (nobody is going), so the going line never renders and
+  // the host's intended range stands alone on `card-age-range` — the branch
+  // that keeps it. The assertion waits for the line to paint before asserting
+  // anything about it (an absence asserted before paint is vacuous).
   await expect(card.getByTestId('card-age-range')).toHaveText('ages 3–6')
   const paragraphs = await card.locator('p').allInnerTexts()
   expect(paragraphs.indexOf('ages 3–6')).toBeGreaterThanOrEqual(0)
   expect(paragraphs.indexOf('ages 3–6')).toBeLessThan(paragraphs.indexOf(PLACE))
+  // v33-5: exactly ONE age line per card — no going line means no attendee band,
+  // so nothing else on this card can carry an age range.
+  expect(paragraphs.filter((text) => /age[s]?\b/.test(text)).length).toBe(1)
 
   // The ticket's "contains no kid name (asserted by absence)".
   for (const kid of kids) {
@@ -356,7 +363,9 @@ test('the card leads with the ages of the kids the host is bringing — and neve
 
   // Part 1b (this is now the whole STATED half too — V16 t03 item 1): a post
   // with NO kids picked states nothing → the card shows no ages line at all
-  // ("never a guess"), not an empty one.
+  // ("never a guess"), not an empty one. v33-5: this is also the "nobody is
+  // going" branch of `feed.cardAgeLineDecision` — the host range stands alone
+  // only when it EXISTS; here there is nothing to say, so no age line at all.
   await postDropIn(page, { title: bareTitle, kidLabels: [] })
   const bareCard = cardFor(page, bareTitle)
   await expect(bareCard).toBeVisible()
@@ -490,7 +499,12 @@ test('a kid can be saved with NO first name — the optional name, end to end', 
   await postDropIn(page, { title, kidLabels: [`Age ${age}`] })
 
   const card = cardFor(page, title)
+  // v33-5: the single-kid post has no pings either, so `card-age-range` is the
+  // one age line (the "nobody is going" branch keeps it). Wait for paint before
+  // asserting.
   await expect(card.getByTestId('card-age-range')).toHaveText('age 4')
+  const paragraphs = await card.locator('p').allInnerTexts()
+  expect(paragraphs.filter((text) => /age[s]?\b/.test(text)).length).toBe(1)
   await expect(card).not.toContainText('null')
   /**
    * V28 r4 — THE " · 4" CHECK WAS AIMED AT THE WRONG ELEMENT, and that is why it

@@ -10,6 +10,7 @@ import {
   ageBoundsLine,
   ageRangeFields,
   ageRangeLine,
+  cardAgeLineDecision,
   cardAgeRangeLabel,
   cardWhenLabel,
   buildGoingLine,
@@ -1617,27 +1618,54 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
   // V6: the kids half of the line (migration 0027's batched count feeds it).
   describe('the kids count', () => {
     it('is omitted entirely when nobody has said they are bringing kids', () => {
-      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT, 0)!.label).toBe('2 going')
-      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT)!.label).toBe('2 going')
+      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT, 0)!.label).toBe('2 parents')
+      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT)!.label).toBe('2 parents')
     })
 
-    it('reads "N going · M kids" when kids are coming', () => {
-      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT, 3)!.label).toBe('2 going · 3 kids')
+    it('reads "N parents · M kids" when kids are coming', () => {
+      expect(buildGoingLine(2, pingers(2), GOING_CIRCLE_LIMIT, 3)!.label).toBe('2 parents · 3 kids')
     })
 
     it('says "1 kid", not "1 kids"', () => {
-      expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT, 1)!.label).toBe('1 going · 1 kid')
+      expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT, 1)!.label).toBe('1 parent · 1 kid')
     })
 
     it('ignores a nonsense negative count rather than printing it', () => {
-      expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT, -2)!.label).toBe('1 going')
+      expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT, -2)!.label).toBe('1 parent')
     })
 
     it('leaves the circles and overflow to the parents alone', () => {
       const line = buildGoingLine(5, pingers(5), GOING_CIRCLE_LIMIT, 4)!
       expect(line.circles).toHaveLength(3)
       expect(line.overflow).toBe(2)
-      expect(line.label).toBe('5 going · 4 kids')
+      expect(line.label).toBe('5 parents · 4 kids')
+    })
+  })
+
+  // v33-5: both counts name their people as words (annotation muyed1t6 — "how
+  // many kids … how many parents"), singular at 1, and a zero-kid card says
+  // parents only (there is no "0 kids" state).
+  describe('the named counts (v33-5)', () => {
+    it('names parents and kids as words with the attendee band', () => {
+      expect(goingCountsLabel(3, 2, { min: 2, max: 5 })).toBe('3 parents · 2 kids (ages 2–5)')
+    })
+
+    it('is singular at one parent and one kid', () => {
+      expect(goingCountsLabel(1, 1, { min: 4, max: 4 })).toBe('1 parent · 1 kid (age 4)')
+    })
+
+    it('pluralises correctly at two', () => {
+      expect(goingCountsLabel(2, 2)).toBe('2 parents · 2 kids')
+    })
+
+    it('keeps a truthful label when the band read failed (no fabricated age)', () => {
+      expect(goingCountsLabel(3, 2)).toBe('3 parents · 2 kids')
+      expect(goingCountsLabel(3, 2, null)).toBe('3 parents · 2 kids')
+    })
+
+    it('never says "0 kids" — a zero-kid card reads parents only', () => {
+      expect(goingCountsLabel(2, 0, { min: 2, max: 5 })).toBe('2 parents')
+      expect(goingCountsLabel(2, 0)).toBe('2 parents')
     })
   })
 
@@ -1645,33 +1673,28 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
   // AGGREGATE ONLY — the band is two integers (min/max), never a per-kid age
   // or identity.
   describe('the kids age band', () => {
-    it('leaves the label unchanged when there is no band (the pre-apply / failed-read state)', () => {
-      expect(goingCountsLabel(3, 2)).toBe('3 going · 2 kids')
-      expect(goingCountsLabel(3, 2, null)).toBe('3 going · 2 kids')
-    })
-
     it('states the range as "ages min–max" (the en dash the app’s ranges use)', () => {
-      expect(goingCountsLabel(3, 2, { min: 2, max: 5 })).toBe('3 going · 2 kids (ages 2–5)')
+      expect(goingCountsLabel(3, 2, { min: 2, max: 5 })).toBe('3 parents · 2 kids (ages 2–5)')
     })
 
     it('collapses a one-year band to "age N"', () => {
-      expect(goingCountsLabel(1, 1, { min: 4, max: 4 })).toBe('1 going · 1 kid (age 4)')
+      expect(goingCountsLabel(1, 1, { min: 4, max: 4 })).toBe('1 parent · 1 kid (age 4)')
     })
 
     it('omits the kids segment (and the band) when nobody is bringing kids', () => {
-      expect(goingCountsLabel(2, 0, { min: 2, max: 5 })).toBe('2 going')
+      expect(goingCountsLabel(2, 0, { min: 2, max: 5 })).toBe('2 parents')
     })
 
     it('is threaded through buildGoingLine as the fifth argument', () => {
       const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT, 2, { min: 2, max: 5 })!
-      expect(line.label).toBe('3 going · 2 kids (ages 2–5)')
+      expect(line.label).toBe('3 parents · 2 kids (ages 2–5)')
     })
   })
 
   it('labels exactly 3 pingers with no overflow', () => {
     const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT)
     expect(line).not.toBeNull()
-    expect(line!.label).toBe('3 going')
+    expect(line!.label).toBe('3 parents')
     expect(line!.circles).toHaveLength(3)
     expect(line!.circles).toEqual([
       { avatarUrl: 'https://x/0.jpg', initial: 'P' },
@@ -1685,7 +1708,7 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
     const line = buildGoingLine(5, pingers(5), GOING_CIRCLE_LIMIT)!
     expect(line.circles).toHaveLength(3)
     expect(line.overflow).toBe(2)
-    expect(line.label).toBe('5 going')
+    expect(line.label).toBe('5 parents')
   })
 
   it('uses the display-name initial (upper-cased) when there is no avatar', () => {
@@ -1698,8 +1721,8 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
     expect(line.circles).toEqual([{ avatarUrl: null, initial: '?' }])
   })
 
-  it('labels a single pinger "1 going"', () => {
-    expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT)!.label).toBe('1 going')
+  it('labels a single pinger "1 parent"', () => {
+    expect(buildGoingLine(1, pingers(1), GOING_CIRCLE_LIMIT)!.label).toBe('1 parent')
   })
 
   it('keeps the pings\' order (the circles are the first `limit`)', () => {
@@ -1709,6 +1732,59 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
       'https://x/1.jpg',
       'https://x/2.jpg',
     ])
+  })
+})
+
+describe('cardAgeLineDecision (v33-5: one age line per card)', () => {
+  // The defect this seam exists to catch: TWO age ranges on one card — the
+  // host's `card-age-range` AND the attendee band inside the going line. The
+  // decision is pure, so the e2e absence assertion (exactly one of the two
+  // lines in the rendered DOM) is only as strong as this rule.
+  it('never renders two age ranges on one card (going-band suppresses card-age-range)', () => {
+    // Someone is going and the attendee band exists: the going line carries
+    // the ages, so the host range must be suppressed — both at once would be
+    // the duplicate-line failure the design reviews reject.
+    expect(
+      cardAgeLineDecision({
+        goingLineRenders: true,
+        attendeeBandPresent: true,
+        hostRangePresent: true,
+      }),
+    ).toBe('going-band')
+  })
+
+  it('lets card-age-range stand alone when nobody is going', () => {
+    // A fresh post (or a failed ping read): no going line, no band — the host's
+    // intended ages are the only age signal the card has.
+    expect(
+      cardAgeLineDecision({
+        goingLineRenders: false,
+        attendeeBandPresent: false,
+        hostRangePresent: true,
+      }),
+    ).toBe('host-range')
+  })
+
+  it('keeps card-age-range when the going line renders but its band read failed', () => {
+    // buildGoingLine still shows the counts ("2 parents · 1 kid") without a
+    // band; the ages then ride the host range, not a fabricated attendee band.
+    expect(
+      cardAgeLineDecision({
+        goingLineRenders: true,
+        attendeeBandPresent: false,
+        hostRangePresent: true,
+      }),
+    ).toBe('host-range')
+  })
+
+  it('renders nothing when neither source has an age to say', () => {
+    expect(
+      cardAgeLineDecision({
+        goingLineRenders: false,
+        attendeeBandPresent: false,
+        hostRangePresent: false,
+      }),
+    ).toBeNull()
   })
 })
 

@@ -8,6 +8,7 @@ import { WeatherChip } from './WeatherChip'
 // meta line against the SAME rule the card renders, instead of a copy of it.
 import {
   buildGoingLine,
+  cardAgeLineDecision,
   cardWhenLabel,
   formatDistanceLabel,
   formatTimeWindow,
@@ -335,6 +336,19 @@ export function DropInCard({
     kidsGoingCount,
     kidsGoingAgeBand,
   )
+  // v33-5: ONE age line per card (annotation muyed1t6 — "putting the ages of
+  // the kids here looks weird"). The going line renders when someone is going;
+  // it carries the attendee band only when that band exists. The pure
+  // `feed.cardAgeLineDecision` decides which age line stands: the band inside
+  // the going line (suppressing `card-age-range`) or the host's own range, so
+  // a card never prints two age ranges at once. React renders the decision;
+  // it does not make it (the build law).
+  const showHostAgeRange =
+    cardAgeLineDecision({
+      goingLineRenders: goingLine !== null,
+      attendeeBandPresent: kidsGoingAgeBand !== null,
+      hostRangePresent: ageRangeLabel !== null && ageRangeLabel !== '',
+    }) === 'host-range'
   // V32 v32-4 (A7/A9): the banner keyed by the url that failed. A url change
   // must clear the failure, or a card that once failed would keep its
   // illustration after the row gained a new photo (the PlaceDirectory rule).
@@ -518,8 +532,15 @@ export function DropInCard({
             means there is nothing to say — no kids picked and nothing stated —
             and then NOTHING renders: no empty line, no stray separator.
             `data-testid` is the stable handle the e2e reads (and asserts the
-            ABSENCE of, which is the other half of the rule). */}
-        {ageRangeLabel !== null && ageRangeLabel !== '' ? (
+            ABSENCE of, which is the other half of the rule).
+
+            v33-5: this line now renders ONLY when the pure decision hands it
+            over — the going line carries the attendee band (someone is going
+            AND the band exists), or nobody is going / the pings were never
+            read and the host's intended ages stand alone. Never both: two age
+            ranges on one card was exactly the defect annotation muyed1t6
+            pointed at. */}
+        {showHostAgeRange ? (
           <p data-testid="card-age-range" className="text-sm font-medium text-slate-700">
             {ageRangeLabel}
           </p>

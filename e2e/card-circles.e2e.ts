@@ -8,7 +8,9 @@
  * 0010 self-ping trigger allows it, the viewer is not the host). The
  * host's OWN feed card then shows the going line (the ticket pin: own
  * posts keep the line, the host sees who's coming — unlike the ping
- * toggle, which is hidden there): the pinger's circle, then "1 going". V25
+ * toggle, which is hidden there): the pinger's circle, then "1 parent" (v33-5:
+ * both counts name their people — "N parents · M kids"; a zero-kid card says
+ * parents only). V25
  * ticket 06 flipped that order — the circles LEAD and the count follows — and
  * this spec asserts the ORDER on the rendered geometry, because it is the
  * change a regression would silently undo. The ticket also took the overlap to
@@ -51,7 +53,7 @@ import {
   signUpViewer, stepStartTimeOnce,
 } from './fixtures'
 
-test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no "+N")', async ({
+test('a pinger\'s circle shows on the host\'s own card ("1 parent" + initial, no "+N")', async ({
   page,
   browser,
 }) => {
@@ -84,11 +86,11 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
 
   // No pings yet: the host's own card renders NO going line (count 0 →
   // the line is hidden — "0 going" is not a state). The anchored regex
-  // matches the going line's "N going" label only (the card's title also
+  // matches the going line's "N parents" label only (the card's title also
   // contains the word "going" — an unanchored match would hit the h3).
   const hostCard = page.locator('a').filter({ hasText: title }).first()
   await expect(hostCard).toBeVisible()
-  await expect(hostCard.getByText(/^\d+ going$/)).toHaveCount(0)
+  await expect(hostCard.getByText(/^\d+ parent(s)?$/)).toHaveCount(0)
 
   // --- The viewer: a second deterministic marker in a FRESH signed-out
   // context (the default context carries the host marker's session). The
@@ -129,7 +131,7 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // before the viewer's 4-call upsert chain commits, and the host reload
   // below re-runs the feed's ONE-SHOT pings fetch (no live refresh after
   // a toggle — the product behavior, parked ticket-07 observation). A
-  // reload that beats the upsert sees an empty feed and the "1 going"
+  // reload that beats the upsert sees an empty feed and the "1 parent"
   // assertion misses its window. Poll REST going_pings (the broad
   // authenticated SELECT, 0007) with the marker's own JWT (the same
   // extraction the cleanup below uses) until the row is visible.
@@ -164,12 +166,15 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // --- The host's feed: the host's OWN post keeps the going line. The
   // viewer has no avatar → the fallback-initial circle (the display
   // name's first char, upper — "E" for e2e-v-<epoch>; the only
-  // span.bg-slate-200 in the card is that circle). ---
+  // span.bg-slate-200 in the card is that circle). v33-5: the label names
+  // both counts as words — "1 parent" here (the pinger brings no kid, so
+  // there is no kids segment and no band; a zero-kid card never says
+  // "0 kids").
   await page.reload()
   // TODO(V27 slice 4, the going line's age BAND): this spec's pinger pings the
   // post WITHOUT a kid, so there is no `ping_kids` row and the card has no
-  // aggregate band to assert — the going line reads "1 going", never
-  // "1 going · 1 kid (age N)". MISSING FIXTURE: a pinger who attaches a
+  // aggregate band to assert — the going line reads "1 parent", never
+  // "1 parent · 1 kid (age N)". MISSING FIXTURE: a pinger who attaches a
   // `ping_kids` row to their `going_pings` row (a kid owned by the pinger, the
   // 0026/0040 policy), which would let this spec assert the 0056 band on the
   // host's card. Not invented here on purpose (the fixture is a real change to
@@ -189,16 +194,16 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   // invented here. WORKSPACE BLOCKER: no live credentials and no e2e/.auth
   // marker in this workspace, so the line cannot be exercised end-to-end; the
   // pure seam (feed.hostCommonGroundLine) is unit-tested instead.
-  await expect(hostCard.getByText('1 going', { exact: true })).toBeVisible()
+  await expect(hostCard.getByText('1 parent', { exact: true })).toBeVisible()
   await expect(hostCard.locator('span.bg-slate-200')).toHaveText('E')
   // One pinger: no "+N" overflow chip (the chip only appears past the
   // 3-circle cap — buildGoingLine's overflow math, unit-tested).
   await expect(hostCard.getByText(/^\+\d+$/)).toHaveCount(0)
 
   // V25 ticket 06: the CIRCLES lead and the count follows — the row reads
-  // "◍ 1 going", never the old "1 going ◍". Pinned on the RENDERED geometry
+  // "◍ 1 parent", never the old "1 parent ◍". Pinned on the RENDERED geometry
   // (not on a class name, which is what the ordering is made of): the
-  // fallback circle's left edge sits left of the "1 going" label. Both halves
+  // fallback circle's left edge sits left of the "1 parent" label. Both halves
   // matter — an x comparison alone would also pass if the two were stacked
   // vertically, so the SAME ROW is pinned by their vertical centres agreeing.
   // This is non-vacuous: the pre-ticket order (label first) fails the x check.
@@ -219,7 +224,7 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   }
   const goingCircleBox = await goingCircles.first().boundingBox()
   const goingLabelBox = await hostCard
-    .getByText('1 going', { exact: true })
+    .getByText('1 parent', { exact: true })
     .boundingBox()
   if (goingCircleBox === null || goingLabelBox === null) {
     throw new Error('the going row did not render a measurable circle AND label')
@@ -239,7 +244,7 @@ test('a pinger\'s circle shows on the host\'s own card ("1 going" + initial, no 
   await page.goto('/profile')
   const profileCard = page.locator('a').filter({ hasText: title }).first()
   await expect(profileCard).toBeVisible()
-  await expect(profileCard.getByText('1 going', { exact: true })).toBeVisible()
+  await expect(profileCard.getByText('1 parent', { exact: true })).toBeVisible()
   await expect(profileCard.getByText('No one’s going yet')).toHaveCount(0)
 
   await viewerContext.close()

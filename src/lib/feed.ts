@@ -1577,32 +1577,78 @@ export function buildGoingLine(
 }
 
 /**
- * "N going" / "N going · M kids" (V6).
+ * "N parents" / "N parents · M kids (ages 2–5)" (V6; v33-5 names both counts).
  *
  * First phone feedback: "it only says like one going as in like the parent, but
  * it doesn't show the kids that are going... you're trying to set this up for
  * kids to have a play date with other kids." Parents are how the app is used;
  * kids are why it exists, so both numbers belong on the card.
  *
+ * v33-5 (annotation muyed1t6): "I guess I'd like to just easily see how many
+ * kids are going to be there. How many parents are going to be there." The word
+ * "going" was the ambiguity — it read as ONE kind of person. Both counts now
+ * name their people as words: `3 parents · 2 kids (ages 2–5)`, singular at 1
+ * (`1 parent · 1 kid (age 4)`), and the band simply absent when unknown (the
+ * failed-read case keeps a truthful label: `3 parents · 2 kids`, never a
+ * fabricated age). A zero-kid card says parents ONLY — there is no "0 kids"
+ * state, so `2 parents` reads exactly as today's "2 going" did.
+ *
  * "1 kid" is singular; a post with nobody going shows nothing at all (the
  * caller hides the line — "0 going" is not a state, the V3 pin).
  *
- * V27 slice 4 adds the optional aggregate BAND: `3 going · 2 kids (ages 2–5)`
+ * V27 slice 4 adds the optional aggregate BAND: `3 parents · 2 kids (ages 2–5)`
  * (or `(age 4)` when the band is a single age). It is an aggregate only — no
  * per-kid age or identity — and it is simply absent when the band read failed
- * (the pre-apply / best-effort state), leaving the V6 label byte-identical.
+ * (the pre-apply / best-effort state), leaving the count label byte-identical.
  */
 export function goingCountsLabel(
   pingCount: number,
   kidsCount: number,
   ageBand: KidsAgeBand | null = null,
 ): string {
-  const going = `${pingCount} going`
-  if (kidsCount <= 0) return going
+  const parents = `${pingCount} ${pingCount === 1 ? 'parent' : 'parents'}`
+  if (kidsCount <= 0) return parents
   const kids = `${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
-  if (ageBand === null) return `${going} · ${kids}`
+  if (ageBand === null) return `${parents} · ${kids}`
   const ages = ageBand.min === ageBand.max ? `age ${ageBand.min}` : `ages ${ageBand.min}–${ageBand.max}`
-  return `${going} · ${kids} (${ages})`
+  return `${parents} · ${kids} (${ages})`
+}
+
+/**
+ * v33-5: WHICH age line this card renders — the card must say the ages ONCE.
+ *
+ * The founder's sentence (annotation muyed1t6): *"Putting the ages of the kids
+ * here looks weird to me. … I guess [you] could provide an age range of the
+ * kids because there's going to be multiple people there. It's not realistic
+ * that you list all the ages out of the kids."* Measured against the card, the
+ * complaint is two age signals at once: the host's intended range on
+ * `card-age-range` AND the attendee band inside the going line. This seam is
+ * the one decision over which of the two lines stands, so the card cannot
+ * render both.
+ *
+ * - SOMEONE IS GOING (the going line renders, with its counts + the attendee
+ *   band) → the band carries the ages and `card-age-range` is SUPPRESSED — no
+ *   duplicate ranges on one card.
+ * - NOBODY IS GOING, or the pings were never read (a fresh post, a failed
+ *   read) → the going line has no band to carry, so `card-age-range` stands
+ *   alone as the host's intended ages — the only age signal a fresh post has.
+ *
+ * Pure: the caller (the card) hands over what it knows — whether the going
+ * line renders at all, whether the attendee band exists, and whether the host
+ * range does — and gets back the single line to print. React renders, it does
+ * not decide (the build law).
+ */
+export function cardAgeLineDecision(input: {
+  /** The going line renders (someone is going). */
+  goingLineRenders: boolean
+  /** The attendee band exists (the going line can carry the ages). */
+  attendeeBandPresent: boolean
+  /** The host's own range exists (card-age-range would stand alone). */
+  hostRangePresent: boolean
+}): 'going-band' | 'host-range' | null {
+  if (input.goingLineRenders && input.attendeeBandPresent) return 'going-band'
+  if (input.hostRangePresent) return 'host-range'
+  return null
 }
 
 /**
