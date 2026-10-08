@@ -25,7 +25,7 @@ import {
   type FirstRunView,
 } from '../lib/firstRun'
 import { FIRST_RUN_COPY } from '../lib/firstRunCopy'
-import { FIRST_RUN_TOOLTIPS_ARMED_STATE } from '../lib/firstRunTooltips'
+import { clearFirstRunDismissed, FIRST_RUN_TOOLTIPS_ARMED_STATE } from '../lib/firstRunTooltips'
 import {
   addKid,
   createProfile,
@@ -1426,6 +1426,15 @@ export function OnboardingPage() {
       // null: the row is born without the photo, and the late upload leaves
       // an orphaned object, the escape's documented trade.)
       await createProfile(name, pendingAvatarUrl ?? undefined)
+      // v33-E: THE BRAND-NEW PROFILE STARTS UNDISMISSED. The first-run fact
+      // (`lib/firstRunTooltips`) is sessionStorage — per TAB — and shared with
+      // the resume nudge, so a profile created in a tab that already stood a
+      // first-run surface down inherited that dismissal and was never taught
+      // the tour. Clearing at the moment the row is minted (only on SUCCESS —
+      // a failed write must not touch the tab's fact) gives the new parent the
+      // orientation exactly once. A session that had already dismissed and is
+      // NOT creating a profile keeps its fact untouched.
+      clearFirstRunDismissed(window.sessionStorage)
       setPendingAvatarUrl(null)
       await refresh()
     } catch (err) {

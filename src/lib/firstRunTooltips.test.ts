@@ -31,6 +31,7 @@ import {
   FIRST_RUN_TOOLTIPS_LABELS,
   TOOLTIP_TARGET_TEST_IDS,
   TOOLTIPS_STEPS,
+  clearFirstRunDismissed,
   isFirstRunTooltipsArmed,
   markFirstRunDismissed,
   nextTooltipStepIndex,
@@ -177,6 +178,10 @@ describe('the shared dismissal fact', () => {
         if (broken) throw new Error('locked-down browser')
         entries[key] = value
       },
+      removeItem(key: string) {
+        if (broken) throw new Error('locked-down browser')
+        delete entries[key]
+      },
     }
   }
 
@@ -197,6 +202,52 @@ describe('the shared dismissal fact', () => {
 
   it('a throwing write swallows (the dismissal still applies to this mount)', () => {
     expect(() => markFirstRunDismissed(fakeStorage({}, true))).not.toThrow()
+  })
+
+  /**
+   * v33-E — THE DEFECT THIS TEST NAMES: a brand-new profile inherits a USED
+   * session's dismissal, so the new parent is never taught the tour.
+   *
+   * Mutation proof, run and recorded in `.scratch/v33-e-report.md`: delete the
+   * `clearFirstRunDismissed` call from `handleCreateProfile` (or make this
+   * helper a no-op) and the first assertion below goes red — the gate still
+   * reads the stale fact as dismissed.
+   *
+   * WHY THE TEST IS WRITTEN AS THE WHOLE GATE, not just the helper: the fix's
+   * claim is "the NEW parent sees the tour", and `shouldShowTooltips` is the
+   * only function that decides that. Testing the clear alone would pin the
+   * mechanism, not the behaviour the founder reported missing.
+   */
+  it('a brand-new profile is undismissed even in a tab that dismissed before', () => {
+    // The used tab: a parent stood the nudge (or the tour) down earlier today.
+    const storage = fakeStorage()
+    markFirstRunDismissed(storage)
+    const usedTab = { homeZipSet: true, signedIn: true, armed: true }
+
+    // BEFORE the clear: the new parent arrives armed and finished, and the
+    // stale per-tab fact silently closes the gate — the founder's screenshot.
+    expect(readFirstRunDismissed(storage)).toBe(true)
+    expect(shouldShowTooltips({ ...usedTab, dismissed: readFirstRunDismissed(storage) })).toBe(false)
+
+    // The profile is created (OnboardingPage's handleCreateProfile clears).
+    clearFirstRunDismissed(storage)
+
+    // AFTER: same facts, and the tour shows.
+    expect(readFirstRunDismissed(storage)).toBe(false)
+    expect(shouldShowTooltips({ ...usedTab, dismissed: readFirstRunDismissed(storage) })).toBe(true)
+  })
+
+  it('clearing does not resurrect a dismissal written AFTER the profile exists', () => {
+    // The order that must not regress: clear happens at creation only. A later
+    // dismissal (the parent walks the tour and stands it down) survives.
+    const storage = fakeStorage()
+    clearFirstRunDismissed(storage)
+    markFirstRunDismissed(storage)
+    expect(shouldShowTooltips({ homeZipSet: true, signedIn: true, armed: true, dismissed: readFirstRunDismissed(storage) })).toBe(false)
+  })
+
+  it('a throwing clear swallows (a locked-down browser keeps its fact)', () => {
+    expect(() => clearFirstRunDismissed(fakeStorage({}, true))).not.toThrow()
   })
 })
 

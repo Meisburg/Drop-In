@@ -74,6 +74,38 @@ export function markFirstRunDismissed(storage: Pick<Storage, 'setItem'>): void {
 }
 
 /**
+ * Clear the dismissal fact — v33-E. A **brand-new profile starts
+ * undismissed**, whatever this tab's history holds.
+ *
+ * ⚠️ THE DEFECT THIS CLOSES (measured, v33-E, private port 4210): the shared
+ * fact is `sessionStorage`, which is **per tab**, and the founder reviews this
+ * app in ONE tab all day. Whatever stood the nudge down earlier therefore also
+ * stood the tour down — so a profile created later in that used tab landed on
+ * the feed with no orientation. The reproduction numbers:
+ *
+ *   - fresh tab, fresh viewer, onboarding done → tour VISIBLE;
+ *   - used tab with `FIRST_RUN_DISMISSED_KEY` already set → tour ABSENT;
+ *   - same tab, key cleared before the walk → tour VISIBLE again.
+ *
+ * The fix is ONE clear on the profile-creation path (`OnboardingPage`'s
+ * `handleCreateProfile`, the write that mints the row), not a new storage
+ * layer and not a per-profile key: the fact stays per-tab and cross-surface,
+ * and "a session that already dismissed is not taught again" is untouched —
+ * clearing happens only when a NEW profile is created, which by definition is
+ * a parent who has never seen the tour.
+ *
+ * Best-effort like the write: a locked-down browser (sessionStorage throws)
+ * simply keeps whatever it had, and the gate's other clauses still decide.
+ */
+export function clearFirstRunDismissed(storage: Pick<Storage, 'removeItem'>): void {
+  try {
+    storage.removeItem(FIRST_RUN_DISMISSED_KEY)
+  } catch {
+    // A locked-down browser: nothing to clear, and nothing to crash.
+  }
+}
+
+/**
  * The transient trigger — "the run just ended in this tab". `OnboardingPage`
  * sets it on the finish redirect's navigation; the feed's gate reads it.
  * A plain object (structured-cloned into `history.state`), never a function
