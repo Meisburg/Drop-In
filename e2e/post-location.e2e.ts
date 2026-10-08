@@ -57,6 +57,7 @@ import {
   BROWSE_PLACES_LABEL,
   PLACE_BROWSE_LIMIT,
   PLACE_PICKER_LABEL,
+  placeTrustLine,
 } from '../src/lib/places'
 import {
   editTitle,
@@ -154,20 +155,28 @@ async function readMarkerPost(title: string): Promise<MarkerRow | null> {
  * this spec red, and a hard-coded one would silently stop proving anything if
  * the row were re-imported.
  *
- * V32-4F (F5): ONE helper selecting all three columns. It was two (plus a third
- * inline fetch in the unreviewed test) issuing separate single-column requests
- * for the same row; selecting them together removes the round-trips and makes
- * the photo/credit/state triple atomically consistent — a row cannot be
+ * V32-4F (F5): ONE helper selecting the columns together. It was two (plus a
+ * third inline fetch in the unreviewed test) issuing separate single-column
+ * requests for the same row; selecting them together removes the round-trips and
+ * makes the photo/credit/state triple atomically consistent — a row cannot be
  * observed mid-update with, say, a new url and a stale attribution.
+ *
+ * V33-4: the same read also selects `kind` + `indoor`, so the spec can assert
+ * the detail page's facts line against the SAME live row the app renders from,
+ * rather than a hard-coded kind word. `kind`/`indoor` are the very two fields
+ * `placeTrustLine` composes the facts line from, so reading them here is not a
+ * NEW read — it is the same row the page already loads via `place_ref`.
  */
 async function readPlacePhotoFields(placeId: string): Promise<{
   photo_url: string | null
   photo_attribution: string | null
   photo_review_state: string | null
+  kind: string | null
+  indoor: boolean | null
 } | null> {
   const { url, anonKey } = readSupabaseEnv()
   const res = await fetch(
-    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_url,photo_attribution,photo_review_state`,
+    `${url}/rest/v1/places?id=eq.${placeId}&select=photo_url,photo_attribution,photo_review_state,kind,indoor`,
     { headers: { apikey: anonKey } },
   )
   const rows = res.ok
@@ -175,6 +184,8 @@ async function readPlacePhotoFields(placeId: string): Promise<{
         photo_url: string | null
         photo_attribution: string | null
         photo_review_state: string | null
+        kind: string | null
+        indoor: boolean | null
       }>)
     : []
   return rows[0] ?? null
@@ -565,16 +576,27 @@ test('typing @ opens the picker, and picking a place fills place + address in on
   const detailPlaceLink = page.getByRole('link', { name: PLACE_NAME, exact: true })
   await expect(detailPlaceLink).toBeVisible()
   // V33-4: the place's own facts line (kind + indoor/outdoor) now renders under
-  // the name, so the paragraph's text is no longer just the place name. The
-  // facts come from `placeTrustLine` — the SAME seam the card uses — which for
-  // this seeded place yields "Park · Outdoor". Assert on the testid rather than
-  // a positional `p` read, because the trust line is its own element now.
+  // the name, so the paragraph's exact text is no longer just the place name —
+  // the old `toHaveText(PLACE_NAME)` pin on that paragraph moved here,
+  // deliberately, in the same diff. The facts are built by `placeTrustLine`
+  // (lib/places.ts) — the SAME seam the feed card uses, composed from
+  // `placeKindLabel` + `placeIndoorLabel` — so the page and the directory row
+  // cannot word a kind differently. Assert the rendered string against the
+  // helper's output on the SAME row the app reads (`kind` + `indoor`, the
+  // fields the `place_ref` embed carries): an exact match is what proves the
+  // page renders the shared vocabulary; a separator-only assertion would pass
+  // for a line the page invented on its own. A free-text post (no `place_id`)
+  // renders no facts line at all — that pin lives below, as a count of zero.
   const detailPlaceTrust = page.getByTestId('detail-place-trust')
-  await expect(detailPlaceTrust).toBeVisible()
-  await expect(detailPlaceTrust).toContainText('·')
-  // The name link still lives in the paragraph above it; assert the link is
-  // visible and the trust line is present, without pinning the paragraph's
-  // exact text (which would couple the spec to the trust line's wording).
+  const expectedTrustLine = placeTrustLine({
+    kind: placeFields!.kind ?? '',
+    indoor: placeFields!.indoor ?? false,
+  })
+  expect(
+    expectedTrustLine,
+    'the seeded directory place must carry a kind, or the page would render no facts line',
+  ).toBeTruthy()
+  await expect(detailPlaceTrust).toHaveText(expectedTrustLine)
 
   // The remembered place on the SEEDED-PLACE path (V8 ticket 01's memory).
   //
