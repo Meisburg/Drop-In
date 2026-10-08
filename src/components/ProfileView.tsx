@@ -31,6 +31,7 @@ import {
 } from '../lib/feed'
 import { PAST_FIRST_PAGE, nextPastVisible, planPastArchive } from '../lib/profileArchive'
 import { linkedNameTargetForViewer } from '../lib/links'
+import { interestBubbles } from '../lib/interestBubbles'
 import { parentNameRows } from '../lib/parentCards'
 import { profileBlurbOrder } from '../lib/photoStorage'
 import type { ParentCard, PlaydateWithNeighborhood, ProfileWithKids } from '../lib/types'
@@ -906,10 +907,52 @@ export function ProfileView({
             optional blocks ahead of it. It is deliberately OUTSIDE every other
             block's gate — a family that wrote interests and no parent rows still
             shows its interests (which is what this page has always done). */}
+        {/* v35-B (`muzjx0we`) — THE INTERESTS ARE EMOJI + TEXT BUBBLES.
+            The founder, verbatim, anchored on this block:
+            *"under interests, I would like a bubble with a lot of different
+            different categories that are represented by text plus a
+            corresponding emoji … if they're a book lover, it should say
+            'Book Lover 📕' in a pill ui … These categories will just let you
+            know what the person likes … if you see them at a drop-in you have
+            like something to connect on."*
+
+            The block's GATE (`showsInterests`) and its position are unchanged —
+            only the sentence became a row. The split into categories, the emoji
+            mapping and the unknown rule are ALL in `lib/interestBubbles` (the
+            build law: the component renders, it does not decide). No new read:
+            this is `profile.interests`, the same string the line used to print.
+
+            These are LABELS, not controls: `<li>` elements with no button, no
+            link, no `aria-pressed` and no press handler, so nothing here looks
+            tappable. The wrapper is a plain `<ul>` and the chips WRAP
+            (`flex-wrap`) rather than overflow at 390px. */}
         {showsInterests ? (
-          <p className="mt-2 text-sm text-slate-600">
-            Interests: {profile.interests}
-          </p>
+          <ul
+            data-testid="profile-interests"
+            className="mt-2 flex flex-wrap gap-2 list-none p-0"
+            aria-label="Interests"
+          >
+            {interestBubbles(profile.interests).map((bubble, index) => (
+              <li
+                /* Index in the key is deliberate: duplicate categories are kept
+                   (the parent typed them), so `text` alone is not unique. The
+                   ORDER is the parent's own and never sorted — acceptance (e). */
+                key={`${bubble.text}-${index}`}
+                data-testid="interest-bubble"
+                className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-700"
+              >
+                {bubble.emoji !== null ? (
+                  <span data-testid="interest-bubble-emoji" aria-hidden="true">
+                    {bubble.emoji}
+                  </span>
+                ) : null}
+                {/* The text is ALWAYS rendered, emoji or not — an unknown
+                    category keeps its words and gets no glyph, never a blank
+                    bubble and never a stand-in emoji. */}
+                <span>{bubble.text}</span>
+              </li>
+            ))}
+          </ul>
         ) : null}
         {/* V16 t05: THE FAMILY PHOTO IS THE CLOSER (it used to lead this card).
             "A PHOTO OF YOUR FAMILY" IS NOT PUBLIC — it is in the private bucket
