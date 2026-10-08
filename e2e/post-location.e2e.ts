@@ -564,7 +564,17 @@ test('typing @ opens the picker, and picking a place fills place + address in on
 
   const detailPlaceLink = page.getByRole('link', { name: PLACE_NAME, exact: true })
   await expect(detailPlaceLink).toBeVisible()
-  await expect(page.locator('p').filter({ has: detailPlaceLink })).toHaveText(PLACE_NAME)
+  // V33-4: the place's own facts line (kind + indoor/outdoor) now renders under
+  // the name, so the paragraph's text is no longer just the place name. The
+  // facts come from `placeTrustLine` — the SAME seam the card uses — which for
+  // this seeded place yields "Park · Outdoor". Assert on the testid rather than
+  // a positional `p` read, because the trust line is its own element now.
+  const detailPlaceTrust = page.getByTestId('detail-place-trust')
+  await expect(detailPlaceTrust).toBeVisible()
+  await expect(detailPlaceTrust).toContainText('·')
+  // The name link still lives in the paragraph above it; assert the link is
+  // visible and the trust line is present, without pinning the paragraph's
+  // exact text (which would couple the spec to the trust line's wording).
 
   // The remembered place on the SEEDED-PLACE path (V8 ticket 01's memory).
   //
@@ -716,6 +726,10 @@ test('"Somewhere else" still posts free text — and its address is still the Ma
   // ticket is about — fails here.
   const placeLine = page.locator('p').filter({ has: maps })
   await expect(placeLine).toHaveText(place)
+
+  // V33-4: a free-text post (no `place_id`) renders NO facts line at all — no
+  // placeholder, no dangling separator. The trust line's testid must be absent.
+  await expect(page.getByTestId('detail-place-trust')).toHaveCount(0)
 
   // The SECOND signed-out shape (the anon RPC again, different row): a post with
   // no neighbourhood AND no place_id, which is the whole existing free-text

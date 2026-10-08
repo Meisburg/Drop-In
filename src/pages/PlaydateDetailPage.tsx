@@ -70,7 +70,7 @@ import { canModerate } from '../lib/moderation'
 // (the 13th public field is a bare id; the place page reads the directory
 // itself).
 import { hasPlaceRating } from '../lib/reviews'
-import { placePath, placePhotoForDropIn } from '../lib/places'
+import { placePath, placePhotoForDropIn, placeTrustLine } from '../lib/places'
 import { PlaceRatingLine } from '../components/PlaceRatingLine'
 // V28 slice 2a fix 1/5: the ONE home-zip presence predicate (lib/homeZip.ts) —
 // every presence test on this page goes through it, so a guard can never be
@@ -1678,6 +1678,10 @@ export function PlaydateDetailPage() {
   const detailBanner = detail.place_ref ?? null
   const detailPhoto = detailBanner !== null ? placePhotoForDropIn(detailBanner) : null
   const detailBannerKind = detailBanner?.kind ?? 'other'
+  // V33-4: the place's own facts — kind and indoor/outdoor — from the SAME
+  // `placeTrustLine` seam the card uses. Null for a free-text post (no
+  // directory place) or a degraded embed; the page then renders no facts line.
+  const detailPlaceTrustLabel = placeTrustLine(detail.place_ref)
   // V8 ticket 09: ONE "now" for this render — the "Same time next week"
   // block's day/time label reads the same clock it was offered under, so the
   // block can never be labelled with a day it is not actually offering.
@@ -2385,6 +2389,15 @@ export function PlaydateDetailPage() {
             ? ` · ${detail.neighborhood.name}`
             : ''}
         </p>
+        {/* V33-4: the place's own facts — kind and indoor/outdoor — under the
+            name, from the SAME `placeTrustLine` seam the card uses. Renders
+            ONLY when `place_ref` resolved AND the post names a directory place;
+            a free-text post shows nothing rather than a guess. */}
+        {detailPlaceTrustLabel !== null && detail.place_id != null ? (
+          <p data-testid="detail-place-trust" className="mt-1 text-xs text-slate-500">
+            {detailPlaceTrustLabel}
+          </p>
+        ) : null}
         {/* V32 v32-9 (A10) — THE PLACE'S RATING, BESIDE THE PLACE IT DESCRIBES.
             Q1 ruled: the stars rate the PLACE, not the drop-in (rating the
             drop-in itself is out of scope and is not queued).
