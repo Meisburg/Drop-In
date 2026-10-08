@@ -170,9 +170,9 @@ Read it when its situation arrives — the pointer says when.
 
 | Read before | File |
 |---|---|
-| Any `git push` to origin/master | `docs/agents/auto-push.md` — the three conditions, staging rules, enforcing hook |
+| Any `git push` to origin/master | `docs/agents/auto-push.md` — the three conditions, staging rules, hook |
 | Starting ANY browser lane (e2e, playtest, audits) | `docs/agents/browser-lanes.md` — the human works here; never touch their Chrome |
-| A slice touches an external API, library, or version-specific behavior | `docs/agents/grounding-gates.md` — Exa grounding before dispatch; findings into `research/` |
+| A slice touches an external API, library, or version-specific behavior | `docs/agents/grounding-gates.md` — grounding before dispatch; findings into `research/` |
 | Acting as the DSH coordinator | `docs/agents/coordinator.md` — dispatch mechanics, migration/QA steps, fleet roles |
 | Running agents in Orca (worktrees, terminals, diff, browser) | `docs/agents/orca.md` — the workspace substrate, and what it must never own |
 | Choosing compute or a model, or a lane is resource-blocked | `docs/agents/compute-policy.md` — local-first routing; then `factory.md`, `model-routing.md` |
@@ -181,13 +181,14 @@ Read it when its situation arrives — the pointer says when.
 | Running the playtest lane | `docs/agents/playtest-lane.md` — routes, verdict, evidence |
 | Running e2e, or changing `e2e/.e2e-target.json` | `docs/agents/e2e-target-guard.md` — the target policy and its waiver; then `e2e-fixture-convention.md` |
 | Filing or triaging a ticket | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` |
-| The human hands you a batch of browser annotations | `docs/agents/annotations.md` — the server and the triage rule |
+| The human hands you a batch of browser annotations | `docs/agents/annotations.md` — server and triage rule |
 | Naming a domain concept | `docs/agents/domain.md` — `CONTEXT.md` + `docs/adr/`, created lazily |
-| CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what CI runs, the two repo variables, what it skips |
-| Dispatching a slice, or picking a lane | `docs/agents/builder-routing.md` — the lane pool, one slice per lane, one writer per worktree |
-| Where work runs (5090 / cloud / fleet) | `docs/agents/compute-split.md` — a rate meter is not parallelizable by adding machines |
-| Fleet capacity, or a stalled lane | `docs/agents/fleet-capacity.md`, `docs/agents/lane-health.md` — measured ceilings, the safe-lane cap |
+| CI is red, or changing `.github/workflows/` | `docs/agents/ci.md` — what it runs, the two repo variables, what it skips |
+| Dispatching a slice, or picking a lane | `docs/agents/builder-routing.md` — one slice per lane, one writer per worktree |
+| Where work runs (5090 / cloud / fleet) | `docs/agents/compute-split.md` — a rate meter cannot be parallelized |
+| Fleet capacity, or a stalled lane | `docs/agents/fleet-capacity.md`, `lane-health.md` — ceilings, the lane cap |
 | Running more than one slice at once | `docs/agents/parallel-development.md` — read-only lanes overlap; writers never |
+| Writing a slice brief | `docs/agents/brief-template.md` — the required shape, two-strikes rule |
 
 **A pointer is skippable; a file you never opened is not a rule you followed.**
 The unconditional rules — delegate and never do the work yourself; the
