@@ -457,3 +457,43 @@ planned: one flat pill row, no tiers, no map door, plus the deleted modal and th
 Best-first default) · **v33-7b** · **v33-12** (avatar left of the name) · **5c** five
 miles · **v33-8** settings rule · **ADR** for community places on `0063` · the
 reviews-ask copy prototype.
+
+---
+
+## 14 — NEW BATCH: 9 annotations filed 2026-10-08 13:07–13:23 (24 pending again)
+
+Triaged on arrival, **not dispatched**. Two of them **change the browse slice
+before it is dispatched** — read those first.
+
+### ⚠️ These two revise the browse work in flight
+
+- **`muzk5y54` (browse, multi-select row)** — his **wife**, reviewing with him:
+  *"why aren't all these pills together? Why are they all space-weird? … you don't
+  even need to make them scrollable where they're off-screen, you could show all of
+  them together."* **This supersedes the correction's "scrolls sideways":** the pill
+  row must **wrap and show every pill, none off-screen**, and the spacing must read
+  as one group (tight, even gaps) rather than "space-weird". The corrected plan's
+  §3 and acceptance criterion 7 (sideways scroll) change accordingly.
+- **`muzk3j1e` (browse)** — two findings in one: **the coffee-nearby control renders
+  TWICE** (a real defect — duplicate control on the row), and **the data rule for
+  the claim**: *"if there's any coffee shop that's less than a fourth of a mile from
+  that location we can make that claim"* → **< ¼ mile (400 m)**, which **narrows
+  v32-10's pinned 750 m** and gives the refresh script a real threshold. Re-run
+  `scripts/refresh-coffee-nearby.mjs` at 400 m when it is next paced.
+
+### New work, grouped (V34 candidates — do NOT fold into V33)
+
+| Group | Annotation | Ask |
+|---|---|---|
+| Browse pills | `muzka6tz` | a new pill category: **bathrooms available** (needs a data source — OSM `toilets`, the same Overpass/cached-column shape as `coffee_nearby`) |
+| Place page | `muzk9fk3` | show the place's own attributes as pills **on the place page** (coffee nearby, outdoor, playground) |
+| Reviews | `muzk8c1g` | the reviewer's **avatar left of their name**, and the name **links to their profile** — the same avatar-beside-name pattern as v33-12 |
+| Profile | `muzjx0we` | interests as **emoji + text bubbles** (a picker of categories), replacing the free-text field's feel |
+| Feed map | `muzk0bae` | the marker popup says **"details" twice** — one is redundant |
+| Onboarding | `muzkg290` | clicking Finish **jumps into the app jarringly**; wants a loading / "building your profile" state |
+| Onboarding | `muzkh36s` | after creating a profile the **orientation tooltips did not appear** — possible real bug (the first-run tour; see `.scratch/first-run-tooltip-target/`) |
+
+**Ordering by value:** the two browse items gate the browse slice — apply them
+there. Then `muzk0bae` (a redundancy, tiny), `muzkh36s` (possibly a broken
+first-run experience), `muzk8c1g` (consistent with v33-12's ruling),
+`muzkg290`, `muzk9fk3`, `muzjx0we`, `muzka6tz` (needs a data decision).
