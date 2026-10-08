@@ -1,12 +1,15 @@
 import type { FormEvent, ReactNode } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import {
   durationLabel,
   formatTimeLabel,
   kidLabel,
+  MIN_WINDOW_MINUTES,
   PLAYDATE_DURATIONS_MINUTES,
   smallHoursStartNote,
   stepTimeMinutes,
+  stepWindowEnd,
   TIME_STEP_MINUTES,
   TITLE_MAX_LENGTH,
 } from '../lib/feed'
@@ -279,6 +282,16 @@ export function PlaydateFormFields({
   onSubmit,
 }: PlaydateFormFieldsProps) {
   const endTotal = values.startMinutes + values.durationMinutes
+  /**
+   * V33 slice 7b — WHETHER THE LAST STEP MOVED THE OTHER END, so the window
+   * section can SAY SO instead of moving a value invisibly. Local UI state: it
+   * describes the last interaction, not the form's data, and it is derived from
+   * `stepWindowEnd`'s answer rather than recomputed here (the one-copy rule).
+   *
+   * It clears on the next step; it is NOT sticky, because the note is "that step
+   * moved the other end", which stops being true the moment another step lands.
+   */
+  const [otherEndMoved, setOtherEndMoved] = useState(false)
   // V3 slice 5 (ticket 08): the address's inline error (≤120 after trim;
   // computed at render, like the title's live counter — no separate
   // error state).
@@ -507,8 +520,17 @@ export function PlaydateFormFields({
      it surfaces in the visible "When" section (whenBlock) instead of behind More
      options — the summary still reads the day and the window back as text.
      Branches 2/3 (the location-first page and /edit) keep startBlock in the flow
-     as-is, so /edit stays byte-identical. */
-  const startBlock = (
+     as-is, so /edit stays byte-identical.
+
+     ⚠️ `onStartStep` IS A PARAMETER (V33 slice 7b), and that is a one-copy
+     decision rather than a convenience. The date input, the start stepper and
+     the two notes below are the SAME markup on every branch — only the STEP RULE
+     differs: `/new` steps the window (`stepWindowEnd`, so the end does not ride
+     along), while `/edit` and the location-first page keep the pre-v33-7b
+     handler because the brief pins their markup and behaviour as unchanged.
+     Passing the handler in keeps ONE copy of the control that both branch
+     families render; an inlined second copy is how the two drift. */
+  const startBlock = (onStartStep: (deltaMinutes: number) => void) => (
     <div className="flex flex-col gap-1 text-sm">
       <span className="text-slate-700">Start</span>
       <input
@@ -522,12 +544,7 @@ export function PlaydateFormFields({
         {...fieldA11y('start-date', errors.startDate ?? null)}
       />
       {errors.startDate ? <p role="alert" id={errorId('start-date')} className="text-sm text-red-600">{errors.startDate}</p> : null}
-      <TimeStepper
-        minutes={values.startMinutes}
-        onStep={(delta) =>
-          onFieldChange('startMinutes', stepTimeMinutes(values.startMinutes, delta))
-        }
-      />
+      <TimeStepper minutes={values.startMinutes} onStep={onStartStep} />
       {errors.startMinutes ? (
         <p role="alert" id={errorId('start-time')} className="text-sm text-red-600">{errors.startMinutes}</p>
       ) : smallHoursStartNote(values.startMinutes) !== null ? (
@@ -541,14 +558,82 @@ export function PlaydateFormFields({
     </div>
   )
 
-  /* V11 ticket 05: the visible "When" section — the place block's section-label
-     style (the ticket pins `text-sm font-semibold text-slate-700`) with startBlock
-     under it. Rendered by /new (branch 1) only, in the visible flow; branches 2/3
-     keep startBlock in the flow directly, so /edit stays byte-identical. */
+  /* V33 slice 7b — START AND END ARE ONE WINDOW, NOT TWO QUESTIONS.
+     The founder (muyefjzq, second half): *"There's got to be a more elegant and
+     refined way to show off setting your start time and your end time."* The
+     section keeps the V11 ticket 05 heading style (`text-sm font-semibold
+     text-slate-700`) and holds the date + the two steppers in ONE bordered
+     block, with a single "When" heading — so the two steppers read as the two
+     ends of one answer rather than two unrelated fields.
+
+     ⚠️ NO COPY HERE IMPLIES A FIXED LENGTH. There is no "How long", no "1h", no
+     "Ends …" line on /new (the chips and the read-back are branches 2/3's
+     `durationBlock`, untouched). The only sentence the section adds is the
+     "other end moved" note, which states what JUST HAPPENED rather than what
+     the length is allowed to be.
+
+     ONE SOURCE FOR THE START CONTROL: the date input, the start stepper and the
+     start error/small-hours notes below come from `startBlock` — the SAME markup
+     branches 2/3 render — so the two branch families cannot drift. The step
+     HANDLER is the one thing that must differ (`/new` uses the window rule, the
+     other branches keep the pre-v33-7b one), and `startBlock` takes it as an
+     argument for exactly that reason. Branches 2/3 keep `startBlock` +
+     `durationBlock` verbatim, so /edit's markup and the location-first page are
+     byte-identical. */
   const whenBlock = (
     <div className="flex flex-col gap-1">
       <span className="text-sm font-semibold text-slate-700">When</span>
-      {startBlock}
+      <div
+        data-testid="window-section"
+        className="flex flex-col gap-2 rounded-xl border border-slate-200 p-2"
+      >
+        {/* THE START HALF, from the ONE `startBlock` — the only difference is
+            the step rule, which is what makes `/new` a window control. */}
+        {startBlock((delta) => {
+          const next = stepWindowEnd(
+            { startMinutes: values.startMinutes, endMinutes: endTotal },
+            'start',
+            delta,
+          )
+          onFieldChange('startMinutes', next.startMinutes)
+          onFieldChange('durationMinutes', next.endMinutes - next.startMinutes)
+          setOtherEndMoved(next.otherEndMoved)
+        })}
+        {/* V13 ticket 03's End stepper, now the SECOND END of one window rather
+            than a block of its own. Stepping it moves the end; the start is the
+            "other end" that gives way only to keep the 30-minute minimum, and
+            that is what the note below announces. */}
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-700">End</span>
+          <TimeStepper
+            minutes={endTotal}
+            onStep={(delta) => {
+              const next = stepWindowEnd(
+                { startMinutes: values.startMinutes, endMinutes: endTotal },
+                'end',
+                delta,
+              )
+              onFieldChange('startMinutes', next.startMinutes)
+              onFieldChange('durationMinutes', next.endMinutes - next.startMinutes)
+              setOtherEndMoved(next.otherEndMoved)
+            }}
+            label="end"
+            testId="end-time-label"
+          />
+          {errors.durationMinutes ? (
+            <p role="alert" id={errorId('duration')} className="text-sm text-red-600">{errors.durationMinutes}</p>
+          ) : null}
+        </div>
+        {/* THE NOTE THE BRIEF REQUIRES: a window must satisfy end > start, and
+            when a step would break that the OTHER end moves. Say it, never let
+            it happen invisibly. It says what happened, not what the length may
+            be — no fixed length is implied. */}
+        {otherEndMoved ? (
+          <p data-testid="window-adjusted-note" className="text-sm text-slate-600">
+            Kept the other end at least {MIN_WINDOW_MINUTES} minutes away.
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 
@@ -605,39 +690,11 @@ export function PlaydateFormFields({
     </div>
   )
 
-  /* V13 ticket 03 (A16/A17): the /new (branch 1) END TIME — a second stepper
-     (the same TimeStepper shape as the start, labeled "End" with testid
-     `end-time-label`). Stepping it writes `durationMinutes = end − start`
-     (wrapping past midnight is allowed, matching the existing `(next day)`
-     handling). The "How long" label and the duration-chips row are GONE from
-     the /new flow (AC1: no "how long" control, no "Ends …" line on /new);
-     branches 2/3 keep durationBlock byte-identical so /edit is untouched. */
-  const endBlock = (
-    <div className="flex flex-col gap-1 text-sm">
-      <span className="text-slate-700">End</span>
-      <TimeStepper
-        minutes={endTotal}
-        onStep={(delta) => {
-          const newEnd = stepTimeMinutes(endTotal, delta)
-          // duration = end − start (wrap past midnight allowed: if the end
-          // wraps below the start, the window crosses midnight and the
-          // duration is the difference modulo the day).
-          const duration = ((newEnd - values.startMinutes) % DAY_MINUTES + DAY_MINUTES) % DAY_MINUTES
-          onFieldChange('durationMinutes', duration)
-        }}
-        label="end"
-        testId="end-time-label"
-      />
-      {errors.durationMinutes ? (
-        <p role="alert" id={errorId('duration')} className="text-sm text-red-600">{errors.durationMinutes}</p>
-      ) : null}
-    </div>
-  )
-
   /* V13 ticket 03: the /new (branch 1) DURATION read-back is REPLACED by the
-     end stepper above. The old `durationValueLine` ("How long / 1h · Ends …")
-     is gone from the /new flow (AC1: no "Ends …" line on /new). Branches 2/3
-     still use durationBlock (byte-identical to before this ticket). */
+     END stepper, which since V33 slice 7b lives inside `whenBlock` as the second
+     end of one window. The old `durationValueLine` ("How long / 1h · Ends …") is
+     gone from the /new flow (AC1: no "Ends …" line on /new). Branches 2/3 still
+     use `durationBlock` (byte-identical to before that ticket). */
 
   /* V3 slice 6 (ticket 09): the "Best for ages" section is REPLACED by the
      "Kids you're bringing" picker — a multi-select of the host's own kids
@@ -812,10 +869,9 @@ line. No kids yet → the designed empty state + the /settings link (the
               put the auto-filled value far from the field that filled it. */}
           {addressBlock}
           {mapSlot}
-          {/* V13 ticket 03: the END stepper replaces the duration read-back —
-              three picks (date, start, end), no "how long" control. */}
+          {/* V13 ticket 03 / V33 slice 7b: the END stepper now lives INSIDE
+              `whenBlock`, because Start and End are one window. */}
           {whenBlock}
-          {endBlock}
           {/* V13 ticket 02: repeat + ages + details now have visible homes in
               the compact tail before kids (the disclosure is gone). */}
           {moreTailBlock}
@@ -833,7 +889,12 @@ line. No kids yet → the designed empty state + the /settings link (the
           {titleBlock}
           {addressBlock}
           {neighborhoodBlock}
-          {startBlock}
+          {/* Branches 2/3 keep the PRE-v33-7b start step (see `startBlock`'s
+              doc): their window is expressed by `durationBlock`'s chips, and the
+              brief pins their markup and behaviour as unchanged. */}
+          {startBlock((delta) =>
+            onFieldChange('startMinutes', stepTimeMinutes(values.startMinutes, delta)),
+          )}
           {durationBlock}
           {kidsBlock}
           {detailsBlock}
@@ -845,7 +906,12 @@ line. No kids yet → the designed empty state + the /settings link (the
           {placeBlock}
           {addressBlock}
           {neighborhoodBlock}
-          {startBlock}
+          {/* Branches 2/3 keep the PRE-v33-7b start step (see `startBlock`'s
+              doc): their window is expressed by `durationBlock`'s chips, and the
+              brief pins their markup and behaviour as unchanged. */}
+          {startBlock((delta) =>
+            onFieldChange('startMinutes', stepTimeMinutes(values.startMinutes, delta)),
+          )}
           {durationBlock}
           {kidsBlock}
           {detailsBlock}

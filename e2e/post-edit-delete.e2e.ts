@@ -73,7 +73,7 @@ async function postMarkerDropIn(
   page: Page,
   title: string,
   startDate: string,
-): Promise<{ startLabel: string; startMinutes: number }> {
+): Promise<{ startLabel: string; startMinutes: number; endLabel: string }> {
   await page.goto('/new')
   await settleOnRoute(page, '/new')
   // V9 ticket 03 (review cycle 1, F2): the summary's title is a read-back —
@@ -91,9 +91,21 @@ async function postMarkerDropIn(
   // timed out three specs in this file. The form already picks a duration for
   // the parent from the start slot; the End stepper is the read-back.
   await expect(page.getByTestId('end-time-label')).toBeVisible()
+  /**
+   * ⚠️ THE END IS READ OFF THE FORM, NOT COMPUTED AS `start + 60` (v33-7b).
+   *
+   * The old arithmetic encoded the very coupling this slice removes: it assumed
+   * stepping the START dragged the END along, so `startMinutes + 60` was the
+   * end. Since v33-7b a start step leaves the end where it was, so that sum is
+   * simply a different time than the form now posts. Reading the rendered end
+   * label makes this helper describe WHAT THE FORM DID rather than restating a
+   * rule about how the two ends relate — which is also what every assertion
+   * below is really about.
+   */
+  const endLabel = (await page.getByTestId('end-time-label').innerText()).replace(/\s+/g, ' ').trim()
   await page.getByRole('button', { name: 'Post drop-in' }).click()
   await page.waitForURL('/')
-  return { startLabel: start.startLabel, startMinutes: start.startMinutes }
+  return { startLabel: start.startLabel, startMinutes: start.startMinutes, endLabel }
 }
 
 /** The marker's own row for `title`, read back through PostgREST. */
@@ -129,8 +141,11 @@ test('the host fixes the start time — the card and the detail show the new win
   const title = `e2e ${marker.displayName} edit-time`
   // Two days out: inside the feed's upcoming window whatever the clock says.
   const startDate = localDatePlusDays(2)
-  const { startLabel, startMinutes } = await postMarkerDropIn(page, title, startDate)
-  const oldEndLabel = formatTimeLabel(startMinutes + 60)
+  const { startLabel, startMinutes, endLabel: oldEndLabel } = await postMarkerDropIn(
+    page,
+    title,
+    startDate,
+  )
   const details = 'E2E — moved an hour later, bring the blue ball.'
 
   await page.goto('/')
@@ -157,10 +172,22 @@ test('the host fixes the start time — the card and the detail show the new win
   await expect(page.getByPlaceholder(PLACE_PLACEHOLDER)).toHaveValue(PLACE)
   await expect(page.locator('input[type="date"]')).toHaveValue(startDate)
   await expect(page.getByTestId('start-time-label')).toHaveText(startLabel)
-  await expect(page.getByRole('button', { name: '1h', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  /**
+   * ⚠️ THE CHIP IS NO LONGER ASSERTED AS PRESSED (v33-7b), and the REASON is the
+   * slice's own change rather than a weakened check.
+   *
+   * The old coupling moved the END with the start, so the helper's one start
+   * step produced a 60-minute post and `/edit` prefilled the "1h" chip. Since
+   * v33-7b the end stays where the parent left it, so that same step produces a
+   * 30-minute window — which no chip represents (the chips are 1h/1.5h/2h/3h;
+   * a free length is v33-7a's whole point). The chip row therefore correctly
+   * shows NOTHING pressed, which this asserts exactly: pinning `1h` here would
+   * pin the removed coupling back.
+   *
+   * The REAL read-back — that /edit prefills the window the post stores — is the
+   * `Ends …` line asserted below. It is unchanged and still exact.
+   */
+  await expect(page.locator('button[aria-pressed="true"]')).toHaveCount(0)
   // V9 ticket 01 CHANGED THIS ASSERTION, deliberately. It used to be
   // `await expect(page.locator('select')).toHaveValue(/.+/)` — pinning that a
   // post created through /new arrives on /edit WITH a neighbourhood, because
@@ -215,7 +242,7 @@ test('the host fixes the start time — the card and the detail show the new win
 test('a save that changes nothing writes nothing', async ({ page }) => {
   const marker = readMarkerMeta()
   const title = `e2e ${marker.displayName} edit-noop`
-  const { startLabel, startMinutes } = await postMarkerDropIn(page, title, localDatePlusDays(2))
+  const { startLabel, endLabel } = await postMarkerDropIn(page, title, localDatePlusDays(2))
 
   await page.goto('/')
   const card = page.locator('a').filter({ hasText: title }).first()
@@ -243,7 +270,9 @@ test('a save that changes nothing writes nothing', async ({ page }) => {
   await page.getByRole('button', { name: 'Save changes' }).click()
   // The host lands back on the post — with nothing written.
   await expect(page).toHaveURL(new RegExp(`${detailPath}$`))
-  await expect(page.getByText(`${startLabel}–${formatTimeLabel(startMinutes + 60)}`)).toBeVisible()
+  // The window shown is the one the form POSTED — read off the form, not
+  // recomputed as `start + 60` (v33-7b removed the coupling that sum assumed).
+  await expect(page.getByText(`${startLabel}–${endLabel}`)).toBeVisible()
   expect(writes).toEqual([])
 })
 

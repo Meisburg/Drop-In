@@ -610,6 +610,180 @@ test('a 30-minute window posts and the live row carries the exact span (v33-7a)'
   expect(Date.parse(row?.ends_at ?? '') - Date.parse(row?.starts_at ?? '')).toBe(30 * 60_000)
 })
 
+/**
+ * v33-7b — START AND END READ AS ONE WINDOW, AND STEPPING ONE END NEVER
+ * SILENTLY DRAGS THE OTHER.
+ *
+ * The founder (muyefjzq, second half): *"There's got to be a more elegant and
+ * refined way to show off setting your start time and your end time. And I don't
+ * want them to be linked together because people can make it as long or as short
+ * as they want it to be."*
+ *
+ * THE DEFECT THIS PINS IS THE SILENT DRAG, not the geometry. Before this slice
+ * the Start stepper wrote `startMinutes` alone and left `durationMinutes`
+ * untouched, so the END rode along with every start step — the two were exactly
+ * the "linked together" the founder rejected, and nothing on screen said so.
+ *
+ * WHAT IS PROVEN HERE, in the order the acceptance lists it:
+ *   1. one window: both steppers sit in one section (`window-section`) under a
+ *      single "When" heading, and their boxes share a band at 390px;
+ *   2. the LENGTH survives a step of either end (the "as long or as short as
+ *      they want" half);
+ *   3. stepping an end INTO the other one keeps a 30-minute window AND SHOWS THE
+ *      NOTE — asserted on the rendered text, then its absence in the ordinary
+ *      case (a note that is always on proves nothing);
+ *   4. no copy on /new states or implies a fixed length.
+ */
+test('Start and End are one window, and stepping one end never silently drags the other (v33-7b)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/new')
+  await settleOnRoute(page, '/new')
+
+  const readStepper = async (testid: string): Promise<number> =>
+    parseAnyTimeLabel(
+      (await page.getByTestId(testid).innerText()).replace(/\s+/g, ' ').trim(),
+    )
+
+  // ----------------------------------------------------------------
+  // AC 1: ONE WINDOW — one section, one heading, one band.
+  // ----------------------------------------------------------------
+  const section = page.getByTestId('window-section')
+  await expect(section).toHaveCount(1)
+  // A SINGLE heading for the pair. `getByText('When')` is scoped to the section's
+  // PARENT (the section itself holds the two end labels), so this counts the
+  // heading over both steppers rather than one per end.
+  await expect(page.getByTestId('window-section').locator('xpath=..').getByText('When', { exact: true })).toHaveCount(1)
+  // ...and inside the section there is exactly ONE "Start" and ONE "End" label,
+  // so the two steppers are the two ends of one answer.
+  await expect(section.getByText('Start', { exact: true })).toHaveCount(1)
+  await expect(section.getByText('End', { exact: true })).toHaveCount(1)
+
+  const startBox = await page.getByTestId('start-time-label').boundingBox()
+  const endBox = await page.getByTestId('end-time-label').boundingBox()
+  const sectionBox = await section.boundingBox()
+  expect(startBox, 'the start stepper must render').not.toBeNull()
+  expect(endBox, 'the end stepper must render').not.toBeNull()
+  expect(sectionBox, 'the window section must render').not.toBeNull()
+  // ONE BAND: both steppers live inside the section's own box (not merely on the
+  // page), which is what "read as one window" means structurally.
+  for (const [name, box] of [['start', startBox!], ['end', endBox!]] as const) {
+    expect(box.y, `the ${name} stepper must sit inside the window section`).toBeGreaterThanOrEqual(
+      sectionBox!.y - 1,
+    )
+    expect(
+      box.y + box.height,
+      `the ${name} stepper must end inside the window section`,
+    ).toBeLessThanOrEqual(sectionBox!.y + sectionBox!.height + 1)
+  }
+  // And the house tap-target floor survives on both steppers' BUTTONS. The
+  // floor belongs to the tappable controls, not to the time text between them:
+  // `start-time-label` / `end-time-label` are the label spans (26px of text), so
+  // measuring THOSE for 44px would be measuring the wrong element — the AC is
+  // about the ±  buttons a thumb actually hits.
+  for (const [name, buttonName] of [
+    ['start', 'Later start time'],
+    ['start', 'Earlier start time'],
+    ['end', 'Later end time'],
+    ['end', 'Earlier end time'],
+  ] as const) {
+    const button = page.getByRole('button', { name: buttonName })
+    await expect(button).toBeVisible()
+    const buttonBox = await button.boundingBox()
+    expect(buttonBox, `${buttonName} must render a box`).not.toBeNull()
+    expect(
+      buttonBox!.height,
+      `${buttonName} must keep a 44px target`,
+    ).toBeGreaterThanOrEqual(44)
+    expect(
+      buttonBox!.width,
+      `${buttonName} must keep a 44px target`,
+    ).toBeGreaterThanOrEqual(44)
+    void name
+  }
+
+  // ----------------------------------------------------------------
+  // AC 4 (checked FIRST, so the absence is about the untouched mount): no copy
+  // on /new implies a fixed length. These are the exact strings the removed
+  // controls used to render.
+  // ----------------------------------------------------------------
+  await expect(page.getByText('How long', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '1h', exact: true })).toHaveCount(0)
+  await expect(page.getByText(/^Ends /)).toHaveCount(0)
+
+  // ----------------------------------------------------------------
+  // AC 2a: THE ORDINARY CASE SHOWS NO NOTE. The mount window is untouched (a
+  // step has not happened yet), so a note here would be a false claim.
+  // ----------------------------------------------------------------
+  const note = page.getByTestId('window-adjusted-note')
+  await expect(note).toHaveCount(0)
+
+  // ----------------------------------------------------------------
+  // AC 2b: STEPPING THE START LEAVES THE END WHERE IT WAS. This is the defect:
+  // the old code kept `durationMinutes` fixed, so BOTH ends moved on a single
+  // step — the "linked together" the founder rejected. Asserting the LENGTH
+  // would prove nothing here (the old code preserved it too); the claim that can
+  // fail is that the END did not move.
+  // ----------------------------------------------------------------
+  const mountedStart = await readStepper('start-time-label')
+  const mountedEnd = await readStepper('end-time-label')
+  const mountedLength = wrapMinutes(mountedEnd - mountedStart)
+  expect(mountedLength, 'the mount window must be a real window').toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Later start time' }).click()
+  const startAfter = await readStepper('start-time-label')
+  const endAfter = await readStepper('end-time-label')
+  expect(
+    wrapMinutes(startAfter - mountedStart),
+    'one later step must move the START by exactly one 30-minute slot',
+  ).toBe(30)
+  expect(
+    endAfter,
+    'the END must not ride along with the start — the parent moved one end',
+  ).toBe(mountedEnd)
+  // ...and because the end held still, the window is now one slot SHORTER —
+  // the "as long or as short as they want" half, visible in the numbers.
+  expect(
+    wrapMinutes(endAfter - startAfter),
+    'the length follows the two ends the parent chose',
+  ).toBe(mountedLength - 30)
+  // The ordinary step moved nothing but the start, so STILL no note.
+  await expect(note, 'an ordinary start step must not claim an adjustment').toHaveCount(0)
+
+  // ----------------------------------------------------------------
+  // AC 2c: A STEP THAT WOULD BREAK end > start KEEPS 30 MINUTES AND SHOWS THE
+  // NOTE. Stepping the START later eventually reaches the end; the rule then
+  // moves the OTHER end forward by the minimum and SAYS SO.
+  //
+  // The loop steps until the note appears (bounded by a full day of slots), so it
+  // does not depend on the mounted window's length — the mount slot is
+  // time-of-day dependent and a hard-coded step count would flake.
+  // ----------------------------------------------------------------
+  let collidedStart = await readStepper('start-time-label')
+  let collidedEnd = await readStepper('end-time-label')
+  for (let i = 0; i < 48 && (await note.count()) === 0; i += 1) {
+    await page.getByRole('button', { name: 'Later start time' }).click()
+    collidedStart = await readStepper('start-time-label')
+    collidedEnd = await readStepper('end-time-label')
+  }
+  await expect(
+    note,
+    'stepping the start into the end must move the other end and SAY SO',
+  ).toBeVisible()
+  await expect(note).toContainText('30 minutes')
+  expect(
+    wrapMinutes(collidedEnd - collidedStart),
+    'a collision must still leave a window of at least the 30-minute minimum',
+  ).toBeGreaterThanOrEqual(30)
+  console.log(
+    `[e2e v33-7b] mount ${mountedStart}→${mountedEnd} (${mountedLength}min); ` +
+      `after a start step ${startAfter}→${endAfter} (end UNMOVED, ${wrapMinutes(endAfter - startAfter)}min, no note); ` +
+      `after stepping the start into the end ${collidedStart}→${collidedEnd} ` +
+      `(${wrapMinutes(collidedEnd - collidedStart)}min, note shown)`,
+  )
+})
+
 test('typing over a picked place drops the address it came with — and a typed address survives', async ({
   page,
 }) => {

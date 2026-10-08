@@ -103,6 +103,7 @@ import {
   feedCardCountdown,
   feedLocationSummary,
   feedNowSummary,
+  MIN_WINDOW_MINUTES,
   radiusChoices,
   coordNumber,
   placeDistanceMiles,
@@ -116,6 +117,7 @@ import {
   startOfTodayIso,
   statedAgeRangeLine,
   stepTimeMinutes,
+  stepWindowEnd,
   suggestedDurationMinutes,
   TIME_STEP_MINUTES,
   TITLE_MAX_LENGTH,
@@ -1328,6 +1330,106 @@ describe('duration math + the 30-minute stepper (pure, unit-tested)', () => {
     expect(stepTimeMinutes(930, -TIME_STEP_MINUTES)).toBe(900)
     expect(stepTimeMinutes(1410, TIME_STEP_MINUTES)).toBe(0) // 11:30 PM + 30
     expect(stepTimeMinutes(0, -TIME_STEP_MINUTES)).toBe(1410) // 12:00 AM − 30
+  })
+
+  /**
+   * v33-7b — THE DEFECT THIS NAMES IS A SILENT DRAG, not "the arithmetic".
+   *
+   * The founder's ask (muyefjzq): *"I don't want them to be linked together
+   * because people can make it as long or as short as they want it to be."* The
+   * old Start stepper wrote only `startMinutes` and left `durationMinutes`
+   * alone, so the END rode along with every start step — the two were exactly
+   * the "linked together" the founder rejected.
+   *
+   * So each test below states the thing that must NOT happen (the other end
+   * moving when it did not have to), not merely the numbers that fall out.
+   */
+  describe('stepWindowEnd (v33-7b: one end steps, the other stays put)', () => {
+    it('THE SILENT DRAG: stepping the START moves the START and leaves the END', () => {
+      // A 2:00–3:00 PM window, stepped one slot later. The old rule left
+      // `durationMinutes` alone, so the END rode along with the start — both
+      // moved and the parent only touched one. The end must stay at 3:00 PM and
+      // the window must simply become SHORTER (2:30–3:00), because the parent
+      // asked for "as long or as short as they want".
+      const stepped = stepWindowEnd(
+        { startMinutes: 840, endMinutes: 900 },
+        'start',
+        TIME_STEP_MINUTES,
+      )
+      expect(stepped.startMinutes).toBe(870) // 2:30 PM — the end the parent stepped
+      expect(stepped.endMinutes).toBe(900) // 3:00 PM — UNMOVED
+      expect(stepped.otherEndMoved).toBe(false)
+      // ...and stepping the start BACKWARDS lengthens it, same rule.
+      const back = stepWindowEnd({ startMinutes: 840, endMinutes: 900 }, 'start', -TIME_STEP_MINUTES)
+      expect(back.startMinutes).toBe(810)
+      expect(back.endMinutes).toBe(900)
+      expect(back.otherEndMoved).toBe(false)
+    })
+
+    it('the LENGTH follows the parent, not the other end', () => {
+      // "as long or as short as they want": the length is whatever the two ends
+      // the parent chose make it. Step the start toward the end and the window
+      // shortens to the minimum, still without the end moving.
+      const short = stepWindowEnd({ startMinutes: 600, endMinutes: 900 }, 'start', TIME_STEP_MINUTES * 9)
+      expect(short.startMinutes).toBe(870)
+      expect(short.endMinutes).toBe(900) // unmoved
+      expect(short.endMinutes - short.startMinutes).toBe(MIN_WINDOW_MINUTES)
+      expect(short.otherEndMoved).toBe(false) // the minimum was REACHED, not broken
+    })
+
+    it('stepping the END moves only the end, and never reports a drag', () => {
+      const stepped = stepWindowEnd({ startMinutes: 840, endMinutes: 900 }, 'end', TIME_STEP_MINUTES)
+      expect(stepped.startMinutes).toBe(840) // untouched
+      expect(stepped.endMinutes).toBe(930)
+      expect(stepped.otherEndMoved).toBe(false)
+    })
+
+    it('a step that WOULD break end > start moves the other end AND SAYS SO', () => {
+      // The START stepped past its own end: the end gives way forward by the
+      // minimum and the flag is set — this is the "and the UI says so" half, and
+      // the flag IS the UI's input.
+      const collidedStart = stepWindowEnd(
+        { startMinutes: 840, endMinutes: 870 },
+        'start',
+        TIME_STEP_MINUTES,
+      )
+      expect(collidedStart.startMinutes).toBe(870)
+      expect(collidedStart.endMinutes - collidedStart.startMinutes).toBe(MIN_WINDOW_MINUTES)
+      expect(collidedStart.endMinutes).toBe(900) // the OTHER end, moved forward
+      expect(collidedStart.otherEndMoved).toBe(true)
+
+      // The mirror case: the END stepped back onto its own start.
+      const collidedEnd = stepWindowEnd(
+        { startMinutes: 600, endMinutes: 630 },
+        'end',
+        -TIME_STEP_MINUTES,
+      )
+      expect(collidedEnd.endMinutes).toBe(600) // the end the parent stepped to
+      expect(collidedEnd.startMinutes).toBe(570) // the OTHER end, moved back
+      expect(collidedEnd.endMinutes - collidedEnd.startMinutes).toBe(MIN_WINDOW_MINUTES)
+      expect(collidedEnd.otherEndMoved).toBe(true)
+    })
+
+    it('a window crossing midnight is still a window (11:30 PM → 12:30 AM)', () => {
+      const across = stepWindowEnd({ startMinutes: 1410, endMinutes: 1470 }, 'end', TIME_STEP_MINUTES)
+      expect(across.startMinutes).toBe(1410)
+      expect(across.endMinutes).toBe(1500) // past DAY_MINUTES on purpose
+      expect(across.otherEndMoved).toBe(false)
+      // A start step inside a cross-midnight window keeps the END where it is —
+      // 12:30 AM — and the window simply grows to 90 minutes.
+      const inside = stepWindowEnd({ startMinutes: 1410, endMinutes: 1470 }, 'start', -TIME_STEP_MINUTES)
+      expect(inside.startMinutes).toBe(1380)
+      expect(inside.endMinutes).toBe(1470) // 12:30 AM, unmoved
+      expect(inside.otherEndMoved).toBe(false)
+    })
+
+    it('a degenerate window falls back to the minimum rather than a 0-length one', () => {
+      // `end === start` cannot be preserved as a window; the rule must stay total
+      // (a form that mounted before its duration derived, or a legacy 0).
+      const degenerate = stepWindowEnd({ startMinutes: 600, endMinutes: 600 }, 'start', TIME_STEP_MINUTES)
+      expect(degenerate.endMinutes - degenerate.startMinutes).toBe(MIN_WINDOW_MINUTES)
+      expect(degenerate.otherEndMoved).toBe(true)
+    })
   })
 
   it('formatTimeLabel gives 12-hour labels, wrapping past midnight', () => {
