@@ -6815,7 +6815,7 @@ export async function listPlaceReviewsWithClient(
     .from('reviews')
     .select(
       'place_id, author_profile_id, score, body, created_at, ' +
-        'author:profiles!reviews_author_profile_id_fkey ( display_name )',
+        'author:profiles!reviews_author_profile_id_fkey ( display_name, avatar_url )',
     )
     .eq('place_id', placeId)
     .order('created_at', { ascending: false })
@@ -6826,7 +6826,7 @@ export async function listPlaceReviewsWithClient(
     score: number
     body: string | null
     created_at: string
-    author: { display_name: string } | null
+    author: { display_name: string; avatar_url: string | null } | null
   }>
   return rows.map((row) => ({
     placeId: row.place_id,
@@ -6835,6 +6835,11 @@ export async function listPlaceReviewsWithClient(
     body: row.body,
     createdAt: row.created_at,
     authorDisplayName: row.author?.display_name ?? '',
+    // V35 slice A: the author's photo, for the avatar circle on the reviewer
+    // row. `?? null` (never `?? ''`) so "no photo" stays distinct from "the
+    // embed did not answer" — the row's placeholder is keyed on null, and an
+    // empty string would be handed to an `<img src="">`.
+    authorAvatarUrl: row.author?.avatar_url ?? null,
   }))
 }
 

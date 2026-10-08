@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { BackControl } from '../components/BackControl'
-import { DropInCard } from '../components/DropInCard'
+import { DropInCard, HostAvatar } from '../components/DropInCard'
 import { PlaceMap } from '../components/PlaceMapLazy'
 import { PlaceKindArt } from '../components/PlaceKindArt'
 import { PlaceRatingLine } from '../components/PlaceRatingLine'
@@ -1103,11 +1103,78 @@ export function PlacePage() {
                     {/* A commented review: the row only exists because there are
                         words (the pure projection drops stars-only rows). */}
                     <p className="text-sm text-slate-800">{review.body?.trim()}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {review.authorDisplayName === '' ? 'A parent' : review.authorDisplayName}
-                      {' · '}
-                      {review.score} star{review.score === 1 ? '' : 's'}
-                    </p>
+                    {/* V35 slice A (`muzk8c1g`) — THE REVIEWER'S FACE, LEFT OF
+                        THEIR NAME.
+                        The founder's ruling, verbatim: *"in a message thread,
+                        show the other person's profile photo in a circle to the
+                        LEFT of their name. That is the conventional messaging
+                        pattern."* He wants that pattern here too.
+
+                        THE PRIMITIVE IS REUSED, NOT COPIED OR EDITED: this is
+                        the app's one avatar (`HostAvatar`, `DropInCard.tsx`) —
+                        the same circle the feed card, the comment row and the
+                        follow list draw. It already owns the 40px box, the
+                        `rounded-full` crop, the `onError` suppression of a dead
+                        URL, and the initial-placeholder fallback below, so the
+                        reviewer row inherits all four rather than re-deciding
+                        them.
+
+                        ⚠️ THE `host` SHAPE IS THE PRIMITIVE'S CONTRACT, and the
+                        two fields it needs are the two the review read already
+                        has (`authorDisplayName`, `authorAvatarUrl`). The `id` is
+                        the reviewer's profile id — it is the primitive's key, not
+                        a second identity for the row (the row is already keyed on
+                        `authorProfileId`). */}
+                    <div className="mt-1 flex items-center gap-2">
+                      {/* ⚠️ THE `review-avatar` TESTID LIVES ON A WRAPPER, NOT ON
+                          THE PRIMITIVE. `HostAvatar` is the app's one avatar and
+                          this slice must not edit it (the brief's rule), so it
+                          cannot grow a testid of its own. The wrapper is the
+                          row's addressable handle on the avatar; it adds no
+                          markup the primitive does not already draw — no second
+                          circle, no second box. */}
+                      <span data-testid="review-avatar" className="flex shrink-0 items-center">
+                        <HostAvatar
+                          host={{
+                            id: review.authorProfileId,
+                            display_name: review.authorDisplayName,
+                            avatar_url: review.authorAvatarUrl,
+                          }}
+                          size="sm"
+                        />
+                      </span>
+                      {/* THE NAME LINKS TO THAT PERSON'S PROFILE.
+                          `/u/<handle>` is the route this app already uses for
+                          exactly this (see `FollowingSection`, `ProfileView`,
+                          `PlaydateDetailPage`), and it needs no new column: the
+                          handle a `/u/:handle` URL carries IS
+                          `profiles.display_name` (`getProfileByHandle` matches
+                          `.eq('display_name', handle)` in `src/lib/db.ts`), which
+                          is the `authorDisplayName` this row already renders.
+                          The brief's "reuse the route that already exists; BLOCKED
+                          rather than invent one" is therefore satisfied with no
+                          invented route — and no invented handle column.
+
+                          A nameless profile keeps the SAME words it always had
+                          ("A parent") but does NOT become a link: `/u/` with an
+                          empty segment resolves nothing, and a link to a page
+                          that cannot load is the dead control this repo's other
+                          surfaces refuse to render. */}
+                      {review.authorDisplayName.trim() === '' ? (
+                        <span className="text-xs text-slate-500">A parent</span>
+                      ) : (
+                        <Link
+                          to={`/u/${encodeURIComponent(review.authorDisplayName)}`}
+                          data-testid="review-author-link"
+                          className="text-xs font-medium text-indigo-600 hover:underline"
+                        >
+                          {review.authorDisplayName}
+                        </Link>
+                      )}
+                      <span className="text-xs text-slate-500">
+                        {review.score} star{review.score === 1 ? '' : 's'}
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>

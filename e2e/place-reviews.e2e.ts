@@ -361,6 +361,167 @@ test('three parents leave three reviews, and the place page shows three rows (re
   expect(await readPlaceReviews(place.id, accessToken)).toEqual([])
 })
 
+/**
+ * V35 slice A (`muzk8c1g`) — THE REVIEWER'S FACE, LEFT OF THEIR NAME, AND THE
+ * NAME A LINK TO THAT PERSON'S PROFILE.
+ *
+ * The founder's ruling, verbatim: *"in a message thread, show the other person's
+ * profile photo in a circle to the LEFT of their name. That is the conventional
+ * messaging pattern."* He asked for the same on a place's review cards, with the
+ * name linked to the reviewer's profile.
+ *
+ * WHAT THIS PINS, and the half of each that could actually break:
+ *
+ *   1. THE GEOMETRY, measured — not the DOM order. `avatar.x < name.x` (left of)
+ *      and the two boxes' vertical centres within a few px (aligned). A DOM-order
+ *      assertion would pass on a row that had been re-ordered visually with
+ *      `order-*` or `flex-row-reverse`, which is exactly the regression worth
+ *      catching: the founder asked for a PLACE, not a node order.
+ *   2. THE LINK resolves to `/u/<handle>` and NAVIGATES. `getProfileByHandle`
+ *      matches `profiles.display_name` (`src/lib/db.ts`), so the reviewer's
+ *      display name IS the handle — the assertion therefore reads the name it
+ *      rendered and follows it, rather than hardcoding a handle.
+ *   3. THE PLACEHOLDER. The reviewers this spec creates have NO avatar, so the
+ *      primitive must draw the initial circle — and it must draw the review's
+ *      name's first letter in it, never a broken `<img>`. Asserted on BOTH: the
+ *      letter is present AND no `img` exists in the avatar box.
+ *   4. 390px DOES NOT WIDEN THE PAGE — the repo's own overflow rule.
+ *
+ * THE REUSE IS PINNED BY INSPECTION, not by this spec: the avatar comes from the
+ * app's single `HostAvatar` primitive (`DropInCard.tsx`), which this slice does
+ * NOT edit. A spec cannot see "which component drew this", so the guard against
+ * a copied circle is the diff itself — one JSX call site, no new primitive.
+ */
+test('a review row shows the reviewer avatar LEFT of their name, and the name links to their profile (muzk8c1g)', async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(300_000)
+  const { accessToken, userId } = readMarkerSession()
+  const marker = readMarkerMeta()
+  const place = await readPlaceByName(PLACE_NAME)
+  await claimEmptyReviewSet(place.id, accessToken, userId)
+
+  const stamp = `${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1e6)}`
+  const reviewerName = `e2e-v-avatar-${stamp}`
+  let context: Awaited<ReturnType<typeof browser.newContext>> | null = null
+  let reviewer: { token: string; id: string } | null = null
+
+  try {
+    // A REAL reviewer, through the app's own signup walk. The account carries NO
+    // avatar — which is what makes the placeholder assertion below meaningful
+    // rather than incidental.
+    context = await browser.newContext({
+      baseURL: E2E_BASE_URL,
+      storageState: { cookies: [], origins: [] },
+    })
+    const viewerPage = await context.newPage()
+    await signUpViewer(viewerPage, {
+      name: reviewerName,
+      email: `${reviewerName}@gmail.com`,
+      password: `e2e-avatar-pw-${stamp}`,
+    })
+    await finishSignup(viewerPage, { homeZip: marker.homeZip, radiusMiles: 5 })
+    const session = await readSessionFromBrowserPage(viewerPage)
+    expect(session, 'the reviewer must hold a session after onboarding').not.toBeNull()
+    reviewer = { token: session!.accessToken, id: session!.userId }
+
+    const body = `e2e review ${stamp} — the avatar fixture row.`
+    await openPlacePage(viewerPage, place.id)
+    await composeReview(viewerPage, 4, body)
+
+    // The marker reads the row the OTHER parent wrote — a different viewer, so
+    // this is not a row the page is rendering from local state.
+    await openPlacePage(page, place.id)
+    const row = page.getByTestId(`place-review-row-${reviewer.id}`)
+    await expect(row).toBeVisible()
+
+    // ----------------------------------------------------------------
+    // AC 3 FIRST: the reviewer has no photo, so the avatar is the initial.
+    // ----------------------------------------------------------------
+    const avatar = row.getByTestId('review-avatar')
+    await expect(avatar).toHaveCount(1)
+    // The initial is the review's name's first letter, uppercased.
+    await expect(avatar).toHaveText(reviewerName.charAt(0).toUpperCase())
+    // NOT a broken image: a no-photo reviewer must never mount an `<img>`.
+    await expect(avatar.locator('img')).toHaveCount(0)
+
+    // ----------------------------------------------------------------
+    // AC 1: THE GEOMETRY — avatar LEFT of the name, and vertically aligned.
+    // Measured, never inferred from DOM order.
+    // ----------------------------------------------------------------
+    const nameLink = row.getByTestId('review-author-link')
+    await expect(nameLink).toBeVisible()
+    const avatarBox = await avatar.boundingBox()
+    const nameBox = await nameLink.boundingBox()
+    expect(avatarBox, 'the avatar must render a box').not.toBeNull()
+    expect(nameBox, 'the author link must render a box').not.toBeNull()
+    expect(
+      avatarBox!.x,
+      `the avatar must sit LEFT of the name (avatar x=${avatarBox!.x}, name x=${nameBox!.x})`,
+    ).toBeLessThan(nameBox!.x)
+    // ...and clear of it: left means before, not overlapping.
+    expect(avatarBox!.x + avatarBox!.width).toBeLessThanOrEqual(nameBox!.x + 1)
+    // Vertically aligned: the two centres within a few px. The avatar is a
+    // `size="sm"` circle inside a `items-center` flex row, so this is the rule
+    // that a future row change (`items-start`, a taller link) would break.
+    const avatarCentre = avatarBox!.y + avatarBox!.height / 2
+    const nameCentre = nameBox!.y + nameBox!.height / 2
+    expect(
+      Math.abs(avatarCentre - nameCentre),
+      `the avatar and the name must share a row (avatar centre=${avatarCentre}, name centre=${nameCentre})`,
+    ).toBeLessThan(6)
+
+    // ----------------------------------------------------------------
+    // AC 2: the name is a LINK to that person's profile, and it NAVIGATES.
+    // `/u/<handle>` is the route this app already uses, and the handle IS the
+    // display name (`getProfileByHandle` matches `profiles.display_name`).
+    // ----------------------------------------------------------------
+    const handle = (await nameLink.innerText()).replace(/\s+/g, ' ').trim()
+    expect(handle, 'the link must carry the reviewer’s own name').toBe(reviewerName)
+    await expect(nameLink).toHaveAttribute('href', `/u/${encodeURIComponent(handle)}`)
+
+    // It really goes there: click and land on the public profile the route
+    // resolves — the `getProfileByHandle` read, proved through the UI.
+    //
+    // ⚠️ THE IDENTITY IS AN `<h2>`, NOT AN `<h1>`, and it carries an `@`. Both
+    // halves were MEASURED before this assertion was written: `ProfileView`
+    // renders `@{profile.display_name}` in an `<h2>` (`ProfileView.tsx:552`),
+    // and the page's ONLY `<h1>` is the not-found sentence
+    // (`ProfileView.tsx:1233`). Asserting `level: 1` would therefore have passed
+    // in exactly the case that means the link is BROKEN — the vacuous-assertion
+    // trap. It pins the real heading instead.
+    await nameLink.click()
+    await page.waitForURL(new RegExp(`/u/${encodeURIComponent(handle)}$`))
+    await expect(
+      page.getByRole('heading', { level: 2, name: `@${handle}` }),
+      'the linked profile must be the reviewer’s own, not a not-found page',
+    ).toBeVisible()
+    await expect(page.getByText(/couldn’t find/i)).toHaveCount(0)
+
+    // ----------------------------------------------------------------
+    // AC 4: 390px does not widen the page.
+    // ----------------------------------------------------------------
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openPlacePage(page, place.id)
+    const rowAt390 = page.getByTestId(`place-review-row-${reviewer.id}`)
+    await expect(rowAt390).toBeVisible()
+    const widths = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }))
+    expect(
+      widths.scroll,
+      `390px must not widen: scrollWidth ${widths.scroll} vs clientWidth ${widths.client}`,
+    ).toBeLessThanOrEqual(widths.client + 1)
+  } finally {
+    if (reviewer !== null) await deleteOwnReview(place.id, reviewer.id, reviewer.token)
+    if (context !== null) await context.close()
+    await deleteOwnReview(place.id, userId, accessToken)
+  }
+  expect(await readPlaceReviews(place.id, accessToken)).toEqual([])
+})
+
 test('the research page keeps the wall, hours and the web search — and the door stops promising the summary (reviews-inline)', async ({
   page,
 }) => {
