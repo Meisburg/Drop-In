@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
 import { hasHomeZip } from '../lib/homeZip'
+import { createHerePrefill } from '../lib/feedCreateHere'
 import { emptyRadiusBeyondCopy, emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 import { LocationRequiredNotice } from './LocationRequiredNotice'
@@ -68,12 +69,27 @@ import { LocationRequiredNotice } from './LocationRequiredNotice'
  * controls are inert. The component therefore early-returns the SHARED
  * LocationRequiredNotice (slice 2a) for that case; with a zip present it
  * renders exactly what it rendered before, unchanged.
+ *
+ * meetup-empty-state: a THIRD opt-in prop, `showCreateHere` (default FALSE —
+ * only the feed passes it, so the Browse caller is byte-for-byte unchanged).
+ * It renders the secondary "Create one here" control: navigate to /new
+ * seeded with the viewer's OWN location through the SAME PlacePrefill router
+ * state the place pages use (App.tsx NewRoute reads `state.place`). The
+ * derivation is the pure seam (lib/feedCreateHere.ts, sibling-tested): the
+ * one place this state can name is the viewer's home zip — the home pin the
+ * feed's map band draws — and when no place can be named the control does not
+ * render, even with the prop on (a button that would seed /new with nowhere
+ * is the control-that-swallows-its-tap this component exists to remove).
+ * It is NOT the "Post a drop-in" link V23 removed (the raised nav "+" stays
+ * the persistent post action): this control carries a location the bare post
+ * CTA never did. `showPostCta` stays false on the feed, exactly as it is.
  */
 export function RadiusEmptyState({
   radiusMiles,
   showEscapes = true,
   showPostCta = true,
   showBrowseCta = false,
+  showCreateHere = false,
   beyondRadiusCount = 0,
 }: {
   radiusMiles: number
@@ -96,6 +112,18 @@ export function RadiusEmptyState({
    */
   showBrowseCta?: boolean
   /**
+   * meetup-empty-state: render the secondary "Create one here" control
+   * (default FALSE — only the FEED passes it; the Browse caller stays
+   * byte-for-byte unchanged). It navigates to /new with the viewer's OWN
+   * location as the PlacePrefill router state (`state.place`, the same shape
+   * the place pages seed — App.tsx NewRoute). The derivation is the pure seam
+   * `createHerePrefill` (lib/feedCreateHere.ts, sibling-tested): it names the
+   * viewer's home zip — the home pin the feed's map band draws — and returns
+   * null when no place can be named, in which case the control does not
+   * render, even with this prop on.
+   */
+  showCreateHere?: boolean
+  /**
    * V29 v29-6: how many drop-ins the SAME fetch found outside this radius but
    * inside the widest one. 0 (the default, and Browse's value today) renders no
    * second line at all — an empty city is not sold a number.
@@ -103,10 +131,21 @@ export function RadiusEmptyState({
   beyondRadiusCount?: number
 }) {
   const { session, profile, refresh } = useSessionContext()
+  const navigate = useNavigate()
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
   const [escapeError, setEscapeError] = useState<string | null>(null)
   const homeZip = profile?.home_zip ?? ''
   const escapes = showEscapes ? radiusEscapes(radiusMiles) : []
+  /**
+   * meetup-empty-state: the "Create one here" prefill. The pure seam names the
+   * ONE place this state can name (the viewer's own home zip — the home pin the
+   * feed's map band already draws) and returns null when it cannot, so the
+   * control below renders only when the tap can actually seed /new with a
+   * location (a button that would seed nowhere is the control-that-swallows-
+   * its-tap this component exists to remove). Gated on the opt-in prop so the
+   * Browse caller — which never passes it — is unchanged.
+   */
+  const createHere = showCreateHere ? createHerePrefill(homeZip) : null
   /**
    * V8 ticket 02 REVIEW ROUND: an escape with nothing to widen FROM (no
    * session, no home zip) must not render as a live control — a button that
@@ -226,6 +265,24 @@ export function RadiusEmptyState({
         </div>
       ) : null}
       {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
+      {/* meetup-empty-state: THE LOCATION-SEEDED CREATE. Distinct from the
+          "Post a drop-in" link V23 removed — that one carried nothing; this one
+          carries the viewer's OWN location (the home zip) through the
+          PlacePrefill router state, so the post starts where the parent already
+          is. Rendered only when the seam named that place (createHere !== null),
+          so it is never a control that swallows its tap. Secondary, below the
+          escapes: the escapes answer "is it worth widening?", this answers "or
+          start one here". Absent on Browse, which never passes the prop. */}
+      {createHere !== null ? (
+        <button
+          type="button"
+          data-testid="empty-radius-create-here"
+          onClick={() => navigate('/new', { state: { place: createHere } })}
+          className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+        >
+          Create one here
+        </button>
+      ) : null}
       {showPostCta ? (
         <Link
           to="/new"

@@ -1412,11 +1412,22 @@ export function FeedPage() {
            V31 v31-1: showBrowseCta is TRUE here and only here. The feed's parent
            has not seen the places directory (it is one nav tab away and nothing
            in this state offered it), while Browse's parent is already on it — so
-           the door is a prop, not a behaviour of the shared component. */
+           the door is a prop, not a behaviour of the shared component.
+
+           meetup-empty-state: showCreateHere is TRUE here and only here — the
+           feed is the caller that can name the viewer's own location (the home
+           zip the map band draws), so "Create one here" has a place to seed.
+           Browse never passes it. The map-stays-rendered half of Meetup's
+           EmptyOrError (mapItems) is ALREADY satisfied by the feed's MAP view
+           (the S9 pin in feed-empty-state.e2e.ts: the empty radius draws the
+           home-pin map when the Map toggle is tapped). This slice therefore
+           does NOT add a map to the list view — that split is deliberate and
+           pinned. It adds only the location-seeded create. */
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
           showPostCta={false}
           showBrowseCta
+          showCreateHere
           beyondRadiusCount={beyondRadiusCount}
         />
       ) : feedViewShowsMap(feedView) ? (

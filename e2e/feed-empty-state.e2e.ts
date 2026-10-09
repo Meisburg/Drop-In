@@ -206,6 +206,21 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   // this assertion moves from inside `empty` to the page-level control.
   await expect(page.getByTestId('feed-location-control')).toBeVisible()
 
+  /* meetup-empty-state (meetup-a62da3b6fca2): THE LOCATION-SEEDED CREATE. The
+     feed's empty state offers "Create one here" — the empty ACTION Meetup's
+     EmptyOrError carries. It is NOT the "Post a drop-in" link V23 removed: it
+     carries the viewer's OWN location (the home zip) through the PlacePrefill
+     router state, so the post starts where the parent already is. It renders
+     only when a place can be named; this marker has a home zip (98901 by
+     pin), so it is present and enabled here. */
+  const createHere = empty.getByTestId('empty-radius-create-here')
+  await expect(createHere).toBeVisible()
+  await expect(createHere).toBeEnabled()
+  await expect(createHere).toHaveAccessibleName('Create one here')
+  // The 44px tap floor (the mobile audit's rule).
+  const createBox = await createHere.boundingBox()
+  expect(createBox!.height).toBeGreaterThanOrEqual(44)
+
   // The visibility-refresh gate's NEGATIVE half, checked on the wire: a
   // focus/visibility bounce a second after the load must issue NO new feed
   // query (the "no refetch storm on quick app switches" AC). The positive half
@@ -275,6 +290,38 @@ test('the empty feed\'s door opens the places directory', async ({ page }) => {
 
   await settleOnRoute(page, '/browse')
   await expect(page).toHaveURL(/\/browse(\?|$)/)
+})
+
+/**
+ * meetup-empty-state (meetup-a62da3b6fca2): THE LOCATION-SEEDED CREATE ACTUALLY
+ * CARRIES THE LOCATION. The assertion above proves the control exists on the
+ * right screen; this one proves the behaviour — the parent who taps "Create one
+ * here" lands on /new with the viewer's OWN place PREFILLED, so the post starts
+ * where they already are. That prefill is the whole difference between this
+ * control and the bare "Post a drop-in" link V23 removed, so it is what must be
+ * pinned: the place input arrives carrying the home label the seam names, not an
+ * empty form. Its own test so the write path above (which re-renders the same
+ * screen) is not entangled with a navigation.
+ */
+test('the empty feed\'s "Create one here" opens the post form seeded with the viewer location', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await settleOnRoute(page, '/')
+
+  const createHere = page.getByTestId('empty-radius-create-here')
+  await expect(createHere).toBeVisible()
+  await createHere.click()
+
+  await settleOnRoute(page, '/new')
+  await expect(page).toHaveURL(/\/new(\?|$)/)
+
+  // The prefill landed: the place text field carries the home label the seam
+  // wrote (createHerePrefill -> `Home (${homeZip})`), not an empty form. The
+  // address input is the same place field the /new form has always used.
+  await expect(page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')).toHaveValue(
+    `Home (${FAR_ZIP})`,
+  )
 })
 
 /**
