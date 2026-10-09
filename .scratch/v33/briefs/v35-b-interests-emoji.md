@@ -14,7 +14,7 @@ If you cannot fetch it, implement this spec:
 
 ACCEPTANCE: (a) a profile with 3 interests renders 3 bubbles, each with its text; (b) a known interest gets its mapped emoji (asserted); (c) an UNKNOWN interest renders its text with NO emoji (its own assertion); (d) 390px no overflow (scrollWidth <= clientWidth + 1); (e) the list stays stable order (no reshuffle between renders).
 
-GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. Only steering-lint may be red. Specs on a private port 4210-4218. Stage BY PATH ONLY.
+GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. The gate must be FULLY green — no waivers. Specs on a private port 4210-4218. Stage BY PATH ONLY.
 Report .scratch/v35-b-report.md, then reply:
 Sentinel: V35-B-INTERESTS-EMOJI-H8W2
 Status: DONE | BLOCKED

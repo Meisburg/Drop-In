@@ -20,7 +20,7 @@ ACCEPTANCE:
 4. 390px: documentElement.scrollWidth <= clientWidth + 1.
 5. Every spec that located the reviewer row changes in the SAME diff.
 
-GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. Only steering-lint naming another lane's docs/agents/* may be red. Specs on a private port 4210-4218 (mint marker there; kill by port/PID). Stage BY PATH ONLY.
+GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. The gate must be FULLY green — no waivers. Specs on a private port 4210-4218 (mint marker there; kill by port/PID). Stage BY PATH ONLY.
 Report .scratch/v35-a-report.md, then reply:
 Sentinel: V35-A-REVIEWER-AVATAR-K3D7
 Status: DONE | BLOCKED

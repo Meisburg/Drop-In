@@ -16,7 +16,7 @@ WORK:
 
 ACCEPTANCE: (a) the constant is 5 miles and is the single source; (b) the migration applies cleanly twice and the read-back proves the new value; (c) a spec asserts the browse default is now five miles (and any spec asserting the old value changes in the SAME diff); (d) typecheck+tests+lint clean.
 
-GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. Only steering-lint may be red. Specs on a private port 4210-4218. Stage BY PATH ONLY.
+GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. The gate must be FULLY green — no waivers. Specs on a private port 4210-4218. Stage BY PATH ONLY.
 Report .scratch/v35-c-report.md, then reply:
 Sentinel: V35-C-FIVE-MILES-N6T4
 Status: DONE | BLOCKED

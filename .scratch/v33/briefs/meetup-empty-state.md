@@ -70,7 +70,7 @@ ACCEPTANCE:
   (e) Browse's RadiusEmptyState render is unchanged (its existing spec still passes);
   (f) 390px: no horizontal overflow (scrollWidth <= clientWidth + 1).
 
-GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. Only steering-lint may be red. Specs on a private port 4210-4218. Stage BY PATH ONLY (never git add -A; the two dirty files vite.config.ts + src/dev/AgentationDev.tsx belong to another session).
+GATE: ALLOW_CONFIG_CHANGE="vite.config.ts: the PHONE LANE's unstaged dev-only server.host change (another session), not this slice" npm run verify ; then npm run guards -> GUARDS: PASS. The gate must be FULLY green — no waivers. Specs on a private port 4210-4218. Stage BY PATH ONLY (never git add -A; the two dirty files vite.config.ts + src/dev/AgentationDev.tsx belong to another session).
 
 Report .scratch/meetup-empty-state-report.md, then reply:
 Sentinel: MEETUP-EMPTY-STATE-C4K9
