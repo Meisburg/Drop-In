@@ -11,7 +11,7 @@
 //   factory route builder [--independence-of <work-id|model>] [--json]
 //   factory admit verifier --id r2-6c-verify [--model <key>] [--json]
 //   factory run gate --id r2-6c-gate -- npm run verify
-//   factory release <id>
+//   factory release <id> [--force]
 //   factory reclaim
 //   factory work init|list|show|ready|graph|transition
 
@@ -26,6 +26,8 @@ import {
   checkHealth,
   capabilityGaps,
   dependencyGraph,
+  forceDecision,
+  holderConflict,
   laneTransitionAllowed,
   liveReservations,
   loadConfig,
@@ -39,6 +41,7 @@ import {
   addReservation,
   applyFields,
   applyTransition,
+  forceReleaseReservation,
   implementerOf,
   listWorkItems,
   logRun,
@@ -46,10 +49,11 @@ import {
   newWorkItem,
   paths,
   readReservations,
+  readWorkItem,
   readRuns,
   readTelemetry,
-  readWorkItem,
   releaseReservation,
+  releaseReservationOwned,
   writeWorkItem,
 } from './state.mjs'
 
@@ -139,6 +143,28 @@ function independenceNote(kind, chosen, indep) {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Refuse to acquire a task id that a DIFFERENT live process already holds.
+ *
+ * Exit code 4, not 3. 3 is BLOCKED_RESOURCE — the machine cannot carry this
+ * work right now, and waiting or reclaiming unblocks it. This is not that: the
+ * machine may be empty and the task still must not start, because another
+ * process owns the write on this id. Letting both run is an illegal transition
+ * of the work item, which is what 4 names. The refusal states pid AND start time,
+ * so a stale lease is identifiable without `ps`.
+ */
+function assertAcquirable(id, label) {
+  const conflict = holderConflict(readReservations(), id, process.pid, systemProbes.now())
+  if (!conflict) return
+  console.error(
+    `REFUSED: '${id}' is already held (${label}) — the second run for one task id is an illegal transition, not a resource question.`,
+  )
+  console.error(`  holder pid ${conflict.pid ?? 'unknown'}  started ${conflict.startedAt ?? 'unknown'}  state ${conflict.state ?? 'unknown'}`)
+  console.error(`  a stale lease whose holder is dead can be reclaimed with: factory release ${id} --force`)
+  logTelemetry({ event: 'lease_refused', id, label, holderPid: conflict.pid, holderStartedAt: conflict.startedAt })
+  process.exit(4)
+}
 
 function cmdDoctor() {
   const ram = systemProbes.availableRamGb()
@@ -260,6 +286,7 @@ function cmdAdmit(args) {
   const { flags, positional } = parse(args)
   const kind = positional[0] ?? die('usage: factory admit <task-kind> --id <id> [--model <key>]')
   const id = flags.id ?? die('factory admit: --id is required — every lease needs an owner')
+  assertAcquirable(id, `admit ${kind}`)
   const resolved = resolveModel({ kind, requested: flags.model })
   if (resolved.blocked) {
     reportBlocked('admit', id, kind, resolved)
@@ -279,6 +306,10 @@ function cmdAdmit(args) {
       requiredGb: decision.requiredGb,
       exclusive: decision.exclusive ?? null,
       admittedAt: new Date().toISOString(),
+      // Holder identity. Without these a stale lease and a live one are
+      // indistinguishable and the mutex cannot be enforced (v33-14).
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
       expiresAt: systemProbes.now() + 30 * 60 * 1000,
     })
     process.exit(0)
@@ -304,6 +335,7 @@ function cmdRun(args) {
   const kind = positional[0] ?? die('usage: factory run <task-kind> --id <id> -- <command...>')
   const id = flags.id ?? die('factory run: --id is required')
   if (!passthrough.length) die('factory run: no command given (use `-- <command...>`)')
+  assertAcquirable(id, `run ${kind}`)
   const resolved = resolveModel({ kind, requested: flags.model })
   if (resolved.blocked) {
     reportBlocked('run', id, kind, resolved)
@@ -326,29 +358,71 @@ function cmdRun(args) {
     requiredGb: decision.requiredGb,
     exclusive: decision.exclusive ?? null,
     admittedAt: new Date().toISOString(),
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+  })
+
+  // THE CRASH PATH IS THE ONE THAT LEAKS. A try/finally covers a thrown error,
+  // but not `process.exit` from deep inside the child, nor an uncaught throw
+  // that unwinds past the finally. So release is idempotent, keyed on pid, and
+  // hung off `exit` as well; whichever fires first wins, the rest are no-ops.
+  const release = () => {
+    try {
+      releaseReservationOwned(id, process.pid)
+    } catch {
+      // A release that throws during teardown must not mask the real failure.
+    }
+  }
+  process.once('exit', release)
+  process.once('uncaughtException', (err) => {
+    release()
+    console.error(err)
+    process.exit(1)
   })
 
   const startedAt = Date.now()
   const [bin, ...binArgs] = passthrough
-  const result = spawnSync(bin, binArgs, { stdio: 'inherit', cwd: process.cwd(), env: process.env })
-  const durationMs = Date.now() - startedAt
+  try {
+    const result = spawnSync(bin, binArgs, { stdio: 'inherit', cwd: process.cwd(), env: process.env })
+    const durationMs = Date.now() - startedAt
 
-  logRun({ id, kind, model: modelKey, command: passthrough, exitCode: result.status, durationMs })
-  logTelemetry({
-    event: 'run_complete',
-    id,
-    kind,
-    model: modelKey,
-    exitCode: result.status,
-    durationMs,
-    ramAvailableAfterGb: Math.round((systemProbes.availableRamGb() ?? 0) * 10) / 10,
-  })
-  releaseReservation(id)
-  process.exit(result.status ?? 1)
+    logRun({ id, kind, model: modelKey, command: passthrough, exitCode: result.status, durationMs })
+    logTelemetry({
+      event: 'run_complete',
+      id,
+      kind,
+      model: modelKey,
+      exitCode: result.status,
+      durationMs,
+      ramAvailableAfterGb: Math.round((systemProbes.availableRamGb() ?? 0) * 10) / 10,
+    })
+    process.exit(result.status ?? 1)
+  } finally {
+    release()
+  }
 }
 
 function cmdRelease(args) {
-  const id = args[0] ?? rest[0] ?? die('usage: factory release <id>')
+  const { flags, positional } = parse(args)
+  const id = positional[0] ?? flags.id ?? rest[0] ?? die('usage: factory release <id> [--force]')
+
+  // `--force` reclaims a lease whose holder is DEAD. It must refuse — loudly and
+  // without touching the file — when the holder is alive: two writers on one id
+  // is the failure the mutex exists to prevent, and a recovery flag that can
+  // clear a live lease is a recovery flag that causes the bug it recovers from.
+  if (flags.force) {
+    const decision = forceDecision(readReservations(), id, systemProbes.now())
+    if (!decision.ok) {
+      console.error(`REFUSED: ${decision.reason}`)
+      logTelemetry({ event: 'force_refused', id, holderPid: decision.holder?.pid ?? null })
+      process.exit(4)
+    }
+    forceReleaseReservation(id)
+    console.log(`force-released ${id} — ${decision.reason}`)
+    logTelemetry({ event: 'force_release', id, holderPid: decision.holder?.pid ?? null })
+    process.exit(0)
+  }
+
   releaseReservation(id)
   console.log(`released ${id}`)
   process.exit(0)
@@ -533,8 +607,8 @@ function cmdHelp() {
   doctor                              the resource picture, and what each kind would do now
   route <kind> [--independence-of X]  capability + resource + independence routing
   admit <kind> --id <id> [--model M]  admission control; exit 3 = BLOCKED_RESOURCE
-  run <kind> --id <id> -- <cmd...>    admit, execute, log, release
-  release <id>
+  run <kind> --id <id> -- <cmd...>    admit, execute, log, release (refuses a held id)
+  release <id> [--force]              release; --force only when the holder pid is dead
   reclaim                             stop resident local models (opt-in, logged)
   work init|list|show|ready|graph|transition
   status [--json]

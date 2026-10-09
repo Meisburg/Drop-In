@@ -171,6 +171,126 @@ export function liveReservations(reservations, nowMs) {
   })
 }
 
+/**
+ * The live reservation for this task id, or null.
+ *
+ * The mutex is keyed on the WORK ITEM ID, not on the model or the exclusive
+ * resource: two `factory run` invocations for the same `--id` are two writers on
+ * one slice, and the second must refuse rather than silently interleave. An
+ * id-less reservation cannot be a holder — there is nothing to name — so it is
+ * skipped.
+ */
+export function reservationForId(reservations, id) {
+  return reservations.find((r) => r?.id === id) ?? null
+}
+
+/**
+ * Is this a LIVE lease for this id held by a DIFFERENT process?
+ *
+ * Returns null when the acquisition may proceed (no live holder, or the live
+ * holder is THIS process re-entering its own lease) and a description of the
+ * holder when it must refuse.
+ *
+ * Two properties are load-bearing and were the whole point of the slice:
+ *
+ *   1. LIVENESS IS A DECISION, NOT A FIELD. A record with no `pid` is a lease
+ *      written by a build that did not record holder identity; it cannot be
+ *      distinguished from a live one, so it is treated as HELD (conservative —
+ *      refusing is recoverable, double-writing is not). A record whose pid is
+ *      dead, or whose pid belongs to another user, is NOT live and does not
+ *      block.
+ *   2. IT IS THE SAME PID THAT IS EXCUSED, NOT THE SAME "SESSION". A worker that
+ *      re-raises a lease (e.g. `run` re-admitting after `admit`) must not lock
+ *      itself out; any other pid must.
+ *
+ * `isAlive` is injected so the test can hand it a dead pid without forking a
+ * process and prove the refusal is the check and not the environment.
+ */
+export function holderConflict(reservations, id, selfPid, nowMs, isAlive = processAlive) {
+  if (id === null || id === undefined) return null
+  const existing = reservationForId(liveReservations(reservations, nowMs), id)
+  if (!existing) return null
+  if (existing.pid === selfPid) return null
+  if (aliveByPid(existing, isAlive)) {
+    return {
+      id: existing.id,
+      pid: existing.pid ?? null,
+      startedAt: existing.startedAt ?? existing.admittedAt ?? null,
+      state: existing.state ?? null,
+      kind: existing.kind ?? null,
+    }
+  }
+  return null
+}
+
+/**
+ * The default liveness probe: `process.kill(pid, 0)`.
+ *
+ * Signal 0 sends nothing and only performs the permission/existence check, so
+ * it never harms the process. `ESRCH` means no such process (dead). `EPERM`
+ * means the process exists but belongs to another user — LIVE, and it must not
+ * be signalled away by a `--force`. A non-integer or non-positive pid is not a
+ * process and is never alive.
+ */
+export function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return err?.code === 'EPERM'
+  }
+}
+
+/**
+ * A pid that is known to be alive, for the `--force`-refusal test.
+ *
+ * `process.pid` is this very process; it exists for the duration of the test by
+ * construction. Named so the intent is unmistakable in the test body.
+ */
+export const CURRENT_PID = process.pid
+
+const aliveByPid = (record, isAlive) => {
+  const pid = record?.pid
+  if (pid === null || pid === undefined) return true // no identity recorded: cannot prove dead, so held
+  if (!Number.isInteger(pid)) return true // a malformed pid is not evidence of death
+  return isAlive(pid)
+}
+
+/**
+ * Decide whether `--force` may clear a lease: ONLY when the holder pid is dead.
+ *
+ * The rule is asymmetric on purpose. A dead holder's lease leaks forever — the
+ * process that would have called `release` no longer exists — so reclaiming it
+ * is recovery. A live holder's lease is held by that holder, and clearing it
+ * would let two writers run at once; `--force` must refuse and say who holds it.
+ * No identity recorded is likewise a refusal: `--force` may not guess.
+ */
+export function forceDecision(reservations, id, nowMs, isAlive = processAlive) {
+  const existing = reservationForId(liveReservations(reservations, nowMs), id)
+  if (!existing) return { ok: true, reason: 'no live lease' }
+  const pid = existing.pid
+  if (pid === null || pid === undefined || !Number.isInteger(pid)) {
+    return {
+      ok: false,
+      reason: `lease '${id}' records no holder pid — refusing to force-clear a lease whose owner cannot be proven dead`,
+      holder: { pid: pid ?? null, startedAt: existing.startedAt ?? existing.admittedAt ?? null },
+    }
+  }
+  if (isAlive(pid)) {
+    return {
+      ok: false,
+      reason: `lease '${id}' is held by live pid ${pid} (started ${existing.startedAt ?? existing.admittedAt ?? 'unknown'}) — refusing --force; the holder is still running`,
+      holder: { pid, startedAt: existing.startedAt ?? existing.admittedAt ?? null },
+    }
+  }
+  return {
+    ok: true,
+    reason: `lease '${id}' holder pid ${pid} is dead — safe to force-clear`,
+    holder: { pid, startedAt: existing.startedAt ?? existing.admittedAt ?? null },
+  }
+}
+
 /** The GB that has been promised but is not yet observable in MemAvailable. */
 export function heldGb(reservations) {
   return reservations

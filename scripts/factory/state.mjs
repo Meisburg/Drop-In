@@ -181,6 +181,46 @@ export function releaseReservation(id) {
   return writeReservations(all)
 }
 
+/**
+ * Release by id, but ONLY if the live lease is held by the caller's pid.
+ *
+ * This is the process-'exit'-handler form of release: the handler can fire
+ * during a crash, after a `--force` has already reclaimed the lease, or on a
+ * lease a different pid now owns. Releasing unconditionally there would stamp a
+ * fresh holder's record with `releasedAt` and hand the resource to a third
+ * writer. `ownerPid === null` releases whatever id matches (the CLI's explicit
+ * `factory release <id>` stays unconditional); a numeric `ownerPid` releases
+ * only on an exact pid match.
+ */
+export function releaseReservationOwned(id, ownerPid = null) {
+  const all = readReservations()
+  const found = all.find((r) => r.id === id)
+  if (!found) return { ok: false, why: `no reservation '${id}'` }
+  if (found.releasedAt) return { ok: false, why: `reservation '${id}' is already released` }
+  if (ownerPid !== null && found.pid !== ownerPid) {
+    return { ok: false, why: `reservation '${id}' is now held by pid ${found.pid ?? 'unknown'}, not ${ownerPid}` }
+  }
+  found.releasedAt = new Date().toISOString()
+  writeReservations(all)
+  return { ok: true }
+}
+
+/**
+ * Force-release a lease whose holder is dead. The PID CHECK IS NOT DONE HERE —
+ * the caller runs `forceDecision` from scheduler.mjs and only calls this once
+ * that has said the holder is dead. This function is the write; the decision is
+ * the module's pure function, so the rule is tested without a filesystem.
+ */
+export function forceReleaseReservation(id) {
+  const all = readReservations()
+  const found = all.find((r) => r.id === id)
+  if (!found) return { ok: false, why: `no reservation '${id}'` }
+  found.releasedAt = new Date().toISOString()
+  found.releasedBy = 'force'
+  writeReservations(all)
+  return { ok: true }
+}
+
 export function markRunning(id) {
   const all = readReservations()
   const found = all.find((r) => r.id === id)

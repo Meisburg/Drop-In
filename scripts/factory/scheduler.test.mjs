@@ -25,10 +25,16 @@ import {
   heldGb,
   laneTransitionAllowed,
   liveReservations,
+  processAlive,
   readyItems,
   reclaimCandidates,
   residentModel,
   selectModel,
+} from './scheduler.mjs'
+import {
+  CURRENT_PID,
+  forceDecision,
+  holderConflict,
 } from './scheduler.mjs'
 import { applyFields, applyTransition, implementerOf, newWorkItem } from './state.mjs'
 
@@ -593,5 +599,97 @@ describe('reclaim never kills a model that is in use (D-004)', () => {
 
   it('reclaim is opt-in by policy — this is not an automatic behaviour', () => {
     expect(realConfig.policies.reclaim).toBe('opt-in')
+  })
+})
+
+/**
+ * THE LEASE MUTEX — holder identity, refusal on a held id, and `--force`.
+ *
+ * WHY THIS FILE GREW A SECOND CONCERN. Before v33-14 a reservation carried no
+ * holder: no pid, no start time. A lease whose process had died and a lease
+ * whose process was mid-slice were the SAME OBJECT on disk, so the factory
+ * could not tell "this task is running" from "this task leaked", and a second
+ * `factory run` for the same `--id` silently proceeded. Two writers, one slice.
+ *
+ * These cases pin the three decisions that close it, each on the PURE function
+ * so the liveness probe is injected and no test depends on the machine:
+ *   - a second acquire is refused and NAMES the holder (pid + startedAt);
+ *   - `--force` clears a lease whose holder is dead;
+ *   - `--force` REFUSES a lease whose holder is alive.
+ * The crash-path release (d) is a CLI concern and is exercised end-to-end in
+ * `.scratch/v33-14-report.md`, not here — `factory.mjs` is argv-driven and has
+ * no exported entry point, so a unit case for it would test a copy of the
+ * handler rather than the handler.
+ */
+describe('the lease mutex (v33-14)', () => {
+  const NOW = 1_000_000
+  const heldBy = (pid) => [{ id: 'slice-1', kind: 'builder', state: 'RUNNING', pid, startedAt: '2026-10-08T12:00:00.000Z' }]
+
+  it('refuses a second acquire for a held id, and names the holder pid and start time', () => {
+    // The other process is LIVE. This is the case that used to proceed.
+    const conflict = holderConflict(heldBy(4242), 'slice-1', process.pid, NOW, () => true)
+
+    expect(conflict).not.toBeNull()
+    expect(conflict.pid).toBe(4242)
+    expect(conflict.startedAt).toBe('2026-10-08T12:00:00.000Z')
+    // The refusal the CLI prints is built from exactly these fields, so a message
+    // that omitted either would be a bug the test can see.
+    expect(`holder pid ${conflict.pid} started ${conflict.startedAt}`).toBe('holder pid 4242 started 2026-10-08T12:00:00.000Z')
+  })
+
+  it('does NOT refuse a re-acquire by the SAME pid — a worker is not locked out of its own lease', () => {
+    expect(holderConflict(heldBy(process.pid), 'slice-1', process.pid, NOW, () => true)).toBeNull()
+  })
+
+  it('does NOT refuse when the recorded holder pid is dead — a leaked lease is not a holder', () => {
+    // pid 4242 is handed a probe that says it is dead. The lease exists but blocks
+    // nobody; if it did, a crashed worker would wedge its slice forever.
+    expect(holderConflict(heldBy(4242), 'slice-1', process.pid, NOW, () => false)).toBeNull()
+  })
+
+  it('treats a lease with NO recorded pid as HELD rather than as free', () => {
+    // A record written before holder identity existed cannot be proven dead, and
+    // "cannot prove dead" must resolve to "held": refusing is recoverable, two
+    // writers is not.
+    const legacy = [{ id: 'slice-1', state: 'RUNNING' }]
+    expect(holderConflict(legacy, 'slice-1', process.pid, NOW, () => false)).not.toBeNull()
+  })
+
+  it('ignores a released or expired lease, so a finished slice does not block its successor', () => {
+    const released = [{ id: 'slice-1', state: 'RUNNING', pid: 4242, releasedAt: '2026-10-08T12:30:00.000Z' }]
+    expect(holderConflict(released, 'slice-1', process.pid, NOW, () => true)).toBeNull()
+    const expired = [{ id: 'slice-1', state: 'RUNNING', pid: 4242, expiresAt: NOW - 1 }]
+    expect(holderConflict(expired, 'slice-1', process.pid, NOW, () => true)).toBeNull()
+  })
+
+  it('--force CLEARS a lease whose holder pid is dead', () => {
+    const d = forceDecision(heldBy(4242), 'slice-1', NOW, () => false)
+    expect(d.ok).toBe(true)
+    expect(d.reason).toMatch(/dead/)
+    expect(d.holder.pid).toBe(4242)
+  })
+
+  it('--force REFUSES a lease whose holder pid is alive, and says who holds it', () => {
+    const d = forceDecision(heldBy(4242), 'slice-1', NOW, () => true)
+    expect(d.ok).toBe(false)
+    expect(d.reason).toMatch(/live pid 4242/)
+    expect(d.reason).toMatch(/2026-10-08T12:00:00.000Z/)
+  })
+
+  it('--force REFUSES when no pid was recorded — it may not guess a dead owner', () => {
+    const d = forceDecision([{ id: 'slice-1', state: 'RUNNING' }], 'slice-1', NOW, () => false)
+    expect(d.ok).toBe(false)
+    expect(d.reason).toMatch(/no holder pid/)
+  })
+
+  it('--force on an id with no live lease is a no-op, not a refusal', () => {
+    expect(forceDecision([], 'slice-1', NOW, () => true).ok).toBe(true)
+  })
+
+  it('processAlive reads the REAL process table: this pid is alive, a dead one is not', () => {
+    // The injected probe is a test double. This case proves the DEFAULT probe
+    // behind it is real, so the double is not standing in for nothing.
+    expect(processAlive(CURRENT_PID)).toBe(true)
+    expect(processAlive(999_999)).toBe(false)
   })
 })

@@ -395,6 +395,53 @@ Pinned here so builders do not re-decide them. **Read, do not invent.**
 
 ---
 
+### v33-14 — A second `verify` on the same task must refuse (no mutex, no lease check)
+
+- **Objective:** two `verify` runs on the same task can race today. A second run
+  refuses while a lease is held; a lease is released only by its holder, or by
+  `--force`.
+- **Problem, measured (2026-10-08):** `grep -rn 'mutex|lease-holder|--force'
+  scripts/factory/` returns **zero hits**. `factory.mjs`, `state.mjs` and
+  `scheduler.mjs` have no concurrency refusal at all. A stale lease can be
+  re-woken silently, and two e2e runs were observed in flight on the same tree
+  while this was written.
+- **Files in scope:** `scripts/factory/factory.mjs`, `scripts/factory/state.mjs`,
+  `scripts/factory/scheduler.mjs`, `scripts/factory/scheduler.test.mjs`.
+- **Approach:** take an advisory lease keyed on the task id when a run starts;
+  release on exit (including error paths). A second acquire for a held key exits
+  non-zero with a message naming the holder (pid + start time). `--force` clears a
+  lease whose holder pid is dead, and refuses to clear a live holder's lease.
+- **Acceptance criteria:**
+  - A second run on a held task exits non-zero and names the holder. Show it.
+  - `--force` releases a lease whose pid is dead; it **refuses** when the holder
+    pid is alive. Both shown.
+  - The lease is released on a normal exit **and** on a thrown error (the crash
+    path is the one that leaks).
+  - Mutation-proved: deleting the acquire check turns a named test red.
+- **Verification command:** `npm test -- scheduler`; then `npm run verify`.
+- **Budget:** one small builder context. **Depends on:** nothing.
+- **Open question for Jon (not blocking the build):** should this be promoted to
+  a deterministic guard (`npm run guards`) so it is an invariant rather than a
+  soft check inside `factory.mjs`? Queued as v33-15 pending that ruling.
+
+### v33-15 — Promote the verify mutex to a deterministic guard (RULED: yes)
+
+- **Ruling (Jon, 2026-10-08):** promote it. A soft check inside `factory.mjs` is a
+  claim; a `.check.mjs` under `scripts/guards/` is an invariant. Per AGENTS.md,
+  a lane that lives only in a pointer table quietly stops running.
+- **Objective:** make the lease refusal a `.check.mjs` under `scripts/guards/` so
+  it fires without a model, wired into `npm run guards` (inside `verify`).
+- **Files in scope:** `scripts/guards/` (new check), `package.json`'s `guards`
+  script if a glob needs widening — read it first, do not assume.
+- **Acceptance criteria:** the guard parses the source and fires on a live lease;
+  it ships its own `.check.mjs` proving the failure mode is reachable (per
+  `docs/agents/borrowed-guards.md`, a rule that parses source ships a check
+  proving it can fire).
+- **Budget:** one small context. **Depends on:** v33-14 must land first — the guard
+  can only be written once the acquire path exists to guard. **Not dispatched.**
+
+---
+
 ## 5. Slices that need a ruling BEFORE dispatch (⛔)
 
 These are written up so the decision is cheap, and **no builder is dispatched on
@@ -527,3 +574,18 @@ the Going confirmation.
     V33: v33-5 complete (1f9914c) — the card counts parents and kids; one age range, mutation-proved
     V33: toolbar resolved 6 annotations with shas; 18 remain pending
     V33: ocr NOT yet run on v33-6 (091aad8), v33-7a (aebdb84), v33-13 (964d066) — recorded, not hidden
+    V33: v33-14 written (no sha — plan only) — verify mutex + lease-holder check. The gap is
+         CONFIRMED OPEN by grep: scripts/factory/ has zero mutex/lease/--force hits. Approved by Jon.
+    V33: v33-15 RULED by Jon — promote the mutex to a deterministic guard. Unblocked; still
+         not dispatched, because it depends on v33-14 existing to guard. Guard over soft check:
+         "a lane that lives only in a pointer table quietly stops running."
+    V33: v33-14 complete (uncommitted working tree — 4 factory files, +351/-19) — lease holder identity
+         + refusal on acquire (exit 4) + --force for dead pids only + release on crash path.
+         VERIFIED INDEPENDENTLY by the orchestrator, not taken on the builder's word:
+         `npm test -- scheduler` 52 passed (was 42); `npm run verify` exit 0, 185 guard checks PASS;
+          MUTATION reproduced by the orchestrator — neutering holderConflict → 2 named tests red,
+          restored and re-green, scheduler.mjs diff confirmed clean.
+         NOT proven, recorded: no flock (read-modify-write is not atomic, so two SIMULTANEOUS first
+         acquires could still both pass — closes the sequential case, not true concurrency); a-d
+         proven by CLI execution not unit tests, because factory.mjs exports no entry point.
+    V33: v33-15 dispatched (deleg_7e5acc57) — the guard, now that v33-14 exists to guard.
