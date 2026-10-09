@@ -94,7 +94,7 @@ describe('target binding', () => {
   it('maps the labels to the controls the tour teaches', () => {
     expect(tooltipTargetForLabel('Drop Ins')).toBe('dropIns')
     expect(tooltipTargetForLabel('Inbox')).toBe('inbox')
-    expect(tooltipTargetForLabel('Post a drop-in')).toBe('post')
+    expect(tooltipTargetForLabel('Create a drop-in')).toBe('post')
     expect(tooltipTargetForLabel('Places')).toBe('places')
     expect(tooltipTargetForLabel('Profile')).toBe('profile')
   })

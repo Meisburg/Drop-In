@@ -79,12 +79,12 @@ describe('TOUR_LINES — the four tabs and the Post action, one line each', () =
   // The bar's real order (src/App.tsx): Drop Ins, Inbox, the Post action
   // between Inbox and Places, Places, Profile. The labels are the ones the
   // parent will read in the nav — the four NavTab labels and
-  // PostActionButton's aria-label ("Post a drop-in").
+  // PostActionButton's aria-label ("Create a drop-in").
   it('names exactly the four tabs plus the Post action, in the nav’s order', () => {
     expect(TOUR_LINES.map((line) => line.label)).toEqual([
       'Drop Ins',
       'Inbox',
-      'Post a drop-in',
+      'Create a drop-in',
       'Places',
       'Profile',
     ])
@@ -101,7 +101,7 @@ describe('TOUR_LINES — the four tabs and the Post action, one line each', () =
   // ACTION, not a fifth tab ("Do NOT 'fix' the nav back to the V22 shape").
   // The tour must teach that shape, not undo it.
   it('describes the centre control as the + action, never as a tab', () => {
-    const action = TOUR_LINES.find((line) => line.label === 'Post a drop-in')
+    const action = TOUR_LINES.find((line) => line.label === 'Create a drop-in')
     expect(action, 'the Post action line is missing from the tour').toBeDefined()
     expect(action?.detail).toContain('+')
     expect(action?.detail.toLowerCase()).not.toContain('tab')

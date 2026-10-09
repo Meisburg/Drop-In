@@ -2896,7 +2896,7 @@ export function feedZipSaveIsNoop(
  * The feed's ONE location control (V23 slice 1, pure + unit-tested).
  *
  * V16 t06 left the feed with TWO permanent controls — a radius `<select>` and a
- * home-zip form — plus the empty state's own "Post a drop-in" link, so the top
+ * home-zip form — plus the empty state's own "Create a drop-in" link, so the top
  * of the page read as three near-identical rows shoved above the list (the
  * founder's words: "this button is shoved in at the top of a page… two post a
  * drop-in buttons on this page"). This slice collapses all of it into ONE row:

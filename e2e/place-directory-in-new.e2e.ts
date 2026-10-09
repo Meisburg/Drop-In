@@ -59,7 +59,7 @@ test('the place directory is reachable from /new, with its map and list (V21 t02
   //         now that the Post tab no longer exists. ---
   await page.getByTestId('feed-post-drop-in').click()
   await settleOnRoute(page, '/new')
-  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Create a drop-in' })).toBeVisible()
 
   // V23 slice 3: the bottom "browse-all-places" door is GONE. The field's own
   // "Browse places" button is the only door to the directory sheet.
@@ -146,7 +146,7 @@ test('the directory sheet can be dismissed without picking (V21 t02)', async ({ 
   await settleOnRoute(page, '/')
   // The feed's own action reaches /new in one tap (the Post tab is gone).
   await page.getByTestId('feed-post-drop-in').click()
-  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Create a drop-in' })).toBeVisible()
 
   // V23 slice 3: the field's button is the door (the bottom door is gone).
   await expect(page.getByTestId('browse-all-places')).toHaveCount(0)
@@ -169,7 +169,7 @@ test('the directory sheet traps focus, closes on Escape, and scrolls (V23 slice 
   await page.setViewportSize({ width: 390, height: 844 })
   await settleOnRoute(page, '/')
   await page.getByTestId('feed-post-drop-in').click()
-  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Create a drop-in' })).toBeVisible()
 
   // Open the sheet through the field's button.
   const door = page.getByTestId('browse-places')
@@ -237,7 +237,7 @@ test('typing in the place field still opens inline suggestions (V23 slice 3 regr
   await page.setViewportSize({ width: 390, height: 844 })
   await settleOnRoute(page, '/')
   await page.getByTestId('feed-post-drop-in').click()
-  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Create a drop-in' })).toBeVisible()
 
   // Type a partial place name; the inline suggestion list should appear.
   const placeInput = page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')

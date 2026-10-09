@@ -159,7 +159,7 @@ export const TOUR_LINES: readonly TourLine[] = [
     detail: 'message the parents you’re arranging a drop-in with',
   },
   {
-    label: 'Post a drop-in',
+    label: 'Create a drop-in',
     detail: 'the + in the middle — put your own on for the neighborhood',
   },
   {

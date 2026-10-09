@@ -165,7 +165,7 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   // the feed. This is what makes "one button, not four" a checkable claim.
   await expect(empty.getByTestId('empty-radius-browse')).toHaveCount(0)
   await expect(empty.getByTestId('empty-radius-create-here')).toHaveCount(0)
-  await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toHaveCount(0)
+  await expect(empty.getByRole('link', { name: 'Create a drop-in' })).toHaveCount(0)
   // Exactly ONE button inside the state (the widen control): the count line is
   // text, not a control, so a second button would be a regression.
   await expect(empty.getByRole('button')).toHaveCount(1)
@@ -346,7 +346,7 @@ test('browse shows the same honest empty state (one component, both screens)', a
   await expect(empty).not.toContainText(/today/i)
   await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toBeEnabled()
   await expect(empty.getByRole('button', { name: 'See everything in Seattle' })).toBeEnabled()
-  await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toBeVisible()
+  await expect(empty.getByRole('link', { name: 'Create a drop-in' })).toBeVisible()
 
   /* V31 v31-1: THE SAME COMPONENT, ONE DELIBERATE DIFFERENCE. The door is a
      prop the feed passes, because a browse → browse link would be a control

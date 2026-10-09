@@ -1511,7 +1511,7 @@ export function PlacesMap({
                       onClick={() => hostHere()}
                       className="min-h-11 rounded-xl bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
                     >
-                      Start a drop-in
+                      Host a drop-in
                     </button>
                   ) : null}
                   {/* V23 slice 4: ONLY a verified operator site, never the map

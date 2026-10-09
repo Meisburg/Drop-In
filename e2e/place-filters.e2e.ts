@@ -183,7 +183,7 @@ test.describe('places directory — the filter pills say what they filter (v30-3
     const countRows = page.getByTestId('place-row')
     expect(await countRows.count()).toBeGreaterThan(0)
     const statesItsCount = (t: string) =>
-      /\d+ drop-ins? planned here/.test(t) || /Be the first to start a drop-in here/.test(t)
+      /\d+ drop-ins? planned here/.test(t) || /Be the first to host a drop-in here/.test(t)
     await expect
       .poll(async () => {
         const countTexts = await countRows.evaluateAll((rows) => rows.map((r) => r.textContent ?? ''))

@@ -750,7 +750,7 @@ test('the empty state offers the archive; the places directory does not', async 
   await expect(empty.getByRole('button')).toHaveCount(1)
   // V23 slice 1: the empty state no longer renders its own "Post a drop-in" link
   // — the action row at the top of the page owns the ONE primary CTA.
-  await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toHaveCount(0)
+  await expect(empty.getByRole('link', { name: 'Create a drop-in' })).toHaveCount(0)
   // V13 ticket 05 (A1): the empty-radius state no longer carries the archive
   // link — it was removed from RadiusEmptyState. The day-sections archive line
   // (FeedPage's own link under the feed) is the only remaining one, and it is

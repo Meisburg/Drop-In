@@ -975,7 +975,7 @@ export function FeedPage() {
   if (loadError !== null) {
     return (
       <div className="flex flex-col gap-4">
-        <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins around your area" />
+        <SectionHeader icon={NAV_ICONS.nearby} title="Near you" tagline="Drop-ins other parents are hosting near you" />
         <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <p className="text-sm text-red-600">{loadError}</p>
           <p className="text-xs text-slate-500">
@@ -1211,7 +1211,7 @@ export function FeedPage() {
       <SectionHeader
         icon={NAV_ICONS.nearby}
         title="Near you"
-        tagline="Drop-ins around your area"
+        tagline="Drop-ins other parents are hosting near you"
         testId="feed-section-header"
       />
 
@@ -1406,7 +1406,7 @@ export function FeedPage() {
            suppressing them was the dead end the bug report names. V27 slice 1
            therefore lets the component render its default escapes (its Browse
            caller is untouched). showPostCta stays false: the raised nav "+" is
-           the persistent post action, so a second "Post a drop-in" link here is
+           the persistent post action, so a second "Create a drop-in" link here is
            the duplication V23 removed.
 
            V31 v31-1: showBrowseCta is TRUE here and only here. The feed's parent
