@@ -956,8 +956,8 @@ test('the marker bubble stays open, and a different circle replaces it (V20 t03)
   // consecutive runs) while A–Z was deterministic. Pinning A–Z keeps this spec
   // about the bubble, not about the seed's layout, and a sort is a reorder that
   // changes no pin's existence.
-  await page.getByTestId('places-sort-a-z').click()
-  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('places-sort-control').selectOption('alpha')
+  await expect(page.getByTestId('places-sort-control')).toHaveValue('alpha')
   // V25 t01: MAP MODE, then let the first frame settle before measuring
   // anything: the pan/marker effects
   // run on mount and a measurement taken during them is a measurement of the
@@ -2267,10 +2267,15 @@ test('the browse list defaults to Best first and the sort above the list reorder
   // AC1 (V33-D): the DEFAULT is BEST FIRST (top-rated), not A–Z. `PlaceDirectory`
   // used to load with `sortMode = 'alpha'` — the defect the founder filed twice
   // (*"sorted automatically by top-rated… instead of alphabetical"*).
+  //
+  // 2026-10-08 (directory-polish): the sort is ONE DROPDOWN now. Its value is the
+  // SortMode, the default option states its own meaning, and the one-line hint
+  // says what "best" orders by — so the word is never left to guess.
   await expect(page.getByTestId('place-card-name').first()).toBeVisible()
-  const bestFirst = page.getByTestId('places-sort-best-first')
-  await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'false')
+  const sort = page.getByTestId('places-sort-control')
+  await expect(sort).toHaveValue('top-rated')
+  await expect(page.getByTestId('places-sort-best-first')).toHaveText('Best first (top rated)')
+  await expect(page.getByTestId('places-sort-hint')).toContainText('highest rated')
 
   // AC2 (V33-D): the Filters trigger and its modal are DELETED — the absence is
   // asserted after paint, not merely read off the source.
@@ -2284,9 +2289,8 @@ test('the browse list defaults to Best first and the sort above the list reorder
   const countBefore = await rows.count()
   expect(countBefore).toBeGreaterThan(1)
 
-  await page.getByTestId('places-sort-a-z').click()
-  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
-  await expect(bestFirst).toHaveAttribute('aria-pressed', 'false')
+  await sort.selectOption('alpha')
+  await expect(sort).toHaveValue('alpha')
   await expect(rows).toHaveCount(countBefore)
 
   // A–Z ascends globally (the V17 t01 repair is kept: a sweep over zero names
@@ -2302,8 +2306,8 @@ test('the browse list defaults to Best first and the sort above the list reorder
   }
 
   // And back to Best first — still the same rows.
-  await bestFirst.click()
-  await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
+  await sort.selectOption('top-rated')
+  await expect(sort).toHaveValue('top-rated')
   await expect(rows).toHaveCount(countBefore)
 })
 
@@ -3342,6 +3346,31 @@ test('the pill row is ONE wrapping row over the real kinds, and the coffee contr
     await expect(chip, `${kind} must be reachable behind More kinds`).toBeVisible()
     await expect(chip).toHaveAttribute('aria-pressed', 'false')
   }
+  // 2026-10-08 (directory-polish, D2): the overflow panel is the SECOND wrapping
+  // row (opened above, still open). The same rule as the row: it WRAPS at
+  // 390px — no side-scroll of its own, no pill pushed outside the viewport.
+  const overflowRow = page.getByTestId('place-kind-overflow-row')
+  await expect(overflowRow).toBeVisible()
+  const overflowMetrics = await overflowRow.evaluate((el) => {
+    const viewport = document.documentElement.clientWidth
+    const offenders: string[] = []
+    el.querySelectorAll<HTMLElement>('[data-testid]').forEach((pill) => {
+      const box = pill.getBoundingClientRect()
+      if (box.width > 0 && (box.left < -1 || box.right > viewport + 1)) {
+        offenders.push(pill.getAttribute('data-testid') ?? '?')
+      }
+    })
+    return { rowOverflow: el.scrollWidth - el.clientWidth, offenders }
+  })
+  expect(
+    overflowMetrics.rowOverflow,
+    'the overflow panel must WRAP at 390px, not side-scroll',
+  ).toBeLessThanOrEqual(0)
+  expect(
+    overflowMetrics.offenders,
+    'every overflow-panel pill must be inside the viewport at 390px',
+  ).toEqual([])
+
 
   // The withheld zero-row kinds, and the categories the schema cannot express.
   for (const withheld of ['park', 'trail', 'cafe', 'coffee', 'restaurant']) {
@@ -3354,7 +3383,7 @@ test('the pill row is ONE wrapping row over the real kinds, and the coffee contr
   await expect(foodPlaceholder).toBeVisible()
   await expect(zooPlaceholder).toBeVisible()
   await expect(page.getByTestId('place-kind-placeholder-coffee')).toHaveCount(0)
-  await expect(foodPlaceholder).toContainText('Food')
+  await expect(foodPlaceholder).toHaveText('Food')  // D1: exactly 'Food' — the 'Cafe' half is gone
   await expect(zooPlaceholder).toContainText('Zoo')
   await foodPlaceholder.click()
   const comingSoon = page.getByTestId('place-kind-coming-soon')

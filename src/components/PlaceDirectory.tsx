@@ -368,7 +368,7 @@ export function PlaceDirectory({
    */
   const [searchFocused, setSearchFocused] = useState(false)
   /**
-   * V27 — a placeholder category the parent tapped (Food/Cafe, Zoo/Animals).
+   * V27 — a placeholder category the parent tapped (Food, Zoo/Animals).
    * The data source for these does not exist, so rather than a chip that could
    * only ever return an empty list, they open one honest "coming soon" line.
    */
@@ -830,15 +830,16 @@ export function PlaceDirectory({
    */
   const suggestionWords = kindChips.map((chip) => chip.label)
   /**
-   * V27 — the two categories the DATA CANNOT EXPRESS (no food/cafe, zoo or amenity
-   * dataset anywhere), rendered as the row's trailing pills. They are not
-   * filters: tapping one opens a single honest "coming soon" line instead of a
-   * chip that could only ever return an empty list. The founder asked for them
-   * by name; the substrate does not exist, so the request is named rather than
-   * faked.
+   * V27 — the two categories the DATA CANNOT EXPRESS (no food or zoo dataset
+   * anywhere — the cafe half is the coffee-nearby filter's job, so the food door
+   * no longer claims a cafe; 2026-10-08 review), rendered as the row's trailing
+   * pills. They are not filters: tapping one opens a single honest "coming soon"
+   * line instead of a chip that could only ever return an empty list. The
+   * founder asked for them by name; the substrate does not exist, so the request
+   * is named rather than faked.
    */
   const comingSoonKinds = [
-    { id: 'food', label: 'Food/Cafe', copy: 'Coming soon! Want to request local food spots?' },
+    { id: 'food', label: 'Food', copy: 'Coming soon! Want to request local food spots?' },
     { id: 'zoo', label: 'Zoo/Animals', copy: 'Coming soon! Want to request a zoo or animal farm?' },
   ] as const
   const comingSoonCopy = comingSoonKinds.find((k) => k.id === comingSoonKind)?.copy ?? null
@@ -980,8 +981,9 @@ export function PlaceDirectory({
             them scrollable where they're off-screen, you could show all of them
             together."* That supersedes the earlier correction's "scrolls
             sideways": the row WRAPS, every pill is visible at 390px, and the
-            spacing reads as ONE group — tight, even gaps (`gap-2`), no tier
-            labels, no second row, no side-scroll.
+            spacing reads as ONE group — tight, even gaps (`gap-1.5`; the 2026-10-08
+            review tightened the old `gap-2`, whose ragged right margin read as
+            blank space), no tier labels, no second row, no side-scroll.
 
             THE ORDER is kept from the plan; the tiers are dropped:
               Open now · Playground · Indoor play · Café · Museum · Saved · More kinds
@@ -997,7 +999,7 @@ export function PlaceDirectory({
             data-testid="place-kind-chip-row"
             role="group"
             aria-label="Place filters"
-            className="flex flex-wrap items-center gap-2"
+            className="flex flex-wrap items-center gap-1.5"
           >
             {/* 1 · OPEN NOW — the only question with a deadline. */}
             <button
@@ -1106,8 +1108,9 @@ export function PlaceDirectory({
 
             {/* 7 · MORE KINDS — the overflow DOOR, last. It opens the kinds the
                 four above do not name (pool, splash pad, library, beach, other)
-                plus the two categories the DATA CANNOT EXPRESS (no food/cafe,
-                zoo or amenity dataset anywhere). Those trailing pills are NOT
+                plus the two categories the DATA CANNOT EXPRESS (no food or zoo dataset
+                anywhere; the cafe half is the coffee-nearby filter's). Those
+                trailing pills are NOT
                 filters: tapping one opens the single honest "coming soon" line,
                 exactly as before, because a chip for them could only ever return
                 an empty list. Nothing was dropped — it moved one tap in. */}
@@ -1144,7 +1147,7 @@ export function PlaceDirectory({
               the two honest "coming soon" doors. It is a second WRAPPING line,
               not a scroll strip — the same rule as the row above. */}
           {moreKindsOpen ? (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
+            <div data-testid="place-kind-overflow-row" className="flex flex-wrap items-center gap-1.5 pt-1">
               {moreKindChips.map(renderKindChip)}
               {comingSoonKinds.map((kind) => (
                 <button
@@ -1293,6 +1296,14 @@ export function PlaceDirectory({
           "Top rated" chip left the row entirely — the control that used to exist
           in TWO places now exists ONCE.
 
+          2026-10-08 (directory-polish, `mv0crqvw` / `mv0cq2io`): the ONE segmented
+          control became ONE DROPDOWN — the options a parent would find most useful
+          when looking for a place to host a drop-in, picked from a list rather
+          than a pair of buttons. The default option states its own meaning ("What
+          is Best first based off of?"): it is labelled `Best first (top rated)`,
+          and the one-line hint below it says what "best" means — highest rated,
+          then most reviewed, then name — so no jargon is left undefined.
+
           `Best first` is the load default (`top-rated`); `A–Z` stays a
           first-class option for a parent who knows the name ("Greenlake"). A
           sort reorders — it must never change WHICH rows are shown, which the
@@ -1304,40 +1315,26 @@ export function PlaceDirectory({
           <p className="text-sm text-slate-600">
             {places === null ? 'Loading places…' : `${listRows.length} places`}
           </p>
-          <div
-            role="group"
-            aria-label="Sort places"
-            data-testid="places-sort-control"
-            className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1"
-          >
-            <button
-              type="button"
-              data-testid="places-sort-best-first"
-              aria-pressed={sortMode === 'top-rated'}
-              onClick={() => setSortMode('top-rated')}
-              className={
-                'flex min-h-11 items-center rounded-full px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                (sortMode === 'top-rated'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-700 hover:bg-slate-200')
-              }
+          <div className="flex flex-col items-end gap-1">
+            <select
+              data-testid="places-sort-control"
+              aria-label="Sort places"
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="h-11 w-fit rounded-full border border-slate-200 bg-slate-50 px-4 text-base font-medium text-slate-700 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              Best first
-            </button>
-            <button
-              type="button"
-              data-testid="places-sort-a-z"
-              aria-pressed={sortMode === 'alpha'}
-              onClick={() => setSortMode('alpha')}
-              className={
-                'flex min-h-11 items-center rounded-full px-4 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-indigo-500 ' +
-                (sortMode === 'alpha'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-700 hover:bg-slate-200')
-              }
-            >
-              A–Z
-            </button>
+              <option value="top-rated" data-testid="places-sort-best-first">
+                Best first (top rated)
+              </option>
+              <option value="alpha" data-testid="places-sort-a-z">
+                A–Z
+              </option>
+            </select>
+            {/* `mv0cq2io`: "best" must never be left to guess — this line says
+                exactly what the default option orders by. */}
+            <p data-testid="places-sort-hint" className="text-xs text-slate-500">
+              Best = highest rated, then most reviewed, then name
+            </p>
           </div>
         </div>
       )}
@@ -1665,6 +1662,11 @@ export function PlaceDirectory({
  * how other parents have reviewed it … and how close it is to me. Those are
  * the prominent things."*
  *
+ * 2026-10-08 (directory-polish, `mv0ctaar`): the review verdict is the row's
+ * strongest social proof, so it is now the most prominent text on the card —
+ * the stars render `text-lg` and the value renders `text-sm` semibold, larger
+ * and heavier than the quiet `text-sm`/`text-xs` line it replaced.
+ *
  * HONEST ZERO: this component is only rendered when `hasReviews` is true; the
  * caller shows a quiet "No reviews yet" otherwise, so a place with no reviews
  * is never given a 0-star or 5-star appearance it did not earn. `displayAverage`
@@ -1685,11 +1687,11 @@ function PlaceStars({ count, average }: { count: number; average: number | null 
       data-testid="place-rating-line"
       className="flex shrink-0 items-center gap-1 pt-0.5"
     >
-      <span aria-hidden="true" className="text-sm leading-none text-amber-500">
+      <span aria-hidden="true" className="text-lg leading-none text-amber-500">
         {'★'.repeat(filled)}
         {'☆'.repeat(5 - filled)}
       </span>
-      <span aria-hidden="true" className="text-xs font-medium text-slate-600">
+      <span aria-hidden="true" className="text-sm font-semibold text-slate-600">
         {value.toFixed(1)}
         <span className="text-slate-400"> ({count})</span>
       </span>

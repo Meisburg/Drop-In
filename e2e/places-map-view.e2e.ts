@@ -1347,14 +1347,15 @@ test('"Back to list" restores the same list, its filters and its scroll position
   // REORDERS, so the round trip is exercised against a live, non-empty list.
   //
   // V33-D: the Filter & sort modal is DELETED. The sort is its own control above
-  // the list (`places-sort-a-z`), and the kind-blind indoor toggle is gone too —
+  // the list (the `places-sort-control` DROPDOWN), and the kind-blind indoor
+  // toggle is gone too —
   // "somewhere indoors" is the `indoor_play` KIND pill now, so the state this
   // spec carries is a kind selection plus a sort mode, both read straight off
   // the controls that own them.
   await page.getByTestId('place-kind-chip-playground').click()
-  await page.getByTestId('places-sort-a-z').click()
+  await page.getByTestId('places-sort-control').selectOption('alpha')
   await expect(page.getByTestId('place-kind-chip-playground')).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('places-sort-control')).toHaveValue('alpha')
   await expect(page.getByTestId('place-row').first()).toBeVisible()
   const names = await listNames(page)
 
@@ -1453,7 +1454,7 @@ test('"Back to list" restores the same list, its filters and its scroll position
     'aria-pressed',
     'true',
   )
-  await expect(page.getByTestId('places-sort-a-z')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('places-sort-control')).toHaveValue('alpha')
   await page.getByTestId('set-location-btn').click()
   const radiusSlider = page.getByTestId('location-radius-slider')
   await expect(radiusSlider).toBeVisible()
