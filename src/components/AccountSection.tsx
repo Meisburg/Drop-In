@@ -84,7 +84,7 @@ export function AccountSection() {
           `canModerate` the /mod guard reads), so a parent never sees a control
           they cannot use. It sits FIRST because it is the one control here that
           is not about leaving — a moderator who opened Settings to fix a wrong
-          place photo should not scroll past an export, a sign-out and a delete
+          place photo should not scroll past an export, a delete and a sign-out
           to find it. */}
       {canModerate(profile) ? (
         <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -124,29 +124,6 @@ export function AccountSection() {
         )}
       </div>
 
-      {/* V29 v29-10: SIGN OUT LIVES HERE NOW, not in the app header. In the
-          header it was a permanent one-tap control sitting beside the settings
-          gear on every signed-in screen, with no confirmation — a mis-tap cost a
-          password reset. Settings is where a parent goes to manage the account,
-          and this sits with the other account-level actions rather than
-          competing with navigation. No confirm dialog: the risk being removed
-          was the HEADER mis-tap, and a second tap on a deliberate Settings
-          control is friction, not safety. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <p className="text-sm font-medium text-slate-800">Sign out</p>
-        <p className="mt-1 text-xs text-slate-500">
-          Your family&apos;s drop-ins stay on Drop In — sign back in any time.
-        </p>
-        <button
-          type="button"
-          data-testid="account-sign-out"
-          onClick={() => void signOutUser()}
-          className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700"
-        >
-          Sign out
-        </button>
-      </div>
-
       <div className="rounded-xl border border-red-200 bg-red-50/50 p-3">
         <p className="text-sm font-medium text-slate-800">Delete my account</p>
         <p className="mt-1 text-xs text-slate-500">
@@ -166,6 +143,36 @@ export function AccountSection() {
             {deleteError}
           </p>
         )}
+      </div>
+
+      {/* V29 v29-10: SIGN OUT LIVES HERE, not in the app header. In the header it
+          was a permanent one-tap control sitting beside the settings gear on
+          every signed-in screen, with no confirmation — a mis-tap cost a password
+          reset. No confirm dialog: the risk being removed was the HEADER mis-tap,
+          and a second tap on a deliberate Settings control is friction, not
+          safety.
+
+          v33-8 (muyemm3k): sign out is the LAST action in the category — below
+          Delete, with its own space and a rule between the two. The delete option
+          must not sit beside the sign-out option where a glancing eye lands on it
+          ("I don't even want them to find that easily"). The wrapper's top rule
+          and extra margin are that separation; the red card above keeps its own
+          border. */}
+      <div className="mt-3 border-t border-slate-200 pt-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-sm font-medium text-slate-800">Sign out</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Your family&apos;s drop-ins stay on Drop In — sign back in any time.
+          </p>
+          <button
+            type="button"
+            data-testid="account-sign-out"
+            onClick={() => void signOutUser()}
+            className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
 
       {confirmingDelete ? (

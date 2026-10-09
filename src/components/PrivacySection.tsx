@@ -260,15 +260,52 @@ function FactList({
   return (
     <div data-testid={testId}>
       <h3 className="text-sm font-semibold text-slate-700">{heading}</h3>
-      <dl className="mt-1 flex flex-col gap-2">
+      <div className="mt-1 flex flex-col gap-2">
         {facts.map((fact) => (
-          <div key={fact.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-            <dt className="text-xs font-medium text-slate-500">{fact.label}</dt>
-            <dd className="text-sm font-medium text-slate-800">{fact.value}</dd>
-            <dd className="text-xs text-slate-500">{fact.detail}</dd>
-          </div>
+          <FactRow key={fact.label} fact={fact} />
         ))}
-      </dl>
+      </div>
     </div>
   )
+}
+
+/**
+ * THE ONE READ-ONLY ROW SHAPE for the fact lists (v33-8). A row is either:
+ *
+ *   - a DOORWAY — `fact.editAt` names the screen that owns the change (the
+ *     profile editor). The whole row is a `Link` with a right-hand chevron
+ *     hint, the same row treatment as the index's profile door
+ *     (`SettingsPage.tsx`, `rounded-xl border … min-h-11` + right-hand hint).
+ *     No second editor is built; /profile already owns name, kids and photos.
+ *   - a WHY-LINE — nothing owns the change (a contractual or computed fact).
+ *     The row stays text; its `detail` is the short line that says why.
+ *
+ * Plain `div`/`span` rather than `dl`/`dt`/`dd`: a doorway row wraps the whole
+ * row in a link, and an anchor is not legal inside a `dl` group. Nothing in
+ * the suite selects on the old `dt`/`dd` elements, and the visual treatment is
+ * unchanged.
+ */
+function FactRow({ fact }: { fact: PrivacyFact }) {
+  const rowClasses =
+    'flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2'
+  const body = (
+    <span className="min-w-0">
+      <span className="block text-xs font-medium text-slate-500">{fact.label}</span>
+      <span className="block text-sm font-medium text-slate-800">{fact.value}</span>
+      <span className="block text-xs text-slate-500">{fact.detail}</span>
+    </span>
+  )
+  if (fact.editAt !== undefined) {
+    const slug = fact.label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+    return (
+      <Link to={fact.editAt} data-testid={`privacy-fact-link-${slug}`} className={rowClasses}>
+        {body}
+        <span className="shrink-0 text-sm text-indigo-600">Change ›</span>
+      </Link>
+    )
+  }
+  return <div className={rowClasses}>{body}</div>
 }

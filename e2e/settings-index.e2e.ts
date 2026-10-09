@@ -174,6 +174,16 @@ test.describe('the desktop: the pane beside the nav rail (1280×900)', () => {
     await expect(page.getByTestId('settings-pane')).toBeVisible()
     await expect(page.getByTestId('settings-index')).toBeVisible()
     await expect(page.getByTestId('account-sign-out')).toHaveCount(1)
+    // v33-8 (muyemm3k): sign out is the LAST action in the Account category —
+    // below the Delete card, not adjacent above it, with its own separation.
+    const delBox = await page.getByTestId('delete-account').boundingBox()
+    const signOutBox = await page.getByTestId('account-sign-out').boundingBox()
+    expect(delBox, 'the delete card must be measurable').not.toBeNull()
+    expect(signOutBox, 'the sign out card must be measurable').not.toBeNull()
+    expect(
+      signOutBox?.y ?? 0,
+      'sign out must sit below the Delete card, not beside or above it',
+    ).toBeGreaterThan((delBox?.y ?? 0) + (delBox?.height ?? 0))
     // The one-body rule, measured on the OTHER side of the pane's default: a
     // bare /settings already mounts the notifications body, so a regression that
     // rendered both the routed body and the default would show up here as 2.

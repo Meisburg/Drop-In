@@ -99,4 +99,18 @@ describe('buildPrivacyReport', () => {
       expect(fact.detail.trim()).not.toBe('')
     }
   })
+
+  it('points the name, kids and photo rows at the profile editor, and nothing else does (v33-8)', () => {
+    // Every row on a settings screen is either a control, a doorway to the
+    // screen that owns it, or a read-only line that says why. The three facts
+    // the profile editor (V15 T07) owns are doorways; the description row and
+    // the four kept facts have no editor, so they stay text.
+    expect(empty.visible[0].editAt, 'family name').toBe('/profile')
+    expect(empty.visible[1].editAt, 'about-your-family has no editor — descriptive row').toBeUndefined()
+    expect(empty.visible[2].editAt, 'kids').toBe('/profile')
+    expect(empty.visible[3].editAt, 'photos').toBe('/profile')
+    for (const fact of empty.kept) {
+      expect(fact.editAt, `${fact.label} is contractual — no editor`).toBeUndefined()
+    }
+  })
 })
