@@ -1736,8 +1736,15 @@ export function goingCountsLabel(
   if (kidsCount <= 0) return parents
   const kids = `${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}`
   if (ageBand === null) return `${parents} · ${kids}`
-  const ages = ageBand.min === ageBand.max ? `age ${ageBand.min}` : `ages ${ageBand.min}–${ageBand.max}`
-  return `${parents} · ${kids} (${ages})`
+  // V37 slice C (`R8W5`): the band's wording goes through the SAME
+  // `statedAgeRangeLine` the detail page uses, instead of a hand-rolled
+  // `ages X–Y` built here. The band is a two-sided pair by construction
+  // (`KidsAgeBand` has a min and a max), so the helper returns exactly the
+  // `ages X–Y` / `age X` this line already printed — the change is that there is
+  // now ONE age formatter in the codebase rather than two that happened to agree.
+  // A future edit to the app's age vocabulary lands in both places at once.
+  const ages = statedAgeRangeLine(ageBand.min, ageBand.max)
+  return ages === null ? `${parents} · ${kids}` : `${parents} · ${kids} (${ages})`
 }
 
 /**
@@ -1758,6 +1765,21 @@ export function goingCountsLabel(
  * - NOBODY IS GOING, or the pings were never read (a fresh post, a failed
  *   read) → the going line has no band to carry, so `card-age-range` stands
  *   alone as the host's intended ages — the only age signal a fresh post has.
+ *
+ * V37 slice C (`R8W5`) — WHAT THIS DOES **NOT** DO, and why that is deliberate.
+ *
+ * The v37 review asks to "show age fit more clearly on outings". The tempting
+ * reading is "always render `card-age-range`", and it is WRONG: doing so puts
+ * the host's intended range back alongside the attendee band on every attended
+ * card, which is precisely the two-ranges-at-once card `muyed1t6` was written
+ * against. A later annotation does not silently lose to an earlier-in-time
+ * brief, so the one-line rule STANDS and this seam is unchanged.
+ *
+ * What the slice DOES fix is that the two age facts were spelled by two
+ * different formatters (see `goingCountsLabel`), so the band could drift from
+ * the stated line's vocabulary. With one formatter, the ages a parent reads on
+ * an attended card are worded exactly as the detail page words them — which is
+ * the clarity the review asked for, without the duplicate line it did not.
  *
  * Pure: the caller (the card) hands over what it knows — whether the going
  * line renders at all, whether the attendee band exists, and whether the host
