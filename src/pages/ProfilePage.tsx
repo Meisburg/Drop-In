@@ -50,7 +50,12 @@ import {
   type LinkView,
   type ParentCardLinkState,
 } from '../lib/links'
-import { parentCardList, parentCardSaveLabel, PARENT_CARDS_BLURB } from '../lib/parentCards'
+import {
+  parentCardList,
+  parentCardSaveLabel,
+  nextParentPosition,
+  PARENT_CARDS_BLURB,
+} from '../lib/parentCards'
 import type { AccountLink, Kid, ParentCard, ProfileWithKids } from '../lib/types'
 import {
   planProfileSave,
@@ -283,6 +288,14 @@ export function ProfilePage() {
   // to `idle` so the next edit starts from "Save" again.
   const [parentCardStatus, setParentCardStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const parentCardDwellRef = useRef<number | null>(null)
+  /**
+   * add-parent-flow (annotation mv0d7dwh): whether the explicit
+   * "+ Add another parent" affordance has opened a blank second card. The blank
+   * card itself is DERIVED (see `blankSlot` below) from this flag plus the
+   * current free slot, so it can never outlive a filled slot — save the card
+   * and the slot fills and the blank drops out on reload.
+   */
+  const [addAnotherParentOpen, setAddAnotherParentOpen] = useState(false)
 
   useEffect(() => {
     if (userId === null) return
@@ -599,6 +612,7 @@ export function ProfilePage() {
     name: string,
     about: string,
     interests: string,
+    closeBlank = false,
   ) {
     if (userId === null) return
     if (name.trim() === '') {
@@ -627,6 +641,11 @@ export function ProfilePage() {
         // say about interests" — see saveParentCard's own note.
         interests: interests.trim() === '' ? null : interests.trim(),
       })
+      // add-parent-flow (annotation mv0d7dwh): when this save came from the
+      // explicit "+ Add another parent" blank card, the slot it filled is now
+      // occupied, so close the blank affordance — the saved card (editable, per
+      // Interpretation A) takes its place from the reload below.
+      if (closeBlank) setAddAnotherParentOpen(false)
       await reloadParentCards()
       setParentCardStatus('saved')
       // The short dwell: "Saved" is visible for a beat, then the button returns
@@ -1061,18 +1080,28 @@ export function ProfilePage() {
   const kidsAtCap = (kids ?? []).length >= MAX_KIDS_PER_PROFILE
 
   /**
-   * V27 (the founder's model): A PROFILE IS ONE PARENT.
+   * Parent cards: up to TWO per profile (D0: `MAX_PARENT_CARDS = 2`), so the
+   * model is NOT "a profile is one parent" — that was the V27 status quo, now
+   * superseded by the add-parent-flow work (annotation mv0d7dwh, Interpretation
+   * A, 2026-10-09).
    *
-   * `parentCardEditors` is the rendered list — the owner's OWN card (or an empty
-   * slot to create it), then any linked partner as a READ-ONLY entry. Nothing
-   * here offers a free-text second parent: the partner is an account you LINK,
-   * and her words live on her own profile.
+   * `parentCardEditors` is the rendered list, in position order:
+   *   - the owner's OWN card (or a blank slot-1 card to create it), editable;
+   *   - a linked partner's card, READ-ONLY — she is an account you LINK and her
+   *     words live on her own profile;
+   *   - any other free-text card, EDITABLE (Interpretation A): the reloaded
+   *     second parent is a real, writable row exactly like the first, not a
+   *     frozen one.
    *
    * The owner's card is the one whose name IS this account's display name,
    * falling back to the first card. A card matching the accepted partner's
-   * handle is that partner and renders read-only; any other legacy card is
-   * read-only too, so nothing can be typed into someone else's row. The read
-   * surface synthesizes the linked partner's row when no card exists for her.
+   * handle is that partner and renders read-only.
+   *
+   * A blank second card is reachable only through the explicit "+ Add another
+   * parent" affordance (rendered below the cards, hidden at the cap because
+   * `nextParentPosition` returns null). It is NOT synthesized by
+   * `parentCardList`, which returns only NAMED cards — so with one parent there
+   * is simply no second card until that button opens the blank slot.
    *
    * `linkState` is null while the link rows are still loading, and the card
    * renders no control at all in that beat: rendering the invite form first and
@@ -1103,9 +1132,42 @@ export function ProfilePage() {
     ...(linkedCard === null
       ? []
       : [{ card: linkedCard, slot: linkedCard.position, readOnly: true }]),
-    ...otherCards.map((card) => ({ card, slot: card.position, readOnly: true })),
+    // add-parent-flow (annotation mv0d7dwh, Interpretation A): a second
+    // FREE-TEXT parent is the parent's own card, not someone else's row, so it
+    // is editable after a reload exactly like the first — name, about, interests,
+    // Save and Remove. The ONLY read-only card remains the linked partner's
+    // published row (above). V27's "nothing here offers a free-text second
+    // parent" is the status quo this change supersedes, not a prohibition.
+    ...otherCards.map((card) => ({ card, slot: card.position, readOnly: false })),
   ]
   const firstEditorSlot = parentCardEditors[0]?.slot ?? 1
+  /**
+   * add-parent-flow (annotation mv0d7dwh): the "+ Add another parent" affordance
+   * appends a blank FREE-TEXT card into the next free slot — the exact seam
+   * `nextParentPosition` was built for ("let the page hide the add-another
+   * control at the cap"). `null` at the cap (or with no saved card), so the
+   * button and the blank card both disappear when there is no room.
+   */
+  const freeSlot = nextParentPosition(parentCardsList)
+  /**
+   * add-parent-flow (annotation mv0d7dwh): the "+ Add another parent" affordance
+   * shows only when a slot is actually free, no card holds it, the owner card
+   * exists, and the blank card is not already on screen. At the 2-parent cap
+   * `nextParentPosition` returns null and the control disappears (D0).
+   */
+  const addAnotherParentAvailable =
+    ownerCard !== null &&
+    freeSlot !== null &&
+    !parentCardsList.some((card) => card.position === freeSlot)
+  const showAddAnotherParent = addAnotherParentAvailable && !addAnotherParentOpen
+  const blankParentCard =
+    addAnotherParentOpen && addAnotherParentAvailable
+      ? {
+          card: null,
+          slot: freeSlot,
+          readOnly: false,
+        }
+      : null
   /**
    * V24 batch-end cleanup (ocr 11B): `linkOpenSlot` is RE-VALIDATED against the
    * CURRENT editor list on every render. A parent can open the invite form on
@@ -1422,8 +1484,36 @@ export function ProfilePage() {
                 }
               />
             ))}
+            {blankParentCard !== null ? (
+              <ParentCardEditor
+                key={`new-${blankParentCard.slot}`}
+                card={blankParentCard.card}
+                position={blankParentCard.slot}
+                readOnly={blankParentCard.readOnly}
+                autoFocusName
+                busy={parentCardBusy}
+                status={parentCardStatus}
+                error={parentCardError}
+                onSave={(slot, name, about, interests) =>
+                  handleSaveParentCard(slot, name, about, interests, true)
+                }
+                onRemove={null}
+                link={null}
+              />
+            ) : null}
           </div>
         )}
+
+        {showAddAnotherParent ? (
+          <button
+            type="button"
+            data-testid="add-another-parent"
+            onClick={() => setAddAnotherParentOpen(true)}
+            className="mt-3 min-h-11 rounded-full border border-indigo-300 px-4 text-sm font-medium text-indigo-700"
+          >
+            + Add another parent
+          </button>
+        ) : null}
 
         {parentCardError !== null ? (
           <p className="mt-2 text-sm text-red-600">{parentCardError}</p>
@@ -1872,6 +1962,7 @@ function ParentCardEditor({
   onSave,
   onRemove,
   link,
+  autoFocusName = false,
 }: {
   card: ParentCard | null
   position?: number
@@ -1893,6 +1984,10 @@ function ParentCardEditor({
       rows are still loading (no control renders in that beat). The editor
       supplies the card's own slot and name, so the page does not repeat them. */
   link: Omit<ParentCardLinkProps, 'slot' | 'name'> | null
+  /** add-parent-flow (annotation mv0d7dwh): focus the Name field on mount —
+      the "+ Add another parent" affordance drops the parent straight into
+      typing their partner's name. */
+  autoFocusName?: boolean
 }) {
   const slot = card?.position ?? position ?? 1
   const [name, setName] = useState(card?.name ?? '')
@@ -1948,6 +2043,7 @@ function ParentCardEditor({
           placeholder="e.g. Jon"
           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
           disabled={busy}
+          autoFocus={autoFocusName}
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
@@ -1989,7 +2085,7 @@ function ParentCardEditor({
           onClick={() => void onSave(slot, name, about, interests)}
           className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white disabled:opacity-60"
         >
-          {parentCardSaveLabel(status, card === null, error)}
+          {parentCardSaveLabel(status, card === null, error, slot)}
         </button>
         {onRemove !== null && card !== null ? (
           <button
