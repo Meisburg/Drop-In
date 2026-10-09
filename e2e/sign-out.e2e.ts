@@ -48,6 +48,17 @@ test('sign out is in Settings, not the header, and still lands on /login', async
   await page.goto('/settings/account')
   const control = page.getByTestId('account-sign-out')
   await expect(control).toBeVisible()
+  // v33-8 (muyemm3k): sign out is the LAST action in the Account category — it
+  // sits below the Delete card, not beside it. Measured on the rendered page.
+  const delBox = await page.getByTestId('delete-account').boundingBox()
+  const signOutBox = await control.boundingBox()
+  expect(delBox, 'the delete card must be measurable').not.toBeNull()
+  expect(signOutBox, 'the sign out card must be measurable').not.toBeNull()
+  expect(
+    signOutBox?.y ?? 0,
+    'sign out must sit below the Delete card',
+  ).toBeGreaterThan((delBox?.y ?? 0) + (delBox?.height ?? 0))
+
   await control.click()
 
   await expect(page).toHaveURL(/\/login\/?$/)

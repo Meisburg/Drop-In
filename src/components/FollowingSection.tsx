@@ -172,6 +172,9 @@ export function FollowingSection() {
           {following.families.length > 0 ? (
             <section className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold text-slate-700">Families you follow</h3>
+              <p className="text-xs text-slate-500">
+                This is where you change it: tap Remove next to a family to stop following them.
+              </p>
               <ul className="flex flex-col gap-2">
                 {following.families.map((row) => (
                   <li key={row.followId} className="flex flex-wrap items-center gap-2">
@@ -215,6 +218,9 @@ export function FollowingSection() {
           {following.places.length > 0 ? (
             <section className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold text-slate-700">Places you saved</h3>
+              <p className="text-xs text-slate-500">
+                This is where you change it: tap Remove next to a place to stop saving it.
+              </p>
               <ul className="flex flex-col gap-2">
                 {following.places.map((row) => (
                   <li key={row.followId} className="flex flex-wrap items-center gap-2">

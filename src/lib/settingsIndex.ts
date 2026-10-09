@@ -78,7 +78,9 @@ export const SETTINGS_INDEX: readonly SettingsIndexRow[] = [
   {
     id: 'saved',
     label: 'Following & saved',
-    blurb: 'Families you follow and places you saved.',
+    // v33-8 (muydzvu9): the blurb says what the category IS FOR — a place you
+    // change things, not a mirror of things.
+    blurb: 'Unfollow families, remove saved places.',
     icon: 'bookmark',
   },
   {
@@ -113,7 +115,7 @@ export const SETTINGS_CATEGORY_DESCRIPTIONS: Readonly<Record<SettingsCategoryId,
   notifications: 'What Drop In tells you about, and when it is allowed to.',
   'near-you': 'How far away the drop-ins you see can be.',
   saved:
-    "The families you follow and the places you save. You'll see when they're going to something.",
+    'This is where you change them: unfollow a family, or remove a saved place — both take effect right away.',
   privacy: 'What other parents can see, and who you have blocked.',
   appearance: 'Light, dark, or match my phone.',
   account: 'Take your data with you, or close your account.',

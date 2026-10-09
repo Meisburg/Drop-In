@@ -19,6 +19,14 @@ export interface PrivacyFact {
   value: string
   /** One honest sentence about why it is in this list. */
   detail: string
+  /**
+   * The screen that owns CHANGING this fact, when one does (v33-8). The row
+   * renders as a chevron link to it: a settings row is either a control, a
+   * doorway to the control that owns it, or a read-only line that says why
+   * (its `detail`). Undefined when nothing owns the change — the row stays
+   * text and the detail line is the why.
+   */
+  editAt?: string
 }
 
 export interface PrivacyReport {
@@ -66,6 +74,10 @@ export function buildPrivacyReport(input: PrivacyInput): PrivacyReport {
         label: 'Your family name',
         value: name === '' ? 'Not set yet' : name,
         detail: 'Shown next to your posts, comments, and profile.',
+        // The profile editor (V15 T07) owns the name — /settings already points
+        // here as "Your family profile", so the row is a doorway, not a second
+        // editor (v33-8).
+        editAt: '/profile',
       },
       {
         label: 'About your family',
@@ -76,18 +88,25 @@ export function buildPrivacyReport(input: PrivacyInput): PrivacyReport {
         label: 'Your kids',
         value: kidsSummary(input.kids),
         detail: 'First name and age only — never a full name, school, or birthday.',
+        // Kids are added and edited in the profile editor's kids section.
+        editAt: '/profile',
       },
       {
         label: 'Family photos',
         value: photoSummary(input.familyPhotoCount),
         detail: 'Visible to signed-in parents. Never to a signed-out visitor.',
+        // The photos themselves live in the profile editor's photo section.
+        editAt: '/profile',
       },
     ],
     kept: [
       {
         label: 'Your email',
         value: 'Private',
-        detail: 'Used for your account and the alerts you ask for. Never shown to another parent.',
+        // Contractual, set when the account was created (v33-8): text plus the
+        // why-line, no control.
+        detail:
+          'Set when you created your account. Used for your account and the alerts you ask for. Never shown to another parent.',
       },
       {
         label: 'Your street address',
@@ -97,7 +116,7 @@ export function buildPrivacyReport(input: PrivacyInput): PrivacyReport {
       {
         label: 'Your home area',
         value: zip === '' ? 'Not set yet' : `${zip} area`,
-        detail: 'Other parents see distance, not the ZIP itself.',
+        detail: 'Set when you signed up. Other parents see distance, not the ZIP itself.',
       },
       {
         label: 'Who can reach you',
