@@ -1898,38 +1898,126 @@ test('a place page renders the seeded data with the existing Maps link', async (
   await expect(page.getByTestId('place-page-photo')).toHaveCount(0)
   await expect(page.getByTestId('place-photo-credit')).toHaveCount(0)
 
-  // The link itself: a real external target in a new tab, and its DESTINATION
-  // still declares which kind of link it is. Green Lake Park is a city park,
-  // and the park rows are deliberately NOT in the website backfill (it covers
-  // community centers, pools, beaches and libraries) — so this asserts the
-  // PAIR rather than hard-coding which side of the seam this row lands on.
+  // The link itself: a real external URL, and its DESTINATION declares which
+  // kind of link it is. Green Lake Park is a city park, and the park rows are
+  // deliberately NOT in the website backfill (it covers community centers,
+  // pools, beaches and libraries) — so this asserts the PAIR rather than
+  // hard-coding which side of the seam this row lands on.
   //
-  // V25 t04 changed the LABEL, not the honesty channel: the page's two-button
-  // row reads "Learn more" for BOTH kinds (the old "Find it on the map" label
-  // sat under the page's own map and was the founder's complaint), and
-  // `data-link-kind` is what still tells the two destinations apart. So the
-  // per-kind assertions below are about the HREF (a map search may never be
-  // dressed up as the operator's site), and the label is pinned once, exactly.
+  // mv0cw9r2 made the LABEL part of the honesty channel again: a verified site
+  // reads "View website" and leaves the app in a new tab (`target="_blank"
+  // rel="noopener noreferrer"`); a derived map search keeps "Learn more" and
+  // carries no new-tab target (the in-app-style search door). The label varies
+  // WITH the kind — but only between those two words, and a search URL is
+  // never called a website. `data-link-kind` stays the machine-readable
+  // channel; the per-kind assertions below are about the LABEL and the href.
   const learnMore = page.getByTestId('place-learn-more')
   await expect(learnMore).toBeVisible()
-  await expect(learnMore).toHaveText(/^\s*Learn more\s*$/)
   const learnMoreHref = (await learnMore.getAttribute('href')) ?? ''
   expect(learnMoreHref, 'the learn-more link is a real external URL').toMatch(/^https?:\/\/\S+/)
-  await expect(learnMore).toHaveAttribute('target', '_blank')
-  await expect(learnMore).toHaveAttribute('rel', 'noopener')
   const linkKind = await learnMore.getAttribute('data-link-kind')
   expect(linkKind).toMatch(/^(website|map-search)$/)
   if (linkKind === 'website') {
+    // A verified site names its destination and leaves the app in a new tab.
+    await expect(learnMore).toHaveText(/^\s*View website\s*$/)
+    await expect(learnMore).toHaveAttribute('target', '_blank')
+    await expect(learnMore).toHaveAttribute('rel', 'noopener noreferrer')
     expect(learnMoreHref, 'a verified site must not point at the map search').not.toContain(
       'google.com/maps',
     )
   } else {
     // The V20 t01 lie this guards against: "Visit website" over a search URL.
+    // A map search keeps the "Learn more" label and stays in-tab — it is
+    // the in-app-style search door, so the anchor carries no new-tab target.
+    await expect(learnMore).toHaveText(/^\s*Learn more\s*$/)
+    expect(
+      await learnMore.getAttribute('target'),
+      'a map search carries no new-tab target',
+    ).toBeNull()
     await expect(learnMore).not.toContainText(/website/i)
     expect(
       learnMoreHref,
       'the map-search kind points at the derived Google Maps search (V28 r4)',
     ).toContain('google.com/maps')
+  }
+})
+
+/**
+ * mv0cw9r2 — read ONE place's stored operator site by its exact display
+ * name, through the anon PostgREST read the app itself makes (0029's anon
+ * SELECT on `places`). `websiteUrl` is the RAW stored value: the spec decides
+ * what counts as a verified site with the app's own shape rule (a non-empty
+ * http(s) URL — `placeLearnMoreLink`'s acceptance, the repo's one-copy rule),
+ * never a second copy of the mapping.
+ */
+async function readPlaceWebsite(
+  name: string,
+): Promise<{ id: string; websiteUrl: string | null }> {
+  const { url, anonKey } = readSupabaseEnv()
+  const res = await fetch(
+    `${url}/rest/v1/places?name=eq.${encodeURIComponent(name)}&select=id,website_url`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } },
+  )
+  if (!res.ok) {
+    throw new Error(
+      `reading the place's website_url failed: HTTP ${res.status} ${await res.text()}`,
+    )
+  }
+  const rows = (await res.json()) as Array<{ id: string; website_url: string | null }>
+  if (rows.length !== 1) {
+    throw new Error(`expected exactly one place named ${name}, got ${rows.length}`)
+  }
+  return { id: rows[0].id, websiteUrl: rows[0].website_url }
+}
+
+/**
+ * mv0cw9r2 — THE WEBSITE HALF OF THE LABEL RULE, ON A ROW THAT CARRIES A
+ * VERIFIED SITE.
+ *
+ * The sibling test above asserts the RULE on Green Lake Park (a park row the
+ * website backfill deliberately does not cover) and lets the row's kind decide
+ * the branch. This one drives the OTHER branch with a row the backfill DID
+ * verify — "Baker Park on Crown Hill", a seeded playground whose
+ * `website_url` is a real operator page (the 2026-10-03 backfill verified 139
+ * playgrounds, this among them) — and pins the pair a verified site must
+ * draw: the label names its destination ("View website", never "Learn more"),
+ * the anchor leaves the app in a new tab (`target="_blank"
+ * rel="noopener noreferrer"`), and its href IS the stored URL read back over
+ * PostgREST — the expectation is the row's own fact, not a second copy.
+ *
+ * THE FIXTURE IS A RULE, NOT A PIN: the spec reads the row's `website_url`
+ * first. If the stored site ever leaves the row, the same spec asserts the
+ * map-search half ("Learn more", in-tab, the derived Google Maps search)
+ * instead — the world can drift, but the rule (a search URL is never called
+ * a website) cannot be broken.
+ */
+test('a verified site reads "View website" and leaves the app in a new tab (mv0cw9r2)', async ({
+  page,
+}) => {
+  const name = 'Baker Park on Crown Hill'
+  const { id, websiteUrl } = await readPlaceWebsite(name)
+  await page.goto(`/place/${id}`)
+  await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible()
+
+  const learnMore = page.getByTestId('place-learn-more')
+  await expect(learnMore).toBeVisible()
+  const href = (await learnMore.getAttribute('href')) ?? ''
+  expect(href, 'the first action is a real external URL').toMatch(/^https?:\/\/\S+/)
+  const stored = (websiteUrl ?? '').trim()
+  if (stored !== '' && /^https?:\/\/\S+$/i.test(stored)) {
+    await expect(learnMore).toHaveAttribute('data-link-kind', 'website')
+    await expect(learnMore).toHaveText(/^\s*View website\s*$/)
+    await expect(learnMore).toHaveAttribute('target', '_blank')
+    await expect(learnMore).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(href, 'the href IS the stored operator site').toBe(stored)
+  } else {
+    await expect(learnMore).toHaveAttribute('data-link-kind', 'map-search')
+    await expect(learnMore).toHaveText(/^\s*Learn more\s*$/)
+    expect(
+      await learnMore.getAttribute('target'),
+      'a map search carries no new-tab target',
+    ).toBeNull()
+    expect(href, 'the fallback is the derived Google Maps search').toContain('google.com/maps')
   }
 })
 

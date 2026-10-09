@@ -94,12 +94,13 @@ import {
  * and fix all the broken images"), so the page no longer renders one at all.
  * `places.photo_url` and its attribution columns stay exactly as they are —
  * nothing is migrated or dropped — and `photoCreditLine` keeps its tests;
- * what was removed is this page's use of them. In its place, "Learn more"
- * opens the place's own site when the reviewed backfill verified one, and the
- * derived OSM map search when it did not — the seam decides which, and V25 t04
- * carries that decision on the anchor as `data-link-kind` rather than in the
- * label (both kinds read "Learn more"; the action row's note records exactly
- * what that keeps and what it gives up).
+ * what was removed is this page's use of them. In its place, the first
+ * action opens the place's own site when the reviewed backfill verified one,
+ * and the derived OSM map search when it did not — the seam decides which,
+ * and the anchor carries that decision on `data-link-kind` AND in the label
+ * (mv0cw9r2: a verified site reads "View website" and leaves in a new tab;
+ * a map search keeps "Learn more" in-tab — a search URL is never called a
+ * website).
  *
  * UPCOMING DROP-INS ARE RADIUS-INDEPENDENT (the pinned decision): the parent
  * asked about THIS place, so the viewer's discovery radius must not filter its
@@ -715,11 +716,24 @@ export function PlacePage() {
             represent this place, so like coffee nearby, outdoor, playground."*
 
             The pills reuse the directory filter row's ANATOMY verbatim
-            (`whitespace-nowrap`, `shrink-0`, `rounded-full`, `px-4`,
-            `text-sm font-medium`, the same slate border and white ground) and
-            come from the SAME label seams the directory chips read
+            (`whitespace-nowrap`, `shrink-0`, `rounded-full`, `px-4 py-1.5`,
+            `text-sm font-medium`, `gap-1.5`, `flex items-center`) and come
+            from the SAME label seams the directory chips read
             (`placeKindLabel`, `placeIndoorLabel`) — so a kind cannot be worded
-            one way in the filter row and another way here. */}
+            one way in the filter row and another way here.
+
+            mv0cwpud — COLOUR CARRIES MEANING, NOT DECORATION. Jon, anchored
+            on exactly this row: *"I love these pills, but they're so dull. Can
+            we bring them to life with some color?"* Every pill shared the
+            chips' slate-on-white and read flat next to them, so each now
+            carries a tint from the app's OWN colour families, matched to what
+            the pill states: kind = indigo (the app's primary family),
+            indoor/outdoor = emerald, coffee = amber (its icon already drew
+            amber — the tint follows it). Each tint keeps the AA pair: a
+            `-700` text (coffee `-800`) on its `-50` ground, never a `-100`
+            ground or `-600` text. Colour ONLY: the words, count, order and the
+            seams that decide which pills render are untouched, and the
+            directory chips stay slate — they are controls, not facts. */}
         <ul
           data-testid="place-pill-row"
           className="mt-2 flex flex-wrap gap-2 list-none p-0"
@@ -729,12 +743,12 @@ export function PlacePage() {
               always renders; the seam is still what decides its word. */}
           <li
             data-testid="place-pill-kind"
-            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-sm font-medium text-indigo-700"
           >
             <svg
               viewBox="0 0 24 24"
               aria-hidden="true"
-              className="h-5 w-5 shrink-0 text-slate-500"
+              className="h-5 w-5 shrink-0 text-indigo-500"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.8"
@@ -764,7 +778,7 @@ export function PlacePage() {
               word. Nothing is announced twice. */}
           <li
             data-testid="place-pill-indoor"
-            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-sm font-medium text-emerald-700"
           >
             {placeIndoorLabel(place)}
           </li>
@@ -781,7 +795,7 @@ export function PlacePage() {
           {placeHasCoffeeNearby(place) ? (
             <li
               data-testid="place-pill-coffee"
-              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 text-sm font-medium text-amber-800"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -849,25 +863,23 @@ export function PlacePage() {
           "FIND IT ON THE MAP" IS GONE. It sat under the map and told a parent
           to go and find the place they were already looking at: *"This doesn't
           really make sense to me because I can see the map above this button."*
-          Both controls stay real anchors (`target="_blank" rel="noopener"`)
-          because both leave the app.
+          "Get directions" stays a new-tab anchor (`target="_blank"
+          rel="noopener"`) because it leaves the app; the learn-more anchor's
+          target is kind-driven (mv0cw9r2, the label rule below).
 
-          WHAT THE LABEL STILL DECLARES, AND WHAT IT NO LONGER DOES. The
-          ticket's surviving honesty channel is the anchor's `data-link-kind`
-          (website | map-search), which `e2e/places.e2e.ts` asserts PER KIND
-          against the href — so the V20 t01 lie this repo records ("Visit
-          website" over a search URL, PlaceMap.tsx) cannot recur: the label no
-          longer varies with the kind at all, both read "Learn more". What is
-          NOT preserved is the human-facing half of that rule: a parent reading
-          "Learn more" cannot tell a verified site from a map search before
-          tapping, which the pre-t04 page did disclose in the label. That is the
-          ticket's own naming (its two-button criterion names the label
-          "Learn more" and names `data-link-kind` as the honesty rule that
-          survives the rename), and it is recorded for the orchestrator as an
-          open product question rather than quietly settled here: if the
-          map-search branch must disclose itself in the LABEL, the wording has
-          to include "search" or "map" — and "Find it on the map", the phrase
-          the founder rejected, cannot be the one that comes back.
+          THE LABEL NOW NAMES ITS DESTINATION (mv0cw9r2). Jon, on the first
+          action: *"This should be a view website button that takes you to the
+          actual website."* V25 t04 had collapsed BOTH kinds to "Learn more"
+          because "Find it on the map" sat under a map; that ruling now stands
+          only for the search branch. A VERIFIED site reads "View website" and
+          leaves the app in a new tab (`target="_blank" rel="noopener
+          noreferrer"`), while a derived map search keeps reading "Learn more"
+          with no new-tab target — it is the in-app-style search door. The
+          label therefore varies WITH the kind again — but only between
+          "View website" and "Learn more" — and the rule the V20 t01 lie
+          records still holds: a search URL is never called a website.
+          `data-link-kind` stays the machine-readable honesty channel, and
+          `e2e/places.e2e.ts` asserts the label per kind against the href.
 
           WHY BOTH ARE OUTLINED AND NEITHER IS FILLED: this page's one primary
           action is "Start a drop-in here" (see the card below), and a filled
@@ -882,8 +894,8 @@ export function PlacePage() {
         {links.learnMore !== null ? (
           <a
             href={links.learnMore.url}
-            target="_blank"
-            rel="noopener"
+            target={links.learnMore.kind === 'website' ? '_blank' : undefined}
+            rel={links.learnMore.kind === 'website' ? 'noopener noreferrer' : undefined}
             data-testid="place-learn-more"
             data-link-kind={links.learnMore.kind}
             className="inline-flex min-h-11 flex-1 basis-36 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-indigo-300 bg-white px-4 py-3 text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
@@ -902,7 +914,10 @@ export function PlacePage() {
             >
               <path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
             </svg>
-            Learn more
+            {/* mv0cw9r2 — the label forks on the kind (the rule the comment
+                above records): a verified site names itself, a map search does
+                not. */}
+            {links.learnMore.kind === 'website' ? 'View website' : 'Learn more'}
           </a>
         ) : null}
         {links.directions !== null ? (
