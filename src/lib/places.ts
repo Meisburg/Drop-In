@@ -330,7 +330,7 @@ export function kindEmptyCopy(label: string): string {
 export function savedPlacesEmptyCopy(hasSaves: boolean): string {
   return hasSaves
     ? 'None of your saved places match these filters.'
-    : 'You haven’t saved any places yet. Tap the bookmark on a place to keep it here.'
+    : 'You haven’t saved any places yet. Tap the heart on a place to keep it here.'
 }
 
 /**

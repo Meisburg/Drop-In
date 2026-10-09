@@ -478,11 +478,16 @@ export function PlaceDetailsPage() {
         Host a drop-in here
       </button>
 
-      {/* ---- Save: how many families, and the bookmark. Saving keeps a place on
+      {/* ---- Save: how many families, and the heart. Saving keeps a place on
           your shortlist so you can find it again — that is the benefit stated
           plainly; nothing here promises notifications. The pressed state is
-          conveyed by MORE THAN colour: the bookmark glyph fills when saved
-          (stroked otherwise) AND the label flips Save → Saved. */}
+          conveyed by MORE THAN colour: the heart glyph fills when saved
+          (stroked otherwise) AND the label flips Save → Saved.
+
+          heart-not-star: a bookmark until 2026-10-08 (Jon's review). "Saved" now
+          means "hearted", so the glyph matches the count line above it — N
+          families have saved this place is N hearts on it. Same `NAV_ICONS.heart`
+          as the places row, its Saved pill and the place page. */}
       <div className="flex flex-col gap-2">
         <p data-testid="details-follower-line" className="text-sm text-slate-700">
           {followerCount === null
@@ -514,7 +519,7 @@ export function PlaceDetailsPage() {
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d={NAV_ICONS.bookmark} />
+            <path d={NAV_ICONS.heart} />
           </svg>
           {followBusy
             ? 'Updating…'

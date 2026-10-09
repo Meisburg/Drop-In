@@ -250,7 +250,7 @@ test('saving a place puts it in the Places Saved list, and un-saving removes it 
     'You haven’t saved any places yet.',
   )
   await expect(page.getByTestId('empty-saved-state')).toContainText(
-    'Tap the bookmark on a place to keep it here.',
+    'Tap the heart on a place to keep it here.',
   )
   await expect(page.getByTestId('saved-empty-escape-all')).toHaveText('Browse all places')
 

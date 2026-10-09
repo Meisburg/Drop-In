@@ -1002,10 +1002,14 @@ export function PlacePage() {
                   : 'border-indigo-300 bg-white text-indigo-700')
               }
             >
-              {/* The pressed state is conveyed by MORE THAN colour: the bookmark
+              {/* The pressed state is conveyed by MORE THAN colour: the heart
                   glyph fills when saved (stroked otherwise) AND the label flips
                   Save → Saved. The glyph is decorative (aria-hidden); the button's
-                  accessible name comes from its text content. */}
+                  accessible name comes from its text content.
+
+                  heart-not-star: a bookmark until 2026-10-08 (Jon's review). The
+                  whole save convention is one heart now — this page, the places
+                  row, its Saved pill and the details page all draw `NAV_ICONS.heart`. */}
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -1016,7 +1020,7 @@ export function PlacePage() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d={NAV_ICONS.bookmark} />
+                <path d={NAV_ICONS.heart} />
               </svg>
               {followBusy
                 ? 'Updating…'
