@@ -826,11 +826,13 @@ export function ProfilePage() {
     const writers: Record<ProfileSection, () => Promise<void>> = {
       // V15 ticket 06 (A20): the display name is now edited INLINE on this page
       // (the identity block at the top) — the writer moved here from /settings.
-      // V32-2 (A6c): the INTERESTS writer is a live path again — this page owns
-      // an interests input beside the display name, and the founder's complaint
-      // was exactly that the read line had no way to fill it in. The cap lives
-      // in lib (`validateInterests` + `INTERESTS_MAX_LENGTH`), injected below as
-      // a validator, so the page only trims and writes.
+      // V32-2 (A6c) made the INTERESTS writer live again (the input beside the
+      // display name); the remove-buttons pass removed that input — the founder
+      // ruled it redundant with the per-parent interests cards below — so the
+      // entry now stands where LOCATION's does: a TYPE requirement of the
+      // Record, not a live path (the planner cannot schedule a section nothing
+      // edits), kept so the machine's contract is complete rather than patched.
+      // The cap lives in lib (`validateInterests` + `INTERESTS_MAX_LENGTH`).
       // The LOCATION writer remains a TYPE requirement of the Record, not a live
       // path: this page owns no location input (zip is set during onboarding,
       // radius in the browse modal), so the planner never schedules it here. It
@@ -1314,33 +1316,6 @@ export function ProfilePage() {
             <p className="mt-1 text-sm text-slate-600">@{draft?.name.trim() || profile?.display_name}</p>
             {writeErrors.name !== undefined ? (
               <p className="mt-1 text-sm text-red-600">{writeErrors.name}</p>
-            ) : null}
-            {/* V32-2 (A6c): THE INTERESTS FIELD IS WRITABLE AGAIN. The founder
-                sees an `Interests:` line on /profile and cannot fill it in; it
-                has been unwritable since V15 T07 stubbed the writer and removed
-                the input. The read render (ProfileView, gated by
-                `showsInterests`) never changed — only the edit surface was
-                missing. The cap is the lib's own `INTERESTS_MAX_LENGTH`, never
-                a literal here: the `maxLength` attribute is the typing
-                affordance and `validators.interests` is the rule. `text-base`
-                is load-bearing (inputs must be >=16px). */}
-            <label className="mt-3 flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">Interests</span>
-              <input
-                data-testid="interests-input"
-                aria-label="Interests"
-                className={
-                  'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
-                  (writeErrors.interests !== undefined ? 'border-red-400' : 'border-slate-300')
-                }
-                value={draft?.interests ?? ''}
-                onChange={(e) => editDraft({ interests: e.target.value }, 'interests')}
-                maxLength={INTERESTS_MAX_LENGTH}
-                disabled={draft === null}
-              />
-            </label>
-            {writeErrors.interests !== undefined ? (
-              <p className="mt-1 text-sm text-red-600">{writeErrors.interests}</p>
             ) : null}
           </div>
         </div>

@@ -192,16 +192,8 @@ export interface PlaydateFormFieldsProps {
    */
   mapSlot?: ReactNode
   /**
-   * V27 slice 2: the /new-only VIBE CHIPS — a stateless slot like `preset`,
-   * rendered inside the Details block between its label and its textarea. The
-   * PAGE owns the chip list (`lib/vibeChips`) and the write (`applyVibeChip`);
-   * this component owns no state. `/edit` passes nothing, so its Details block
-   * renders exactly the markup it always has — no chips.
-   */
-  detailsChipsSlot?: ReactNode
-  /**
    * V27 slice 3: the /new-only PRIVACY PREVIEW + trust line — a stateless slot
-   * (the `detailsChipsSlot` pattern) the page builds from the pure
+   * (the `mapSlot` pattern) the page builds from the pure
    * `privacyPreview` seam. It renders directly ABOVE the submit button/error
    * block, at the point of posting. `/edit` passes nothing, so its markup is
    * unchanged and no privacy block appears there.
@@ -268,7 +260,6 @@ export function PlaydateFormFields({
   onPickPlace,
   onSomewhereElse,
   mapSlot,
-  detailsChipsSlot,
   privacySlot,
   preset,
   kidsSectionSlot,
@@ -759,10 +750,6 @@ line. No kids yet → the designed empty state + the /settings link (the
       <span className="text-slate-700">
         Details <span className="text-slate-500">(optional)</span>
       </span>
-      {/* V27 slice 2: the one-tap starters, right under the label and above the
-          box they fill. A slot the PAGE passes (/new builds it from
-          `lib/vibeChips`); `/edit` passes nothing, so no chips appear there. */}
-      {detailsChipsSlot}
       <textarea
         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200"
         rows={3}

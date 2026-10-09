@@ -28,16 +28,20 @@
  *   6. The bubbles are LABELS, not controls: nothing inside the row is a
  *      button, a link or `aria-pressed`.
  *
- * THE INTERESTS ARE SEEDED THROUGH THE APP'S OWN EDITOR (`edit-profile` →
- * `interests-input`, which autosaves), not by a hand-built REST payload: the
- * row this page reads is the row the app wrote. The marker's ORIGINAL interests
- * are snapshotted first and restored in a `finally`, because the live project's
- * marker row is shared by the whole suite.
+ * THE INTERESTS ARE SEEDED THROUGH THE APP'S OWN PERSISTENCE PATH: the
+ * remove-buttons slice removed the `interests-input` that V32-2 (A6c) had put
+ * beside the display name (the founder ruled it redundant with the per-parent
+ * interests cards), so the spec now writes `profiles.interests` directly with
+ * the marker's OWN session token through PostgREST — the exact RLS-scoped row
+ * the app's `updateInterests` seam writes (trimmed value, the row this page
+ * reads is the row the app's own seam would write). The marker's ORIGINAL
+ * interests are snapshotted first and restored in a `finally`, because the
+ * live project's marker row is shared by the whole suite.
  */
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { emojiForInterest, interestBubbles } from '../src/lib/interestBubbles'
-import { settleOnRoute } from './fixtures'
+import { readMarkerSession, readSupabaseEnv, settleOnRoute } from './fixtures'
 
 /**
  * A MIX the spec needs: two categories the vocabulary knows and one it cannot.
@@ -61,39 +65,73 @@ async function openProfile(page: Page): Promise<void> {
   await expect(page.getByTestId('edit-profile')).toBeVisible({ timeout: 20_000 })
 }
 
-/** Write the marker's interests through the app's own editor (autosaved). */
-async function seedInterests(page: Page, value: string): Promise<void> {
-  await page.goto('/profile')
-  await settleOnRoute(page, '/profile')
-  await page.getByTestId('edit-profile').click()
-  const input = page.getByTestId('interests-input')
-  await expect(input).toBeVisible({ timeout: 20_000 })
-  await input.fill(value)
-  /**
-   * ⚠️ THE DEBOUNCE IS THE TRAP HERE (measured, not guessed). The interests
-   * field saves on a debounce while the editor is open; clicking Done
-   * immediately after `fill` closes the editor BEFORE the write fires, so the
-   * row on the read view still shows the OLD value — the spec then fails on a
-   * page that is behaving correctly. The wait below is the write's own latency,
-   * bounded, and the assertion after Done is what proves it landed.
-   */
-  await page.waitForTimeout(1200)
-  await page.getByTestId('done-editing-profile').click()
-  await expect(page.getByTestId('interests-input')).toHaveCount(0)
-  // Prove the write landed on the READ view rather than assuming it: an empty
-  // seed means "no row", any other value means the row is up with our words.
-  if (value.trim() === '') {
-    await expect(page.getByTestId('profile-interests')).toHaveCount(0, { timeout: 15_000 })
-  } else {
-    await expect(page.getByTestId('profile-interests')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('profile-interests')).toContainText(value.split(',')[0].trim())
+/**
+ * Write the marker's `profiles.interests` row through PostgREST with the
+ * marker's OWN session token — the same RLS-scoped write the app's
+ * `updateInterests` seam performs (the app trims; an empty value clears the
+ * field). The read-back from the PATCH's own representation is what proves the
+ * write landed: a PATCH that matched zero rows (a stale id) is a silent no-op
+ * in the database, so the read-back is what makes it loud. `null` (the column
+ * was unset, pre-0022 rows) is written back as `null`, never as `''`.
+ */
+async function writeInterests(value: string | null): Promise<void> {
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const headers: Record<string, string> = {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation',
   }
+  const res = await fetch(
+    `${url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=interests`,
+    { method: 'PATCH', headers, body: JSON.stringify({ interests: value }) },
+  )
+  if (!res.ok) throw new Error(`interests write HTTP ${res.status}: ${await res.text()}`)
+  const rows = (await res.json()) as Array<{ interests: string | null }>
+  if (rows.length !== 1 || rows[0].interests !== value) {
+    throw new Error(
+      `interests write did not land: expected ${JSON.stringify(value)}, read back ${JSON.stringify(rows)}`,
+    )
+  }
+}
+
+/** The seed the spec's assertions run against: the app seam's own trim. */
+async function seedInterests(value: string): Promise<void> {
+  await writeInterests(value.trim())
+}
+
+/**
+ * The marker's ORIGINAL interests, captured once BEFORE the first seed (the
+ * live project's marker row is shared by the whole suite, so each test's
+ * `finally` restores exactly this — `null` and `''` kept distinct).
+ */
+let originalInterests: string | null | undefined
+
+async function captureOriginal(): Promise<string | null> {
+  if (originalInterests !== undefined) return originalInterests
+  const { url, anonKey } = readSupabaseEnv()
+  const { accessToken, userId } = readMarkerSession()
+  const res = await fetch(
+    `${url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=interests`,
+    { headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` } },
+  )
+  if (!res.ok) throw new Error(`interests snapshot HTTP ${res.status}: ${await res.text()}`)
+  const rows = (await res.json()) as Array<{ interests: string | null }>
+  originalInterests = rows.length === 1 ? (rows[0].interests ?? null) : null
+  return originalInterests
+}
+
+/** The `finally` restore: put the marker's row back exactly as the suite found it. */
+async function restoreInterests(original: string | null): Promise<void> {
+  await writeInterests(original)
 }
 
 test('each interest renders as its own text bubble, in the parent’s order (V35-B)', async ({
   page,
 }) => {
-  await seedInterests(page, SEEDED)
+  const original = await captureOriginal()
+  await seedInterests(SEEDED)
 
   try {
     await openProfile(page)
@@ -143,13 +181,14 @@ test('each interest renders as its own text bubble, in the parent’s order (V35
     await expect(row.locator('[aria-pressed]')).toHaveCount(0)
     await expect(bubbles.nth(0)).toHaveJSProperty('tagName', 'LI')
   } finally {
-    await seedInterests(page, '')
+    await restoreInterests(original)
   }
 })
 
 test('the interest bubbles wrap at 390px and never widen the page (V35-B)', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await seedInterests(page, SEEDED)
+  const original = await captureOriginal()
+  await seedInterests(SEEDED)
 
   try {
     await openProfile(page)
@@ -175,7 +214,7 @@ test('the interest bubbles wrap at 390px and never widen the page (V35-B)', asyn
       expect(box!.x + box!.width).toBeLessThanOrEqual(391)
     }
   } finally {
-    await seedInterests(page, '')
+    await restoreInterests(original)
   }
 })
 
@@ -186,7 +225,8 @@ test('an unknown interest never gets an emoji — and the row survives a reload 
   // unknown still renders every bubble, emoji-free. The row is never blank and
   // never invents a glyph.
   const onlyUnknown = 'Competitive Napping, Kombucha Brewing'
-  await seedInterests(page, onlyUnknown)
+  const original = await captureOriginal()
+  await seedInterests(onlyUnknown)
 
   try {
     await openProfile(page)
@@ -204,6 +244,6 @@ test('an unknown interest never gets an emoji — and the row survives a reload 
     await expect(page.getByTestId('profile-interests')).toBeVisible({ timeout: 20_000 })
     expect(await page.locator(BUBBLES).allInnerTexts()).toEqual(before)
   } finally {
-    await seedInterests(page, '')
+    await restoreInterests(original)
   }
 })
