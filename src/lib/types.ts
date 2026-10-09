@@ -379,6 +379,25 @@ export interface Place {
    */
   coffee_nearby?: boolean | null
   /**
+   * V36 (0070, annotation `muzka6tz`): is there a bathroom near this place?
+   *
+   * THREE-VALUED, and the distinction is the point:
+   *   `true`  — yes, a public toilet is within the radius
+   *   `false` — OpenStreetMap was ASKED and there is none
+   *   `null`  — NEVER ASKED (what every pre-0070 row carries)
+   *
+   * `null` must never be read as "no bathroom". A place we never asked about
+   * renders NO pill rather than a "no bathrooms" badge — and `false` renders no
+   * pill either, for a different reason (an absence is not an attribute worth
+   * stating). The two must not be collapsed. It is populated offline by
+   * `scripts/refresh-bathrooms-nearby.mjs`; no read path queries Overpass. The
+   * predicate is `placeHasBathroomsNearby` (lib/places.ts).
+   *
+   * The source is OpenStreetMap via Overpass: free, ODbL, no key. The tag is
+   * `amenity=toilets`.
+   */
+  bathrooms_nearby?: boolean | null
+  /**
    * V20 t01 (0048): the place's OWN website — what "Learn more" opens.
    *
    * NULL for most rows, and that is the designed state rather than a gap: no

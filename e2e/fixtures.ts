@@ -780,6 +780,74 @@ export async function setPlaceCoffeeNearby(
 }
 
 /**
+ * V36 (`muzka6tz`) — read ONE place's `bathrooms_nearby` value, THREE-VALUED.
+ *
+ * ⚠️ THE THREE STATES ARE THE POINT, exactly as they are for coffee, and the
+ * stakes are higher: `true` (OSM was asked, a toilet is near), `false` (asked,
+ * none found) and `null` (NEVER ASKED — every pre-0070 row). Keeping `false` and
+ * `null` apart here is what lets the spec assert them SEPARATELY; a helper that
+ * collapsed them through `?? false` would make "we never asked" indistinguishable
+ * from "there is none", which is the defect the column's design exists to prevent.
+ *
+ * Same PostgREST path and same reasoning as `readPlaceCoffeeNearby`.
+ */
+export async function readPlaceBathroomsNearby(id: string): Promise<boolean | null> {
+  const { result, rows } = await postgrest<{ bathrooms_nearby: boolean | null }>(
+    `read places.bathrooms_nearby on ${id}`,
+    'GET',
+    `places?id=eq.${encodeURIComponent(id)}&select=bathrooms_nearby`,
+  )
+  if (!result.ok) throw new Error(`reading bathrooms_nearby failed: ${result.output}`)
+  if (rows.length !== 1) {
+    throw new Error(`expected exactly one place for id ${id}, got ${rows.length}`)
+  }
+  // `=== true` is the ONLY value that means "a bathroom is near" (the pure
+  // `placeHasBathroomsNearby` seam's rule); `false` and `null` stay distinct.
+  return rows[0].bathrooms_nearby === true
+    ? true
+    : rows[0].bathrooms_nearby === false
+      ? false
+      : null
+}
+
+/**
+ * V36 (`muzka6tz`) — write ONE place's `bathrooms_nearby`, and READ IT BACK.
+ *
+ * The read-back is the point (the `setPlaceCoffeeNearby` discipline): a PATCH
+ * that reports success but did not land would let the spec's `true` case pass
+ * against a row that never changed. The call site snapshots first with
+ * `readPlaceBathroomsNearby` and restores in a `finally` — the directory is the
+ * founder's real data, and `null` is a real state to write back.
+ */
+export async function setPlaceBathroomsNearby(
+  id: string,
+  value: boolean | null,
+): Promise<AdminResult> {
+  const { result, rows } = await postgrest<{ bathrooms_nearby: boolean | null }>(
+    `write places.bathrooms_nearby=${String(value)} on ${id}`,
+    'PATCH',
+    `places?id=eq.${encodeURIComponent(id)}&select=bathrooms_nearby`,
+    { body: { bathrooms_nearby: value } },
+  )
+  if (!result.ok) return result
+  if (rows.length !== 1) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back returned ${rows.length} row(s) — wanted exactly one for id ${id}`,
+    }
+  }
+  const written = rows[0].bathrooms_nearby
+  const landed = written === true ? true : written === false ? false : null
+  if (landed !== value) {
+    return {
+      ok: false,
+      output: `${result.output}; read-back returned bathrooms_nearby=${String(landed)} — wanted ${String(value)}`,
+    }
+  }
+  return result
+}
+
+/**
  * Write the five photo columns of one row back (null clears) and read them back
  * in the same round-trip. The read-back compares EVERY snapshot column, not just
  * `photo_url`: the restore's whole job is to leave the live row exactly as it was

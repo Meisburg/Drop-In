@@ -21,6 +21,8 @@ import {
   matchPlaces,
   placeAgeFitLabel,
   placeDistanceMiles,
+  placeHasBathroomsNearby,
+  placeHasCoffeeNearby,
   placeIdField,
   placeIndoorLabel,
   placeTrustLine,
@@ -496,6 +498,68 @@ describe('browsePlaces (the directory\'s filter + sort decision)', () => {
       )
       expect(rows.map((r) => r.place.name)).not.toContain('Unasked Park')
       expect(rows.map((r) => r.place.name)).toEqual(['Cafe Park'])
+    })
+  })
+
+  /**
+   * V36 (`muzka6tz`) — the bathrooms pill's ONE rule, and the three values it
+   * resolves. This is the pure seam the render site calls; `=== true` is NOT
+   * re-derived in the `.tsx` (the build law).
+   *
+   * ⚠️ THE THREE ASSERTIONS ARE DELIBERATELY SEPARATE. `false` and `null` must
+   * BOTH render nothing, but they are DIFFERENT facts — "asked, and there is
+   * none" vs "never asked" — and collapsing them is the defect the column design
+   * exists to prevent. Asserting them in one `expect` would let a future edit
+   * that returns `false` for a `null` row pass. The stakes are higher here than
+   * for coffee: a wrong bathrooms pill costs a parent a toddler emergency.
+   */
+  describe('the bathrooms-nearby seam (V36, muzka6tz)', () => {
+    it('TRUE renders the pill — a real yes', () => {
+      expect(placeHasBathroomsNearby({ bathrooms_nearby: true })).toBe(true)
+    })
+
+    it('FALSE renders NOTHING — asked, and there is none (never "no bathrooms")', () => {
+      expect(placeHasBathroomsNearby({ bathrooms_nearby: false })).toBe(false)
+    })
+
+    it('NULL renders NOTHING — NEVER ASKED, which is NOT the same fact as false', () => {
+      // The defect: reading "we never asked" as "there is no bathroom". A place
+      // that was never probed must stay silent, not be presented as bathroom-less.
+      expect(placeHasBathroomsNearby({ bathrooms_nearby: null })).toBe(false)
+      // ⚠️ AND THE PAIRING HALF, so this cannot pass on a seam that ignores its
+      // input entirely: an ABSENT column (a pre-0070 row) is `null` by another
+      // name and must behave identically.
+      expect(placeHasBathroomsNearby({})).toBe(false)
+      // The two silent cases are the SAME OUTPUT but must never be asserted as
+      // the same REASON — this pins that the seam distinguishes them internally
+      // by comparing against a literal `true` rather than a truthiness test.
+      expect(placeHasBathroomsNearby({ bathrooms_nearby: false })).toBe(
+        placeHasBathroomsNearby({ bathrooms_nearby: null }),
+      )
+      // A truthy-but-not-true value must NOT render the pill: only `true` is a
+      // yes. (`as never` because the column type is `boolean | null`; this guards
+      // against a JSON string arriving where a boolean was expected.)
+      expect(placeHasBathroomsNearby({ bathrooms_nearby: 'true' as never })).toBe(false)
+    })
+
+    it('is independent of the coffee rule — one place can have either, both, or neither', () => {
+      // The two columns are separate facts, so the two seams must not be wired
+      // together. A regression that made the bathrooms pill read `coffee_nearby`
+      // (a plausible mirror-drift) would show up here.
+      //
+      // The literals are typed `Place` rather than passed inline: each seam takes
+      // a `Pick<>` of its ONE column, so an inline literal naming the other column
+      // is an excess-property error — which is the type system correctly refusing
+      // the very cross-wiring this test is checking for.
+      const both: Place = { coffee_nearby: true, bathrooms_nearby: true } as Place
+      expect(placeHasBathroomsNearby(both)).toBe(true)
+      expect(placeHasCoffeeNearby(both)).toBe(true)
+
+      const coffeeOnly: Place = { coffee_nearby: true, bathrooms_nearby: false } as Place
+      expect(placeHasBathroomsNearby(coffeeOnly)).toBe(false)
+
+      const bathroomsOnly: Place = { coffee_nearby: false, bathrooms_nearby: true } as Place
+      expect(placeHasCoffeeNearby(bathroomsOnly)).toBe(false)
     })
   })
 

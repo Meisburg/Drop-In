@@ -1515,6 +1515,33 @@ export function placeHasCoffeeNearby(place: Pick<Place, 'coffee_nearby'>): boole
   return place.coffee_nearby === true
 }
 
+/**
+ * V36 (`muzka6tz`) — DOES THE PLACE PILL SAY "BATHROOMS"? The same one rule as
+ * `placeHasCoffeeNearby` above, and the same tri-state reasoning, but the stakes
+ * are higher: a wrong coffee pill costs a parent a coffee, a wrong bathrooms pill
+ * costs them a toddler emergency.
+ *
+ *   `true`  — OSM was asked and a public toilet is near → the pill RENDERS.
+ *   `false` — OSM was asked and there is none → the pill renders NOTHING.
+ *   `null`  — NEVER ASKED → the pill renders NOTHING, and this is NOT the same
+ *             answer as `false`.
+ *
+ * WHY `false` RENDERS NOTHING RATHER THAN "No bathrooms". A badge about an
+ * absence states something the row was never asked to claim, and a row of "No
+ * bathrooms" pills across a directory reads as a warning about the neighborhood
+ * rather than a fact about the place. The pill exists to say YES to a question a
+ * parent is about to ask out loud; silence is the honest answer to "no" and to
+ * "we don't know" alike. What must never happen is the third case being *read* as
+ * the second — and the predicate is where that is prevented, so it lives here in
+ * `lib/` rather than being re-derived as `=== true` at a render site.
+ *
+ * Pure and exported so the rule is unit-tested directly (the build law: lib
+ * decides, the `.tsx` renders).
+ */
+export function placeHasBathroomsNearby(place: Pick<Place, 'bathrooms_nearby'>): boolean {
+  return place.bathrooms_nearby === true
+}
+
 export function browsePlaces(
   places: readonly Place[],
   filters: PlaceFilters,

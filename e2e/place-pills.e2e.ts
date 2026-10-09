@@ -25,6 +25,13 @@
  *      and asserted on its own — a spec that only ever tested `true` would pass
  *      against a page that rendered the pill for every value.
  *
+ *      ⚠️ AND THE BATHROOMS PILL (V36, `muzka6tz`) IS THE SAME THREE CASES, held
+ *      to the same standard by its own test. `true` renders "Bathrooms
+ *      available"; `false` and `null` render NOTHING, separately asserted. The
+ *      stakes are higher than coffee's: a wrong bathrooms pill costs a parent a
+ *      toddler emergency, so a `null` row being read as "no bathrooms" is the
+ *      single most expensive defect this file guards.
+ *
  *   3. The pills are LABELS, not filters. The directory's are `<button>`s
  *      carrying `aria-pressed`; these must be neither. The assertion is
  *      positional as well as negative: NOTHING inside the pill row is a button,
@@ -57,8 +64,10 @@ import type { Page } from '@playwright/test'
 import {
   E2E_BASE_URL,
   readPlaceByName,
+  readPlaceBathroomsNearby,
   readPlaceCoffeeNearby,
   readSupabaseEnv,
+  setPlaceBathroomsNearby,
   setPlaceCoffeeNearby,
 } from './fixtures'
 // The pure seams, imported rather than re-spelled: the spec asserts the label
@@ -196,6 +205,72 @@ test('coffee nearby: true renders the pill, false and null render none (V34-D)',
     expect(restored.ok, `restoring coffee_nearby must succeed: ${restored.output}`).toBe(true)
   }
   expect(await readPlaceCoffeeNearby(place.id), 'the row must be back as found').toBe(original)
+})
+
+/**
+ * V36 (`muzka6tz`) — THE BATHROOMS PILL IS THREE CASES, NOT TWO.
+ *
+ * This is the same discipline as the coffee test above, and it is written as its
+ * own test rather than folded into that one because the failure it guards against
+ * is more expensive: a wrong "Café" pill costs a parent a coffee, a wrong
+ * "Bathrooms" pill costs them a toddler emergency. The assertion that matters is
+ * CASE 3 — a `null` row (NEVER ASKED, what all 234 pre-0070 rows carry) must
+ * render NOTHING, and specifically must not be read as `false` and printed as
+ * "no bathrooms". Collapsing those two is the defect the column's three-valued
+ * design exists to prevent, so `false` and `null` are written, read back, and
+ * asserted SEPARATELY.
+ */
+test('bathrooms nearby: true renders the pill, false and null render none (V36)', async ({
+  page,
+}) => {
+  const place = await readPlaceByName(PLACE_NAME)
+  const original = await readPlaceBathroomsNearby(place.id)
+
+  try {
+    // --- CASE 1: `true` — a bathroom IS near. The pill renders. ---
+    const wrote = await setPlaceBathroomsNearby(place.id, true)
+    expect(wrote.ok, `setting bathrooms_nearby=true must land: ${wrote.output}`).toBe(true)
+    expect(await readPlaceBathroomsNearby(place.id), 'the true write must be readable').toBe(true)
+    await openPlacePage(page, place.id)
+    await expect(page.getByTestId('place-pill-bathrooms')).toHaveCount(1)
+    await expect(page.getByTestId('place-pill-bathrooms')).toHaveText('Bathrooms available')
+    // The kind and indoor pills are still there: the bathrooms pill is an
+    // ADDITION to the row, never a replacement for what it already showed.
+    await expect(page.getByTestId('place-pill-kind')).toHaveCount(1)
+    await expect(page.getByTestId('place-pill-indoor')).toHaveCount(1)
+
+    // --- CASE 2: `false` — OSM was asked and found none. NO pill, and
+    // specifically not a pill saying "No bathrooms". ---
+    const cleared = await setPlaceBathroomsNearby(place.id, false)
+    expect(cleared.ok, `setting bathrooms_nearby=false must land: ${cleared.output}`).toBe(true)
+    expect(await readPlaceBathroomsNearby(place.id), 'the false write must be readable').toBe(false)
+    await page.reload()
+    await expect(page.getByTestId('place-pill-row')).toBeVisible()
+    await expect(page.getByTestId('place-pill-bathrooms')).toHaveCount(0)
+    // The absence is not the word hidden somewhere else in the row.
+    await expect(page.getByTestId('place-pill-row')).not.toContainText(/bathroom/i)
+    // The page still rendered its other pills — absence on a broken page would
+    // satisfy every count above for the wrong reason.
+    await expect(page.getByTestId('place-pill-kind')).toHaveCount(1)
+
+    // --- CASE 3: `null` — NEVER ASKED, what every pre-0070 row carries. NO pill
+    // either, and this is the case a two-valued reading gets wrong: `null` is NOT
+    // "no bathrooms", it is "we do not know". ---
+    const nulled = await setPlaceBathroomsNearby(place.id, null)
+    expect(nulled.ok, `setting bathrooms_nearby=null must land: ${nulled.output}`).toBe(true)
+    expect(await readPlaceBathroomsNearby(place.id), 'the null write must be readable').toBeNull()
+    await page.reload()
+    await expect(page.getByTestId('place-pill-row')).toBeVisible()
+    await expect(page.getByTestId('place-pill-bathrooms')).toHaveCount(0)
+    await expect(page.getByTestId('place-pill-row')).not.toContainText(/bathroom/i)
+    await expect(page.getByTestId('place-pill-kind')).toHaveCount(1)
+  } finally {
+    // RESTORE THE COLUMN EXACTLY AS FOUND — `null` is a real state to write back,
+    // not "nothing to do".
+    const restored = await setPlaceBathroomsNearby(place.id, original)
+    expect(restored.ok, `restoring bathrooms_nearby must succeed: ${restored.output}`).toBe(true)
+  }
+  expect(await readPlaceBathroomsNearby(place.id), 'the row must be back as found').toBe(original)
 })
 
 test('the pills are labels, not filters — nothing in the row is pressable (V34-D)', async ({
