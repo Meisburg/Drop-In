@@ -589,3 +589,26 @@ the Going confirmation.
          acquires could still both pass — closes the sequential case, not true concurrency); a-d
          proven by CLI execution not unit tests, because factory.mjs exports no entry point.
     V33: v33-15 dispatched (deleg_7e5acc57) — the guard, now that v33-14 exists to guard.
+    V33: v33-14 COMMITTED (76c54c3) — staged by explicit path only: plan.md + the 4 factory files.
+         Nothing else swept in; the 100+ untracked files and the other lane's vite.config.ts /
+         AgentationDev.tsx were left alone.
+    V33: dsh TUI finished its create-language slice on its own (3 turns / 170 steps) and COMMITTED
+         (a310772) — the long-runner driving itself, no intervention. HEAD moved past 42aee26.
+    V33: v33-15 complete + VERIFIED INDEPENDENTLY by the orchestrator, not taken on the builder's word:
+         `npm run guards` PASS on the clean tree incl. the new factory-lease-guard; its check is
+         non-vacuous (5 mutations — admit, run, exit(0) weakening, function deleted, compound — each
+         flips to a named red). The orchestrator mutated the LIVE tree (removed assertAcquirable from
+         cmdRun) → guard RED: "function cmdRun( no longer calls assertAcquirable() — the lease-refusal
+         invariant is not enforced on the run acquire path", exit 1. Restored byte-exact (md5
+         1086548f3347148f283b3f71cda87139; git diff vs HEAD empty); green again.
+         DESIGN NOTE: the guard parses the LIVE source but seeds its mutations off a baseline fixture —
+         that is why it can prove it fires without touching the working tree.
+         STANDING FOOTGUN, recorded: `scripts/guards/run-all.sh` uses an EXPLICIT list, NOT globbing. A
+         new guard file dropped into scripts/guards/ does NOT run unless someone adds it to the list.
+         Files: scripts/guards/factory-lease-guard.mjs (new), factory-lease-guard.check.mjs (new),
+         run-all.sh (modified). NOT staged, NOT committed.
+    V33: ocr on v33-14 was attempted twice. A nohup/background run (no TTY) filtered the files then
+         exited 0 with NO json — do not background ocr, it needs a real terminal. A foreground run is
+         the live path. Correction to an earlier note in this ledger: v33-6 and v33-7a were NEVER
+         owed an ocr pass — .scratch/ocr-v33-6.json (174 KB) and -7a.json (37 KB) exist from Oct 7.
+         Only v33-13 and v33-14 are actually owed.

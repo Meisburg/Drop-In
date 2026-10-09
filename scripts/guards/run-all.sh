@@ -58,6 +58,11 @@
 #                     required lane is incomplete; and EVERY ARTIFACT A WORK ITEM
 #                     NAMES IS ON DISK. The registry is where the memory
 #                     arithmetic lives, so a silent error in it is a silent OOM.
+#   factory-lease   v33-14 lease-mutex (docs/agents/factory.md)        — the
+#                     lease-refusal path still exists in factory.mjs, is wired
+#                     into BOTH acquire subcommands (admit and run), and the
+#                     refusal exits non-zero: two processes may never acquire
+#                     one task id.
 #
 # PROVENANCE: the first two are borrowed patterns from affaan-m/ECC's
 # PostToolUse / PreToolUse hook set, reimplemented as batch gates suited to
@@ -93,7 +98,7 @@ guard_run() {
   esac
 }
 
-for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard e2e-target-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard trailing-newline-guard factory-guard; do
+for guard in lib-sibling-guard config-guard no-bypass-guard fixture-marker-guard e2e-target-guard vacuous-absence-guard stale-locator-guard copy-field-consumption-guard copy-taxonomy-guard check-acceptance-greps regexp-escape-guard trailing-newline-guard factory-guard factory-lease-guard; do
   script="$(guard_script "$guard")"
   echo
   if [ -z "$script" ]; then
@@ -145,6 +150,7 @@ run_check "no-bypass-guard (stated blind spot)" scripts/guards/no-bypass-guard.c
 run_check "regexp-escape-guard (behavior)" scripts/guards/regexp-escape-guard.check.mjs
 run_check "trailing-newline-guard (behavior)" scripts/guards/trailing-newline-guard.check.mjs
 run_check "factory-guard (behavior)" scripts/guards/factory-guard.check.mjs
+run_check "factory-lease-guard (behavior)" scripts/guards/factory-lease-guard.check.mjs
 
 echo
 echo "==========================================================="
