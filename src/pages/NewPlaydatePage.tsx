@@ -42,9 +42,6 @@ import {
 import type { LastOwnPlaydate, PlaydateFormErrors, PlaydateFormValues, ZipCoords } from '../lib/feed'
 import type { PlaydateStatus } from '../lib/types'
 import { addressAfterPlaceTextEdit, generatedTitle, privacyPreview } from '../lib/postSummary'
-// V27 slice 2: the pure seam behind the Details chips — the page renders the
-// list and the tap goes through `applyVibeChip`, never an inline rule here.
-import { VIBE_CHIPS, applyVibeChip } from '../lib/vibeChips'
 import {
   MAP_FOCUS_RADIUS_MILES,
   PLACE_BROWSE_LIMIT,
@@ -1131,35 +1128,6 @@ export function NewPlaydatePage({
     ) : null
 
   /**
-   * V27 slice 2: the Details VIBE CHIPS — one row of starters that turns the
-   * optional description into an inviting sentence with no typing. A slot, not
-   * props on the form (the mapSlot/kidsSectionSlot pattern): the form renders it
-   * inside the Details block, and `/edit` passes nothing, so no chips appear
-   * there.
-   *
-   * The row WRAPS (`flex-wrap`) so four chips never push a 320px phone
-   * sideways, and every chip is `min-h-11` (the 44px tap floor this page
-   * enforces). The write is the PURE `applyVibeChip` — empty becomes the
-   * sentence, the same chip again is a no-op, a different one appends on a new
-   * line.
-   */
-  const detailsChipsSlot = (
-    <div className="flex flex-wrap gap-2" data-testid="vibe-chips">
-      {VIBE_CHIPS.map((chip) => (
-        <button
-          key={chip.id}
-          type="button"
-          data-testid="vibe-chip"
-          onClick={() => update('details', applyVibeChip(values.details, chip))}
-          className="min-h-11 rounded-full border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-        >
-          {chip.label}
-        </button>
-      ))}
-    </div>
-  )
-
-  /**
    * V27 slice 3: the PRIVACY PREVIEW + trust line — shown at the point of
    * posting, directly above the submit area. The wording is the PURE seam
    * (`lib/postSummary.privacyPreview`, unit-tested): the selected kids by
@@ -1474,10 +1442,6 @@ export function NewPlaydatePage({
            this parent has kids (the slot renders the section); null/loading
            keeps the picker inside the disclosure — today's exact form. */
         kidsSectionSlot={kidsSectionSlot ?? undefined}
-        /* V27 slice 2: the Details chips — the one-tap starters for the optional
-           Details field, written through the pure `applyVibeChip`. /edit passes
-           nothing, so no chips appear there. */
-        detailsChipsSlot={detailsChipsSlot}
         /* V27 slice 3: the privacy preview + trust line — built from the pure
            `privacyPreview` seam above and rendered by the form directly above
            its submit area. /edit passes nothing, so no block appears there. */

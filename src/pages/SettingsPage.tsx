@@ -103,18 +103,6 @@ export function SettingsPage() {
           data-testid="settings-pane"
           className={`flex-col gap-3 ${selected === null ? 'flex' : 'hidden md:flex'}`}
         >
-          {/* One obvious door to the profile editor. The editable profile fields
-              stay on /profile (V15 T07); a parent who lands here looking for
-              their name or kids is pointed there instead of guessing. */}
-          <Link
-            to="/profile"
-            data-testid="settings-profile-link"
-            className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-          >
-            <span className="text-sm font-medium text-slate-800">Your family profile</span>
-            <span className="text-sm text-indigo-600">Name, kids &amp; photos ›</span>
-          </Link>
-
           <ul data-testid="settings-index" className="flex flex-col gap-2">
             {SETTINGS_INDEX.map((row) => (
               <li key={row.id}>

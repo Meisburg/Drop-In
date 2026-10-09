@@ -1322,12 +1322,6 @@ export function InboxPage() {
                     Message a parent from a drop-in page once you're both going, or start a new
                     conversation above.
                   </p>
-                  <Link
-                    to="/browse"
-                    className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white"
-                  >
-                    Browse places
-                  </Link>
                 </div>
               ) : (
                 <ul className="mt-4 flex flex-col gap-2">

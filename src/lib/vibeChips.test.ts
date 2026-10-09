@@ -1,9 +1,11 @@
 /**
  * V27 slice 2 — the pure rule behind /new's vibe chips.
  *
- * The page renders these chips and calls `applyVibeChip`; the acceptance
- * criteria that are rules rather than wiring are pinned HERE, string by string,
- * while the e2e (vibe-chips.e2e.ts) proves the row is rendered and wired.
+ * The chips' UI was removed in the remove-buttons slice (the founder's
+ * minimalism pass: "I don't like these buttons here… remove it."), so this
+ * module has no live caller. The rule stays pinned here, string by string,
+ * because `applyVibeChip` is a pure seam: a future surface re-adding the chips
+ * inherits this behavior rather than re-deciding it.
  */
 import { describe, expect, it } from 'vitest'
 import { VIBE_CHIPS, applyVibeChip } from './vibeChips'
