@@ -531,6 +531,15 @@ export function ProfileView({
    */
   const pastArchive = planPastArchive(past, pastVisible, olderCount, HOST_POSTS_LIMIT)
 
+  // V33-HERO (muye6aeo): the hero's photo is the SAME photo the family-photo
+  // block below renders — one signed URL (`familyPhotoUrl`), one source, no
+  // second read. The one-photo array is the family block's own shape (what
+  // `FamilyPhotoBlock` hands the shared lightbox), and the label is that
+  // block's one alt, so the hero's tap and the block's tap open the EXISTING
+  // viewer on the same photo and the two surfaces cannot drift apart.
+  const familyPhotoLabel = `@${profile.display_name}’s family photo`
+  const heroPhotos = galleryPhotosFrom(familyPhotoUrl, familyPhotoLabel)
+
   return (
     <div className="flex flex-col gap-4">
       {header}
@@ -543,6 +552,39 @@ export function ProfileView({
           heading. The default is deliberately unchanged: every drop-in card
           and the detail page's host line keep their 40px circle. */}
       <div className="flex flex-col gap-3">
+        {/* V33-HERO (the founder's annotation): THE HERO — the family's photo in
+            a Places-style rectangle ABOVE the name, the one image that
+            "represents the family". It is a PRESENTATION copy of the photo the
+            family-photo block below already shows (the same `familyPhotoUrl`,
+            the same one-photo `heroPhotos` array, the same label), so a tap
+            reuses that block's exact mechanism: the shared lightbox's
+            `openGallery` on the existing viewer. Rendered ONLY when the signed
+            photo exists — without one, the identity block is exactly today's:
+            no hero, no empty box. The box is the app's existing hero treatment
+            (the place page's 2:1 full-width rectangle, `object-cover` crop, the
+            slate loading ground) at the app's card radius. */}
+        {familyPhotoUrl !== null ? (
+          <PhotoButton
+            src={familyPhotoUrl}
+            alt={familyPhotoLabel}
+            gallery={heroPhotos}
+            galleryIndex={0}
+            dataTestId="profile-hero-photo"
+            className="block aspect-[2/1] w-full overflow-hidden rounded-xl bg-slate-100"
+          >
+            <img
+              src={familyPhotoUrl}
+              alt={familyPhotoLabel}
+              // Above the fold at the top of the profile: the same eager rule
+              // the identity avatar carries (a lazy-load can flash an empty
+              // box on arrival).
+              loading="eager"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-cover"
+            />
+          </PhotoButton>
+        ) : null}
         <div className="flex items-center gap-3">
           {/* Slice 11 follow-up: this avatar sits ABOVE the fold at the top of a
               profile page, so it is eager. The slice's `eager` default is false
@@ -994,8 +1036,8 @@ export function ProfileView({
                 a second column or a photo table — and this slice deliberately
                 ships no migration. */}
             <FamilyPhotoBlock
-              photos={galleryPhotosFrom(familyPhotoUrl, `@${profile.display_name}’s family photo`)}
-              label={`@${profile.display_name}’s family photo`}
+              photos={galleryPhotosFrom(familyPhotoUrl, familyPhotoLabel)}
+              label={familyPhotoLabel}
               roundedClassName="rounded-xl"
             />
           </div>
