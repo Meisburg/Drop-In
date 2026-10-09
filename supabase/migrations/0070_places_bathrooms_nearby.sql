@@ -1,0 +1,68 @@
+-- ===========================================================================
+-- V36 (migration 0070, sentinel V36-BATHROOMS-PILL-Y7M5, annotation muzka6tz):
+-- a place can say whether there are bathrooms near it.
+-- ===========================================================================
+--
+-- What this adds: ONE nullable column, `public.places.bathrooms_nearby boolean`.
+-- No column is dropped or renamed, no row's data is touched, no constraint is
+-- added, no policy changes. It is a LIVE-DATABASE migration (the project holds
+-- real family data), so it is strictly additive and re-paste-safe.
+--
+-- Why: the founder's ask (annotation `muzka6tz`) — a "bathrooms available" pill
+-- on the place surfaces. For a parent choosing where to take a small child,
+-- "is there a bathroom here" is a load-bearing fact, not a nicety: it is the
+-- difference between a two-hour outing and a twenty-minute one. The column is
+-- the fact the pill states.
+--
+-- ⚠️ THE SOURCE IS OPENSTREETMAP, THE FREE ONE, BY RULING. The tag is
+-- `amenity=toilets`, matched with `nwr` (NODES, WAYS AND RELATIONS) within a
+-- radius of the place's coordinates — the same shape, matcher and posture as the
+-- existing `coffee_nearby` column (0068). No paid source, no API key: Overpass is
+-- a free, ODbL-licensed, shared public endpoint.
+--
+-- ⚠️ THREE-VALUED ON PURPOSE, AND `null ≠ false` — THIS IS THE WHOLE DESIGN:
+--   `true`  — OSM was ASKED and there is a bathroom within the radius
+--   `false` — OSM was ASKED about this place and there is none
+--   `null`  — NEVER ASKED (the default for every existing row)
+-- A place that was never asked must NOT be silently treated as "no bathroom".
+-- That single distinction is the difference between an honest dataset and a
+-- lying one. It is why the column is nullable and why there is deliberately NO
+-- `not null default false`.
+--
+-- This matters MORE here than for coffee. A wrong "Café" pill costs a parent a
+-- coffee; a wrong "Bathrooms" pill costs them a toddler emergency. So the rule is
+-- absolute and has THREE separate consequences, each pinned by its own test:
+--   * `true`  renders the pill;
+--   * `false` renders NOTHING (never "no bathrooms" — an absence is not an
+--     attribute the parent was shown or filtered on);
+--   * `null`  renders NOTHING for a DIFFERENT reason (we never asked, so we know
+--     nothing), and the two must never be collapsed into one another.
+--
+-- POPULATED OFFLINE, NEVER AT READ TIME. `scripts/refresh-bathrooms-nearby.mjs`
+-- asks Overpass once per place and writes the column; **no read path queries
+-- Overpass** — not on load, not on toggle, not lazily. Overpass is a shared free
+-- endpoint with rate limits and multi-second latency (measured again during this
+-- slice: the primary returned the "Dispatcher_Client / too busy" HTML page for
+-- minutes before answering normally), so making a directory load depend on it
+-- would be the wrong posture. Caching the answer on the row keeps the read path
+-- offline and testable. The precedent for "a fact fetched from an external
+-- source, cached on the row" is `places.hours` / `hours_source` / `hours_checked_at`.
+--
+-- THE EXACT QUERY, so the claim is auditable: the script asks
+--   `nwr(around:<radius>, <lat>, <lng>)[amenity=toilets]; out tags;`
+-- i.e. OpenStreetMap amenity=toilets, matching NODES, WAYS AND RELATIONS (`nwr`,
+-- not `node`), within `BATHROOMS_NEARBY_RADIUS_METERS` of the place's
+-- coordinates. The radius and the tag are defined in the script, which is the
+-- single source of truth for both.
+--
+-- A FAILED, TIMED-OUT OR THROTTLED QUERY LEAVES THE ROW UNTOUCHED (still `null`).
+-- Only a successful response reporting zero bathrooms writes `false`. Writing
+-- `false` from a failure would claim every place we happened to probe while the
+-- server was busy has no bathroom near it — a silent lie in a dataset parents
+-- will act on.
+--
+-- `add column if not exists` is inherently re-runnable and converges. There is
+-- deliberately no `do $$` guard, which would be one more thing to drift.
+-- ===========================================================================
+
+alter table public.places add column if not exists bathrooms_nearby boolean;

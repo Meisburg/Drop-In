@@ -38,6 +38,7 @@ import {
   placePhotoVisibleTo,
   placeAgeFitLabel,
   placeDistanceMiles,
+  placeHasBathroomsNearby,
   placeHasCoffeeNearby,
   placeIndoorLabel,
   placeKindLabel,
@@ -810,6 +811,38 @@ export function PlacePage() {
                 <path d="M4 8h13v5.5A4.5 4.5 0 0 1 12.5 18h-4A4.5 4.5 0 0 1 4 13.5V8Z M17 9.5h1.6a2.6 2.6 0 0 1 0 5.2H17 M3.5 21h14" />
               </svg>
               Coffee nearby
+            </li>
+          ) : null}
+          {/* 🚻 THE THREE-VALUED COLUMN AGAIN, AND WHY ONLY `true` RENDERS.
+              `places.bathrooms_nearby` is three-valued for the same reason the
+              coffee column is (0070): `true` (OSM was asked and a toilet is
+              near), `false` (asked, none found) and `null` (NEVER ASKED — what
+              every pre-0070 row carries). A `false` or `null` place gets NO pill
+              at all, and for this column the stakes are higher: a wrong "Café"
+              pill costs a parent a coffee, a wrong "Bathrooms" pill costs them a
+              toddler emergency. So silence is the only honest answer to "no" and
+              to "we don't know" alike — a pill reading "No bathrooms" would
+              state something the `null` rows never established. The two cases
+              are ALSO not collapsed with each other: the predicate is the pure
+              seam, and it is the only place the tri-state is resolved. */}
+          {placeHasBathroomsNearby(place) ? (
+            <li
+              data-testid="place-pill-bathrooms"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-4 py-1.5 text-sm font-medium text-sky-800"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 shrink-0 text-sky-700"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={NAV_ICONS.toilet} />
+              </svg>
+              Bathrooms available
             </li>
           ) : null}
         </ul>

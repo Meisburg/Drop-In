@@ -47,6 +47,15 @@ export const NAV_ICONS = {
   // channel this control needs — and it keeps the "more than colour" rule: the
   // glyph channel differs (outline vs solid) AND the name flips (Save → Saved).
   heart: 'M12 20.4 5 13.3a4.5 4.5 0 0 1 6.3-6.4l.7.7.7-.7A4.5 4.5 0 0 1 19 13.3Z',
+  // V36 (`muzka6tz`): the bathrooms pill's glyph — the conventional RESTROOM
+  // FIGURE (head + shoulders over a tapered body), drawn in the same stroked
+  // family (24px viewBox, stroke 1.8, currentColor) as the rest of NAV_ICONS.
+  //
+  // WHY THIS SHAPE: it is the one mark for "bathroom" that needs no legend. A
+  // sign reading "WC" would localise badly, and a door outline would be
+  // indistinguishable at 20px from the app's other rectangles. The figure is
+  // legible at the pill's rendered size and reads the same to every parent.
+  toilet: 'M12 4.2a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8Z M8.4 9.4h7.2l1.4 6.1h-2.1l-.5 5.1h-4.8l-.5-5.1H7Z',
   // V24 slice 04: the search field's magnifying glass (the inbox's "Message a
   // parent" picker) — a lens circle + handle in the same stroked family, so it
   // matches the rest of the icon set rather than being a pasted-in glyph.
