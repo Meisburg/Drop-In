@@ -438,7 +438,142 @@ Pinned here so builders do not re-decide them. **Read, do not invent.**
   `docs/agents/borrowed-guards.md`, a rule that parses source ships a check
   proving it can fire).
 - **Budget:** one small context. **Depends on:** v33-14 must land first — the guard
-  can only be written once the acquire path exists to guard. **Not dispatched.**
+  can only be written once the acquire path exists to guard. **DONE, `787571c`.**
+  Verified: `npm run guards` PASS, 5 mutations each flip red, and a live-tree mutation
+  (removing `assertAcquirable` from `cmdRun`) turned the guard red naming the run path.
+
+---
+
+### v33-16 — The ocr findings on v33-14: no-op successes, the audit trail, and the signal leak
+
+- **Origin:** the `ocr` pass on v33-14 (`42aee26..76c54c3`), 9 findings at
+  `.scratch/ocr-v33-14.json` (provider `ninfer`/`qwen3.8-27b`, 14m44s). Findings 2–7 and 9
+  are this slice. Findings 1 and 8 are **v33-17**, because they are a design change, not a fix.
+- **The class that matters:** three of these are *a check that reports SUCCESS when nothing
+  happened*. That is the same failure mode as the v33-6 regression (a green gate over vacuous
+  assertions) and it is exactly what this repo has been burned by.
+- **Files in scope:** `scripts/factory/factory.mjs`, `scripts/factory/state.mjs`,
+  `scripts/factory/scheduler.mjs`, `scripts/factory/scheduler.test.mjs`.
+- **The findings to fix, each with its evidence:**
+  1. **(ocr 2, `factory.mjs:407`) `release --force <id>` is a silent no-op.** The flag parser
+     has no boolean flags, so `--force` swallows the id as its value: `flags.force === 'slice-1'`,
+     id resolves to the string `'--force'`, `forceDecision` says "no live lease", and the CLI
+     prints `force-released --force`, exit 0, while the real lease is untouched. **The `rest[0]`
+     fallback must go** (so `die` fires rather than a silent no-op) and `--force` must be
+     boolean-aware, or reject a string value.
+  2. **(ocr 3, `factory.mjs:420`) The result of `forceReleaseReservation` is discarded.** On a
+     missing/expired lease it returns `{ok:false}` and the CLI still prints `force-released`,
+     exit 0. Check `r.ok`, `die(r.why, 1)` on failure.
+  4. **(ocr 4, `state.mjs:218`) No `releasedAt` guard on the force path.** An already-released
+     lease gets a fresh `releasedAt` + `releasedBy:'force'` stamped over the original record,
+     corrupting the audit trail. Add the guard that `releaseReservationOwned` already has.
+  5. **(ocr 5, `factory.mjs:376`) A Ctrl+C leaks the lease.** `'exit'` does not fire on an
+     unhandled SIGINT/SIGTERM, so an interrupted `run` leaks its reservation — and it is the
+     one record written **without** `expiresAt`, so it counts against admission until `--force`.
+     Add `process.once` handlers for the catchable signals. SIGKILL is uncatchable: state in
+     the help text that `--force` is the recovery path for it.
+  6. **(ocr 6, `scheduler.test.mjs:693`) A flaky assertion.** `999999` is not a guaranteed-dead
+     pid — on 64-bit Linux `pid_max` is often 4194304, and an EPERM from another user's pid
+     makes `processAlive` return true. Document the assumption or make the probe tolerant.
+  7. **(ocr 7, `scheduler.test.mjs:34`) A duplicate import statement.** Merge `CURRENT_PID`,
+     `forceDecision` and `holderConflict` into the existing `./scheduler.mjs` import.
+  9. **(ocr 9, `scheduler.mjs:196-201`) The doc contradicts the code.** It claims a lease whose
+     pid belongs to another user does not block acquisition; `processAlive` returns **true** on
+     `EPERM` precisely so it does. Align the doc with `holderConflict`.
+- **Acceptance criteria:**
+  - `factory release --force <real-held-id>` demonstrably releases it, OR refuses with a
+    non-zero exit and a reason. **Show the raw output for both the held and the missing case.**
+  - A no-op can no longer print `force-released` with exit 0 — mutation-prove it.
+  - An interrupted run (SIGINT the process) does not leak a lease. Show the reservation file
+    before and after.
+  - The flaky test's assumption is either removed or documented in the test itself.
+- **Verification command:** `npm test -- scheduler`; then `npm run verify`; then
+  `npm run guards` (v33-15's guard must still pass — if it goes red, the guard is right and
+  the fix is wrong).
+- **Budget:** one builder context. **Depends on:** v33-14 (`76c54c3`), v33-15 (`787571c`).
+
+### v33-17 — The lock: make the reservation write atomic (ocr findings 1 and 8)
+
+- **Origin:** `ocr` findings 1 and 8, both **high severity**. This is the gap v33-14's own
+  report admitted ("no flock") and could not close.
+- **The defect, in ocr's words:** `assertAcquirable` (read) and `addReservation` (write) are
+  separate, non-atomic operations, and the window spans `resolveModel` (which shells out to
+  `systemctl`) and the `admit` computation. Two concurrent invocations for the same `--id` can
+  both pass `holderConflict`; the second `addReservation` filter-by-id + push then **erases the
+  first writer's record**, so both processes run. Separately, two invocations for **different**
+  ids can interleave their read-modify-write and the last writer silently drops the other's
+  record. A concurrent reader can observe a torn file and crash in `JSON.parse`.
+- **Why it is its own slice:** it is a design change (a lock primitive plus an atomic replace),
+  not a fix. **State the design in the brief before writing code.**
+- **The shape ocr suggests:** claim the id atomically before the expensive decision —
+  `fs.openSync(join(lockDir, `${id}.lock`), 'wx')`, which throws if a peer already claimed it,
+  held until the reservation is written/released — and make `writeReservations` atomic
+  (write to a temp file, then `rename`).
+- **Non-goals:** do not rewrite the reservation model. Keep the on-disk shape; add the lock.
+- **Acceptance criteria:**
+  - Two truly-concurrent acquires for the same id: exactly one wins, the other refuses. Prove it
+    with two real processes, not a unit test of a copy.
+  - Two concurrent acquires for different ids both survive in the reservation file — no record
+    dropped.
+  - `writeReservations` cannot be observed torn (temp + rename).
+  - Mutation-proved: removing the lock turns a named test red.
+- **Budget:** one builder context, possibly two. **Depends on:** v33-16 (do the small fixes first,
+  so this slice is not confused with them).
+
+### v33-18 — The confetti does not fall: the v33-13 ocr findings
+
+- **Origin:** the `ocr` pass on v33-13 (`ab33d61..964d066`), 7 findings at
+  `.scratch/ocr-v33-13.json` (6m8s). **Note the range:** the base is `ab33d61`, which is
+  964d066's real parent. The base named in the old BATCH-STATE note (`40b1f06`) is wrong and
+  yields "No files changed".
+- **The headline:** the feature this slice is named for is broken, and the test that covers it
+  passes vacuously. Same class as the v33-6 regression.
+- **Files in scope:** `src/index.css`, `src/lib/confetti.ts`, `e2e/rsvp-confirmation.e2e.ts`.
+- **The findings:**
+  1. **(ocr 1, `index.css:662`) THE PIECES DO NOT FALL.** In a CSS `transform`, a percentage
+     resolves against the element's OWN height, not the layer's. The piece is 11px tall, so
+     `calc(100% - 11px)` = `calc(11px - 11px)` = **0px**. The animation is an 8px nudge parked at
+     the top of the layer. The comment and the lib contract ("falls only as far as the layer's own
+     height") both describe behaviour that does not happen. **`piecesBounded` passes anyway**
+     because pieces end at the top, inside the box. Fix by animating a property whose percentage
+     is relative to the containing block (e.g. `top: 0` → `calc(100% - 11px)`), or feed the layer
+     height in as a CSS variable.
+  2. **(ocr 7, `index.css:654`) Up to 14 colored slivers blink along the dialog's top.** With
+     `fill-mode: both`, the `from` frame (`opacity: 1` at `translateY(-8px)`) applies during each
+     piece's stagger delay, so every not-yet-fallen piece shows a ~3px sliver at the top edge for
+     the whole stagger.
+  3. **(ocr 2, `lib/confetti.ts:80`) A rare invisible piece.** `Math.round(rand() * 1000) / 10`
+     can yield exactly `100.0`; at `left: 100%` the 7px piece sits fully outside the
+     `overflow: hidden` clip. The sibling test pins `<= 100`, which is why the boundary slips
+     through. Clamp to 0–99.
+  4. **(ocr 6, `e2e/rsvp-confirmation.e2e.ts:299`) The settle check is dead code.**
+     `animation-play-state` has no "finished" value, so `settled` is effectively always false and
+     the loop always runs to its 3000ms cap. It only works because that cap exceeds
+     `MAX_TOTAL_MS` (2500ms) — bump either and pieces get measured mid-flight.
+  5. **(ocr 4, `e2e/rsvp-confirmation.e2e.ts:350`) A structural selector that silently no-ops.**
+     `:scope > div.relative` reaching into the component's internals; if the class or nesting
+     moves, `wrapper` is null and the walk just stops matching with no error. Anchor on a
+     `data-testid`.
+  6. **(ocr 5, `e2e/rsvp-confirmation.e2e.ts:316`) Debug leftovers:** `console.log` noise and a
+     `document.title` mutation in the spec.
+  7. **(ocr 3, `lib/confetti.ts:84`) `colorIndex` is dead.** Nothing consumes it — the component
+     colors pieces via `:nth-child(4n + k)`. Either wire it up (a per-piece
+     `--rsvp-confetti-color`) or drop the field and its `rand()` draw.
+- **Acceptance criteria:**
+  - **A piece visibly reaches the bottom of the layer.** Prove it with a measurement, not an
+    eyeball: assert the piece's computed final `transform`/`top` puts its bottom edge at the
+    layer's bottom, **and mutation-prove it** — restore the old `calc(100% - 11px)` and show the
+    assertion go red. This is the fix's whole justification.
+  - No piece renders at `left: 100%` (boundary test at the clamp).
+  - The settle wait is driven by a real signal or an explicit `MAX_TOTAL_MS` budget, not a dead
+    `animation-play-state` check.
+  - No debug `console.log` / `document.title` writes in the spec.
+  - `colorIndex` is either consumed or gone. **Do not leave a field only a test reads.**
+- **Verification command:** `npm test -- confetti`; the e2e spec on a minted marker;
+  `npm run verify`; `npm run guards`.
+- **Budget:** one builder context. **Depends on:** nothing.
+- **Meta-rule this slice earns:** the `stale-locator-guard` catches a moved locator; **nothing
+  catches an assertion that became vacuous.** Consider a guard for that class after v33-18.
 
 ---
 
@@ -612,3 +747,45 @@ the Going confirmation.
          the live path. Correction to an earlier note in this ledger: v33-6 and v33-7a were NEVER
          owed an ocr pass — .scratch/ocr-v33-6.json (174 KB) and -7a.json (37 KB) exist from Oct 7.
          Only v33-13 and v33-14 are actually owed.
+    V33: ocr on v33-14 RAN (.scratch/ocr-v33-14.json) — provider ninfer/qwen3.8-27b, 14m44s, 9 findings.
+         It independently confirmed the "no flock" gap v33-14's own report admitted, and found MORE:
+         (1) TOCTOU — assertAcquirable read vs addReservation write are non-atomic, so two concurrent
+             same-id acquires can BOTH pass and the second erases the first's record. HIGH.
+         (2) `release --force <id>` is a SILENT NO-OP: the flag parser has no boolean flags, so --force
+             swallows the id, id becomes the string '--force', and it prints "force-released --force"
+             exit 0 while the real lease is untouched.
+         (3) forceReleaseReservation's {ok:false} is DISCARDED — a missing lease still prints success.
+         (4) no releasedAt guard on the force path — an already-released lease gets re-stamped,
+             corrupting the audit trail.
+         (5) 'exit' does not fire on SIGINT/SIGTERM → an interrupted run LEAKS its lease, and it is the
+             one record written without expiresAt, so it counts against admission until --force.
+         (6) flaky test: 999999 is not a guaranteed-dead pid on 64-bit Linux (pid_max often 4194304).
+         (7) duplicate import. (8) all reservation writes are lock-free RMW on a non-atomic writeFileSync,
+             so different-id writers can drop each other and a reader can see a torn file. (9) a doc
+             contradicting processAlive's EPERM→alive behaviour.
+         CLASS WORTH NAMING: findings 2, 3 are "a check that reports SUCCESS when nothing happened" —
+         the same failure mode as the v33-6 vacuous-assertion regression.
+    V33: v33-16 WRITTEN (the surgical ocr fixes: findings 2,3,4,5,6,7,9) and v33-17 WRITTEN (the atomic
+         lock: findings 1 and 8). NOT dispatched. v33-14 is therefore NOT "done" — 787571c is the commit
+         point, not the finished state. NOTE: v33-15's guard must be re-run after v33-16, and if it goes
+         red the guard is right and the fix is wrong.
+    V33: ocr on v33-13 RAN (.scratch/ocr-v33-13.json) — base is ab33d61 (964d066's REAL parent; the
+         40b1f06 in an earlier BATCH-STATE note is WRONG and yields "No files changed"). 6m8s, 7 findings.
+         THE FEATURE IS BROKEN AND THE TEST IS VACUOUS:
+         (1) THE CONFETTI DOES NOT FALL. index.css:662 — a % in a CSS transform resolves against the
+             element's OWN height, so calc(100% - 11px) = calc(11px - 11px) = 0px. The animation is an
+             8px nudge parked at the layer top. `piecesBounded` passes anyway because pieces end INSIDE
+             the box. The comment and the lib contract describe behaviour that does not happen.
+         (2) up to 14 colored slivers blink along the dialog's top (fill-mode: both applies the from-frame
+             during each stagger delay).
+         (3) lib/confetti.ts:80 can yield left exactly 100.0 → the piece sits outside overflow:hidden; the
+             test pins <=100, which is why it slips through.
+         (4) the e2e settle check is DEAD: animation-play-state has no "finished" value, so `settled` is
+             always false and the loop always runs to its 3000ms cap.
+         (5) a structural selector (`:scope > div.relative`) that silently no-ops if the component moves.
+         (6) console.log + document.title debug leftovers in the spec.
+         (7) colorIndex is dead — no renderer consumes it.
+    V33: v33-18 WRITTEN for the above (7 findings). NOT dispatched. CLASS: this is the SECOND slice in a
+         row where ocr found the feature broken while the gate was green (v33-6, now v33-13). The
+         stale-locator-guard catches a MOVED locator; nothing catches an assertion that became VACUOUS.
+         That guard is earned and should be written.
