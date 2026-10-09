@@ -26,6 +26,20 @@ import { errorId, fieldA11y } from '../lib/a11y'
 import { summaryLineDisplays, summaryTitleLine } from '../lib/postSummary'
 
 /**
+ * form-times-redesign (annotation mv0d2y3o): the ONE-LINE timezone readout
+ * beside the start time — e.g. "PDT". Derived from the DEVICE's runtime zone
+ * via `Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })` on the
+ * mount-time instant, never a second source of time. It is a READOUT, not a
+ * control: the app already stores "the moment the parent meant, whatever their
+ * timezone", so there is no tz picker here (a picker would be a new schema of
+ * decisions, out of scope).
+ */
+function formatTimezoneAbbr(instant: Date): string {
+  const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(instant)
+  return parts.find((part) => part.type === 'timeZoneName')?.value ?? ''
+}
+
+/**
  * The drop-in form's FIELD SET (V8 ticket 05), extracted from /new so there
  * is exactly ONE implementation of every field, chip and error — the shared
  * presentational component behind both `/new` (post a drop-in) and
@@ -274,6 +288,13 @@ export function PlaydateFormFields({
 }: PlaydateFormFieldsProps) {
   const endTotal = values.startMinutes + values.durationMinutes
   /**
+   * form-times-redesign (annotation mv0d2y3o, D1): the timezone readout beside
+   * the start time. Computed ONCE per render from "now" — a readout of the
+   * device's current zone, not a control and not a second source of time. It
+   * reads e.g. "PDT" on a Pacific device, "UTC" in CI.
+   */
+  const timezoneAbbr = formatTimezoneAbbr(new Date())
+  /**
    * V33 slice 7b — WHETHER THE LAST STEP MOVED THE OTHER END, so the window
    * section can SAY SO instead of moving a value invisibly. Local UI state: it
    * describes the last interaction, not the form's data, and it is derived from
@@ -283,6 +304,15 @@ export function PlaydateFormFields({
    * moved the other end", which stops being true the moment another step lands.
    */
   const [otherEndMoved, setOtherEndMoved] = useState(false)
+  /**
+   * form-times-redesign (annotation mv0d2y3o, D2): on `/new` the END folds
+   * behind an "End date and time" toggle — a drop-in has ONE required input,
+   * the start, so the second end is an OPTIONAL addition. Collapsed is the
+   * default. This is per-render UI state, NOT a persisted preference (a stored
+   * "show end" preference would be a new schema decision — the brief's STOP
+   * condition). Branches 2/3 never read it: their end rides `durationBlock`.
+   */
+  const [endOpen, setEndOpen] = useState(false)
   // V3 slice 5 (ticket 08): the address's inline error (≤120 after trim;
   // computed at render, like the title's live counter — no separate
   // error state).
@@ -578,43 +608,96 @@ export function PlaydateFormFields({
         data-testid="window-section"
         className="flex flex-col gap-2 rounded-xl border border-slate-200 p-2"
       >
-        {/* THE START HALF, from the ONE `startBlock` — the only difference is
-            the step rule, which is what makes `/new` a window control. */}
-        {startBlock((delta) => {
-          const next = stepWindowEnd(
-            { startMinutes: values.startMinutes, endMinutes: endTotal },
-            'start',
-            delta,
-          )
-          onFieldChange('startMinutes', next.startMinutes)
-          onFieldChange('durationMinutes', next.endMinutes - next.startMinutes)
-          setOtherEndMoved(next.otherEndMoved)
-        })}
-        {/* V13 ticket 03's End stepper, now the SECOND END of one window rather
-            than a block of its own. Stepping it moves the end; the start is the
-            "other end" that gives way only to keep the 30-minute minimum, and
-            that is what the note below announces. */}
+        {/* form-times-redesign (annotation mv0d2y3o, D1): the START half now
+            reads like a familiar event form — a "Start date" label over the date
+            input, a "Start time" label over the stepper strip, and a one-line
+            timezone readout beside the time. `startBlock` stays the ONE source
+            of the date input + stepper (branches 2/3 render it verbatim); the
+            LABELS live here so /edit and the location-first page are byte-
+            identical. The readout is the DEVICE zone, not a control. */}
+        <div className="flex flex-col gap-1">
+          <span className="text-slate-700">Start date</span>
+          <input
+            type="date"
+            className={touch(
+              'w-full rounded-xl border px-3 py-2.5 text-base outline-none focus-visible:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-200 ' +
+                (errors.startDate ? 'border-red-400' : 'border-slate-300'),
+            )}
+            value={values.startDate}
+            onChange={(e) => onFieldChange('startDate', e.target.value)}
+            {...fieldA11y('start-date', errors.startDate ?? null)}
+          />
+          {errors.startDate ? <p role="alert" id={errorId('start-date')} className="text-sm text-red-600">{errors.startDate}</p> : null}
+        </div>
         <div className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">End</span>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-slate-700">Start time</span>
+            <span data-testid="start-timezone-readout" className="text-slate-500">
+              {timezoneAbbr}
+            </span>
+          </div>
           <TimeStepper
-            minutes={endTotal}
+            minutes={values.startMinutes}
             onStep={(delta) => {
               const next = stepWindowEnd(
                 { startMinutes: values.startMinutes, endMinutes: endTotal },
-                'end',
+                'start',
                 delta,
               )
               onFieldChange('startMinutes', next.startMinutes)
               onFieldChange('durationMinutes', next.endMinutes - next.startMinutes)
               setOtherEndMoved(next.otherEndMoved)
             }}
-            label="end"
-            testId="end-time-label"
           />
-          {errors.durationMinutes ? (
-            <p role="alert" id={errorId('duration')} className="text-sm text-red-600">{errors.durationMinutes}</p>
+          {errors.startMinutes ? (
+            <p role="alert" id={errorId('start-time')} className="text-sm text-red-600">{errors.startMinutes}</p>
+          ) : smallHoursStartNote(values.startMinutes) !== null ? (
+            <p data-testid="small-hours-note" className="text-sm text-slate-600">
+              {smallHoursStartNote(values.startMinutes)}
+            </p>
           ) : null}
         </div>
+        {/* form-times-redesign (annotation mv0d2y3o, D2/D3): the END folds behind
+            an "End date and time" toggle. Collapsed is the default — a drop-in
+            has one required input, the start. The toggle only HIDES the second
+            row: the value model is untouched (`endTotal`, `stepWindowEnd`, the
+            30-minute floor all unchanged). No copy here implies a fixed length —
+            the toggle says "End date and time", never "How long". */}
+        <button
+          type="button"
+          data-testid="end-toggle"
+          aria-expanded={endOpen}
+          onClick={() => setEndOpen((open) => !open)}
+          className={touch(
+            'self-start rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 ' +
+              'transition-colors motion-reduce:transition-none hover:bg-slate-100',
+          )}
+        >
+          {endOpen ? 'Hide end' : 'End date and time'}
+        </button>
+        {endOpen ? (
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-700">End</span>
+            <TimeStepper
+              minutes={endTotal}
+              onStep={(delta) => {
+                const next = stepWindowEnd(
+                  { startMinutes: values.startMinutes, endMinutes: endTotal },
+                  'end',
+                  delta,
+                )
+                onFieldChange('startMinutes', next.startMinutes)
+                onFieldChange('durationMinutes', next.endMinutes - next.startMinutes)
+                setOtherEndMoved(next.otherEndMoved)
+              }}
+              label="end"
+              testId="end-time-label"
+            />
+            {errors.durationMinutes ? (
+              <p role="alert" id={errorId('duration')} className="text-sm text-red-600">{errors.durationMinutes}</p>
+            ) : null}
+          </div>
+        ) : null}
         {/* THE NOTE THE BRIEF REQUIRES: a window must satisfy end > start, and
             when a step would break that the OTHER end moves. Say it, never let
             it happen invisibly. It says what happened, not what the length may
