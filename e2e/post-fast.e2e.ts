@@ -316,6 +316,21 @@ function nodeDayLabel(iso: string): string {
 }
 
 /**
+ * form-times-redesign (annotation mv0d2y3o, D2): on `/new` the END row is
+ * collapsed behind the "End date and time" toggle by default — a drop-in has
+ * one required input, the start. Any spec that reads or steps the END on /new
+ * opens it first. A no-op on `/edit` and the location-first page, which render
+ * `durationBlock` instead and so have no toggle (that is what keeps their
+ * markup byte-identical).
+ */
+async function openEndSection(page: Page): Promise<void> {
+  const toggle = page.getByTestId('end-toggle')
+  if ((await toggle.count()) === 0) return
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
+}
+
+/**
  * Every visible control inside the form (which contains the summary), with its
  * rendered height — the shape scripts/mobile-audit.mjs measures on the
  * signed-out routes: `button, a[href], label[for]`, plus the inputs, skipping
@@ -394,11 +409,14 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   await expect(page.getByPlaceholder(TITLE_PLACEHOLDER)).toHaveCount(0)
 
   // (b) The decisions are visible: the place picker and Post — and the duration
-  //     is picked FOR the parent (V13 ticket 03): the End stepper shows
-  //     start + auto-duration in the visible flow, no "How long" label, no chips.
+  //     is picked FOR the parent (V13 ticket 03): the duration is shown by the
+  //     start stepper + the auto-window. form-times-redesign (D2): the END now
+  //     folds behind "End date and time" and is NOT opened on the cold path (it
+  //     is not one of the three required taps).
   await expect(page.getByText(PLACE_PICKER_LABEL, { exact: true })).toBeVisible()
   await expect(page.getByTestId('browse-places')).toHaveText(BROWSE_PLACES_LABEL)
-  await expect(page.getByTestId('end-time-label')).toBeVisible()
+  await expect(page.getByTestId('end-toggle')).toBeVisible()
+  await expect(page.getByTestId('end-time-label')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '1h', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Post drop-in' })).toBeVisible()
 
@@ -419,9 +437,13 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
 
   // (d) No tap for how long (V12 t02): the start slot picked the duration at
   //     mount — "until the next hour". V13 ticket 02: the WINDOW is no longer a
-  //     summary line — it is read off the two steppers that show it, the start
-  //     (`start-time-label`) and the end (`end-time-label`), which is the same
-  //     window the submit writes (`start + durationMinutes`). `now` is read ONCE
+  //     summary line — it is read off the start stepper (`start-time-label`) plus
+  //     the auto-picked duration. form-times-redesign (D2): the END folds behind
+  //     "End date and time" and is NOT part of the three-tap cold path, so this
+  //     spec must NOT open it — reading it would add a fourth touch and break the
+  //     very budget it pins. The end is therefore start + the 60-minute mount
+  //     window, which is the same window the submit writes (`start +
+  //     durationMinutes`), verified against the DB row below. `now` is read ONCE
   //     at mount and bracketed by beforeMount/afterRead, so a run crossing a
   //     30-minute boundary still matches one of the two candidates.
   const windowCandidates = [mountValues(beforeMount), mountValues(afterRead)].map(
@@ -429,19 +451,17 @@ test('a cold /new is posted in three taps or fewer, typing exactly one place', a
   )
   const readStepper = async (testid: string): Promise<string> =>
     (await page.getByTestId(testid).innerText()).replace(/\s+/g, ' ').trim()
-  // Each stepper is parsed on its OWN: `parseAnyTimeLabel` folds a label onto a
-  // single day, so a window that crosses midnight would read as a NEGATIVE
-  // duration if the two were parsed as one range. Comparing the steppers as a
-  // pair of wall-clock minutes is exact for both cases.
-  const [shownStart, shownEnd] = [
-    parseAnyTimeLabel(await readStepper('start-time-label')),
-    parseAnyTimeLabel(await readStepper('end-time-label')),
-  ]
+  // The end stepper is behind the toggle on /new; pin that it is HIDDEN here (the
+  // one-required-input rule) rather than opening it.
+  await expect(page.getByTestId('end-toggle')).toBeVisible()
+  await expect(page.getByTestId('end-time-label')).toHaveCount(0)
+  const shownStart = parseAnyTimeLabel(await readStepper('start-time-label'))
+  const shownEnd = wrapMinutes(shownStart + 60)
   expect(
     windowCandidates.map(([start, end]) => [start, wrapMinutes(end)]),
     `the visible When section must show the mounted window (start stepper "${await readStepper(
       'start-time-label',
-    )}", end stepper "${await readStepper('end-time-label')}")`,
+    )}", end = start + the 60-minute mount window)`,
   ).toContainEqual([shownStart, shownEnd])
   // The auto-picked duration is one hour (V12 t02) — modulo the day, so a
   // 11:30 PM start ending at 12:30 AM is still the one-hour window it promises.
@@ -566,6 +586,8 @@ test('a 30-minute window posts and the live row carries the exact span (v33-7a)'
 
   // (b) Read the mounted window off the two steppers (the visible "When"
   //     section — V11 t05 / V13 t02: the steppers are where the window shows).
+  //     The END is behind the toggle now (D2), so open it first.
+  await openEndSection(page)
   const readStepper = async (testid: string): Promise<string> =>
     (await page.getByTestId(testid).innerText()).replace(/\s+/g, ' ').trim()
   const shownStart = parseAnyTimeLabel(await readStepper('start-time-label'))
@@ -646,6 +668,10 @@ test('Start and End are one window, and stepping one end never silently drags th
       (await page.getByTestId(testid).innerText()).replace(/\s+/g, ' ').trim(),
     )
 
+  // form-times-redesign (D2): the END folds behind "End date and time"; this
+  // spec is about the TWO ends reading as one window, so open it up front.
+  await openEndSection(page)
+
   // ----------------------------------------------------------------
   // AC 1: ONE WINDOW — one section, one heading, one band.
   // ----------------------------------------------------------------
@@ -655,9 +681,11 @@ test('Start and End are one window, and stepping one end never silently drags th
   // PARENT (the section itself holds the two end labels), so this counts the
   // heading over both steppers rather than one per end.
   await expect(page.getByTestId('window-section').locator('xpath=..').getByText('When', { exact: true })).toHaveCount(1)
-  // ...and inside the section there is exactly ONE "Start" and ONE "End" label,
-  // so the two steppers are the two ends of one answer.
-  await expect(section.getByText('Start', { exact: true })).toHaveCount(1)
+  // ...and inside the section there is exactly ONE start label and ONE end
+  // label, so the two steppers are the two ends of one answer. form-times-
+  // redesign (D1): the start label now reads "Start date" + "Start time", and
+  // the end label is "End" (revealed by the toggle this spec opened above).
+  await expect(section.getByText('Start time', { exact: true })).toHaveCount(1)
   await expect(section.getByText('End', { exact: true })).toHaveCount(1)
 
   const startBox = await page.getByTestId('start-time-label').boundingBox()
@@ -942,7 +970,10 @@ test('the title is generated, read back, editable in place — the extras are be
   }
   await expect(page.getByText('How long', { exact: true })).toHaveCount(0)
   // …and the duration IS shown, on the two steppers that replaced it.
+  // form-times-redesign (D2): the END is behind the toggle now, so open it.
   await expect(page.getByTestId('start-time-label')).toBeVisible()
+  await expect(page.getByTestId('end-toggle')).toBeVisible()
+  await openEndSection(page)
   await expect(page.getByTestId('end-time-label')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Later end time' })).toBeVisible()
 
@@ -1036,6 +1067,36 @@ test('the phone pass: /new at 320/375/390/430 and both orientations', async ({
     }
   }
 })
+
+test(
+  'the When section is labeled like a familiar event form: Start date, Start time, and a device-zone readout (form-times-redesign D1)',
+  async ({ page }) => {
+    await page.goto('/new')
+    await settleOnRoute(page, '/new')
+
+    // D1: the two halves read like a familiar event form. The labels live in the
+    // /new `whenBlock` (branches 2/3 keep `startBlock` verbatim, so /edit and the
+    // location-first page stay byte-identical — AC3).
+    await expect(page.getByText('Start date', { exact: true })).toBeVisible()
+    await expect(page.getByText('Start time', { exact: true })).toBeVisible()
+
+    // D1: a ONE-LINE timezone readout beside the time. It is a READOUT, not a
+    // control: the device zone, derived from `Intl.DateTimeFormat(undefined,
+    // { timeZoneName: 'short' })` on the mount-time instant. Assert it equals
+    // the SAME computation run in the page (never a second source of time) and
+    // that it is not empty.
+    const expectedTz = await page.evaluate(
+      () =>
+        new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+          .formatToParts(new Date())
+          .find((part) => part.type === 'timeZoneName')?.value ?? '',
+    )
+    const readout = page.getByTestId('start-timezone-readout')
+    await expect(readout).toBeVisible()
+    expect(expectedTz, 'the device zone must have a short name').not.toBe('')
+    await expect(readout).toHaveText(expectedTz)
+  },
+)
 
 test.afterEach(async () => {
   // Best-effort cleanup (the golden-path / quick-post pattern): delete the

@@ -65,6 +65,18 @@ const DETAILS_PLACEHOLDER =
 const PLACE = 'E2E edit lot'
 
 /**
+ * form-times-redesign (annotation mv0d2y3o, D2): on `/new` the END row is
+ * collapsed behind the "End date and time" toggle by default. This helper opens
+ * it so the end label can be read. A no-op on `/edit`, which renders no toggle.
+ */
+async function openEndSection(page: Page): Promise<void> {
+  const toggle = page.getByTestId('end-toggle')
+  if ((await toggle.count()) === 0) return
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await expect(page.getByTestId('end-time-label')).toBeVisible()
+}
+
+/**
  * Post a drop-in through /new as the marker (the golden-path pattern:
  * steppers + chips, the end computed) and return what the form itself
  * rendered as the start — which is exactly what the edit form must prefill.
@@ -90,7 +102,10 @@ async function postMarkerDropIn(
   // "1h" here waited forever on a control that no longer exists, which is what
   // timed out three specs in this file. The form already picks a duration for
   // the parent from the start slot; the End stepper is the read-back.
-  await expect(page.getByTestId('end-time-label')).toBeVisible()
+  // form-times-redesign (D2): the END is behind the "End date and time" toggle
+  // on /new — open it before reading the end (this helper is not the tap-budget
+  // spec, so the extra click is fine here).
+  await openEndSection(page)
   /**
    * ⚠️ THE END IS READ OFF THE FORM, NOT COMPUTED AS `start + 60` (v33-7b).
    *
