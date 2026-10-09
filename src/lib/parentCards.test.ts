@@ -120,6 +120,17 @@ describe('parentCardSaveLabel (V24 slice 02 — one save-state pattern)', () => 
     expect(parentCardSaveLabel('error', false, '')).toBe('Try again')
     expect(parentCardSaveLabel('error', false)).toBe('Try again')
   })
+
+  it('names the action by POSITION for a new card (annotation mv0d7dwh)', () => {
+    // The "+ Add another parent" affordance opens a blank card in the free
+    // slot; its button must name what it will do — "Add another parent", not a
+    // second "Add parent". Slot 1 (or an omitted slot) keeps the historical verb.
+    expect(parentCardSaveLabel('idle', true, null, 1)).toBe('Add parent')
+    expect(parentCardSaveLabel('idle', true, null, undefined)).toBe('Add parent')
+    expect(parentCardSaveLabel('idle', true, null, 2)).toBe('Add another parent')
+    // A SAVED card is always "Save", whatever the slot.
+    expect(parentCardSaveLabel('idle', false, null, 2)).toBe('Save')
+  })
 })
 
 describe('parentNameRows (V24 slice 11A — the names the READ surface shows; V25 t09 added the photo and the about)', () => {

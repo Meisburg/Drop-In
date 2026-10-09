@@ -1222,3 +1222,101 @@ test('parent interests: cleared renders nothing, and a name-only save preserves 
     }).catch(() => {})
   }
 })
+
+/**
+ * add-parent-flow — annotation mv0d7dwh (Jon's 2026-10-08 meetup review).
+ *
+ * THE GAP THIS CLOSES. With one saved parent the editor rendered exactly one
+ * card and no way to reach a second: `parentCardList` returns only NAMED cards,
+ * so there was nothing to click. This spec pins the affordance that fills it —
+ * an explicit "+ Add another parent" that opens a blank FREE-TEXT card in the
+ * next free slot — and the two rules that keep it honest:
+ *   1. The blank card's button names the action by POSITION ("Add another
+ *      parent"), never a second "Add parent".
+ *   2. At the two-parent cap the affordance DISAPPEARS (D0: `nextParentPosition`
+ *      returns null), because the database would refuse a third write.
+ * It also pins Interpretation A: the reloaded second card is EDITABLE, exactly
+ * like the first — not the read-only row the pre-fix model implied.
+ */
+test('a second parent is reachable, addable, and editable — and the cap hides the control (add-parent-flow)', async ({
+  page,
+}) => {
+  test.setTimeout(180_000)
+  const { url: restUrl, anonKey } = readSupabaseEnv()
+  const { accessToken: markerToken, userId: markerId } = readMarkerSession()
+  const authed = (token: string): Record<string, string> => ({
+    apikey: anonKey,
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  })
+
+  // Scoped by `profile_id` ALONE and sliced to the position in code — the
+  // fixture-marker guard rejects `position` as a filter column (see the V32-8
+  // note above).
+  const readCards = async (): Promise<Array<{ name: string; position: number }>> => {
+    const res = await fetch(
+      `${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}&select=name,position`,
+      { headers: authed(markerToken) },
+    )
+    return res.ok ? ((await res.json()) as Array<{ name: string; position: number }>) : []
+  }
+
+  const NAME_ONE = 'e2e-addparent One'
+  const NAME_TWO = 'e2e-addparent Two'
+
+  try {
+    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    })
+    const seeded = await fetch(`${restUrl}/rest/v1/parent_cards`, {
+      method: 'POST',
+      headers: { ...authed(markerToken), Prefer: 'return=representation' },
+      body: JSON.stringify({ profile_id: markerId, position: 1, name: NAME_ONE }),
+    })
+    if (!seeded.ok) throw new Error(`seed HTTP ${seeded.status} ${await seeded.text()}`)
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/profile')
+    await page.getByTestId('edit-profile').click()
+    await expect(page.getByTestId('parent-name-1')).toHaveValue(NAME_ONE, { timeout: 20_000 })
+
+    // ---- ONE parent → the affordance is offered ------------------------------
+    const addButton = page.getByTestId('add-another-parent')
+    await expect(addButton).toBeVisible()
+    await addButton.click()
+
+    // The blank card lands in slot 2 and its button names the action by POSITION.
+    const blankName = page.getByTestId('parent-name-2')
+    await expect(blankName).toBeVisible()
+    await expect(blankName).toHaveValue('')
+    await expect(page.getByTestId('parent-save-2')).toHaveText('Add another parent')
+    // The affordance does not double up while the blank card is open.
+    await expect(addButton).toHaveCount(0)
+
+    await blankName.fill(NAME_TWO)
+    await page.getByTestId('parent-save-2').click()
+    await expect
+      .poll(async () => (await readCards()).length, { timeout: 15_000 })
+      .toBe(2)
+
+    // ---- Interpretation A: the reloaded second card is EDITABLE -------------
+    await expect(page.getByTestId('parent-name-2')).toHaveValue(NAME_TWO)
+    // Its input is a real, writable field (the read-only model rendered a <p>).
+    await expect(page.getByTestId('parent-card-interests-2')).toBeVisible()
+    // At the cap the affordance is GONE (nextParentPosition → null, D0).
+    await expect(page.getByTestId('add-another-parent')).toHaveCount(0)
+
+    // ---- It survives a reload, editable, with the control still hidden -------
+    await page.reload()
+    await page.getByTestId('edit-profile').click()
+    await expect(page.getByTestId('parent-name-2')).toHaveValue(NAME_TWO, { timeout: 20_000 })
+    await expect(page.getByTestId('parent-save-2')).toHaveText('Save')
+    await expect(page.getByTestId('add-another-parent')).toHaveCount(0)
+  } finally {
+    await fetch(`${restUrl}/rest/v1/parent_cards?profile_id=eq.${markerId}`, {
+      method: 'DELETE',
+      headers: authed(markerToken),
+    }).catch(() => {})
+  }
+})

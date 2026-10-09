@@ -74,6 +74,7 @@ export function parentCardSaveLabel(
   status: 'idle' | 'saving' | 'saved' | 'error',
   isNew: boolean,
   errorMessage?: string | null,
+  slot?: number,
 ): string {
   if (status === 'saving') return 'Saving…'
   if (status === 'saved') return 'Saved'
@@ -82,8 +83,15 @@ export function parentCardSaveLabel(
       ? `Error: ${errorMessage}`
       : 'Try again'
   }
-  // idle: the verb depends on whether this editor is adding or updating.
-  return isNew ? 'Add parent' : 'Save'
+  // idle: the verb depends on whether this editor is adding or updating, and —
+  // for a NEW card — on WHICH slot it sits. The second parent's blank card says
+  // "Add another parent" (not "Add parent"), so the verb names what it actually
+  // does by position. add-parent-flow (annotation mv0d7dwh): adding a second
+  // parent used to be implied by a blank card, never labelled. Default (no slot
+  // passed) keeps the historical "Add parent" verb, so existing callers are
+  // unchanged.
+  if (isNew) return slot !== undefined && slot > 1 ? 'Add another parent' : 'Add parent'
+  return 'Save'
 }
 
 /**
