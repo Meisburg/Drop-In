@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
 import { hasHomeZip } from '../lib/homeZip'
 import { createHerePrefill } from '../lib/feedCreateHere'
-import { emptyRadiusBeyondCopy, emptyRadiusCopy, radiusEscapes, radiusSaveErrorMessage, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../lib/feed'
+import { emptyRadiusBeyondCopy, emptyRadiusCopy, nextWidenRadius, radiusEscapes, radiusSaveErrorMessage, WIDEN_SEARCH_LABEL, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 import { LocationRequiredNotice } from './LocationRequiredNotice'
 
@@ -83,6 +83,23 @@ import { LocationRequiredNotice } from './LocationRequiredNotice'
  * It is NOT the "Post a drop-in" link V23 removed (the raised nav "+" stays
  * the persistent post action): this control carries a location the bare post
  * CTA never did. `showPostCta` stays false on the feed, exactly as it is.
+ *
+ * empty-state-one-button (Jon's doctrine, 2026-10-08 — "I'm a minimalist and I
+ * don't wanna make the user think … there should just be one button here …
+ * WIDEN THE SEARCH"): the FEED's empty state offers ONE control, not a row.
+ * The feed passes `widenOnly` (default FALSE — the Browse caller keeps the
+ * component's full option set, untouched): with it on, the state renders its
+ * honest count line (plus the beyond line when the same read counted
+ * something) and the SINGLE filled "Widen the search" button, which
+ * re-queries at the immediate next radius preset (`nextWidenRadius`:
+ * 2 → 5 → 10 → 20 → 35, one step per tap, the count line re-naming itself
+ * after each) through the SAME `updateHomeZipRadius` + `refresh()` path the
+ * escapes used. At the 35-mile ceiling `nextWidenRadius` is null and the
+ * button does not render — a widen that cannot widen is the dead control this
+ * component exists to remove — so at the max the state is honestly terminal.
+ * Every other control (the browse door + headline, the escape ladder, the
+ * location-seeded create, the post CTA) is suppressed in this mode: one
+ * button, not four.
  */
 export function RadiusEmptyState({
   radiusMiles,
@@ -90,6 +107,7 @@ export function RadiusEmptyState({
   showPostCta = true,
   showBrowseCta = false,
   showCreateHere = false,
+  widenOnly = false,
   beyondRadiusCount = 0,
 }: {
   radiusMiles: number
@@ -124,6 +142,18 @@ export function RadiusEmptyState({
    */
   showCreateHere?: boolean
   /**
+   * empty-state-one-button (Jon's doctrine, 2026-10-08): render the ONE
+   * control — the filled "Widen the search" button that re-queries at the
+   * immediate next radius preset (`nextWidenRadius`, the single next step on
+   * the `RADIUS_MILES_OPTIONS` ladder, not the whole `radiusEscapes` row) —
+   * and suppress every other control (the browse door + headline, the escape
+   * ladder, the location-seeded create, the post CTA). Default FALSE: the
+   * Browse caller keeps the component's full option set, untouched. The
+   * honest count line and the beyond line render in this mode too — they are
+   * the reason the button exists, not controls.
+   */
+  widenOnly?: boolean
+  /**
    * V29 v29-6: how many drop-ins the SAME fetch found outside this radius but
    * inside the widest one. 0 (the default, and Browse's value today) renders no
    * second line at all — an empty city is not sold a number.
@@ -135,7 +165,9 @@ export function RadiusEmptyState({
   const [busyRadius, setBusyRadius] = useState<number | null>(null)
   const [escapeError, setEscapeError] = useState<string | null>(null)
   const homeZip = profile?.home_zip ?? ''
-  const escapes = showEscapes ? radiusEscapes(radiusMiles) : []
+  // empty-state-one-button: the widen-only mode (the feed's doctrine — ONE
+  // button) never renders the ladder, so it is not even computed there.
+  const escapes = showEscapes && !widenOnly ? radiusEscapes(radiusMiles) : []
   /**
    * meetup-empty-state: the "Create one here" prefill. The pure seam names the
    * ONE place this state can name (the viewer's own home zip — the home pin the
@@ -146,6 +178,14 @@ export function RadiusEmptyState({
    * Browse caller — which never passes it — is unchanged.
    */
   const createHere = showCreateHere ? createHerePrefill(homeZip) : null
+  /**
+   * empty-state-one-button: the one-step widen target — the IMMEDIATE next
+   * preset up the `RADIUS_MILES_OPTIONS` ladder (2 → 5 → 10 → 20 → 35), null
+   * at the ceiling. Only the widen-only mode renders it; a null target means
+   * the button does not render either (a widen that cannot widen is the dead
+   * control this component exists to remove).
+   */
+  const nextWiden = widenOnly ? nextWidenRadius(radiusMiles) : null
   /**
    * V8 ticket 02 REVIEW ROUND: an escape with nothing to widen FROM (no
    * session, no home zip) must not render as a live control — a button that
@@ -220,8 +260,10 @@ export function RadiusEmptyState({
       className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm"
     >
       {/* V31 v31-1: value first, then the honest count — the headline names no
-          number (the line under it does) and promises no content. */}
-      {showBrowseCta ? (
+          number (the line under it does) and promises no content. The headline
+          frames the browse door, so the widen-only mode (which removes the
+          door) renders the count without it. */}
+      {showBrowseCta && !widenOnly ? (
         <p className="text-sm font-medium text-slate-700">{EMPTY_RADIUS_BROWSE_HEADLINE}</p>
       ) : null}
       <p className="text-sm text-slate-600">{emptyRadiusCopy(radiusMiles)}</p>
@@ -235,62 +277,94 @@ export function RadiusEmptyState({
           {emptyRadiusBeyondCopy(beyondRadiusCount)}
         </p>
       ) : null}
-      {/* V31 v31-1: THE DOOR. The state's one filled control, above the escapes
-          — the panel's parents reached for the directory while the screen in
-          front of them offered three ways to widen a radius. Deliberately NOT a
-          post CTA: `showPostCta` stays false on the feed, so V27's ruling ("the
-          raised nav + is the persistent post action") is untouched. */}
-      {showBrowseCta ? (
-        <Link
-          to="/browse"
-          data-testid="empty-radius-browse"
-          className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
-        >
-          {EMPTY_RADIUS_BROWSE_LABEL}
-        </Link>
-      ) : null}
-      {escapes.length > 0 ? (
-        <div className="flex flex-wrap justify-center gap-2">
-          {escapes.map((escape) => (
+      {/* empty-state-one-button (Jon's doctrine, 2026-10-08): THE ONE
+          CONTROL. With `widenOnly` (the feed), the state renders the single
+          filled "Widen the search" button — the immediate next radius preset
+          (`nextWiden`), re-queried through the SAME `updateHomeZipRadius` +
+          `refresh()` path the escapes used, so the count line re-names itself
+          with the new radius on the re-render. The button is gated by the
+          shared one-write-at-a-time rule (the `escapesDisabled` guard above:
+          a write needs a session + a home zip, and one write runs at a time).
+          A null target (the 35-mile ceiling) renders NOTHING: a widen that
+          cannot widen is the dead control this state exists to remove — at
+          the max the state is honestly terminal. Every other control stays in
+          the branch below, which the Browse caller — which never passes the
+          prop — renders byte-for-byte unchanged. */}
+      {widenOnly ? (
+        <>
+          {nextWiden !== null ? (
             <button
-              key={escape.radiusMiles}
               type="button"
+              data-testid="empty-radius-widen"
               disabled={escapesDisabled}
-              onClick={() => void handleEscape(escape.radiusMiles)}
-              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+              onClick={() => void handleEscape(nextWiden)}
+              className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
             >
-              {busyRadius === escape.radiusMiles ? 'Updating…' : escape.label}
+              {busyRadius === nextWiden ? 'Updating…' : WIDEN_SEARCH_LABEL}
             </button>
-          ))}
-        </div>
-      ) : null}
-      {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
-      {/* meetup-empty-state: THE LOCATION-SEEDED CREATE. Distinct from the
-          "Post a drop-in" link V23 removed — that one carried nothing; this one
-          carries the viewer's OWN location (the home zip) through the
-          PlacePrefill router state, so the post starts where the parent already
-          is. Rendered only when the seam named that place (createHere !== null),
-          so it is never a control that swallows its tap. Secondary, below the
-          escapes: the escapes answer "is it worth widening?", this answers "or
-          start one here". Absent on Browse, which never passes the prop. */}
-      {createHere !== null ? (
-        <button
-          type="button"
-          data-testid="empty-radius-create-here"
-          onClick={() => navigate('/new', { state: { place: createHere } })}
-          className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
-        >
-          Create one here
-        </button>
-      ) : null}
-      {showPostCta ? (
-        <Link
-          to="/new"
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-        >
-          Post a drop-in
-        </Link>
-      ) : null}
+          ) : null}
+          {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
+        </>
+      ) : (
+        <>
+          {/* V31 v31-1: THE DOOR. The state's one filled control, above the escapes
+              — the panel's parents reached for the directory while the screen in
+              front of them offered three ways to widen a radius. Deliberately NOT a
+              post CTA: `showPostCta` stays false on the feed, so V27's ruling ("the
+              raised nav + is the persistent post action") is untouched. */}
+          {showBrowseCta ? (
+            <Link
+              to="/browse"
+              data-testid="empty-radius-browse"
+              className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
+            >
+              {EMPTY_RADIUS_BROWSE_LABEL}
+            </Link>
+          ) : null}
+          {escapes.length > 0 ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              {escapes.map((escape) => (
+                <button
+                  key={escape.radiusMiles}
+                  type="button"
+                  disabled={escapesDisabled}
+                  onClick={() => void handleEscape(escape.radiusMiles)}
+                  className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {busyRadius === escape.radiusMiles ? 'Updating…' : escape.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {escapeError !== null ? <p className="text-sm text-red-600">{escapeError}</p> : null}
+          {/* meetup-empty-state: THE LOCATION-SEEDED CREATE. Distinct from the
+              "Post a drop-in" link V23 removed — that one carried nothing; this one
+              carries the viewer's OWN location (the home zip) through the
+              PlacePrefill router state, so the post starts where the parent already
+              is. Rendered only when the seam named that place (createHere !== null),
+              so it is never a control that swallows its tap. Secondary, below the
+              escapes: the escapes answer "is it worth widening?", this answers "or
+              start one here". Absent on Browse, which never passes the prop. */}
+          {createHere !== null ? (
+            <button
+              type="button"
+              data-testid="empty-radius-create-here"
+              onClick={() => navigate('/new', { state: { place: createHere } })}
+              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50"
+            >
+              Create one here
+            </button>
+          ) : null}
+          {showPostCta ? (
+            <Link
+              to="/new"
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
+            >
+              Post a drop-in
+            </Link>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }

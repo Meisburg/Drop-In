@@ -2747,6 +2747,38 @@ export function radiusEscapes(radiusMiles: number): RadiusEscape[] {
 }
 
 /**
+ * The ONE-STEP widen (empty-state-one-button, Jon's doctrine 2026-10-08: the
+ * empty state offers ONE button — "WIDEN THE SEARCH" — not the ladder).
+ *
+ * `radiusEscapes` above offers up to three radii at once (back-to-default,
+ * widen, see-all); this returns the ONE next step: the smallest preset in
+ * `RADIUS_MILES_OPTIONS` STRICTLY LARGER than `radiusMiles` — 2 → 5 → 10 →
+ * 20 → 35. A single tap lands the immediate next radius, the copy line
+ * re-names itself with it, and a further tap takes the next step, so the
+ * parent never faces a row of choices.
+ *
+ * Returns null at the ceiling (`RADIUS_MAX_MILES`): at 35 miles nothing is
+ * further out, so the button must not render — a widen that cannot widen is
+ * the dead control this component exists to remove — and the empty state is
+ * honestly terminal, the ruling `radiusEscapes` already carries for its empty
+ * list at the max (narrowing can never surface what 35 did not).
+ */
+export function nextWidenRadius(radiusMiles: number): number | null {
+  for (const option of RADIUS_MILES_OPTIONS) {
+    if (option > radiusMiles) return option
+  }
+  return null
+}
+
+/**
+ * The single widen button's label (empty-state-one-button), pinned as a const
+ * so the e2e spec asserts against the SAME string the app renders rather than
+ * a copy of it (the `emptyRadiusCopy` / `EMPTY_RADIUS_BROWSE_LABEL`
+ * discipline). The words are Jon's own: "WIDEN THE SEARCH."
+ */
+export const WIDEN_SEARCH_LABEL = 'Widen the search'
+
+/**
  * One row of the feed's persistent radius picker: the radius it writes + the
  * `<option>`'s own copy (V16 t06 item 1).
  */

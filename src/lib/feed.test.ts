@@ -93,6 +93,7 @@ import {
   distanceChoiceFromValue,
   feedZipSaveIsNoop,
   milesWord,
+  nextWidenRadius,
   distanceSelectValue,
   type DistanceChoice,
   RADIUS_MILES_OPTIONS,
@@ -127,6 +128,7 @@ import {
   validateRadiusMiles,
   WHILE_AWAY_ITEM_LIMIT,
   WIDEN_RADIUS_MILES,
+  WIDEN_SEARCH_LABEL,
   withinRadius,
   type FeedPost,
   type GoingPinger,
@@ -2919,6 +2921,40 @@ describe('radiusEscapes (V8 ticket 02 + V11 ticket 01: the way out of an empty r
     // widen escapes. The case still matters: a far-zip parent at 2 miles must
     // never be left with an empty escape list.
     expect(radiusEscapes(2).map((e) => e.radiusMiles)).toEqual([20, 35])
+  })
+})
+
+describe('nextWidenRadius (empty-state-one-button: the ONE-STEP widen, Jon\'s doctrine)', () => {
+  it('takes the IMMEDIATE next preset, never the whole ladder', () => {
+    // The doctrine's button re-queries at the next larger radius PRESET —
+    // one step at a time, the copy line re-naming itself after each tap —
+    // instead of the `radiusEscapes` row of up to three buttons.
+    expect(nextWidenRadius(1)).toBe(2)
+    expect(nextWidenRadius(2)).toBe(5)
+    expect(nextWidenRadius(5)).toBe(10)
+    expect(nextWidenRadius(10)).toBe(20)
+    expect(nextWidenRadius(20)).toBe(35)
+  })
+
+  it('is null at the 35-mile ceiling (honestly terminal — no dead button)', () => {
+    // At the max there is nothing further out; the button must not render
+    // rather than swallow its tap (the same ruling `radiusEscapes` carries
+    // for its empty list at the max).
+    expect(nextWidenRadius(35)).toBeNull()
+  })
+
+  it('never returns a radius at or below the current one, for any input radius', () => {
+    for (const radius of RADIUS_MILES_OPTIONS) {
+      const next = nextWidenRadius(radius)
+      if (next !== null) {
+        expect(next, `${radius} must step strictly up the preset ladder`).toBeGreaterThan(radius)
+        expect(RADIUS_MILES_OPTIONS).toContain(next)
+      }
+    }
+  })
+
+  it('pins the button\'s label (the spec asserts the SAME string the app renders)', () => {
+    expect(WIDEN_SEARCH_LABEL).toBe('Widen the search')
   })
 })
 

@@ -1422,12 +1422,22 @@ export function FeedPage() {
            (the S9 pin in feed-empty-state.e2e.ts: the empty radius draws the
            home-pin map when the Map toggle is tapped). This slice therefore
            does NOT add a map to the list view — that split is deliberate and
-           pinned. It adds only the location-seeded create. */
+           pinned. It adds only the location-seeded create.
+
+           empty-state-one-button (Jon's doctrine, 2026-10-08): the feed's empty
+           state now offers ONE control. Jon: *"I'm a minimalist and I don't
+           wanna make the user think ... there should just be one button here ...
+           WIDEN THE SEARCH."* So the feed passes `widenOnly` — the state renders
+           its honest count line and the single filled "Widen the search" button
+           (the immediate next radius preset, one step per tap), and suppresses
+           the browse door, the escape ladder, the create CTA and the headline.
+           This supersedes the props below (showBrowseCta / showCreateHere) for
+           the FEED only: Browse never passes `widenOnly`, so its render is
+           byte-for-byte unchanged. */
         <RadiusEmptyState
           radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
           showPostCta={false}
-          showBrowseCta
-          showCreateHere
+          widenOnly
           beyondRadiusCount={beyondRadiusCount}
         />
       ) : feedViewShowsMap(feedView) ? (
@@ -1550,15 +1560,19 @@ export function FeedPage() {
               No drop-ins have a location yet — switch to List to see them all.
             </div>
           )}
-          {/* The empty radius keeps its honest count, its one-tap widen escapes
-              and its directory door UNDER the map (V27 slice 1 / V31 v31-1):
+          {/* The empty radius keeps its honest count and its ONE widen control
+              UNDER the map (V27 slice 1 / V31 v31-1 / empty-state-one-button):
               the map answers "where am I?", not "is it worth widening?".
-              Dropping the card would trade one dead end for another. */}
+              Dropping the card would trade one dead end for another.
+              empty-state-one-button: this map-view card now matches the list
+              view — `widenOnly`, the single "Widen the search" button, the
+              browse door and escape ladder suppressed (the doctrine is per
+              CALLER, not per view). */}
           {posts.length === 0 ? (
             <RadiusEmptyState
               radiusMiles={profile.radius_miles ?? DEFAULT_RADIUS_MILES}
               showPostCta={false}
-              showBrowseCta
+              widenOnly
               beyondRadiusCount={beyondRadiusCount}
             />
           ) : null}
