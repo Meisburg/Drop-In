@@ -70,6 +70,9 @@ import { hasHomeZip } from '../lib/homeZip'
 // (`savedPlaceIdSetAfterToggle`), so the picker's collection cannot drift from
 // the directory's.
 import { savedPlaceIdSetAfterToggle } from '../lib/follows'
+// V37 slice B (`T6N3`): the pure bookkeeping behind the in-flow add-a-kid — which
+// kid the add created, and how the picker lands back in the flow with it selected.
+import { newlyAddedKidIds, selectionAfterAdd } from '../lib/inlineAddKid'
 import type { DuplicatePrefill, Kid, Place, PlacePrefill } from '../lib/types'
 
 /**
@@ -762,6 +765,28 @@ export function NewPlaydatePage({
     )
   }
 
+  /**
+   * V37 slice B (`T6N3`): the in-flow add came back with the refreshed kid list.
+   *
+   * ⚠️ IT SELECTS THE NEW KID, which is the difference between "the kid exists"
+   * and "the parent is back in the flow". The brief forbids a second tap to
+   * resume; leaving the new chip unpressed would be exactly that tap. The newly
+   * added kid is the one id in `rows` that was not in the previous list, so it is
+   * found by difference rather than guessed (the list arrives ordered, and taking
+   * the last row would be a coincidence, not a rule).
+   *
+   * Nothing else moves: no navigation, no reset. The draft flag is set because
+   * adding a kid is a user edit, so the draft persists like any other field.
+   */
+  function handleKidAdded(rows: Kid[]) {
+    draftDirty.current = true
+    const added = newlyAddedKidIds(kids ?? [], rows)
+    setKids(rows)
+    if (added.length > 0) {
+      setSelectedKidIds((prev) => selectionAfterAdd(prev, added))
+    }
+  }
+
   function update<K extends keyof PlaydateFormValues>(field: K, value: PlaydateFormValues[K]) {
     // r3-9: a user-initiated field change is what makes the form a draft (the
     // write effect below keys off this flag — a mount with no edits writes
@@ -1438,6 +1463,12 @@ export function NewPlaydatePage({
         kids={kids}
         selectedKidIds={selectedKidIds}
         onToggleKid={toggleKid}
+        /* V37 slice B (`T6N3`): an in-flow add finishes HERE, not in Settings. The
+           page swaps in the refreshed list and SELECTS the new kid, so the parent
+           comes back to the flow with the kid already coming along — the "second
+           tap to resume" the brief forbids. Nothing navigates and nothing unmounts,
+           so every field already filled still holds its value. */
+        onKidAdded={handleKidAdded}
         /* V10 ticket 02: the kids picker SURFACES above the disclosure when
            this parent has kids (the slot renders the section); null/loading
            keeps the picker inside the disclosure — today's exact form. */

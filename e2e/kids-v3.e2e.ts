@@ -176,7 +176,7 @@ async function postMarkerDropInWithKids(
   // "Add kids" link) is ABSENT (the pin: it renders only when the
   // marker has no kids).
   await expect(page.getByText('Kids you\'re bringing')).toBeVisible()
-  await expect(page.getByText('Add your kids in your settings')).toHaveCount(0)
+  await expect(page.getByTestId('inline-add-kid')).toHaveCount(0)
   for (const kid of kids) {
     await page.getByRole('button', { name: `${kid.first_name} · Age ${kid.age}`, exact: true }).click()
   }

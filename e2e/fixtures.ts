@@ -592,7 +592,7 @@ function postgrestCredentials(): { restUrl: string; key: string } {
  */
 async function postgrest<T>(
   label: string,
-  method: 'GET' | 'PATCH',
+  method: 'GET' | 'PATCH' | 'DELETE',
   path: string,
   options: { body?: unknown } = {},
 ): Promise<{ result: AdminResult; rows: T[] }> {
@@ -1245,4 +1245,36 @@ export async function dismissRsvpConfirmationIfOpen(page: Page): Promise<void> {
   if ((await gotIt.count()) === 0) return
   await gotIt.click()
   await expect(page.getByTestId('rsvp-confirmation')).toHaveCount(0)
+}
+
+/**
+ * V37 slice B (`T6N3`) — read the `kids` rows for one first name.
+ *
+ * The spec's proof that the inline form WROTE A ROW, rather than only updating the
+ * DOM: the same "read it back" discipline the admin helpers use. Exact-name match
+ * on purpose — the spec mints a name unique to the run, so a fuzzy match could
+ * pick up another family's kid and quietly pass.
+ */
+export async function listKidRows(firstName: string): Promise<Array<{ id: string; age: number }>> {
+  const { result, rows } = await postgrest<{ id: string; age: number }>(
+    `read kids named ${firstName}`,
+    'GET',
+    `kids?first_name=eq.${encodeURIComponent(firstName)}&select=id,age`,
+  )
+  if (!result.ok) throw new Error(`reading kids failed: ${result.output}`)
+  return rows
+}
+
+/**
+ * V37 slice B (`T6N3`) — delete one `kids` row by id, so a spec that creates a kid
+ * does not leave it in the founder's real data. Throws when the delete did not
+ * land, rather than reporting a clean-up that did not happen.
+ */
+export async function deleteKid(kidId: string): Promise<void> {
+  const { result } = await postgrest(
+    `delete kid ${kidId}`,
+    'DELETE',
+    `kids?id=eq.${encodeURIComponent(kidId)}`,
+  )
+  if (!result.ok) throw new Error(`deleting kid ${kidId} failed: ${result.output}`)
 }

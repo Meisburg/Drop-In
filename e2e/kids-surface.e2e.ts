@@ -101,9 +101,10 @@ test('with kids, the picker surfaces above the disclosure, the hint swaps, and a
     await expect(chip).toBeVisible()
     await expect(chip).toHaveAttribute('aria-pressed', 'false')
   }
-  // The empty state ("Add your kids in your settings") is ABSENT — the marker
-  // has kids.
-  await expect(page.getByText('Add your kids in your settings')).toHaveCount(0)
+  // The in-flow add-a-kid form is ABSENT — the marker has kids, so the picker
+  // renders instead of the empty state (V37-B: this used to assert the absence of
+  // the "Add your kids in your settings" sentence, which the inline form replaced).
+  await expect(page.getByTestId('inline-add-kid')).toHaveCount(0)
 
   // V13 ticket 02: the "More options" disclosure is GONE — the kids section now
   // renders LAST in the form flow, right before the Post button (the AC's order:
@@ -177,8 +178,12 @@ test('with no kids, /new renders today\u2019s form (picker inside the disclosure
   await expect(page.getByTestId('more-options-body')).toHaveCount(0)
   await expect(page.getByText("Kids you're bringing")).toBeVisible()
   // Loading vs empty is kids-state-dependent, but a no-rows parent gets the
-  // designed empty state (the load resolves to [] for a kidless profile).
-  await expect(page.getByText('Add your kids in your settings')).toBeVisible()
+  // designed empty state — which since V37-B is the IN-FLOW add-a-kid form rather
+  // than a sentence pointing at Settings (the founder: *"bring 'add your kids'
+  // into the outing flow instead of stopping the parent and sending them to
+  // Settings"*). The Settings door survives as the secondary line below it.
+  await expect(page.getByTestId('inline-add-kid')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Manage kids in Settings' })).toBeVisible()
 })
 
 test.afterEach(async () => {

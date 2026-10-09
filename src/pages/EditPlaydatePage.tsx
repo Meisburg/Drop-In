@@ -27,6 +27,8 @@ import type {
   PlaydateFormErrors,
   PlaydateFormValues,
 } from '../lib/feed'
+// V37 slice B (`T6N3`): the same in-flow add bookkeeping `/new` uses.
+import { newlyAddedKidIds, selectionAfterAdd } from '../lib/inlineAddKid'
 import type { Kid, Neighborhood, PlaydateWithNeighborhood } from '../lib/types'
 
 type EditState =
@@ -195,6 +197,26 @@ export function EditPlaydatePage() {
     )
   }
 
+  /**
+   * V37 slice B (`T6N3`): the in-flow add-a-kid landed here too. `/edit` renders
+   * the SAME picker as `/new`, so it can reach the same no-kids state (a parent
+   * who deleted their kids after posting) — and an add that did not refresh THIS
+   * page's list would leave the new kid invisible until a reload, which is the
+   * half-finished door the slice exists to avoid. Same pure bookkeeping as `/new`:
+   * name what the add created, then select it so the parent is back in the flow.
+   *
+   * Note there is no draft machinery here (the post already exists), so unlike
+   * `/new` this cannot lose an unsaved field — the row is what is at stake, and it
+   * is untouched until the parent presses Save.
+   */
+  function handleKidAdded(rows: Kid[]) {
+    const added = newlyAddedKidIds(kids ?? [], rows)
+    setKids(rows)
+    if (added.length > 0) {
+      setSelectedKidIds((prev) => selectionAfterAdd(prev, added))
+    }
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (state.status !== 'ready' || submitting) return
@@ -328,6 +350,7 @@ export function EditPlaydatePage() {
         kids={kids}
         selectedKidIds={selectedKidIds}
         onToggleKid={toggleKid}
+        onKidAdded={handleKidAdded}
         submitLabel="Save changes"
         submittingLabel="Saving…"
         submitBusy={submitting}
