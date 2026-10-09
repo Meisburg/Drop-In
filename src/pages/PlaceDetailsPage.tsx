@@ -475,7 +475,7 @@ export function PlaceDetailsPage() {
         onClick={startHere}
         className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
       >
-        Start a drop-in here
+        Host a drop-in here
       </button>
 
       {/* ---- Save: how many families, and the bookmark. Saving keeps a place on

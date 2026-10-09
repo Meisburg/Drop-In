@@ -360,7 +360,7 @@ export function RadiusEmptyState({
               to="/new"
               className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
             >
-              Post a drop-in
+              Create a drop-in
             </Link>
           ) : null}
         </>

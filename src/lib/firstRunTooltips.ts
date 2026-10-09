@@ -193,7 +193,7 @@ export interface TooltipStep {
 const LABEL_TO_TARGET: Record<string, TooltipTargetId> = {
   'Drop Ins': 'dropIns',
   Inbox: 'inbox',
-  'Post a drop-in': 'post',
+  'Create a drop-in': 'post',
   Places: 'places',
   Profile: 'profile',
 }

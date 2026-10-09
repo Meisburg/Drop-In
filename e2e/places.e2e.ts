@@ -430,7 +430,7 @@ test('the Places tab is the seeded directory, and anon can read it (RED pre-0029
   await expect(page.getByTestId('places-see-all')).toHaveCount(0)
 })
 
-test('tapping an overview map marker shows the place info + "Start a drop-in" (V13 ticket 05 A6)', async ({
+test('tapping an overview map marker shows the place info + "Host a drop-in" (V13 ticket 05 A6)', async ({
   page,
 }) => {
   await openPlacesTab(page)
@@ -509,7 +509,7 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
   // V15 ticket 04: the renamed action button is visible with its new label.
   const startDropInBtn = info.getByTestId('host-here')
   await expect(startDropInBtn).toBeVisible()
-  await expect(startDropInBtn).toHaveText('Start a drop-in')
+  await expect(startDropInBtn).toHaveText('Host a drop-in')
 
   // V17 t01 REGRESSION GUARD — REACHABILITY, not just visibility.
   //
@@ -585,7 +585,7 @@ test('tapping an overview map marker shows the place info + "Start a drop-in" (V
       },
       {
         message:
-          'the Start a drop-in button must be the topmost element at its own centre once the ' +
+          "the Host a drop-in button must be the topmost element at its own centre once the " +
           'bubble settles — a clipped (overflow-hidden ancestor) or covered button is NOT ' +
           'reachable, even though toBeVisible() passes',
       },
@@ -2067,7 +2067,7 @@ test('the place page reads name → description → the two actions → the map 
   ).toBeGreaterThan(actionsBox.y + actionsBox.height - 1)
   expect(
     startBox.y,
-    'the map must sit above "Start a drop-in here"',
+    'the map must sit above "Host a drop-in here"',
   ).toBeGreaterThan(mapBox.y)
 
   // (2a) ONE ROW at the default (desktop) width, in the founder's order.
@@ -2205,7 +2205,7 @@ test('picking a place on /new posts a drop-in that links to its place page, whic
   await expect(page.locator('a').filter({ hasText: title }).first()).toBeVisible()
 })
 
-test('"Start a drop-in here" prefills the post form with that place', async ({ page }) => {
+test('"Host a drop-in here" prefills the post form with that place', async ({ page }) => {
   await openPlacesTab(page)
   await useAnyDistance(page)
   // V27: the search input is an always-visible inline field; type to narrow
@@ -2232,7 +2232,7 @@ test('"Start a drop-in here" prefills the post form with that place', async ({ p
   )
   // A prefill is not "typing": no suggestion list is left hanging open.
   await expect(page.getByTestId('place-suggestions')).toHaveCount(0)
-  await expect(page.getByText(/Start a drop-in here/)).toHaveCount(0)
+  await expect(page.getByText(/Host a drop-in here/)).toHaveCount(0)
 })
 
 test('the Places tab narrows to indoor kinds through the pill row', async ({ page }) => {

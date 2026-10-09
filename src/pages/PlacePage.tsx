@@ -1210,7 +1210,7 @@ export function PlacePage() {
           onClick={startHere}
           className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-500"
         >
-          Start a drop-in here
+          Host a drop-in here
         </button>
         <p className="mt-2 text-xs text-indigo-700">
           Fills this place in on the post form — you pick the time.

@@ -1817,7 +1817,7 @@ function DirectoryRow({
   const proofLine = dropInProofLine(proof, nowIso ?? new Date().toISOString())
   const inviteLine =
     row.upcomingCount === 0 && proofLine === null
-      ? 'Be the first to start a drop-in here today!'
+      ? 'Be the first to host a drop-in here today!'
       : null
   /**
    * V27 — the review quote, truncated to ~96 chars on a word boundary (the
@@ -2008,7 +2008,7 @@ function DirectoryRow({
               className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none hover:bg-indigo-700"
             >
               <DropInMark variant="mono" className="h-4 w-4 shrink-0" />
-              Start a drop-in
+              Host a drop-in
             </button>
           ) : null}
           {learnMore !== null ? (
