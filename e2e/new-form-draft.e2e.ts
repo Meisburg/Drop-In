@@ -47,12 +47,15 @@ test('leaving /new mid-form keeps a draft; returning restores it (disclosure); p
   await page.getByPlaceholder(PLACE_PLACEHOLDER).fill(place)
   await page.getByPlaceholder(ADDRESS_PLACEHOLDER).fill(address)
 
-  // 2 — LEAVE MID-FORM. The marker host has no kids, so the kids section's
-  // no-kids empty state renders its "Add kids" link — the founder's exit.
+  // 2 — LEAVE MID-FORM. The marker host has no kids, so the kids section renders
+  // the V37-B in-flow add-a-kid form. The founder's exit to the fuller Settings
+  // editor is the SECONDARY link below it (the primary action is now adding a kid
+  // in place, which does NOT leave the form).
   // (If the marker ever gains kids the link disappears, and the spec fails
   // loudly here: a spec that cannot leave the form cannot test a draft.)
-  await expect(page.getByRole('link', { name: 'Add kids' })).toBeVisible()
-  await page.getByRole('link', { name: 'Add kids' }).click()
+  await expect(page.getByTestId('inline-add-kid')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Manage kids in Settings' })).toBeVisible()
+  await page.getByRole('link', { name: 'Manage kids in Settings' }).click()
   await settleOnRoute(page, '/settings')
 
   // 3 — RETURN TO /new. A cold load in the SAME tab, so sessionStorage

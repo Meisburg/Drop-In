@@ -1,6 +1,9 @@
 import type { FormEvent, ReactNode } from 'react'
 import { useState } from 'react'
 import { Link } from 'react-router'
+// V37 slice B (`T6N3`): the in-flow add-a-kid form — the SAME fields, validation
+// and write the profile/settings editor uses, offered where the flow needs it.
+import { InlineAddKidForm } from './InlineAddKidForm'
 import {
   durationLabel,
   formatTimeLabel,
@@ -180,6 +183,14 @@ export interface PlaydateFormFieldsProps {
   selectedKidIds: string[]
   onToggleKid: (kidId: string) => void
   /**
+   * V37 slice B (`T6N3`): called with the parent's REFRESHED kid list after the
+   * in-flow `InlineAddKidForm` adds one, so the page can put the new kid in the
+   * picker without a navigation. Optional: the EDIT form (`/playdate/:id/edit`)
+   * never renders the no-kids empty state's form, so it passes nothing and its
+   * render is unchanged.
+   */
+  onKidAdded?: (kids: Kid[]) => void
+  /**
    * V8 ticket 07: the /new-only place AUTOCOMPLETE — the matches for what the
    * parent has typed, rendered INLINE (in the form's flow, never as an overlay:
    * an absolutely-positioned dropdown over a 375px form would cover the next
@@ -269,6 +280,7 @@ export function PlaydateFormFields({
   kids,
   selectedKidIds,
   onToggleKid,
+  onKidAdded,
   placeSuggestionsOpen = false,
   placeSuggestions,
   onPickPlace,
@@ -792,12 +804,37 @@ line. No kids yet → the designed empty state + the /settings link (the
       {kids === null ? (
         <p className="text-sm text-slate-500">Loading your kids…</p>
       ) : kids.length === 0 ? (
-        <p className="text-sm text-slate-600">
-          Add your kids in your settings, then pick the ones coming along.{' '}
-          <Link to="/settings" className="text-indigo-600">
-            Add kids
-          </Link>
-        </p>
+        /* ⚠️ V37 slice B (`T6N3`) — THE PARENT IS NO LONGER SENT AWAY. This read
+           "Add your kids in your settings, then pick the ones coming along."
+           followed by a link to /settings. That instruction was not wrong, but
+           following it ABANDONS A HALF-WRITTEN OUTING: the parent is stopped at the
+           exact moment they are most committed (place chosen, time picked, kids
+           missing), and the draft is left behind. The founder: *"I'd also bring
+           'add your kids' into the outing flow instead of stopping the parent and
+           sending them to Settings."*
+
+           So the same form is rendered IN PLACE (`InlineAddKidForm` — the same
+           fields, the same `validateKid`, the same `MAX_KIDS_PER_PROFILE`, the
+           same `addKid` write as the profile/settings editor). It never navigates:
+           on success the page refreshes its kid list and every field the parent
+           already filled still holds its value, because nothing unmounts.
+
+           ⚠️ THE SETTINGS DOOR IS KEPT, not replaced. The link below is the path a
+           parent who prefers the fuller editor still takes — this ADDS a door, it
+           does not close the other one. */
+        <div className="flex flex-col gap-2">
+          <InlineAddKidForm
+            kidCount={kids.length}
+            hint="Add a kid here — you'll stay on this form and keep what you've filled in."
+            onKidAdded={onKidAdded ?? (() => {})}
+          />
+          <p className="text-xs text-slate-500">
+            Prefer the full editor?{' '}
+            <Link to="/settings" className="text-indigo-600">
+              Manage kids in Settings
+            </Link>
+          </p>
+        </div>
       ) : (
         <div className="flex flex-wrap gap-2">
           {kids.map((kid) => {
