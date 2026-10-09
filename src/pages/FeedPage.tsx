@@ -1406,7 +1406,7 @@ export function FeedPage() {
            suppressing them was the dead end the bug report names. V27 slice 1
            therefore lets the component render its default escapes (its Browse
            caller is untouched). showPostCta stays false: the raised nav "+" is
-           the persistent post action, so a second "Post a drop-in" link here is
+           the persistent post action, so a second "Create a drop-in" link here is
            the duplication V23 removed.
 
            V31 v31-1: showBrowseCta is TRUE here and only here. The feed's parent

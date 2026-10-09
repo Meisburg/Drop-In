@@ -1663,7 +1663,7 @@ test('the list is the WHOLE list — every matching row renders with no second t
  */
 test('one tap on a picker pin writes both fields (V25 t02)', async ({ page }) => {
   await page.goto('/new')
-  await page.getByRole('heading', { name: 'Post a drop-in' }).waitFor()
+  await page.getByRole('heading', { name: 'Create a drop-in' }).waitFor()
 
   const pickerMap = page.getByTestId('place-picker-map')
   await expect(pickerMap).toBeVisible()

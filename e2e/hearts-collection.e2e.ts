@@ -288,7 +288,7 @@ test('the post form offers the saved places, and selecting one writes the form (
   // --- /new, through the feed's own action (`settleOnRoute` owns that hop:
   //     there is no Post tab any more, so it lands on the feed first). ---
   await settleOnRoute(page, '/new')
-  await expect(page.getByRole('heading', { name: 'Post a drop-in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Create a drop-in' })).toBeVisible()
 
   const door = page.getByTestId('browse-places')
   await expect(door).toBeVisible({ timeout: 15_000 })

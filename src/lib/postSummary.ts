@@ -57,8 +57,8 @@ import { everyWeekdayLabel, weekdayFromDateIso } from './series'
  * that points at the FIELD, and the field's label already read "Title" — what
  * the parent actually sees is this generated VALUE sitting in it. The founder
  * was saying the word should not be there, and the product's own vocabulary
- * agrees: the nav tab is "Drop Ins", the button says "Post a drop-in", the page
- * heading says "Post a drop-in". This constant was the one place the app called
+ * agrees: the nav tab is "Drop Ins", the button says "Create a drop-in", the page
+ * heading says "Create a drop-in". This constant was the one place the app called
  * its own central noun something else.
  *
  * WHAT THIS DOES NOT DO: it does not rewrite existing posts. `title` is a

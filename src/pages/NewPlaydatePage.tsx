@@ -1312,7 +1312,7 @@ export function NewPlaydatePage({
       {/* V3 slice 3 (ticket 06, feedback #8): the "We'll be at the park
           3–5, come by if you like." + "Open invitation, zero pressure."
           helper line is out (the ticket's quick-feedback batch). */}
-      <SectionHeader icon={NAV_ICONS.post} title="Post a drop-in" tagline="Where, when, and who’s coming" />
+      <SectionHeader icon={NAV_ICONS.post} title="Create a drop-in" tagline="Where, when, and who’s coming" />
 
       {/* r3-9: THE DISCLOSURE — ONE dismissible line, shown only when a draft
           was restored on this visit (a silent restore is its own confusion,

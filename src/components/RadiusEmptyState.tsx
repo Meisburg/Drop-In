@@ -56,7 +56,7 @@ import { LocationRequiredNotice } from './LocationRequiredNotice'
  * the escapes never turns this state into a dead end.
  *
  * V23 slice 1 adds a SECOND opt-out, `showPostCta` (default true): the feed
- * now has its own primary "Post a drop-in" button in the action row at the top
+ * now has its own primary "Create a drop-in" button in the action row at the top
  * of the page, so rendering it again inside the empty state would put TWO
  * identical CTAs on the same screen — the exact "two post a drop-in buttons"
  * complaint this slice removes. The feed passes `showPostCta={false}`; Browse
@@ -112,7 +112,7 @@ export function RadiusEmptyState({
 }: {
   radiusMiles: number
   showEscapes?: boolean
-  /** Render the "Post a drop-in" link (default true; the feed opts out). */
+  /** Render the "Create a drop-in" link (default true; the feed opts out). */
   showPostCta?: boolean
   /**
    * V31 v31-1: render the value-first headline and the door to the places
