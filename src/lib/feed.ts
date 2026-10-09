@@ -2606,6 +2606,21 @@ export const EMPTY_RADIUS_BROWSE_HEADLINE = 'Find something to do nearby'
 export const EMPTY_RADIUS_BROWSE_LABEL = 'See what’s around'
 
 /**
+ * V37 slice A (`P4K2`): the empty feed's launchpad copy, pinned as consts so the
+ * e2e spec asserts against the SAME strings the app renders rather than copies of
+ * them (the `EMPTY_RADIUS_BROWSE_LABEL` / `PAST_DROP_INS_LABEL` discipline).
+ *
+ * The headline names the founder's gap in his own terms — a parent who finds no
+ * drop-ins still needs somewhere to GO and something to DO. The line under it
+ * says WHY these places are on screen (they are nearby, they are playgrounds),
+ * and the button label is the founder's verbatim ask: *"a clear 'host the first
+ * drop-in' action."*
+ */
+export const EMPTY_RADIUS_LAUNCHPAD_HEADLINE = 'Start something here'
+export const EMPTY_RADIUS_LAUNCHPAD_LINE = 'Playgrounds near you — host the first drop-in at one.'
+export const EMPTY_RADIUS_LAUNCHPAD_ACTION = 'Host the first drop-in'
+
+/**
  * V29 v29-6: how many drop-ins exist OUTSIDE the viewer's radius but inside the
  * widest one — the honest answer to the question the empty state raises and does
  * not answer ("is it worth widening?").

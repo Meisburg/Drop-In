@@ -35,6 +35,7 @@ import {
   listMyPingPostIds,
   listMyPostRefs,
   loadZipCodes,
+  loadPlacesOrEmpty,
   listPingProfileIdsForPosts,
   listPingsForPosts,
   listRadiusFeed,
@@ -70,6 +71,9 @@ import {
   WHILE_AWAY_ITEM_LIMIT,
   type WhileAwayInbox,
 } from '../lib/feed'
+// V37 slice A (`P4K2`): the empty feed's launchpad — the pure rule that picks up
+// to three nearby playgrounds for the empty state (lib/feedLaunchpad.ts).
+import { nearbyPlaygrounds } from '../lib/feedLaunchpad'
 import { geocodeAddress } from '../lib/geocode'
 import type { DailyForecast } from '../lib/weather'
 import {
@@ -85,7 +89,7 @@ import {
 // this module owns the decisions around it.
 import { FEED_VIEW_DEFAULT, FEED_VIEW_LABELS, feedViewShowsMap, type FeedView } from '../lib/feedView'
 import type { ZipCoords } from '../lib/feed'
-import type { PlaydateWithNeighborhood } from '../lib/types'
+import type { Place, PlaydateWithNeighborhood } from '../lib/types'
 
 /**
  * The retention cursor's restamp window (V3 slice 9, ticket 04): the
@@ -304,6 +308,20 @@ export function FeedPage() {
    * gazetteer is never an error state, and never an empty page).
    */
   const [zipCoords, setZipCoords] = useState<ReadonlyMap<string, ZipCoords> | null>(null)
+  /**
+   * V37 slice A (`P4K2`): the places directory, for the empty feed's launchpad.
+   *
+   * ⚠️ THIS IS NOT A SECOND QUERY. `loadPlacesOrEmpty` is the SAME read the
+   * browse surfaces use, and `loadPlaces` CACHES its promise for the SPA session
+   * (db.ts), so if Browse has run — or if anything else has — this resolves from
+   * that one read. On a cold feed it issues the one directory read Browse would
+   * have issued anyway, not an extra one on top of it.
+   *
+   * It degrades to an EMPTY map on failure (the documented `loadPlacesOrEmpty`
+   * contract), which the launchpad renders as "no playgrounds" → the existing
+   * state, unchanged. A failed directory read must never break the feed.
+   */
+  const [places, setPlaces] = useState<readonly Place[] | null>(null)
   // V3 slice 2 (ticket 02): the Today-section cards' "Rain likely" labels
   // (post id → forecast; null = no badge and no chip panel). Best-effort —
   // the wrapper never rejects, so a failed fetch just leaves the entry null
@@ -479,6 +497,50 @@ export function FeedPage() {
       cancelled = true
     }
   }, [])
+
+  /**
+   * V37 slice A (`P4K2`): the directory read for the empty feed's launchpad — the
+   * SAME cached read Browse performs (`loadPlacesOrEmpty`; see the state's own
+   * comment for why this is not a second query). Fetched once on mount, like the
+   * gazetteer above, because the launchpad is a fallback surface: it only ever
+   * renders when the feed is EMPTY, and loading it lazily at that moment would
+   * put a network round-trip between the parent and the one useful thing on the
+   * screen.
+   *
+   * A failure degrades to an empty array → no playgrounds → the state renders
+   * exactly what it rendered before this slice. No error state, because a
+   * directory read failing is not the parent's problem and the feed still works.
+   */
+  useEffect(() => {
+    let cancelled = false
+    loadPlacesOrEmpty()
+      .then((map) => {
+        if (!cancelled) setPlaces([...map.values()])
+      })
+      .catch(() => {
+        if (!cancelled) setPlaces([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /**
+   * V37 slice A (`P4K2`): the empty feed's launchpad rows — up to three nearby
+   * playgrounds, nearest first, each with its distance. The rule is the pure seam
+   * (`nearbyPlaygrounds`, lib/feedLaunchpad.ts, sibling-tested); this only supplies
+   * its inputs: the directory read above, the viewer's home zip, the radius the
+   * feed just filtered by (the SAME value the count line names), and the gazetteer.
+   *
+   * Empty until `places` settles, and empty whenever nothing qualifies — in both
+   * cases the empty state renders its existing panel unchanged.
+   */
+  const launchpadPlaygrounds = nearbyPlaygrounds(
+    places ?? [],
+    profile?.home_zip ?? null,
+    profile?.radius_miles ?? DEFAULT_RADIUS_MILES,
+    zipCoords,
+  )
 
   /**
    * V19 t02: the home pin's coordinates — the stored `home_zip` resolved through
@@ -1439,6 +1501,7 @@ export function FeedPage() {
           showPostCta={false}
           widenOnly
           beyondRadiusCount={beyondRadiusCount}
+          playgrounds={launchpadPlaygrounds}
         />
       ) : feedViewShowsMap(feedView) ? (
         /* V21 t09 (A9): MAP VIEW — the map band is the primary content, given

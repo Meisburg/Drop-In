@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router'
 import { updateHomeZipRadius } from '../lib/db'
 import { hasHomeZip } from '../lib/homeZip'
 import { createHerePrefill } from '../lib/feedCreateHere'
-import { emptyRadiusBeyondCopy, emptyRadiusCopy, nextWidenRadius, radiusEscapes, radiusSaveErrorMessage, WIDEN_SEARCH_LABEL, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../lib/feed'
+import { launchpadPrefill, type LaunchpadPlace } from '../lib/feedLaunchpad'
+import { emptyRadiusBeyondCopy, emptyRadiusCopy, nextWidenRadius, radiusEscapes, radiusSaveErrorMessage, WIDEN_SEARCH_LABEL, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL, EMPTY_RADIUS_LAUNCHPAD_HEADLINE, EMPTY_RADIUS_LAUNCHPAD_LINE, EMPTY_RADIUS_LAUNCHPAD_ACTION } from '../lib/feed'
 import { useSessionContext } from './SessionProvider'
 import { LocationRequiredNotice } from './LocationRequiredNotice'
 
@@ -100,6 +101,26 @@ import { LocationRequiredNotice } from './LocationRequiredNotice'
  * Every other control (the browse door + headline, the escape ladder, the
  * location-seeded create, the post CTA) is suppressed in this mode: one
  * button, not four.
+ *
+ * V37 slice A (`P4K2`, the launchpad): the empty state stops being a dead end by
+ * naming up to THREE nearby playgrounds, each with its distance and a control
+ * that hosts a drop-in THERE. The feed's cold-start measurement is why: 234
+ * places (151 playgrounds) and ZERO drop-ins — supply of PLACES, none of PEOPLE.
+ * So the panel does not show more content; it converts the one parent present
+ * into the first host, using the place supply that already exists.
+ *
+ * The playgrounds arrive as a PROP (`playgrounds`), derived by the pure seam
+ * `nearbyPlaygrounds` (lib/feedLaunchpad.ts, sibling-tested) from the SAME
+ * directory read the browse surfaces use — this component does not fetch, does
+ * not know the radius, and does not pick the three. Default EMPTY, so Browse and
+ * every other caller render BYTE-FOR-BYTE what they rendered before. An empty
+ * list renders NOTHING extra: never an empty list, never a placeholder row — the
+ * state must never be worse than it is today.
+ *
+ * It is gated on `widenOnly` (the feed's mode), because that is the mode whose
+ * doctrine it extends: the host action at a NAMED playground becomes that panel's
+ * primary control, and the widen button stays the one secondary control. The
+ * launchpad therefore replaces no control — it inserts an answer ABOVE them.
  */
 export function RadiusEmptyState({
   radiusMiles,
@@ -109,6 +130,7 @@ export function RadiusEmptyState({
   showCreateHere = false,
   widenOnly = false,
   beyondRadiusCount = 0,
+  playgrounds = [],
 }: {
   radiusMiles: number
   showEscapes?: boolean
@@ -159,6 +181,17 @@ export function RadiusEmptyState({
    * second line at all — an empty city is not sold a number.
    */
   beyondRadiusCount?: number
+  /**
+   * V37 slice A (`P4K2`): up to three nearby playgrounds the empty state may
+   * name, each with its distance — derived by the pure seam `nearbyPlaygrounds`
+   * (lib/feedLaunchpad.ts) from the SAME directory read the browse surfaces use.
+   *
+   * Default `[]`, and an empty array renders NOTHING: no list, no placeholder row,
+   * no "no playgrounds" line. Browse (and every caller that does not pass it)
+   * therefore renders byte-for-byte what it rendered before, and the state is
+   * never worse than it is today.
+   */
+  playgrounds?: readonly LaunchpadPlace[]
 }) {
   const { session, profile, refresh } = useSessionContext()
   const navigate = useNavigate()
@@ -292,13 +325,73 @@ export function RadiusEmptyState({
           prop — renders byte-for-byte unchanged. */}
       {widenOnly ? (
         <>
+          {/* V37 slice A (`P4K2`): THE LAUNCHPAD. The empty state's reason for
+              existing when there is nothing to show — a real playground, its
+              distance, and the one control that starts a drop-in THERE.
+
+              ⚠️ RENDERED ONLY WHEN THERE IS SOMETHING TO NAME. `playgrounds` is
+              empty when the seam found no playground inside the radius (or no
+              gazetteer / no zip), and then this whole block is absent: no empty
+              list, no placeholder row, no "no playgrounds" line. The state falls
+              through to exactly what it rendered before this slice.
+
+              ⚠️ IT IS THE PRIMARY CONTROL. Jon's doctrine for this panel is ONE
+              obvious action, and the one that matters at a cold start is "host
+              the first drop-in at this playground" — so the rows' controls are
+              the filled ones and the widen button below keeps its place as the
+              single secondary escape. No fourth control is added: three is the
+              founder's ask and also the cap (LAUNCHPAD_PLACE_LIMIT), and a longer
+              list would read as a directory — which is what the browse door is
+              for. */}
+          {playgrounds.length > 0 ? (
+            <div className="flex w-full flex-col gap-2">
+              <p className="text-sm font-medium text-slate-700">
+                {EMPTY_RADIUS_LAUNCHPAD_HEADLINE}
+              </p>
+              <p className="text-sm text-slate-600">{EMPTY_RADIUS_LAUNCHPAD_LINE}</p>
+              <ul className="flex list-none flex-col gap-2 p-0">
+                {playgrounds.map((row) => (
+                  <li key={row.place.id}>
+                    {/* ⚠️ THE WHOLE ROW IS THE HOST ACTION. An earlier draft put a
+                        "Host the first drop-in" label INSIDE each row, repeated three
+                        times — which both read as noise and squeezed the place name
+                        to an ellipsis ("Ballard C…") at 390px. The headline above the
+                        list already states the action once; the row's job is to say
+                        WHICH playground, and its accessible name says what tapping it
+                        does. That is the action carried once, not three times. */}
+                    <button
+                      type="button"
+                      data-testid="empty-radius-launchpad-place"
+                      data-place-id={row.place.id}
+                      aria-label={`${EMPTY_RADIUS_LAUNCHPAD_ACTION} at ${row.place.name}, ${row.distanceLabel}`}
+                      onClick={() => navigate('/new', { state: { place: launchpadPrefill(row) } })}
+                      className="flex w-full min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white px-4 py-2 text-left text-sm font-medium text-indigo-700 outline-none transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{row.place.name}</span>
+                      {/* The launchpad's own label: the same formatter the browse
+                          cards use at 1 mi and up, floored to "<1 mi" below it (see
+                          `launchpadDistanceLabel` — three real sub-mile playgrounds
+                          all read "0 mi" otherwise). `shrink-0` keeps the distance
+                          whole at 390px; the NAME truncates instead. */}
+                      <span
+                        data-testid="empty-radius-launchpad-distance"
+                        className="shrink-0 text-slate-500"
+                      >
+                        {row.distanceLabel}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {nextWiden !== null ? (
             <button
               type="button"
               data-testid="empty-radius-widen"
               disabled={escapesDisabled}
               onClick={() => void handleEscape(nextWiden)}
-              className="flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
+              className="flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 transition-colors motion-reduce:transition-none hover:bg-slate-50 disabled:opacity-50"
             >
               {busyRadius === nextWiden ? 'Updating…' : WIDEN_SEARCH_LABEL}
             </button>
