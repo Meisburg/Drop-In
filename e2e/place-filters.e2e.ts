@@ -75,20 +75,21 @@ test.describe('places directory — the open-now and top-rated gates (V27)', () 
 
     // V33-D: `Best first` is the LOAD DEFAULT (was `alpha` — the defect). The
     // control lives above the list, so it is asserted from the page, not a modal.
-    const bestFirst = page.getByTestId('places-sort-best-first')
-    const aToZ = page.getByTestId('places-sort-a-z')
-    await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
-    await expect(aToZ).toHaveAttribute('aria-pressed', 'false')
+    // 2026-10-08 (directory-polish): it is ONE DROPDOWN now — drive it with
+    // `selectOption`, read its value back, and the options keep their own testids
+    // (a label regression still surfaces here).
+    const sort = page.getByTestId('places-sort-control')
+    await expect(sort).toHaveValue('top-rated')
+    await expect(page.getByTestId('places-sort-best-first')).toHaveText('Best first (top rated)')
 
     // Switching to A–Z is a reorder, never a filter: the same rows remain.
-    await aToZ.click()
-    await expect(aToZ).toHaveAttribute('aria-pressed', 'true')
-    await expect(bestFirst).toHaveAttribute('aria-pressed', 'false')
+    await sort.selectOption('alpha')
+    await expect(sort).toHaveValue('alpha')
     await expect(rows).toHaveCount(before)
 
     // And back — still the same set.
-    await bestFirst.click()
-    await expect(bestFirst).toHaveAttribute('aria-pressed', 'true')
+    await sort.selectOption('top-rated')
+    await expect(sort).toHaveValue('top-rated')
     await expect(rows).toHaveCount(before)
   })
 })
