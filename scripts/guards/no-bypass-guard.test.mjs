@@ -314,4 +314,32 @@ describe('no-bypass guard: ordinary checkouts are unchanged', () => {
     expect(r.stdout).toContain('effective core.hooksPath')
     expect(r.stdout).not.toContain('ACCEPT:')
   }, TIME)
+
+  // The env-layer acceptance path this guard adds: an override that
+  // resolves to this repository's own tracked hooks dir is a no-op and
+  // must be accepted with a visible line, not silently.
+  it('accepts an env-layer no-op override that resolves to the tracked hooks dir', () => {
+    const { clone } = plainClone()
+    const r = runGuard(clone, {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: 'scripts/git-hooks',
+    })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('no-op override')
+  }, TIME)
+
+  // An empty env-layer value resolves to the checkout toplevel, not the
+  // tracked hooks dir — the guard must refuse it (the safe direction).
+  it('refuses an empty env-layer value (it resolves to the toplevel, not the tracked dir)', () => {
+    const { clone } = plainClone()
+    const r = runGuard(clone, {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: '',
+    })
+    expect(r.status).toBe(1)
+    expect(r.stdout).toContain('effective core.hooksPath')
+    expect(r.stdout).not.toContain('ACCEPT:')
+  }, TIME)
 })

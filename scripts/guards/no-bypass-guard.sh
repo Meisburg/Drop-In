@@ -18,6 +18,17 @@
 #                                   guarantee: nobody unwired this repo.
 #                  EFFECTIVE      — what git will actually use after all layers.
 #                  WORKTREE_HOOKS — what the per-worktree config layer says.
+#                It also reads the env config layer (GIT_CONFIG_COUNT /
+#                GIT_CONFIG_KEY_i / GIT_CONFIG_VALUE_i) directly: the env
+#                layer beats every file layer when git runs hooks, yet
+#                `git config --get` does not always report it (on git 2.55.0
+#                it resolves core.hooksPath to a lower layer), so a foreign
+#                env-layer value is refused by name, not by accident of which
+#                git version happens to surface it. The count is audited up
+#                to a cap (4096 entries): the env layer is the hostile surface
+#                this guard polices, so an oversized count is refused as an
+#                unverifiable layer — it fails closed, it does not hang or
+#                silently disable the audit.
 #                A differing effective value is ACCEPTED only for a disposable
 #                copy another tool created and owns: a linked worktree whose
 #                common git dir is outside the checkout, whose worktree config
@@ -125,6 +136,60 @@ REPO_HOOKS="$(git config --local --get core.hooksPath 2>/dev/null || true)"
 WORKTREE_HOOKS="$(git config --worktree --get core.hooksPath 2>/dev/null || true)"
 EFFECTIVE="$(git config --get core.hooksPath 2>/dev/null || true)"
 
+# The env config layer. It is not a file: --show-origin cannot name it, and
+# some git versions (2.55.0 among them) hide its core.hooksPath behind a lower
+# layer in `git config --get` — but git's hook execution honours it either
+# way, so it must be read from the environment, git version for git version.
+ENV_HOOKS=""
+ENV_LAYER=0
+# Cap on the number of env-layer entries the audit is willing to process.
+# The env layer is exactly the surface this guard polices: a hostile agent
+# can set it. An oversized GIT_CONFIG_COUNT must not hang the audit loop
+# (which would hang `npm run verify` and the pre-push chain behind it), and
+# it must not be treated as "layer absent" — an entry past the cap would
+# otherwise silently disable the hooks. Fail closed: the sentinel below
+# fires the foreign-value check, which refuses.
+ENV_COUNT_CAP=4096
+if [ -n "${GIT_CONFIG_COUNT:-}" ]; then
+  case "${GIT_CONFIG_COUNT}" in
+    *[!0-9]*) ;;  # not a count git would honour — the layer is absent
+    *)
+      # The digit-length test runs first: test(1) rejects counts beyond
+      # 64 bits with "integer expression expected" and reports false, so a
+      # bare -gt comparison alone would let a 20-digit count fall through
+      # to the loop branch. Any count of five digits is already over the
+      # cap (>= 10000 > 4096), so the length test is exact.
+      if [ "${#GIT_CONFIG_COUNT}" -gt 4 ] || [ "${GIT_CONFIG_COUNT}" -gt "$ENV_COUNT_CAP" ]; then
+        ENV_LAYER=1
+        ENV_HOOKS="<unverifiable: GIT_CONFIG_COUNT=${GIT_CONFIG_COUNT}>"
+      else
+        i=0
+        while [ "$i" -lt "${GIT_CONFIG_COUNT}" ]; do
+          # ${!var:-} (indirect, with default) — the plain ${NAME_$i:-}
+          # form is a bad substitution in bash.
+          keyvar="GIT_CONFIG_KEY_$i"
+          key="${!keyvar:-}"
+          if [ -n "$key" ]; then
+            valuevar="GIT_CONFIG_VALUE_$i"
+            value="${!valuevar:-}"
+            # git lowercases env-layer variable names before honouring them,
+            # so compare against the lowercased canonical name. Lowercase
+            # via tr rather than ${key,,}: the expansion form needs
+            # bash >= 4 and is a fatal bad substitution on stock macOS
+            # /bin/bash (3.2), which would abort the guard mid-script.
+            lc_key="$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')"
+            if [ "$lc_key" = "core.hookspath" ]; then
+              ENV_HOOKS="$value"
+              ENV_LAYER=1
+            fi
+          fi
+          i=$((i + 1))
+        done
+      fi
+      ;;
+  esac
+fi
+
 # Which layer supplied the effective value? --show-origin names it directly.
 TAB="$(printf '\t')"
 ORIGIN_LINE="$(git config --show-origin --get core.hooksPath 2>/dev/null || true)"
@@ -148,6 +213,18 @@ case "$EFF_RESOLVED" in
   "$COMMON"/*) EFF_INSIDE=1 ;;
 esac
 
+# If the env layer supplies core.hooksPath, that value is what git will
+# actually use to run hooks (it beats every file layer). It is NEVER the
+# accepted externally-owned layer (that case requires <gitdir>/config.worktree),
+# so it is refused unless it resolves to this repository's own tracked hooks
+# dir — a no-op override is harmless.
+EXPECTED_RESOLVED="$(abs_path "$EXPECTED_HOOKS_DIR" "$TOPLEVEL")"
+ENV_FOREIGN=0
+if [ "$ENV_LAYER" -eq 1 ]; then
+  ENV_RESOLVED="$(abs_path "$ENV_HOOKS" "$TOPLEVEL")"
+  [ "$ENV_RESOLVED" != "$EXPECTED_RESOLVED" ] && ENV_FOREIGN=1
+fi
+
 if [ "$LINKED" -eq 1 ] && [ "$COMMON_OUTSIDE" -eq 1 ] \
    && [ -n "$WORKTREE_HOOKS" ] && [ "$WORKTREE_HOOKS" = "$EFFECTIVE" ] \
    && [ -n "$ORIGIN_ABS" ] && [ -n "$WT_CONFIG_ABS" ] && [ "$ORIGIN_ABS" = "$WT_CONFIG_ABS" ] \
@@ -160,6 +237,15 @@ if [ "$REPO_HOOKS" != "$EXPECTED_HOOKS_DIR" ]; then
   echo "  This repository's hooks are not wired. Agents and clones are ungated."
   echo "  Fix: bash scripts/install-git-hooks.sh"
   FAIL=1
+elif [ "$ENV_FOREIGN" -eq 1 ]; then
+  echo "  FINDING: effective core.hooksPath is '${ENV_HOOKS:-<unset>}', supplied by the env config layer (GIT_CONFIG_*)."
+  echo "  The env layer beats every file layer when git runs hooks, and it is never"
+  echo "  the accepted externally-owned worktree config layer (that case requires the"
+  echo "  value to come from <gitdir>/config.worktree). A foreign env override silences this gate."
+  echo "  Fix: unset GIT_CONFIG_COUNT / GIT_CONFIG_KEY_* / GIT_CONFIG_VALUE_*, or point the env layer at the tracked hooks dir."
+  FAIL=1
+elif [ "$ENV_LAYER" -eq 1 ]; then
+  echo "  ok — env-layer core.hooksPath = $ENV_HOOKS is a no-op override (it resolves to the tracked hooks dir)"
 elif [ "$EFFECTIVE" = "$REPO_HOOKS" ]; then
   echo "  ok — core.hooksPath = $EFFECTIVE"
 elif [ "$EXTERNALLY_OWNED" -eq 1 ]; then
@@ -185,9 +271,11 @@ fi
 
 # git's own pre-push resolution points into the effective hooks dir. In an
 # externally owned copy that dir belongs to the owning tool and has no
-# pre-push, so inspect the tracked hook in this checkout instead.
+# pre-push, and an env-layer override points git at a dir it does not own
+# either — so in both cases inspect the tracked hook in this checkout instead.
 RESOLVED_HOOK="$(git rev-parse --git-path hooks/pre-push 2>/dev/null || true)"
 [ "$EXTERNALLY_OWNED" -eq 1 ] && RESOLVED_HOOK="$HOOK"
+[ "$ENV_FOREIGN" -eq 1 ] && RESOLVED_HOOK="$HOOK"
 if [ -n "$RESOLVED_HOOK" ] && [ ! -f "$RESOLVED_HOOK" ]; then
   echo "  FINDING: git cannot resolve pre-push (looked at $RESOLVED_HOOK)."
   FAIL=1
