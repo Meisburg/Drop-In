@@ -28,7 +28,25 @@ export const NAV_ICONS = {
   // family (24px viewBox, stroke 1.8, currentColor). The place control's pressed
   // state fills this silhouette instead of stroking it, so "saved" is never
   // colour-only — the fill channel is paired with the label flip (Save → Saved).
+  //
+  // Kept for the /settings index row that names it by key (`lib/settingsIndex.ts`
+  // maps its "Saved" row to `bookmark`); the SAVE CONTROL no longer draws it —
+  // see `heart` below.
   bookmark: 'M6 4h12v17l-6-4-6 4Z',
+  // heart-not-star (Jon, 2026-10-08): the place-save control is a HEART, not a
+  // bookmark. Two of his review notes asked for it in his own words — "I think
+  // this should be a HEART instead that you click on to heart it" (the directory
+  // row) and "I want this to be a heart system" (the map panel). A bookmark means
+  // "mark this to read later"; a heart means "I love this", which is what the
+  // control actually records (`followed_places` — how many families love a place).
+  //
+  // The path is BYTE-FOR-BYTE the app's existing heart (`REACTION_ICONS.love`,
+  // the "love" reaction), so the save control and the reaction pill draw the SAME
+  // heart rather than two hand-tuned variants. That silhouette is built to be both
+  // stroked (outline) and filled (solid), which is exactly the pressed-state
+  // channel this control needs — and it keeps the "more than colour" rule: the
+  // glyph channel differs (outline vs solid) AND the name flips (Save → Saved).
+  heart: 'M12 20.4 5 13.3a4.5 4.5 0 0 1 6.3-6.4l.7.7.7-.7A4.5 4.5 0 0 1 19 13.3Z',
   // V24 slice 04: the search field's magnifying glass (the inbox's "Message a
   // parent" picker) — a lens circle + handle in the same stroked family, so it
   // matches the rest of the icon set rather than being a pasted-in glyph.

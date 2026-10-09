@@ -1073,9 +1073,14 @@ export function PlaceDirectory({
                 after Café in the plan's order. */}
             {afterCafeKindChips.map(renderKindChip)}
 
-            {/* 6 · SAVED — the bookmark, rendered only when it is not a door to
+            {/* 6 · SAVED — the heart, rendered only when it is not a door to
                 nowhere (see `savedToggleAvailable`). It keeps its own testid and
-                `aria-label`: a signed-out viewer renders nothing extra here. */}
+                `aria-label`: a signed-out viewer renders nothing extra here.
+
+                heart-not-star: the pill draws the mark of the thing it filters
+                FOR, exactly as the Café pill draws a cup — so it must agree with
+                the save control it filters on. Jon made that control a heart, so
+                this mark is the same heart. */}
             {savedToggleAvailable ? (
               <button
                 type="button"
@@ -1100,7 +1105,7 @@ export function PlaceDirectory({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d={NAV_ICONS.bookmark} />
+                  <path d={NAV_ICONS.heart} />
                 </svg>
                 Saved
               </button>
@@ -2077,9 +2082,15 @@ function DirectoryRow({
           }}
           className="absolute right-2 top-[9.5rem] flex min-h-11 min-w-11 items-center justify-center rounded-full outline-none transition-colors motion-reduce:transition-none hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          {/* The pressed state is conveyed by MORE THAN colour: the bookmark
-              glyph fills when saved (stroked otherwise) AND the accessible name
-              flips Save → Saved. The glyph is decorative (aria-hidden). */}
+          {/* The pressed state is conveyed by MORE THAN colour: the heart glyph
+              fills when saved (stroked otherwise) AND the accessible name flips
+              Save → Saved. The glyph is decorative (aria-hidden).
+
+              heart-not-star: this was a BOOKMARK until 2026-10-08, when Jon's
+              review note on this very control asked for it by name — "I think
+              this should be a HEART instead that you click on to heart it". The
+              testid already said `place-heart-`, so the code and the founder had
+              been disagreeing about the word; the glyph now agrees with both. */}
           <svg
             viewBox="0 0 24 24"
             aria-hidden="true"
@@ -2090,7 +2101,7 @@ function DirectoryRow({
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d={NAV_ICONS.bookmark} />
+            <path d={NAV_ICONS.heart} />
           </svg>
         </button>
       ) : null}
