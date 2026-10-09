@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Post-merge — the annotation queue cleans itself when work lands.
+#
+# WHY THIS EXISTS. The annotation toolbar is the factory's intake queue, but
+# nothing ever removed a row when its slice merged. So the queue only grew: the
+# operator saw "23 pending" when the real backlog was 3, re-briefed work that was
+# already built (muzk8c1g was shipped AND re-offered; the whole /browse cluster
+# was shipped and sat "open" for hours), and the autopilot could never be trusted
+# to run on a queue that lied about its own size. A queue you cannot trust is
+# not a queue.
+#
+# WHAT IT DOES. After any merge into this clone, ask `annotation-audit` which
+# pending annotations are PROVABLY shipped (their own named anchor — a testid or
+# a quoted label — is present in master's source) and close exactly those.
+#
+# WHAT IT DELIBERATELY DOES NOT DO. It never closes an annotation the audit
+# cannot decide. The audit's third verdict, `UNKNOWN`, means the annotation
+# named no structured token — only prose. Bare words from a sentence ("instead",
+# "down", "putting") appear in thousands of unrelated lines, so treating them as
+# proof reports unbuilt work as shipped. That is the failure this hook's own
+# dependency was just fixed for. UNKNOWN is a human's call, always.
+#
+# SAFETY. Informational and best-effort: a failure here (server down, tool
+# missing) must NEVER block or fail the merge. It prints and exits 0. It is
+# read-only against git; the only write is to the annotation server.
+#
+# Install: same tracked hooks dir as pre-push (`core.hooksPath = scripts/git-hooks`),
+# so it needs no per-clone install step. Manual run: `fleet-resolve --auto`.
+
+set -uo pipefail
+
+# Never let a queue-tidy failure look like a merge failure.
+trap 'exit 0' EXIT
+
+# Only meaningful where the annotation server and the tool both live.
+command -v agentation-mcp >/dev/null 2>&1 || exit 0
+
+RESOLVE="${FLEET_RESOLVE:-$HOME/fleet/bin/fleet-resolve}"
+[ -x "$RESOLVE" ] || exit 0
+
+# The server must be up, or `--auto` prints a misleading "nothing shipped".
+if ! curl -s -o /dev/null -m 4 "${ANNOT_URL:-http://localhost:4747/pending}" 2>/dev/null; then
+  exit 0
+fi
+
+OUT="$("$RESOLVE" --auto 2>/dev/null)" || exit 0
+
+# Only speak when it actually closed something, or when asked.
+CLOSED="$(printf '%s' "$OUT" | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin); r=d.get("resolved",[])
+except Exception:
+    r=[]
+print(len(r))' 2>/dev/null || echo 0)"
+
+if [ "${CLOSED:-0}" -gt 0 ]; then
+  echo
+  echo "post-merge: annotation queue tidied — $OUT"
+fi
+
+exit 0
