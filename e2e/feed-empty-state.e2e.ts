@@ -27,7 +27,7 @@
  * It creates no rows and no accounts, so there is nothing else to sweep.
  */
 import { expect, test } from '@playwright/test'
-import { WIDEN_RADIUS_MILES, emptyRadiusCopy, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../src/lib/feed'
+import { WIDEN_RADIUS_MILES, emptyRadiusCopy, nextWidenRadius, WIDEN_SEARCH_LABEL, EMPTY_RADIUS_BROWSE_HEADLINE, EMPTY_RADIUS_BROWSE_LABEL } from '../src/lib/feed'
 import {
   E2E_BASE_URL,
   editTitle, localDatePlusDays, readMarkerMeta, readMarkerSession,
@@ -151,53 +151,31 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   // …and it never claims "today": the feed is today AND LATER.
   await expect(empty).not.toContainText(/today/i)
 
-  // V27 slice 1: the feed's empty state now renders the escape buttons again.
-  // V16 suppressed them behind a persistent radius picker that V23 removed, so
-  // the state had NO widen path of its own — the dead end the bug report names.
-  // Mirror the /browse assertions; the feed keeps its post CTA suppressed (the
-  // raised nav "+" is the persistent post action), so no "Post a drop-in" link
-  // may appear inside this empty state.
-  await expect(empty.getByRole('button', { name: 'Widen to 20 miles' })).toBeEnabled()
-  await expect(empty.getByRole('button', { name: 'See everything in Seattle' })).toBeEnabled()
+  // empty-state-one-button (Jon's doctrine, 2026-10-08): the feed's empty state
+  // offers ONE control — the filled "Widen the search" button, the immediate
+  // next radius preset. The browse door, the escape ladder, the headline and
+  // the location-seeded create are all SUPPRESSED on the feed (they remain for
+  // Browse, which never passes `widenOnly`).
+  const widen = empty.getByTestId('empty-radius-widen')
+  await expect(widen).toBeVisible()
+  await expect(widen).toBeEnabled()
+  await expect(widen).toHaveAccessibleName(WIDEN_SEARCH_LABEL)
+
+  // The doctrine's negative half: none of the suppressed controls render on
+  // the feed. This is what makes "one button, not four" a checkable claim.
+  await expect(empty.getByTestId('empty-radius-browse')).toHaveCount(0)
+  await expect(empty.getByTestId('empty-radius-create-here')).toHaveCount(0)
   await expect(empty.getByRole('link', { name: 'Post a drop-in' })).toHaveCount(0)
+  // Exactly ONE button inside the state (the widen control): the count line is
+  // text, not a control, so a second button would be a regression.
+  await expect(empty.getByRole('button')).toHaveCount(1)
 
-  /* V31 v31-1: THE DOOR, AND WHERE IT SITS. A simulated panel (NOT the
-     pre-registered test — see research/first-open-validation/2026-10-05-
-     simulated-panel.md) had two of five modelled parents reach for the places
-     directory while this state offered them three ways to widen a radius. So
-     the directory is now the state's ONE filled control, and it sits above the
-     escapes rather than beside them. */
-  const headline = empty.getByText(EMPTY_RADIUS_BROWSE_HEADLINE)
-  await expect(headline).toBeVisible()
-  const door = empty.getByTestId('empty-radius-browse')
-  await expect(door).toBeVisible()
-  await expect(door).toHaveAttribute('href', '/browse')
-  await expect(door).toHaveAccessibleName(EMPTY_RADIUS_BROWSE_LABEL)
-
-  // ORDER, measured rather than eyeballed: headline above the honest count,
-  // count above the door, door above the escapes.
-  const headlineBox = await headline.boundingBox()
-  const countBox = await empty.getByText(emptyRadiusCopy(FAR_RADIUS)).boundingBox()
-  const doorBox = await door.boundingBox()
-  const escapeBox = await empty
-    .getByRole('button', { name: 'Widen to 20 miles' })
-    .boundingBox()
-  expect(headlineBox!.y).toBeLessThan(countBox!.y)
-  expect(countBox!.y).toBeLessThan(doorBox!.y)
-  expect(doorBox!.y).toBeLessThan(escapeBox!.y)
-
-  // The 44px tap floor (the mobile audit's rule), and "filled" as a
-  // difference rather than a hex: the door's background is neither the
-  // escapes' background nor transparent, so it is the state's only filled
-  // control. Pinning the palette value would break on a theme change that is
-  // not a defect.
-  expect(doorBox!.height).toBeGreaterThanOrEqual(44)
-  const doorBg = await door.evaluate((el) => getComputedStyle(el).backgroundColor)
-  const escapeBg = await empty
-    .getByRole('button', { name: 'Widen to 20 miles' })
-    .evaluate((el) => getComputedStyle(el).backgroundColor)
-  expect(doorBg).not.toBe(escapeBg)
-  expect(doorBg).not.toBe('rgba(0, 0, 0, 0)')
+  // The 44px tap floor (the mobile audit's rule); "filled" as a difference, not
+  // a hex (pinning the palette value would break on a non-defect theme change).
+  const widenBox = await widen.boundingBox()
+  expect(widenBox!.height).toBeGreaterThanOrEqual(44)
+  const widenBg = await widen.evaluate((el) => getComputedStyle(el).backgroundColor)
+  expect(widenBg).not.toBe('rgba(0, 0, 0, 0)')
 
   // V23 slice 1: the feed's empty state no longer renders its own "Post a drop-in"
   // link — the action row at the top of the page owns the ONE primary CTA. The
@@ -205,21 +183,6 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   // that opens the shared LocationModal), which lives OUTSIDE the empty state, so
   // this assertion moves from inside `empty` to the page-level control.
   await expect(page.getByTestId('feed-location-control')).toBeVisible()
-
-  /* meetup-empty-state (meetup-a62da3b6fca2): THE LOCATION-SEEDED CREATE. The
-     feed's empty state offers "Create one here" — the empty ACTION Meetup's
-     EmptyOrError carries. It is NOT the "Post a drop-in" link V23 removed: it
-     carries the viewer's OWN location (the home zip) through the PlacePrefill
-     router state, so the post starts where the parent already is. It renders
-     only when a place can be named; this marker has a home zip (98901 by
-     pin), so it is present and enabled here. */
-  const createHere = empty.getByTestId('empty-radius-create-here')
-  await expect(createHere).toBeVisible()
-  await expect(createHere).toBeEnabled()
-  await expect(createHere).toHaveAccessibleName('Create one here')
-  // The 44px tap floor (the mobile audit's rule).
-  const createBox = await createHere.boundingBox()
-  expect(createBox!.height).toBeGreaterThanOrEqual(44)
 
   // The visibility-refresh gate's NEGATIVE half, checked on the wire: a
   // focus/visibility bounce a second after the load must issue NO new feed
@@ -238,90 +201,54 @@ test('the feed\'s empty state names the real radius, never claims "today", and o
   await page.waitForTimeout(700)
   expect(feedQueries, 'a fresh load must not be re-fetched by a focus bounce').toBe(beforeBounce)
 
-  // V23 slice 1: the feed's ONE location control (the secondary button in the action
-  // row) opens the shared LocationModal. The widen path is driven through that
-  // modal: open it, drag the slider to WIDEN_RADIUS_MILES, tap Apply,
-  // and assert the copy re-names itself with the new radius.
-  const locationControl = page.getByTestId('feed-location-control')
-  await expect(locationControl).toBeVisible()
-  await locationControl.click()
-
-  const modal = page.getByTestId('location-modal')
-  await expect(modal).toBeVisible()
-
-  // Drag the slider to the wider radius. The slider's range is 1–30 (pinned by
-  // places.e2e.ts), so WIDEN_RADIUS_MILES (20) is within range.
-  const slider = page.getByTestId('location-radius-slider')
-  await slider.fill(String(WIDEN_RADIUS_MILES))
-
-  // Tap Apply — the write goes through updateHomeZipRadius + refresh(), and the
-  // dialog closes (V28 r3-4: one control does both).
-  await page.getByTestId('location-apply-btn').click()
-  await expect(page.getByTestId('location-modal')).toHaveCount(0)
-
-  // The empty state's copy must re-name itself with the new radius.
-  await expect(empty).toContainText(emptyRadiusCopy(WIDEN_RADIUS_MILES))
-  // …and the widen really did re-issue the feed query (which also proves the
-  // request counter above observes the app's feed queries — a control for the
-  // "no refetch on a bounce" assertion).
+  // empty-state-one-button: the ONE widen control widens IN PLACE — no modal.
+  // One tap takes the immediate next preset (2 mi → 5 mi on the far location the
+  // beforeEach pins) and the count line re-names itself. This is the whole point
+  // of the doctrine: the empty state acts, it does not open another surface.
+  const nextRadius = nextWidenRadius(FAR_RADIUS)
+  expect(nextRadius, 'the far radius must have a next step to test the widen').not.toBeNull()
+  await widen.click()
+  await expect(empty).toContainText(emptyRadiusCopy(nextRadius!))
+  // …and the single widen did re-issue the feed query (a control that changes
+  // nothing would be the dead control this state exists to remove).
   await expect.poll(() => feedQueries).toBeGreaterThan(beforeBounce)
 
   // The write really landed on the marker's row (the UI could re-render from
   // its own optimistic state; the profiles row cannot).
   const stored = await readMarkerLocation()
-  expect(stored?.radius_miles).toBe(WIDEN_RADIUS_MILES)
+  expect(stored?.radius_miles).toBe(nextRadius)
   expect(stored?.home_zip).toBe(FAR_ZIP)
 })
 
 /**
- * V31 v31-1: THE DOOR ACTUALLY GOES SOMEWHERE. The assertion above proves the
- * link exists on the right screen with the right name and position; this one
- * proves the panel's behaviour — the parent who reaches for "what's around"
- * lands on the directory. It is its own test so the state's write path above
- * (which re-renders the same screen) is not entangled with a navigation.
+ * empty-state-one-button (Jon's doctrine, 2026-10-08): THE FEED OFFERS ONE
+ * CONTROL. The door test and the create-here test that used to live here proved
+ * the browse door and the location-seeded create — both SUPPRESSED on the feed by
+ * the doctrine (they remain on Browse). This test is their replacement: it pins
+ * the doctrine's central claim at the page level, on a fresh navigation, so the
+ * "one button, not four" rule is checked independently of the write path above.
  */
-test('the empty feed\'s door opens the places directory', async ({ page }) => {
+test("the empty feed's state carries exactly ONE control (the widen)", async ({ page }) => {
   await page.goto('/')
   await settleOnRoute(page, '/')
 
-  const door = page.getByTestId('empty-radius-browse')
-  await expect(door).toBeVisible()
-  await door.click()
+  const empty = page.getByTestId('empty-radius-state')
+  await expect(empty).toBeVisible()
 
+  // One button, and it is the widen. No browse door, no create-here, no post.
+  await expect(empty.getByRole('button')).toHaveCount(1)
+  await expect(empty.getByTestId('empty-radius-widen')).toBeVisible()
+  await expect(empty.getByTestId('empty-radius-browse')).toHaveCount(0)
+  await expect(empty.getByTestId('empty-radius-create-here')).toHaveCount(0)
+  await expect(empty.getByRole('link')).toHaveCount(0)
+
+  // Browse still carries its own controls (the doctrine is per-CALLER, not a
+  // global removal): the same component, reached from /browse, is unchanged.
+  await page.goto('/browse')
   await settleOnRoute(page, '/browse')
-  await expect(page).toHaveURL(/\/browse(\?|$)/)
-})
-
-/**
- * meetup-empty-state (meetup-a62da3b6fca2): THE LOCATION-SEEDED CREATE ACTUALLY
- * CARRIES THE LOCATION. The assertion above proves the control exists on the
- * right screen; this one proves the behaviour — the parent who taps "Create one
- * here" lands on /new with the viewer's OWN place PREFILLED, so the post starts
- * where they already are. That prefill is the whole difference between this
- * control and the bare "Post a drop-in" link V23 removed, so it is what must be
- * pinned: the place input arrives carrying the home label the seam names, not an
- * empty form. Its own test so the write path above (which re-renders the same
- * screen) is not entangled with a navigation.
- */
-test('the empty feed\'s "Create one here" opens the post form seeded with the viewer location', async ({
-  page,
-}) => {
-  await page.goto('/')
-  await settleOnRoute(page, '/')
-
-  const createHere = page.getByTestId('empty-radius-create-here')
-  await expect(createHere).toBeVisible()
-  await createHere.click()
-
-  await settleOnRoute(page, '/new')
-  await expect(page).toHaveURL(/\/new(\?|$)/)
-
-  // The prefill landed: the place text field carries the home label the seam
-  // wrote (createHerePrefill -> `Home (${homeZip})`), not an empty form. The
-  // address input is the same place field the /new form has always used.
-  await expect(page.getByPlaceholder('e.g. Green Lake playground, near the boathouse')).toHaveValue(
-    `Home (${FAR_ZIP})`,
-  )
+  const browseEmpty = page.getByTestId('empty-radius-state')
+  await expect(browseEmpty).toBeVisible()
+  await expect(browseEmpty.getByRole('button', { name: 'Widen to 20 miles' })).toBeEnabled()
 })
 
 /**
