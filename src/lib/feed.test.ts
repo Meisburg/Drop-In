@@ -1795,6 +1795,56 @@ describe('buildGoingLine (the card\'s going line, V3 ticket 07)', () => {
       const line = buildGoingLine(3, pingers(3), GOING_CIRCLE_LIMIT, 2, { min: 2, max: 5 })!
       expect(line.label).toBe('3 parents · 2 kids (ages 2–5)')
     })
+
+    /**
+     * V37 slice C (`R8W5`) — ONE age formatter, and the one-age-line rule kept.
+     *
+     * The v37 review asks to "show age fit more clearly on outings". The card
+     * already states an age range; what it did NOT have was a guarantee that the
+     * band's wording came from the SAME rule the detail page uses — it was a
+     * hand-rolled `ages X–Y` in this file, agreeing with `statedAgeRangeLine` by
+     * luck rather than by construction.
+     *
+     * ⚠️ WHAT THESE CASES DELIBERATELY DO **NOT** ASSERT: that the card renders a
+     * second `card-age-range` line alongside the band. It must not — that is the
+     * two-ranges-at-once card annotation `muyed1t6` was written against, and a
+     * later founder note is not overridden by an earlier brief. See
+     * `cardAgeLineDecision`'s own doc for the ruling.
+     */
+    it('⚠️ the band’s ages are the SAME string `statedAgeRangeLine` returns', () => {
+      // The pairing IS the point: whatever the app's age vocabulary becomes, the
+      // card's band and the detail page's line move together.
+      for (const [min, max] of [
+        [2, 5],
+        [0, 2],
+        [4, 4],
+        [8, 12],
+      ] as const) {
+        const line = statedAgeRangeLine(min, max)
+        expect(line, `${min}–${max} must produce a stated line`).not.toBeNull()
+        expect(goingCountsLabel(3, 2, { min, max })).toBe(`3 parents · 2 kids (${line})`)
+      }
+    })
+
+    it('⚠️ PAIRING HALF — the old hand-rolled wording was the SAME, so this is a refactor not a rewrite', () => {
+      // The previous implementation spelled the band itself. Both spellings must
+      // agree on every real band, which is what makes the change safe: if this
+      // ever fails, the refactor changed user-visible copy and needs its own
+      // decision rather than riding in on "one formatter".
+      const handRolled = (min: number, max: number) =>
+        min === max ? `age ${min}` : `ages ${min}–${max}`
+      for (const [min, max] of [
+        [2, 5],
+        [0, 2],
+        [4, 4],
+        [8, 12],
+        [17, 17],
+      ] as const) {
+        expect(goingCountsLabel(3, 2, { min, max })).toBe(
+          `3 parents · 2 kids (${handRolled(min, max)})`,
+        )
+      }
+    })
   })
 
   it('labels exactly 3 pingers with no overflow', () => {
@@ -2158,6 +2208,47 @@ describe('the age-range seams (V9 ticket 05: ages first on a card)', () => {
       expect(
         playdateAgeRangeLine({ ageMin: KID_AGE_MIN, ageMax: KID_AGE_MAX, kidAges: [6] }),
       ).toBe('all ages')
+    })
+
+    /**
+     * V37 slice C (`R8W5`), acceptance (b) — ⚠️ THE CARD'S STRING IS IDENTICAL TO
+     * THE DETAIL PAGE'S FOR THE SAME OUTING. This is the whole point of routing
+     * both surfaces through one seam, so it is asserted directly rather than
+     * inferred from each side separately.
+     *
+     * The detail page composes `statedAgeRangeLine(detail.age_min, detail.age_max)
+     * ?? ageRangeLine(kidAges)` (PlaydateDetailPage.tsx); the card composes
+     * `cardAgeRangeLabel` → `playdateAgeRangeLine`. Both are the same precedence
+     * over the same two inputs, so the strings must be EQUAL — for every shape of
+     * row, not just the happy one.
+     */
+    it('⚠️ the card and the detail page read the SAME age string for one outing', () => {
+      // The detail page's own composition, spelled here so the two cannot drift:
+      // stated first, derived as the fallback.
+      const detailPageLabel = (
+        row: { age_min?: number | null; age_max?: number | null },
+        kidAges: ReadonlyArray<number | null | undefined>,
+      ) => statedAgeRangeLine(row.age_min, row.age_max) ?? ageRangeLine(kidAges)
+
+      const cases: Array<{
+        row: { age_min?: number | null; age_max?: number | null }
+        kidAges: Array<number | null | undefined>
+      }> = [
+        { row: { age_min: 3, age_max: 6 }, kidAges: [4, 5] }, // stated wins
+        { row: { age_min: null, age_max: null }, kidAges: [3, 6] }, // derived answers
+        { row: {}, kidAges: [4] }, // pre-0037 columns absent
+        { row: { age_min: 5, age_max: null }, kidAges: [] }, // one-sided
+        { row: { age_min: null, age_max: 3 }, kidAges: [] }, // one-sided, other end
+        { row: {}, kidAges: [] }, // nothing stated, nothing derived → null
+        { row: {}, kidAges: [null, undefined] }, // no known ages → null
+      ]
+
+      for (const { row, kidAges } of cases) {
+        expect(
+          cardAgeRangeLabel(row, kidAges),
+          `card and detail must agree for ${JSON.stringify(row)} / ${JSON.stringify(kidAges)}`,
+        ).toBe(detailPageLabel(row, kidAges))
+      }
     })
   })
 
