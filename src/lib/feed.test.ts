@@ -39,6 +39,7 @@ import {
   groupByDay,
   GOING_CIRCLE_LIMIT,
   beyondRadiusCount,
+  dedupeBySlug,
   emptyRadiusBeyondCopy,
   smallHoursStartNote,
   SMALL_HOURS_END_MINUTES,
@@ -143,6 +144,7 @@ import {
 // db-v3.test.ts note — the suite already imports db.ts elsewhere).
 import {
   countPostsByHostWithClient,
+  dedupeFeedPage,
   fetchGuestListWithClient,
   HOST_POSTS_LIMIT,
   listCommentsOnPostsWithClient,
@@ -4760,5 +4762,161 @@ describe('milesWord (V16 t07 item 3 — the plural that shipped wrong once)', ()
     expect(`Nothing within 1 ${milesWord(1)} yet.`).toBe('Nothing within 1 mile yet.')
     expect(`Within 1 ${milesWord(1)}`).toBe('Within 1 mile')
     expect(`Radius: 1 ${milesWord(1)}`).toBe('Radius: 1 mile')
+  })
+})
+
+/**
+ * T4 (`meetup-patterns-d8e22536`) — DEDUPE A PAGE OF LISTINGS BY A STABLE SLUG.
+ *
+ * ⚠️ THE DEFECTS THESE CASES DETECT, NAMED. The ruling (Meetup keys a group by
+ * its `urlname`) exists because a PAGINATED list repeats an item across page
+ * boundaries. Two different things can then go wrong, and a test that only
+ * counted length would miss the second:
+ *
+ *   1. A DUPLICATE SURVIVES — the parent sees the same drop-in twice, and every
+ *      count on the page (and any "N drop-ins near you") is inflated by it.
+ *   2. AN ITEM IS SILENTLY MOVED — a naive dedupe that rebuilds the list from a
+ *      `Map` (insertion order of first-seen keys is usually fine, but a
+ *      `sort`-by-slug or a `Set`-then-`find` rebuild is not) leaves the RIGHT
+ *      LENGTH in the WRONG ORDER. The list looks correct and is not.
+ *
+ * The cases below pin BOTH: the survivor set, and the exact survivor ORDER.
+ */
+describe('dedupeBySlug (T4 — the paginated-page repeat)', () => {
+  /** A minimal listing: the slug is the app's existing identity, a uuid `id`. */
+  const post = (id: string, title = id) => ({ id, title })
+
+  /**
+   * THE SLUG READER UNDER TEST is the row's own `id` — NOT a hash of the title.
+   * Passing it explicitly here is the point: the caller declares which field is
+   * the identity, and the helper never guesses.
+   */
+  const byId = <T extends { id: string }>(row: T) => row.id
+
+  it('CASE 1 — NO DUPLICATES: the page passes through untouched, and 0 is reported', () => {
+    const page = [post('a'), post('b'), post('c')]
+    const { listings, duplicatesRemoved } = dedupeBySlug(page, byId)
+    expect(listings.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+    expect(duplicatesRemoved).toBe(0)
+    // Identity is preserved, not rebuilt: a caller holding the previous array
+    // must not have to re-render for nothing.
+    expect(listings).toHaveLength(page.length)
+  })
+
+  it('CASE 2 — ONE DUPLICATE (ADJACENT): the repeat is removed and 1 is reported', () => {
+    // The simplest shape a page boundary produces: the last row of window 1 is
+    // the first row of window 2.
+    const page = [post('a'), post('b'), post('b'), post('c')]
+    const { listings, duplicatesRemoved } = dedupeBySlug(page, byId)
+    expect(listings.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+    expect(duplicatesRemoved).toBe(1)
+  })
+
+  it('CASE 3 — THE SAME ITEM TWICE, NON-ADJACENTLY: removed, and the FIRST position is kept', () => {
+    // ⚠️ THE CASE THAT CATCHES DEFECT 2. `a` appears at the head and again three
+    // rows later, so the survivor must still be at index 0 — a rebuild that kept
+    // the LAST occurrence would produce ['b','c','a'] (right length, wrong list),
+    // and a sort-by-slug would produce ['a','b','c','d'] by accident here but
+    // ['a','b','c','d'] only by luck of the alphabet. The explicit index-0
+    // assertion is what makes the position a claim rather than a coincidence.
+    const page = [post('a', 'first'), post('b'), post('c'), post('a', 'second'), post('d')]
+    const { listings, duplicatesRemoved } = dedupeBySlug(page, byId)
+    expect(listings.map((r) => r.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(duplicatesRemoved).toBe(1)
+    // The FIRST sighting's ROW is kept, not merely its position — the two rows
+    // share a slug but differ in title, so this proves which one survived.
+    expect(listings[0].title).toBe('first')
+  })
+
+  it('keeps the survivors in the INPUT order, never sorted (the caller owns ordering)', () => {
+    // The feed arrives in the DB's `starts_at` order. A dedupe that sorted by
+    // slug would pass every case above and silently re-order the real feed, so
+    // this pins a deliberately NON-alphabetical input.
+    const page = [post('z'), post('m'), post('a'), post('m'), post('z')]
+    const { listings, duplicatesRemoved } = dedupeBySlug(page, byId)
+    expect(listings.map((r) => r.id)).toEqual(['z', 'm', 'a'])
+    expect(duplicatesRemoved).toBe(2)
+  })
+
+  it('removes EVERY repeat of a slug, not just the second one', () => {
+    // Three copies of `a` (a page boundary can repeat an item more than once
+    // across a multi-page walk) must leave exactly one survivor and count 2.
+    const page = [post('a'), post('a'), post('a'), post('b')]
+    const { listings, duplicatesRemoved } = dedupeBySlug(page, byId)
+    expect(listings.map((r) => r.id)).toEqual(['a', 'b'])
+    expect(duplicatesRemoved).toBe(2)
+  })
+
+  it('an EMPTY page is empty, and reports 0 — never a negative or NaN count', () => {
+    const { listings, duplicatesRemoved } = dedupeBySlug([], byId)
+    expect(listings).toEqual([])
+    expect(duplicatesRemoved).toBe(0)
+  })
+
+  it('⚠️ PAIRING HALF — the helper CAN remove something, so CASE 1 is not vacuous', () => {
+    // A dedupe that returned its input unchanged would pass CASE 1 and the empty
+    // case while doing nothing at all. This asserts the shrink is real: N in,
+    // N-1 out, and the two are not the same array.
+    const page = [post('a'), post('a')]
+    const { listings, duplicatesRemoved } = dedupeBySlug(page, byId)
+    expect(page).toHaveLength(2)
+    expect(listings).toHaveLength(1)
+    expect(duplicatesRemoved).toBe(1)
+    expect(listings).not.toBe(page)
+  })
+})
+
+/**
+ * T4, acceptance (c) — ⚠️ THE WIRED CALLER: a duplicated page yields a SHORTER
+ * list through the step `listRadiusFeed` actually runs.
+ *
+ * ⚠️ WHY THIS IS A SEPARATE TEST FROM THE `dedupeBySlug` SUITE ABOVE. That suite
+ * proves the RULE is right. This one proves the rule is WIRED — that the feed
+ * calls it, on the right field. A perfectly correct `dedupeBySlug` that no caller
+ * invokes would pass every case above and still ship duplicate cards.
+ *
+ * `dedupeFeedPage` is the exact function `listRadiusFeed` calls for its dedupe
+ * (not a copy of it), so this asserts the shipped path.
+ */
+describe('dedupeFeedPage — the feed boundary actually shrinks a repeated page (T4)', () => {
+  /** A feed row reduced to the two fields this step reads. */
+  const row = (id: string, startsAt: string) => ({ id, starts_at: startsAt })
+
+  it('a page with a repeat renders a SHORTER list than the page it received', () => {
+    // The page as a paginated geo walk would assemble it: rows 1..3 from window
+    // one, then row 3 AGAIN as the first row of window two.
+    const page = [
+      row('p1', '2026-09-04T10:00:00.000Z'),
+      row('p2', '2026-09-04T11:00:00.000Z'),
+      row('p3', '2026-09-04T12:00:00.000Z'),
+      row('p3', '2026-09-04T12:00:00.000Z'),
+    ]
+    const { posts, duplicatesRemoved } = dedupeFeedPage(page)
+    // THE ASSERTION THE BRIEF NAMES: strictly shorter than what arrived.
+    expect(posts.length).toBeLessThan(page.length)
+    expect(posts).toHaveLength(3)
+    expect(duplicatesRemoved).toBe(1)
+    expect(posts.map((r) => r.id)).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  it('a page with NO repeat is unchanged in length, and reports 0', () => {
+    const page = [row('p1', '2026-09-04T10:00:00.000Z'), row('p2', '2026-09-04T11:00:00.000Z')]
+    const { posts, duplicatesRemoved } = dedupeFeedPage(page)
+    expect(posts).toHaveLength(page.length)
+    expect(duplicatesRemoved).toBe(0)
+  })
+
+  it('does NOT re-order the page — the feed still sorts downstream (filterFeed owns order)', () => {
+    // The rows arrive in the DB's starts_at order. Even with a duplicate in the
+    // middle, the survivors keep their incoming relative order; a dedupe that
+    // sorted would move `p1` behind `p0` here.
+    const page = [
+      row('p2', '2026-09-04T11:00:00.000Z'),
+      row('p1', '2026-09-04T10:00:00.000Z'),
+      row('p2', '2026-09-04T11:00:00.000Z'),
+      row('p0', '2026-09-04T09:00:00.000Z'),
+    ]
+    const { posts } = dedupeFeedPage(page)
+    expect(posts.map((r) => r.id)).toEqual(['p2', 'p1', 'p0'])
   })
 })

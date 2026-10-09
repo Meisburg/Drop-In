@@ -2642,6 +2642,78 @@ export function beyondRadiusCount<T extends FeedPost>(
 }
 
 /**
+ * T4 (`meetup-patterns-d8e22536`) — DEDUPE A PAGE OF LISTINGS BY A STABLE SLUG.
+ *
+ * THE RULING. Meetup keys a group by its `urlname` and dedupes on it, because
+ * paginated geo results WILL repeat an item across pages: an item that sits near
+ * a page boundary can be returned by two consecutive offset windows, and a
+ * radius/cursor walk can hand back the same row twice. Dropping In shows the same
+ * class of list (a radius-ordered page of drop-ins), so it needs the same
+ * guarantee: ONE row on screen per listing, regardless of how the page was
+ * assembled.
+ *
+ * ⚠️ THE SLUG IS THE EXISTING IDENTITY, NOT A NEW ONE. A post is already keyed by
+ * `playdates.id` (a uuid, `0005`), and a place by `places.id`. This helper takes
+ * that value through `slugOf` rather than hashing a title or inventing a second
+ * identity scheme — a second scheme would be a second thing to keep in sync, and
+ * two different rows could collide into one slug (a title+host+time hash can
+ * collide across two genuinely different posts; a primary key cannot).
+ *
+ * ⚠️ FIRST OCCURRENCE WINS, AND ITS POSITION IS KEPT. The list arrives in the
+ * order its owner decided (the DB's `starts_at` order for the feed). This helper
+ * DEDUPES ONLY — it does not sort, re-order, or move a survivor. The defect it
+ * exists to prevent has two faces, and both are asserted in its sibling test:
+ *   1. a duplicate that SURVIVES (two cards for one drop-in), and
+ *   2. an item SILENTLY DROPPED TO A LATER POSITION (because a naive `Map`
+ *      rebuild or a sort-by-slug moved it) — the list would still have the right
+ *      LENGTH while showing the wrong ORDER.
+ *
+ * Returns BOTH the deduped list and the number removed, so the caller can
+ * instrument the count without re-deriving it. The count is the honest measure of
+ * "how often this actually happens" — see the caller for what is (and is not)
+ * done with it.
+ *
+ * Pure, generic over any row carrying the slug, and exported so the rule is
+ * unit-tested directly rather than only through the feed (the build law: lib
+ * decides, the caller injects the I/O).
+ *
+ * @param listings the page, in its owner's order
+ * @param slugOf   reads the stable identity off a row (defaults to the row's `id`)
+ */
+export function dedupeBySlug<T>(
+  listings: readonly T[],
+  slugOf: (listing: T) => string,
+): DedupeResult<T> {
+  const seen = new Set<string>()
+  const deduped: T[] = []
+  for (const listing of listings) {
+    const slug = slugOf(listing)
+    // The FIRST row carrying this slug is the one kept, at the index it already
+    // occupied — `deduped.push` happens only on a first sighting, so the array's
+    // order is the input's order minus the repeats. Nothing is moved.
+    if (seen.has(slug)) continue
+    seen.add(slug)
+    deduped.push(listing)
+  }
+  return { listings: deduped, duplicatesRemoved: listings.length - deduped.length }
+}
+
+/** The pair `dedupeBySlug` returns: the shrunk list, and how many it removed. */
+export interface DedupeResult<T> {
+  /**
+   * The input order with every repeat AFTER its first occurrence removed. The
+   * survivors are the same rows, in the same relative order — never re-sorted.
+   */
+  listings: T[]
+  /**
+   * How many rows were dropped. `0` when the page had no repeats, which is the
+   * common case; the caller reports it rather than inferring it from a length
+   * delta it would have to compute itself.
+   */
+  duplicatesRemoved: number
+}
+
+/**
  * The archive link's one label (V9 ticket 04): "See past drop-ins".
  *
  * ONE constant behind the feed's day-sections archive line in FeedPage, so the

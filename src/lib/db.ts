@@ -49,6 +49,9 @@ import {
 import {
   ageRangeFields,
   beyondRadiusCount,
+  // T4: the paginated-page repeat guard. The rule lives in ./feed (pure, unit-
+  // tested); this file binds it to the one boundary a page of listings enters at.
+  dedupeBySlug,
   filterFeed,
   lastOwnPlaydateFrom,
   localDayKey,
@@ -809,6 +812,33 @@ export interface RadiusFeedResult {
   beyondRadiusCount: number
 }
 
+/**
+ * T4 (`meetup-patterns-d8e22536`) — THE FEED'S DEDUPE STEP, EXPORTED SO THE TEST
+ * CALLS THE SAME CODE THE FEED RUNS.
+ *
+ * This is the wiring, not a re-implementation of it: `listRadiusFeed` calls this
+ * and nothing else for its dedupe, so a spec asserting "a duplicated page yields
+ * a shorter list" is asserting the shipped path rather than a parallel one. The
+ * underlying rule is `feed.dedupeBySlug` (pure, separately tested); this function
+ * is only the binding — it names WHICH field is the slug.
+ *
+ * ⚠️ THE SLUG IS `playdates.id` — THE EXISTING PRIMARY KEY — not a hash of the
+ * title, host and time. A second identity scheme would be a second thing to keep
+ * in sync, and unlike a primary key a composite hash can COLLIDE: two genuinely
+ * different drop-ins at the same place and hour by the same host would collapse
+ * into one, silently deleting a real listing. Reusing the id cannot do that.
+ *
+ * It returns the pair so the caller can report the count; it does NOT sort. The
+ * feed's order is `filterFeed`'s job (starts_at), and this step deliberately runs
+ * before it.
+ */
+export function dedupeFeedPage<T extends { id: string }>(
+  page: readonly T[],
+): { posts: T[]; duplicatesRemoved: number } {
+  const { listings, duplicatesRemoved } = dedupeBySlug(page, (row) => row.id)
+  return { posts: listings, duplicatesRemoved }
+}
+
 export async function listRadiusFeed(
   viewer: RadiusViewer,
   profileId: string,
@@ -830,10 +860,38 @@ export async function listRadiusFeed(
   // fetched and then dropped for being a millisecond older than a second read.
   const nowIso = new Date().toISOString()
   const rows = await queryUpcomingPlaydates(nowIso, blockedIds)
+  // T4 (`meetup-patterns-d8e22536`): DEDUPE THE PAGE AT THE BOUNDARY IT ARRIVES
+  // AT, before any downstream work (the stitch, the filter, the distance model).
+  //
+  // WHY HERE. This is the one place a page of listings enters the app, and it is
+  // where a repeat would become a duplicated CARD. Meetup's ruling is that a
+  // paginated geo walk repeats an item across page boundaries, so the client —
+  // the only layer that sees the assembled page — is where the guarantee belongs.
+  //
+  // ⚠️ DEDUPE, NEVER SORT. `filterFeed` below is the sort's owner (it orders by
+  // starts_at, overriding the query's own order on purpose). This call only
+  // shrinks the list; it does not re-order it, and it runs BEFORE the sort so the
+  // two concerns cannot be confused for one another.
+  //
+  // The wiring itself is the exported `dedupeFeedPage` below, so the step the
+  // feed actually runs is the step its test calls — not a re-implementation of it.
+  const { posts: unique, duplicatesRemoved } = dedupeFeedPage(rows)
+  if (duplicatesRemoved > 0) {
+    // ⚠️ VISIBILITY, NOT TELEMETRY. This repo has NO analytics/telemetry seam —
+    // `src/lib/legal.ts:70` states plainly that the app runs "no third-party
+    // analytics", so building one to carry a single counter would be inventing
+    // infrastructure this slice was told not to. A console.warn makes the event
+    // observable during development and in a bug report; the COUNT itself is
+    // `duplicatesRemoved` above and is any future caller's for the asking. See the
+    // T4 report: there is deliberately no `duplicates_detected` emission.
+    console.warn(
+      `[feed] duplicates_detected: ${duplicatesRemoved} — the page repeated ${duplicatesRemoved} listing(s); deduped by id.`,
+    )
+  }
   // Stitch each post's place coordinates in (place_id -> {lat,lng}), so the
   // pure distance model sees them. A post with no place_id, or one whose place
   // is missing from the map, gets null and falls back to the host's home zip.
-  const posts = rows.map((post) => ({ ...post, place_coords: placeCoordsFor(post.place_id, places) }))
+  const posts = unique.map((post) => ({ ...post, place_coords: placeCoordsFor(post.place_id, places) }))
   const blocked = new Set(blockedIds)
   // V29 v29-7: `profileId` is the VIEWER's own profile id — their own active
   // drop-ins are exempt from the radius (see feed.filterFeed's ownProfileId).
