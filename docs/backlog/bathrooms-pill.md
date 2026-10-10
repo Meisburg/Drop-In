@@ -1,8 +1,22 @@
 # A "bathrooms available" pill — deferred until the data exists
 
+> ## ✅ SHIPPED 2026-10-09 — this file records the *pre-build* reasoning
+>
+> The column exists now: migration `0070_places_bathrooms_nearby.sql` added
+> `places.bathrooms_nearby boolean`, and the refresh script is
+> `scripts/refresh-bathrooms-nearby.mjs` (Overpass `amenity=toilets`, mirroring the
+> coffee path). The pill reads it through the strict tri-valued predicate
+> `placeHasBathroomsNearby` in `src/lib/places.ts` — `true` renders, `false` and
+> `null` render NOTHING. Merged as `8acae8d` (slice v36-bathrooms-pill).
+>
+> **Read the rest of this file as history, not as a pending plan.** It is kept
+> because the reasoning below is why the column is tri-valued and why the pill was
+> not built before the data — both still true.
+
 Parked 2026-10-08. Recorded so a future reader does not rebuild it from scratch,
 and so the reason it is not in the pill row is a written decision rather than an
 omission.
+
 
 ## The ask
 
