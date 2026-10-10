@@ -78,22 +78,21 @@ const DiscoveryMock = import.meta.env.DEV ? lazy(() => import('./dev/DiscoveryMo
  * `mockReplacesApp ? … : …` branch folds to the real shell and the mock's
  * chunk is never emitted.
  *
- * ⚠️ ESCAPE HATCH FOR THE HUMAN: with the dev server running, append
- * `?app=1` to the URL (or set `localStorage.discoveryMock = 'off'`) to get the
- * real app back. Without one, a dev build would be unusable for every other
- * slice, because the mock would be the only screen. The mock is a thing you go
- * and LOOK AT, not a thing that traps you.
+ * ⚠️ THE REAL APP IS THE DEFAULT. Append `?mock=1` to the dev URL to see the
+ * mock. This is deliberately the opposite of the first cut (which showed the mock
+ * by default behind an `?app=1` escape): a dev build that boots into a FAKE
+ * family-discovery screen is a trap, not a tool. The mock is a thing you go and
+ * look at when you mean to, never a thing you land on.
  */
 function shouldReplaceAppWithMock(): boolean {
   if (!import.meta.env.DEV) return false
   if (typeof window === 'undefined') return false
   try {
-    if (new URLSearchParams(window.location.search).get('app') === '1') return false
-    return window.localStorage.getItem('discoveryMock') !== 'off'
+    return new URLSearchParams(window.location.search).get('mock') === '1'
   } catch {
-    // A blocked storage (private mode, an iframe) must never break the app: fall
-    // back to SHOWING the mock, since that is the reason a dev build is running.
-    return true
+    // A blocked or absent URL API must never break the app: fall back to the REAL
+    // app, which is the safe direction now that the mock is opt-in.
+    return false
   }
 }
 
@@ -901,7 +900,7 @@ function AppLinks() {
 
 export default function App() {
   // Evaluated per render, not at module scope: it reads `location.search`, and a
-  // module-scope read would freeze the `?app=1` escape hatch at first load.
+  // module-scope read would freeze the `?mock=1` opt-in at first load.
   const mockReplacesApp = shouldReplaceAppWithMock()
   return (
     <BrowserRouter>
