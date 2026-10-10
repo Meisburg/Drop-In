@@ -527,3 +527,86 @@ orientation. The brief requires the cause to be measured, not assumed.
 into the app jarringly), `muzk9fk3` (place attributes as pills on the place page),
 `muzjx0we` (interests as emoji bubbles), `muzka6tz` (a bathrooms pill — needs a data
 decision), plus v33-7b, v33-12, 5c (five miles), v33-8 (settings), and the ADR.
+
+---
+
+## 16 — UPDATE #6 (2026-10-08 ~20:50): read §16 FIRST, §§1–3 are stale
+
+**Written by Hermes** at the end of the session that added v33-14/v33-15. Newest state is
+here; §1–§3 above still name old HEADs and a dead lane. **The append-only ledger at the end of
+`plan.md` §9 is authoritative for slice-by-slice history — read it alongside this.**
+
+### 16a. Who does what (settled this session, supersedes §10b's routing for this batch)
+
+- **dsh is the long-runner.** It takes turns on its own and grinds e2e jobs unattended. Jon's
+  direct verdict: *"out of all the things that I've tried, deep-seek harness has performed the
+  best in long-running agentic work."* **Do not take the wheel from it.** Every time it was
+  checked today it was already healthy.
+- **Hermes is the unstick / verify / record hand.** Three jobs only: unstick a genuinely STALLED
+  lane, verify a builder's claim against raw output, keep this file current. Not an orchestrator.
+- **Verification rule, now enforced:** a builder's "DONE" is a belief; the diff and a *freshly
+  re-run* gate are the evidence. v33-14 was verified this way (see 16c).
+- **Pi's batch-orchestrator role is retired for this batch.** The loop ran without it.
+
+### 16b. Lane (corrected)
+
+The live builder lane is **`wQ:p17`** — dsh TUI, `session 938db635-f838-4a63-9a7c-bdd054297012`,
+`ollama/deepseek-v4.1-flash:cloud`, Full Access. §6/§10b's lane names (`wQ:p15`, `wQ:p1F`,
+`wQ:p1G`) are historical. Confirm with `HERDR_ENV=1 herdr agent list` before dispatching.
+
+### 16c. v33-14 — verify mutex + lease-holder check — CODE ON DISK, UNCOMMITTED
+
+- **What:** lease holder identity (`pid`, `startedAt`) on both acquire paths; a second acquire for
+  a held task **refuses with exit code 4** and names the holder; `release <id> [--force]` only
+  clears a lease whose holder pid is **dead** (`ESRCH` = dead, `EPERM` = alive, no recorded pid =
+  HELD); release on the normal path **and** on a thrown error.
+- **Files:** `scripts/factory/{factory,scheduler,state}.mjs` + `scheduler.test.mjs`. +351/−19.
+- **Verified by Hermes, not taken on the builder's word:** `npm test -- scheduler` → 52 passed
+  (was 42); `npm run verify` → exit 0, 185 guard checks PASS; **mutation reproduced** — neutering
+  `holderConflict` turned 2 named tests red, then restored and re-green with the diff confirmed clean.
+- **NOT proven (recorded):** no `flock` — the read-modify-write on the lease JSON is not atomic, so
+  two *truly simultaneous first* acquires could still both pass. It closes the sequential case, not
+  real concurrency. And criteria a–d are proven by CLI execution, not unit tests, because
+  `factory.mjs` exports no entry point.
+- **Report:** `.scratch/v33-14-report.md`. **Exit 4 not 3 was a deliberate call** — a held id is an
+  ownership conflict, and 3 would invite a retry loop.
+
+### 16d. v33-15 — promote the mutex to a deterministic guard — DISPATCHED, RUNNING
+
+- Ruled YES by Jon: a soft check in `factory.mjs` is a claim; a `.check.mjs` under `scripts/guards/`
+  is an invariant. ("A lane that lives only in a pointer table quietly stops running.")
+- `deleg_7e5acc57`, running now. **It is editing `scripts/guards/run-all.sh` — do not touch that
+  file while it runs.**
+- Acceptance: `npm run guards` passes on the clean tree; a mutation that removes the refusal from
+  one acquire path turns the guard RED; the sibling `.check.mjs` proves the failure mode is reachable.
+
+### 16e. Landed since §2/§3 were written (they were WRONG about these)
+
+`v33-8` (`b6226bc`,`8f25080`) · `v33-hero` (`f109fd5`,`1a12f3d`) · `meetup-empty-state`
+(`b9f0eef`,`0a3c45d`) · `guard-env-fix` (`41cfedb`,`b37cd75`,`919fdde`) · `empty-state-one-button`
+(`e45c066`,`f8b81c1`) · `create-language` (`eb04835`,`d2ad93d`,`42aee26` = current HEAD).
+
+**SUPERSEDED 2026-10-09: HEAD and origin/master are in sync (pushed `279413f..7c72e43`, 62 commits landed). The line below was written 2026-10-08 and is kept as the record of that session. Do not read it as current.**
+
+**HEAD `42aee26`. `origin/master` `279413f`. `master` is ahead by 27 commits. Nothing pushed.**
+
+### 16f. Housekeeping
+
+- **v33-14 is COMMITTED as `76c54c3`** — staged by explicit path only (plan.md + the 4 factory files).
+  Nothing else swept in.
+- **v33-15 (the guard) is LANDED as `787571c`** — this line previously read "UNSTAGED, UNCOMMITTED"
+  and was stale when written; re-verified 2026-10-09: the files are tracked, `run-all.sh` carries
+  both the loop entry and the `run_check` line, and `npm run guards` passes.
+  Files: `scripts/guards/factory-lease-guard.mjs`, `factory-lease-guard.check.mjs`,
+  `scripts/guards/run-all.sh`. Verified independently: `npm run guards` PASS on the clean
+  tree; the check is non-vacuous (5 mutations, each flips red); the orchestrator mutated the LIVE
+  tree (removed `assertAcquirable` from `cmdRun`) → guard RED naming the run acquire path, exit 1;
+  restored byte-exact and green again. Report: `.scratch/v33-15-report.md`.
+- ⚠️ **STANDING FOOTGUN:** `scripts/guards/run-all.sh` uses an **explicit list**, not globbing. A new
+  guard file in `scripts/guards/` does **not** run until someone adds it to the list. When adding a
+  guard, add both the `for`-loop entry and the `run_check` line.
+- **Do NOT background `ocr`.** A nohup run with no TTY filtered the files, exited 0, and wrote no
+  JSON. It needs a real terminal (foreground).
+- **`ocr` genuinely owed on:** v33-13 (`964d066`) and v33-14 (`76c54c3`). **NOT** v33-6 or v33-7a —
+  those passes exist from Oct 7 (`.scratch/ocr-v33-6.json`, `-7a.json`); an earlier note said
+  otherwise and was wrong.
