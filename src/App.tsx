@@ -55,6 +55,49 @@ import type { DuplicatePrefill, PlacePrefill } from './lib/types'
 const AgentationDev = import.meta.env.DEV ? lazy(() => import('./dev/AgentationDev')) : null
 
 /**
+ * V38 slice A (`W4J7`): the DEV-ONLY discovery mock — `docs/adr/0007` §7
+ * precondition 5, which asks for Option 1's match surface to be shown to real
+ * parents WITHOUT a database behind it.
+ *
+ * ⚠️ IT IS THE SAME MECHANISM AS THE LINE ABOVE, deliberately: a module-scope
+ * `import.meta.env.DEV` ternary means Vite replaces the expression with `false`
+ * in a production build, so this branch, the dynamic import and the chunk are all
+ * eliminated and the fixture strings never land in `dist/`. That is VERIFIED by
+ * grepping the built bundle for a fixture name (see the V38-A report).
+ *
+ * ⚠️ AND IT IS THE SAME SHAPE FOR A SECOND REASON: it is mounted OUTSIDE the
+ * router's route table — it is a sibling of the app shell, not a `<Route>` — so
+ * there is no production route to forget to remove, and nothing in the router's
+ * real table changes.
+ */
+const DiscoveryMock = import.meta.env.DEV ? lazy(() => import('./dev/DiscoveryMock')) : null
+
+/**
+ * Should the dev mock REPLACE the app (rather than render over it)? `false` in a
+ * production build, where `import.meta.env.DEV` is replaced by Vite — so the whole
+ * `mockReplacesApp ? … : …` branch folds to the real shell and the mock's
+ * chunk is never emitted.
+ *
+ * ⚠️ ESCAPE HATCH FOR THE HUMAN: with the dev server running, append
+ * `?app=1` to the URL (or set `localStorage.discoveryMock = 'off'`) to get the
+ * real app back. Without one, a dev build would be unusable for every other
+ * slice, because the mock would be the only screen. The mock is a thing you go
+ * and LOOK AT, not a thing that traps you.
+ */
+function shouldReplaceAppWithMock(): boolean {
+  if (!import.meta.env.DEV) return false
+  if (typeof window === 'undefined') return false
+  try {
+    if (new URLSearchParams(window.location.search).get('app') === '1') return false
+    return window.localStorage.getItem('discoveryMock') !== 'off'
+  } catch {
+    // A blocked storage (private mode, an iframe) must never break the app: fall
+    // back to SHOWING the mock, since that is the reason a dev build is running.
+    return true
+  }
+}
+
+/**
  * V22 slice 10: the /browse route is code-split. It is no longer a nav
  * destination (V21 t02 moved the directory into /new's "Where?" block) — it is
  * reachable by deep link only — so its page (and, through it, the places
@@ -857,14 +900,49 @@ function AppLinks() {
 }
 
 export default function App() {
+  // Evaluated per render, not at module scope: it reads `location.search`, and a
+  // module-scope read would freeze the `?app=1` escape hatch at first load.
+  const mockReplacesApp = shouldReplaceAppWithMock()
   return (
     <BrowserRouter>
       <AppLinks />
-      {/* DEV-ONLY annotation toolbar (Agentation). `import.meta.env.DEV` is
-          replaced with `false` in a production build, so this branch — and the
-          dynamic import behind it — is eliminated: `agentation` never reaches
-          `dist/`. That was VERIFIED, not assumed, by grepping the built bundle
-          when it was added (2026-10-06). */}
+      {/* V38 slice A (`W4J7`): the DEV-ONLY discovery mock — `docs/adr/0007` §7
+          precondition 5 ("shown to real parents WITHOUT a database behind it").
+
+          ⚠️ GATED EXACTLY LIKE THE TOOLBAR ABOVE: `import.meta.env.DEV` is
+          replaced with `false` in a production build, so this branch, its dynamic
+          import and its chunk are eliminated and the fixture strings never reach
+          `dist/` (verified by grepping the bundle — see the V38-A report).
+
+          ⚠️ IT RETURNS EARLY RATHER THAN RENDERING ALONGSIDE. The toolbar above is
+          an overlay that sits ON the app; this is a whole prototype SCREEN, so
+          stacking it would show the mock and the real feed superimposed. In a dev
+          build `mockReplacesApp` is true and the mock is the only thing
+          rendered; in production the flag is `false`, the whole block is dead
+          code, and the returned tree is byte-for-byte what it was. */}
+      {mockReplacesApp && DiscoveryMock !== null ? (
+        <Suspense fallback={null}>
+          <DiscoveryMock />
+        </Suspense>
+      ) : (
+        <AppShell />
+      )}
+    </BrowserRouter>
+  )
+}
+
+/**
+ * V38 slice A (`W4J7`): the app's real tree, unchanged — extracted from the
+ * return above so the dev-only mock can REPLACE it instead of stacking on top of
+ * it. It is a plain move of the existing JSX: every prop, provider and child is
+ * exactly where it was.
+ */
+function AppShell() {
+  return (
+    <>
+      {/* DEV-ONLY annotation toolbar (Agentation). Kept: it is an overlay that
+          belongs ON the app, so it renders in both the real shell and (harmlessly)
+          under the mock. */}
       {AgentationDev !== null ? (
         <Suspense fallback={null}>
           <AgentationDev />
@@ -978,6 +1056,6 @@ export default function App() {
         </LightboxProvider>
         </InboxUnreadProvider>
       </SessionProvider>
-    </BrowserRouter>
+    </>
   )
 }
