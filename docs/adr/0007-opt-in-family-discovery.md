@@ -278,10 +278,30 @@ optional.**
    match surface should be prototyped and shown to real parents *without a database
    behind it* — the question is whether a match is enough to start a conversation, and
    that is a question screenshots can answer for free.
+
+   ✅ **ANSWERED 2026-10-09.** The prototype shipped (V38-A): a DEV-only mock at
+   `src/dev/DiscoveryMock.tsx`, hardcoded fixtures, absent from the production bundle
+   (verified by a dist grep for the fixture name and the module identifier — both clean).
+   It was shown to parents, and **the answer was yes: most said they would send a
+   message from that screen.** The match surface is legible and a parent would act on
+   it. ⚠️ **What this does NOT establish:** it is self-report on a mock, not observed
+   behaviour on a live surface. It answers "is a match enough to start a conversation?"
+   — it does not answer "does discovery actually warm the cold start?" That remains
+   unproven until the feature is real, which precondition 1 still gates.
+
 6. **A moderation answer for the inbox that results.** "Ask to connect" is a message
    path; the block and report surfaces exist, but discovery will produce a different
    volume and character of first contact than a drop-in reply does. That needs its own
    look before it is live.
+
+---
+
+### Status at 2026-10-09
+
+**Precondition 5 is answered. Precondition 1 is NOT, and it alone still gates the
+build.** In the ADR's own order, a child-safety review comes *before* a line of code —
+so a positive prototype result does not move the gate, it only makes the gate worth
+paying for. The next real action is to arrange that review, not to write a spec.
 
 ---
 
